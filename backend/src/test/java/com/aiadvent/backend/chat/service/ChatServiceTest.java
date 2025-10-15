@@ -12,7 +12,6 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +39,7 @@ class ChatServiceTest {
   }
 
   @Test
-  void registerUserMessageCreatesNewSessionAndReturnsHistory() {
+  void registerUserMessageCreatesNewSession() {
     ChatSession savedSession = new ChatSession();
     UUID sessionId = UUID.randomUUID();
     ReflectionTestUtils.setField(savedSession, "id", sessionId);
@@ -51,21 +50,11 @@ class ChatServiceTest {
 
     ChatMessage persistedMessage = new ChatMessage(savedSession, ChatRole.USER, "Привет", 1);
     when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(persistedMessage);
-    when(chatMessageRepository.findBySessionOrderBySequenceNumberAsc(savedSession))
-        .thenReturn(List.of(persistedMessage));
 
     ConversationContext context = chatService.registerUserMessage(null, "Привет");
 
     assertThat(context.sessionId()).isEqualTo(sessionId);
     assertThat(context.newSession()).isTrue();
-    assertThat(context.history())
-        .hasSize(1)
-        .first()
-        .satisfies(
-            message -> {
-              assertThat(message.role()).isEqualTo(ChatRole.USER);
-              assertThat(message.content()).isEqualTo("Привет");
-            });
 
     ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
     verify(chatMessageRepository).save(messageCaptor.capture());

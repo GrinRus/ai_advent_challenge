@@ -18,9 +18,11 @@ import com.aiadvent.backend.chat.support.StubChatClientConfiguration;
 import com.aiadvent.backend.chat.support.StubChatClientState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.hamcrest.Matchers;
@@ -36,6 +38,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -44,7 +47,10 @@ import org.springframework.util.StringUtils;
 @SpringBootTest(
     properties = {
       "spring.ai.openai.api-key=test-token",
-      "spring.ai.openai.base-url=http://localhost"
+      "spring.ai.openai.base-url=http://localhost",
+      "app.chat.memory.window-size=3",
+      "app.chat.memory.retention=PT24H",
+      "app.chat.memory.cleanup-interval=PT1H"
     })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -59,10 +65,13 @@ class ChatStreamControllerIntegrationTest {
 
   @Autowired private ChatMessageRepository chatMessageRepository;
 
+  @Autowired private JdbcTemplate jdbcTemplate;
+
   @BeforeEach
   void cleanDatabase() {
     chatMessageRepository.deleteAll();
     chatSessionRepository.deleteAll();
+    jdbcTemplate.execute("DELETE FROM chat_memory_message");
     StubChatClientState.reset();
   }
 
@@ -77,47 +86,24 @@ class ChatStreamControllerIntegrationTest {
 
     ChatStreamRequest request = new ChatStreamRequest(null, "Hello model");
 
-    MvcResult initialResult =
-        mockMvc
-            .perform(
-                post("/api/llm/chat/stream")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-            .andExpect(request().asyncStarted())
-            .andReturn();
-
-    MvcResult completedResult =
-        mockMvc
-            .perform(asyncDispatch(initialResult))
-            .andExpect(status().isOk())
-            .andExpect(
-                header()
-                    .string("Content-Type", Matchers.startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)))
-            .andReturn();
-
-    String responseBody = completedResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
-
-    List<SseFrame> events = parseSsePayload(responseBody);
+    List<ChatStreamEvent> events = performChatStream(request);
 
     assertThat(events)
-        .extracting(SseFrame::eventName)
+        .extracting(ChatStreamEvent::type)
         .containsExactly("session", "token", "token", "complete");
 
-    List<ChatStreamEvent> payloads =
-        events.stream().map(frame -> frame.event(objectMapper)).collect(Collectors.toList());
-
-    assertThat(payloads)
+    assertThat(events)
         .first()
         .extracting(ChatStreamEvent::newSession, InstanceOfAssertFactories.BOOLEAN)
         .isTrue();
 
-    assertThat(payloads.subList(1, payloads.size()))
+    assertThat(events.subList(1, events.size()))
         .extracting(ChatStreamEvent::sessionId)
-        .containsOnly(payloads.get(0).sessionId());
+        .containsOnly(events.get(0).sessionId());
 
-    assertThat(payloads.get(1).content()).isEqualTo("partial ");
-    assertThat(payloads.get(2).content()).isEqualTo("answer");
-    assertThat(payloads.get(3).content()).isEqualTo("partial answer");
+    assertThat(events.get(1).content()).isEqualTo("partial ");
+    assertThat(events.get(2).content()).isEqualTo("answer");
+    assertThat(events.get(3).content()).isEqualTo("partial answer");
 
     List<ChatSession> sessions = chatSessionRepository.findAll();
     assertThat(sessions).hasSize(1);
@@ -132,31 +118,27 @@ class ChatStreamControllerIntegrationTest {
 
     assertThat(messages.getFirst().getContent()).isEqualTo("Hello model");
     assertThat(messages.get(1).getContent()).isEqualTo("partial answer");
+
+    Integer memoryEntries =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM chat_memory_message WHERE session_id = ?",
+            Integer.class,
+            sessions.getFirst().getId());
+    assertThat(memoryEntries).isEqualTo(2);
   }
 
   @Test
-  void streamUsesExistingSessionHistory() throws Exception {
-    ChatSession existingSession = chatSessionRepository.save(new ChatSession());
-    chatMessageRepository.save(
-        new ChatMessage(existingSession, ChatRole.USER, "Previous question", 1));
-    chatMessageRepository.save(
-        new ChatMessage(existingSession, ChatRole.ASSISTANT, "Previous answer", 2));
+  void streamUsesChatMemoryWindowAcrossRequests() throws Exception {
+    StubChatClientState.setTokens(List.of("Previous answer"));
+    List<ChatStreamEvent> initialEvents =
+        performChatStream(new ChatStreamRequest(null, "Previous question"));
+
+    UUID sessionId = initialEvents.getFirst().sessionId();
+    ChatSession persistedSession = chatSessionRepository.findById(sessionId).orElseThrow();
 
     StubChatClientState.setTokens(List.of("follow-up"));
 
-    ChatStreamRequest request =
-        new ChatStreamRequest(existingSession.getId(), "Next question from user");
-
-    MvcResult initialResult =
-        mockMvc
-            .perform(
-                post("/api/llm/chat/stream")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(request)))
-            .andExpect(request().asyncStarted())
-            .andReturn();
-
-    mockMvc.perform(asyncDispatch(initialResult)).andExpect(status().isOk());
+    performChatStream(new ChatStreamRequest(sessionId, "Next question from user"));
 
     Prompt prompt = StubChatClientState.lastPrompt();
     assertThat(prompt).isNotNull();
@@ -180,12 +162,20 @@ class ChatStreamControllerIntegrationTest {
         .isEqualTo("Next question from user");
 
     List<ChatMessage> messages =
-        chatMessageRepository.findBySessionOrderBySequenceNumberAsc(existingSession);
+        chatMessageRepository.findBySessionOrderBySequenceNumberAsc(persistedSession);
     assertThat(messages)
         .hasSize(4)
         .extracting(ChatMessage::getContent)
         .containsExactly(
             "Previous question", "Previous answer", "Next question from user", "follow-up");
+
+    List<String> memoryMessages =
+        jdbcTemplate.query(
+            "SELECT content FROM chat_memory_message WHERE session_id = ? ORDER BY message_order",
+            (rs, rowNum) -> rs.getString("content"),
+            sessionId);
+
+    assertThat(memoryMessages).containsExactly("Previous answer", "Next question from user", "follow-up");
   }
 
   private List<SseFrame> parseSsePayload(String responseBody) {
@@ -222,5 +212,35 @@ class ChatStreamControllerIntegrationTest {
         throw new IllegalStateException("Failed to deserialize SSE payload", exception);
       }
     }
+  }
+
+  private List<ChatStreamEvent> performChatStream(ChatStreamRequest request) throws Exception {
+    MvcResult initialResult =
+        mockMvc
+            .perform(
+                post("/api/llm/chat/stream")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+
+    initialResult.getAsyncResult(Duration.ofSeconds(2).toMillis());
+
+    MvcResult completedResult =
+        mockMvc
+            .perform(asyncDispatch(initialResult))
+            .andExpect(status().isOk())
+            .andExpect(
+                header()
+                    .string("Content-Type", Matchers.startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)))
+            .andReturn();
+
+    String responseBody =
+        completedResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+    return parseSsePayload(responseBody).stream()
+        .map(frame -> frame.event(objectMapper))
+        .collect(Collectors.toList());
   }
 }

@@ -13,6 +13,7 @@ import com.aiadvent.backend.chat.support.StubChatClientConfiguration;
 import com.aiadvent.backend.chat.support.StubChatClientState;
 import java.time.Duration;
 import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,10 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = {
       "spring.ai.openai.api-key=test-token",
-      "spring.ai.openai.base-url=http://localhost"
+      "spring.ai.openai.base-url=http://localhost",
+      "app.chat.memory.window-size=3",
+      "app.chat.memory.retention=PT24H",
+      "app.chat.memory.cleanup-interval=PT1H"
     })
 @AutoConfigureWebTestClient
 @ActiveProfiles("test")
@@ -42,10 +46,13 @@ class ChatStreamHttpE2ETest {
 
   @Autowired private ChatMessageRepository chatMessageRepository;
 
+  @Autowired private JdbcTemplate jdbcTemplate;
+
   @BeforeEach
   void setUp() {
     chatMessageRepository.deleteAll();
     chatSessionRepository.deleteAll();
+    jdbcTemplate.execute("DELETE FROM chat_memory_message");
     StubChatClientState.reset();
   }
 
@@ -106,5 +113,12 @@ class ChatStreamHttpE2ETest {
         .containsExactly(
             org.assertj.core.api.Assertions.tuple(ChatRole.USER, "Hello over HTTP"),
             org.assertj.core.api.Assertions.tuple(ChatRole.ASSISTANT, "via http"));
+
+    Integer memoryEntries =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM chat_memory_message WHERE session_id = ?",
+            Integer.class,
+            sessionEvent.sessionId());
+    assertThat(memoryEntries).isEqualTo(2);
   }
 }

@@ -34,10 +34,17 @@ public final class StubChatClientState {
     return LAST_PROMPT.get();
   }
 
+  public static List<String> currentTokens() {
+    return TOKENS.get();
+  }
+
   static Flux<ChatResponse> responseFlux() {
     return Flux.fromIterable(
         TOKENS.get().stream()
-            .map(token -> new ChatResponse(List.of(new Generation(new AssistantMessage(token)))))
+            .map(
+                token ->
+                    new ChatResponse(
+                        List.of(new Generation(AssistantMessage.builder().content(token).build()))))
             .toList());
   }
 }

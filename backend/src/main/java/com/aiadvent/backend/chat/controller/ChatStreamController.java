@@ -2,23 +2,18 @@ package com.aiadvent.backend.chat.controller;
 
 import com.aiadvent.backend.chat.api.ChatStreamEvent;
 import com.aiadvent.backend.chat.api.ChatStreamRequest;
-import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
-import com.aiadvent.backend.chat.service.ConversationMessage;
 import jakarta.validation.Valid;
 import java.io.IOException;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
@@ -40,9 +35,14 @@ public class ChatStreamController {
   private final ChatService chatService;
   private final ChatClient chatClient;
 
-  public ChatStreamController(ChatService chatService, ChatClient.Builder chatClientBuilder) {
+  public ChatStreamController(
+      ChatService chatService,
+      ChatClient.Builder chatClientBuilder,
+      SimpleLoggerAdvisor simpleLoggerAdvisor,
+      MessageChatMemoryAdvisor chatMemoryAdvisor) {
     this.chatService = chatService;
-    this.chatClient = chatClientBuilder.defaultAdvisors(new SimpleLoggerAdvisor()).build();
+    this.chatClient =
+        chatClientBuilder.defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor).build();
   }
 
   @PostMapping(
@@ -53,15 +53,20 @@ public class ChatStreamController {
     ConversationContext context =
         chatService.registerUserMessage(request.sessionId(), request.message());
 
-    List<Message> promptMessages = context.history().stream().map(this::toAiMessage).toList();
-
-    Prompt prompt = new Prompt(promptMessages);
     SseEmitter emitter = new SseEmitter(0L);
 
     emit(emitter, "session", ChatStreamEvent.session(context.sessionId(), context.newSession()));
 
     StringBuilder assistantResponse = new StringBuilder();
-    Flux<ChatResponse> responseFlux = chatClient.prompt(prompt).stream().chatResponse();
+    Flux<ChatResponse> responseFlux =
+        chatClient
+            .prompt()
+            .user(request.message())
+            .advisors(
+                advisors ->
+                    advisors.param(ChatMemory.CONVERSATION_ID, context.sessionId().toString()))
+            .stream()
+            .chatResponse();
 
     AtomicReference<Disposable> subscriptionRef = new AtomicReference<>();
 
@@ -184,12 +189,5 @@ public class ChatStreamController {
       return normalized;
     }
     return normalized.substring(0, maxLength) + "...";
-  }
-
-  private Message toAiMessage(ConversationMessage conversationMessage) {
-    if (conversationMessage.role() == ChatRole.ASSISTANT) {
-      return new AssistantMessage(conversationMessage.content());
-    }
-    return new UserMessage(conversationMessage.content());
   }
 }

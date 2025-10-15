@@ -5,9 +5,7 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
-import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,12 +49,7 @@ public class ChatService {
     int nextSequence = nextSequenceNumber(session);
     chatMessageRepository.save(new ChatMessage(session, ChatRole.USER, content, nextSequence));
 
-    List<ConversationMessage> history =
-        chatMessageRepository.findBySessionOrderBySequenceNumberAsc(session).stream()
-            .map(message -> new ConversationMessage(message.getRole(), message.getContent()))
-            .collect(Collectors.toList());
-
-    return new ConversationContext(session.getId(), newSession, history);
+    return new ConversationContext(session.getId(), newSession);
   }
 
   @Transactional
