@@ -16,3 +16,5 @@ out/
 
 # Environment files
 .env
+.env.open-ai
+.env.z-ai

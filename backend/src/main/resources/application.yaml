@@ -16,8 +16,14 @@ spring:
           top-p: ${LLM_TOP_P:1.0}
           max-tokens: ${LLM_MAX_TOKENS:1024}
           stream: true
+      log-request: true
+      log-response: true
 
 logging:
   level:
     com.aiadvent.backend.chat: DEBUG
     org.springframework.ai: DEBUG
+    org.springframework.web: INFO
+#    org.springframework.web.client.RestTemplate: DEBUG
+#    reactor.netty.http.client: DEBUG
+#    org.springframework.ai.openai: DEBUG
