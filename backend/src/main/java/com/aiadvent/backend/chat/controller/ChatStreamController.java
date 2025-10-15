@@ -99,6 +99,9 @@ public class ChatStreamController {
               }
 
               assistantResponse.append(content);
+              if (log.isDebugEnabled()) {
+                log.debug("Stream chunk for session {}: {}", sessionId, content);
+              }
               emit(emitter, "token", ChatStreamEvent.token(sessionId, content));
             });
   }
