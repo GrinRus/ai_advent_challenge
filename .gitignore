@@ -1,0 +1,14 @@
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+build/
+
+# IDE settings
+.idea/
+*.iml
+out/
+
+# OS files
+.DS_Store

@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0001-create-help-table
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: CREATE EXTENSION IF NOT EXISTS "vector";
+        - createTable:
+            tableName: help_content
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: message
+                  type: TEXT
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: 0002-insert-initial-help-message
+      author: ai-advent
+      context: local,prod
+      changes:
+        - insert:
+            tableName: help_content
+            columns:
+              - column:
+                  name: message
+                  value: 'AI Advent Challenge: explore available endpoints via /help.'

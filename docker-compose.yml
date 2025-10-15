@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: ai-advent-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_advent}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_advent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_advent}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    image: ai-advent/backend:latest
+    container_name: ai-advent-backend
+    depends_on:
+      - postgres
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      APP_DB_URL: ${APP_DB_URL:-jdbc:postgresql://postgres:5432/ai_advent}
+      APP_DB_USERNAME: ${APP_DB_USERNAME:-ai_advent}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-ai_advent}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    image: ai-advent/frontend:latest
+    container_name: ai-advent-frontend
+    depends_on:
+      - backend
+    ports:
+      - "4179:4179"
+
+volumes:
+  postgres_data:

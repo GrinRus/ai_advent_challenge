@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: ${APP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
+    username: ${APP_DB_USERNAME:ai_advent}
+    password: ${APP_DB_PASSWORD:ai_advent}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    contexts: local
+
+logging:
+  level:
+    root: INFO

@@ -1,0 +1,30 @@
+# Инфраструктура проекта
+
+## Сервисы и порты
+- Backend (Spring Boot) — сервис `backend`, порт `8080`.
+- Frontend (React + Vite + Nginx) — сервис `frontend`, порт `4179`.
+- Postgres + pgvector — сервис `postgres`, порт `5434` (наружный порт; внутри контейнера используется `5432`).
+
+## Docker Compose
+Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости.
+
+Для локального запуска всех компонентов выполните:
+
+```bash
+docker compose up --build
+```
+
+Переменные окружения для backend (URL, логин, пароль БД) передаются через `APP_DB_*` и уже заданы в `docker-compose.yml`. При необходимости вынесите их в `.env` файл и подключите через ключ `env_file`.
+
+Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
+
+## GitHub Actions
+Workflow `.github/workflows/ci.yml` выполняет следующие шаги:
+1. Прогон backend-тестов (`./gradlew test`, Testcontainers).
+2. Сборка frontend (`npm run build`).
+3. Ручной деплой на VPS по событию `workflow_dispatch`: на сервере выполняется `git pull`, пересборка Docker-образов и запуск `docker compose`.
+
+Для деплоя необходимо определить секреты:
+- `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (и опционально `DEPLOY_PORT`).
+
+На сервере должен существовать клон репозитория. Скрипт деплоя выполняет `git pull` и `docker compose up -d`.
