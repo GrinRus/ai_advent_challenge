@@ -4,3 +4,14 @@ server:
 spring:
   application:
     name: backend
+  ai:
+    openai:
+      base-url: ${LLM_BASE_URL:https://api.z.ai/v1}
+      api-key: ${LLM_API_KEY:}
+      chat:
+        options:
+          model: ${LLM_MODEL:glm4.6}
+          temperature: ${LLM_TEMPERATURE:0.7}
+          top-p: ${LLM_TOP_P:1.0}
+          max-tokens: ${LLM_MAX_TOKENS:1024}
+          stream: true

@@ -18,6 +18,14 @@ docker compose up --build
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
 
+## Настройка LLM-чата
+- Backend использует Spring AI и OpenAI-совместимый провайдер z.ai (`glm4.6`). Настроить подключение можно через переменные окружения:
+  - `LLM_BASE_URL` — базовый URL API провайдера (по умолчанию `https://api.z.ai/v1`).
+  - `LLM_API_KEY` — ключ доступа (обязателен).
+  - `LLM_MODEL`, `LLM_TEMPERATURE`, `LLM_TOP_P`, `LLM_MAX_TOKENS` — параметры запроса к модели.
+- Эти параметры можно задать в `.env` и они автоматически попадут в контейнер backend через `docker-compose.yml`.
+- Для frontend достаточно установить `VITE_API_BASE_URL` (по умолчанию `/api`). SSE-подписка выполняется на эндпоинт `POST /api/llm/chat/stream`, который возвращает события `session`, `token`, `complete`, `error`.
+
 ## GitHub Actions
 Workflow `.github/workflows/ci.yml` выполняет следующие шаги:
 1. Прогон backend-тестов (`./gradlew test`, Testcontainers).

@@ -23,12 +23,20 @@ services:
       APP_DB_URL: ${APP_DB_URL:-jdbc:postgresql://postgres:5432/ai_advent}
       APP_DB_USERNAME: ${APP_DB_USERNAME:-ai_advent}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-ai_advent}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.z.ai/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-glm4.6}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
+      LLM_TOP_P: ${LLM_TOP_P:-1.0}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-1024}
     ports:
       - "8080:8080"
 
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     image: ai-advent/frontend:latest
     container_name: ai-advent-frontend
     depends_on:

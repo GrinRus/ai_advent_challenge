@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? '/api';
+export const CHAT_STREAM_URL = `${API_BASE_URL}/llm/chat/stream`;
 
 export type HelpResponse = {
   message: string;
