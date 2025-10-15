@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 public class HelpService {
 
   private static final String DEFAULT_MESSAGE =
-      "AI Advent Challenge: explore available endpoints via /help.";
+      "AI Advent Challenge: explore available endpoints via /api/help.";
 
   private final HelpMessageRepository helpMessageRepository;
 

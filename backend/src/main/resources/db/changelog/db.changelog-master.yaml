@@ -32,3 +32,14 @@ databaseChangeLog:
               - column:
                   name: message
                   value: 'AI Advent Challenge: explore available endpoints via /help.'
+  - changeSet:
+      id: 0003-update-help-message-api-prefix
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            sql: >
+              UPDATE help_content
+              SET message = 'AI Advent Challenge: explore available endpoints via /api/help.'
+              WHERE message = 'AI Advent Challenge: explore available endpoints via /help.';

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM gradle:8.10.2-jdk17 AS build
+FROM gradle:8.10.2-jdk21 AS build
 WORKDIR /workspace
 
 COPY gradlew settings.gradle build.gradle ./
@@ -10,7 +10,7 @@ RUN ./gradlew --no-daemon clean
 COPY src src
 RUN ./gradlew --no-daemon bootJar
 
-FROM eclipse-temurin:17-jre-alpine AS runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 
 ENV SPRING_PROFILES_ACTIVE=prod \

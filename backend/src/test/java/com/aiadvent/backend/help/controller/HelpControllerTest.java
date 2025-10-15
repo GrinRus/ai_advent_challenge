@@ -26,7 +26,7 @@ class HelpControllerTest {
     given(helpService.getHelpMessage()).willReturn("Test message");
 
     mockMvc
-        .perform(get("/help"))
+        .perform(get("/api/help"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message", equalTo("Test message")));
   }

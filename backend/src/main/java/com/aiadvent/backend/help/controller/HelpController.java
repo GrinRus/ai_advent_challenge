@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/help")
+@RequestMapping("/api/help")
 public class HelpController {
 
   private final HelpService helpService;

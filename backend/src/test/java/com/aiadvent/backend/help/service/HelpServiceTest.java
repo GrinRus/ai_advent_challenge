@@ -36,6 +36,6 @@ class HelpServiceTest {
     given(repository.findTopByOrderByIdDesc()).willReturn(Optional.empty());
 
     assertThat(helpService.getHelpMessage())
-        .isEqualTo("AI Advent Challenge: explore available endpoints via /help.");
+        .isEqualTo("AI Advent Challenge: explore available endpoints via /api/help.");
   }
 }
