@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -41,7 +42,7 @@ public class ChatStreamController {
 
   public ChatStreamController(ChatService chatService, ChatClient.Builder chatClientBuilder) {
     this.chatService = chatService;
-    this.chatClient = chatClientBuilder.build();
+    this.chatClient = chatClientBuilder.defaultAdvisors(new SimpleLoggerAdvisor()).build();
   }
 
   @PostMapping(

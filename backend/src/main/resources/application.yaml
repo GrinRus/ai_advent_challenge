@@ -24,6 +24,7 @@ logging:
     com.aiadvent.backend.chat: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
+    org.springframework.ai.chat.client.advisor: DEBUG
 #    org.springframework.web.client.RestTemplate: DEBUG
 #    reactor.netty.http.client: DEBUG
 #    org.springframework.ai.openai: DEBUG
