@@ -19,6 +19,9 @@ public class HelpService {
 
   public String getHelpMessage() {
     log.debug("Fetching help message from repository");
-    return helpMessageRepository.findTopByOrderByIdDesc().map(m -> m.getMessage()).orElse(DEFAULT_MESSAGE);
+    return helpMessageRepository
+        .findTopByOrderByIdDesc()
+        .map(m -> m.getMessage())
+        .orElse(DEFAULT_MESSAGE);
   }
 }
