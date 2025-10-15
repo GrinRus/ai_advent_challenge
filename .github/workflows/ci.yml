@@ -60,28 +60,16 @@ jobs:
     needs:
       - backend
       - frontend
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '' }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER || '' }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || '' }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '' }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '' }}
     steps:
-      - name: Skip deploy if secrets missing
-        if: ${{ env.DEPLOY_HOST == '' }}
-        run: echo "DEPLOY_HOST secret not set, skipping deployment."
-
       - name: Deploy via SSH
-        if: ${{ env.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ env.DEPLOY_HOST }}
-          username: ${{ env.DEPLOY_USER }}
-          key: ${{ env.DEPLOY_SSH_KEY }}
-          port: ${{ env.DEPLOY_PORT || '22' }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
             set -euo pipefail
-            cd "${{ env.DEPLOY_PATH }}"
+            cd "${{ secrets.DEPLOY_PATH }}"
             git fetch --all --prune
             git pull --ff-only
             docker compose down --remove-orphans || true
