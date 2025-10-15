@@ -55,19 +55,24 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    if: ${{ github.event_name == 'workflow_dispatch' && env.DEPLOY_HOST != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     needs:
       - backend
       - frontend
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST || '' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER || '' }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || '' }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '' }}
     steps:
+      - name: Skip deploy if secrets missing
+        if: ${{ env.DEPLOY_HOST == '' }}
+        run: echo "DEPLOY_HOST secret not set, skipping deployment."
+
       - name: Deploy via SSH
+        if: ${{ env.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ env.DEPLOY_HOST }}
