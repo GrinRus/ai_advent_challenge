@@ -40,7 +40,8 @@ public class StubChatClientConfiguration {
     }
 
     @Override
-    public ChatClient.Builder defaultAdvisors(Consumer<ChatClient.AdvisorSpec> advisorSpecConsumer) {
+    public ChatClient.Builder defaultAdvisors(
+        Consumer<ChatClient.AdvisorSpec> advisorSpecConsumer) {
       return this;
     }
 
@@ -121,8 +122,7 @@ public class StubChatClientConfiguration {
     }
 
     @Override
-    public ChatClient.Builder defaultToolCallbacks(
-        ToolCallbackProvider... toolCallbackProviders) {
+    public ChatClient.Builder defaultToolCallbacks(ToolCallbackProvider... toolCallbackProviders) {
       return this;
     }
 
@@ -175,8 +175,7 @@ public class StubChatClientConfiguration {
     }
 
     @Override
-    public ChatClient.ChatClientRequestSpec advisors(
-        Consumer<ChatClient.AdvisorSpec> consumer) {
+    public ChatClient.ChatClientRequestSpec advisors(Consumer<ChatClient.AdvisorSpec> consumer) {
       return this;
     }
 
@@ -252,8 +251,7 @@ public class StubChatClientConfiguration {
     }
 
     @Override
-    public ChatClient.ChatClientRequestSpec system(
-        Consumer<ChatClient.PromptSystemSpec> consumer) {
+    public ChatClient.ChatClientRequestSpec system(Consumer<ChatClient.PromptSystemSpec> consumer) {
       return this;
     }
 
@@ -273,14 +271,12 @@ public class StubChatClientConfiguration {
     }
 
     @Override
-    public ChatClient.ChatClientRequestSpec user(
-        Consumer<ChatClient.PromptUserSpec> consumer) {
+    public ChatClient.ChatClientRequestSpec user(Consumer<ChatClient.PromptUserSpec> consumer) {
       return this;
     }
 
     @Override
-    public ChatClient.ChatClientRequestSpec templateRenderer(
-        TemplateRenderer templateRenderer) {
+    public ChatClient.ChatClientRequestSpec templateRenderer(TemplateRenderer templateRenderer) {
       return this;
     }
 
@@ -319,4 +315,3 @@ public class StubChatClientConfiguration {
     }
   }
 }
-

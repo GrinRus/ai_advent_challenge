@@ -37,11 +37,7 @@ public final class StubChatClientState {
   static Flux<ChatResponse> responseFlux() {
     return Flux.fromIterable(
         TOKENS.get().stream()
-            .map(
-                token ->
-                    new ChatResponse(
-                        List.of(new Generation(new AssistantMessage(token)))))
+            .map(token -> new ChatResponse(List.of(new Generation(new AssistantMessage(token)))))
             .toList());
   }
 }
-

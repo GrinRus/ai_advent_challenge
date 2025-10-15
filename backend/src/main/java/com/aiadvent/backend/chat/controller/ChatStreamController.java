@@ -153,10 +153,7 @@ public class ChatStreamController {
 
   private String buildErrorMessage(Throwable error) {
     if (error instanceof WebClientResponseException webClientError) {
-      String status =
-          webClientError.getStatusCode().value()
-              + " "
-              + webClientError.getStatusText();
+      String status = webClientError.getStatusCode().value() + " " + webClientError.getStatusText();
       String body = sanitize(webClientError.getResponseBodyAsString());
 
       if (StringUtils.hasText(body)) {

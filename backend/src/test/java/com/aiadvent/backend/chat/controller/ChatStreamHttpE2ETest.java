@@ -108,4 +108,3 @@ class ChatStreamHttpE2ETest {
             org.assertj.core.api.Assertions.tuple(ChatRole.ASSISTANT, "via http"));
   }
 }
-

@@ -92,13 +92,10 @@ class ChatStreamControllerIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(
                 header()
-                    .string(
-                        "Content-Type",
-                        Matchers.startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)))
+                    .string("Content-Type", Matchers.startsWith(MediaType.TEXT_EVENT_STREAM_VALUE)))
             .andReturn();
 
-    String responseBody =
-        completedResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
+    String responseBody = completedResult.getResponse().getContentAsString(StandardCharsets.UTF_8);
 
     List<SseFrame> events = parseSsePayload(responseBody);
 
@@ -227,4 +224,3 @@ class ChatStreamControllerIntegrationTest {
     }
   }
 }
-
