@@ -13,3 +13,6 @@ out/
 
 # OS files
 .DS_Store
+
+# Environment files
+.env

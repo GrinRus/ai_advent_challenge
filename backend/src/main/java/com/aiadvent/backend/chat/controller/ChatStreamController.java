@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -111,13 +112,10 @@ public class ChatStreamController {
   }
 
   private void handleError(Throwable error, UUID sessionId, SseEmitter emitter) {
-    log.error("LLM streaming failed for session {}", sessionId, error);
-    emit(
-        emitter,
-        "error",
-        ChatStreamEvent.error(
-            sessionId, "Failed to stream response from model: " + error.getMessage()));
-    emitter.completeWithError(error);
+    String message = buildErrorMessage(error);
+    logError(sessionId, error);
+    emit(emitter, "error", ChatStreamEvent.error(sessionId, message));
+    emitter.complete();
   }
 
   private void emit(SseEmitter emitter, String eventName, ChatStreamEvent payload) {
@@ -138,6 +136,53 @@ public class ChatStreamController {
     if (disposable != null && !disposable.isDisposed()) {
       disposable.dispose();
     }
+  }
+
+  private void logError(UUID sessionId, Throwable error) {
+    if (error instanceof WebClientResponseException webClientError) {
+      log.error(
+          "LLM streaming failed for session {} with status {} and body: {}",
+          sessionId,
+          webClientError.getStatusCode(),
+          sanitize(webClientError.getResponseBodyAsString()),
+          webClientError);
+    } else {
+      log.error("LLM streaming failed for session {}", sessionId, error);
+    }
+  }
+
+  private String buildErrorMessage(Throwable error) {
+    if (error instanceof WebClientResponseException webClientError) {
+      String status =
+          webClientError.getStatusCode().value()
+              + " "
+              + webClientError.getStatusText();
+      String body = sanitize(webClientError.getResponseBodyAsString());
+
+      if (StringUtils.hasText(body)) {
+        return "Failed to stream response from model: " + status + " - " + body;
+      }
+      return "Failed to stream response from model: " + status;
+    }
+
+    String message = error.getMessage();
+    if (!StringUtils.hasText(message)) {
+      message = error.getClass().getSimpleName();
+    }
+    return "Failed to stream response from model: " + message;
+  }
+
+  private String sanitize(String value) {
+    if (!StringUtils.hasText(value)) {
+      return null;
+    }
+
+    String normalized = value.replaceAll("\\s+", " ").trim();
+    int maxLength = 500;
+    if (normalized.length() <= maxLength) {
+      return normalized;
+    }
+    return normalized.substring(0, maxLength) + "...";
   }
 
   private Message toAiMessage(ConversationMessage conversationMessage) {

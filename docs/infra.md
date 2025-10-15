@@ -19,7 +19,7 @@ docker compose up --build
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
 
 ## Настройка LLM-чата
-- Backend использует Spring AI и OpenAI-совместимый провайдер z.ai (`glm4.6`). Настроить подключение можно через переменные окружения:
+- Backend использует Spring AI и OpenAI-совместимый провайдер z.ai (`glm-4.6`). Настроить подключение можно через переменные окружения:
   - `LLM_BASE_URL` — базовый URL API провайдера (по умолчанию `https://api.z.ai`).
   - `LLM_CHAT_COMPLETIONS_PATH` — относительный путь к чат-эндпоинту (по умолчанию `/api/paas/v4/chat/completions`).
   - `LLM_API_KEY` — ключ доступа (обязателен).
