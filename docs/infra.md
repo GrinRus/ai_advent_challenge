@@ -26,6 +26,10 @@ Frontend контейнер проксирует все запросы `/api/*` 
 - Эти параметры можно задать в `.env` и они автоматически попадут в контейнер backend через `docker-compose.yml`.
 - Для frontend достаточно установить `VITE_API_BASE_URL` (по умолчанию `/api`). SSE-подписка выполняется на эндпоинт `POST /api/llm/chat/stream`, который возвращает события `session`, `token`, `complete`, `error`.
 
+## Тестирование
+- `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.
+- Для локального запуска используйте JDK 21 (на macOS: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew test`), тесты работают на H2 и заглушенном Spring AI клиенте, поэтому не требуют реального LLM.
+
 ## GitHub Actions
 Workflow `.github/workflows/ci.yml` выполняет следующие шаги:
 1. Прогон backend-тестов (`./gradlew test`, Testcontainers).

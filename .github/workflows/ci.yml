@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java
+        id: setup-java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,6 +30,7 @@ jobs:
         run: ./gradlew test
         working-directory: backend
         env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
           TESTCONTAINERS_RYUK_DISABLED: 'true'
 
   frontend:
