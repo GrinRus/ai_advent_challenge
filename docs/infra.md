@@ -1,5 +1,10 @@
 # Инфраструктура проекта
 
+# Навигация
+- Архитектура компонентов описана в `docs/architecture/backend.md`, `docs/architecture/frontend.md` и `docs/architecture/llm.md`.
+- Общие процессы и требования к документации — в `docs/processes.md` и `docs/CONTRIBUTING.md`.
+- Ответы на частые вопросы вынесены в `docs/faq.md`.
+
 ## Сервисы и порты
 - Backend (Spring Boot) — сервис `backend`, порт `8080`.
 - Frontend (React + Vite + Nginx) — сервис `frontend`, порт `4179`.
