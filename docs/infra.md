@@ -20,7 +20,8 @@ Frontend контейнер проксирует все запросы `/api/*` 
 
 ## Настройка LLM-чата
 - Backend использует Spring AI и OpenAI-совместимый провайдер z.ai (`glm4.6`). Настроить подключение можно через переменные окружения:
-  - `LLM_BASE_URL` — базовый URL API провайдера (по умолчанию `https://api.z.ai/v1`).
+  - `LLM_BASE_URL` — базовый URL API провайдера (по умолчанию `https://api.z.ai`).
+  - `LLM_CHAT_COMPLETIONS_PATH` — относительный путь к чат-эндпоинту (по умолчанию `/api/paas/v4/chat/completions`).
   - `LLM_API_KEY` — ключ доступа (обязателен).
   - `LLM_MODEL`, `LLM_TEMPERATURE`, `LLM_TOP_P`, `LLM_MAX_TOKENS` — параметры запроса к модели.
 - Эти параметры можно задать в `.env` и они автоматически попадут в контейнер backend через `docker-compose.yml`.

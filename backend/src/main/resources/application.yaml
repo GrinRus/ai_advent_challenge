@@ -6,9 +6,10 @@ spring:
     name: backend
   ai:
     openai:
-      base-url: ${LLM_BASE_URL:https://api.z.ai/v1}
+      base-url: ${LLM_BASE_URL:https://api.z.ai}
       api-key: ${LLM_API_KEY:}
       chat:
+        completions-path: ${LLM_CHAT_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
         options:
           model: ${LLM_MODEL:glm4.6}
           temperature: ${LLM_TEMPERATURE:0.7}
