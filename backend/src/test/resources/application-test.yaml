@@ -1,18 +1,16 @@
 spring:
-  datasource:
-    url: jdbc:h2:mem:ai_advent_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
   jpa:
+    open-in-view: false
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
   liquibase:
-    enabled: false
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    contexts: local
+    drop-first: true
 
 logging:
   level:

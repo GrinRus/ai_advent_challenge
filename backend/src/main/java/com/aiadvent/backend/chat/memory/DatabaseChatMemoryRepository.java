@@ -5,11 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
@@ -21,7 +23,6 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
-import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.lang.Nullable;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -62,14 +63,15 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
 
   @Override
   public List<String> findConversationIds() {
-    SqlRowSet rowSet = jdbcTemplate.queryForRowSet(SELECT_IDS_SQL, Map.of());
-    List<String> ids = new ArrayList<>();
-    while (rowSet.next()) {
-      UUID value = rowSet.getObject("session_id", UUID.class);
-      if (value != null) {
-        ids.add(value.toString());
-      }
-    }
+    List<String> ids =
+        jdbcTemplate.query(
+        SELECT_IDS_SQL,
+        Map.of(),
+        (rs, rowNum) -> {
+          UUID value = rs.getObject("session_id", UUID.class);
+          return value != null ? value.toString() : null;
+        });
+    ids.removeIf(Objects::isNull);
     return ids;
   }
 
@@ -146,7 +148,7 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
     params.addValue("role", message.getMessageType().name());
     params.addValue("content", message.getText(), Types.VARCHAR);
     params.addValue("metadata", serializeMetadata(message.getMetadata()), Types.VARCHAR);
-    params.addValue("createdAt", Instant.now());
+    params.addValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE);
     return params;
   }
 

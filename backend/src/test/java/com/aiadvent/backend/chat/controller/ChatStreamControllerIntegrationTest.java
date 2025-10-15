@@ -16,6 +16,7 @@ import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.support.StubChatClientConfiguration;
 import com.aiadvent.backend.chat.support.StubChatClientState;
+import com.aiadvent.backend.support.PostgresTestContainer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -55,7 +56,7 @@ import org.springframework.util.StringUtils;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(StubChatClientConfiguration.class)
-class ChatStreamControllerIntegrationTest {
+class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
 
   @Autowired private MockMvc mockMvc;
 

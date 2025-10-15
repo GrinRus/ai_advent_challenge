@@ -11,6 +11,7 @@ import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.support.StubChatClientConfiguration;
 import com.aiadvent.backend.chat.support.StubChatClientState;
+import com.aiadvent.backend.support.PostgresTestContainer;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,7 +39,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @AutoConfigureWebTestClient
 @ActiveProfiles("test")
 @Import(StubChatClientConfiguration.class)
-class ChatStreamHttpE2ETest {
+class ChatStreamHttpE2ETest extends PostgresTestContainer {
 
   @Autowired private WebTestClient webTestClient;
 
