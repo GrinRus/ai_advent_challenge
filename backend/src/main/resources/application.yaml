@@ -20,4 +20,4 @@ spring:
 logging:
   level:
     com.aiadvent.backend.chat: DEBUG
-    org.springframework.ai.openai: DEBUG
+    org.springframework.ai: DEBUG
