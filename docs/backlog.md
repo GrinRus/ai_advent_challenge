@@ -212,7 +212,7 @@
 ## Wave 5 — Клиентские параметры LLM из фронтенда
 ### Backend
 - [ ] Усилить тесты `ChatStreamController`/`StructuredSyncService`: зафиксировать, что при передаче `options.temperature/topP/maxTokens` они доходят до `ChatProviderAdapter`, а при отсутствии значений используются дефолты из `ChatProvidersProperties`.
-- [ ] Расширить OpenAPI/REST документацию (`application.yaml`/`docs/infra.md` ссылкой) описанием новых query-параметров запроса, привести примеры payload с и без overrides.
+- [ ] Расширить OpenAPI/REST документацию (`application.yaml`/`docs/infra.md` ссылкой) описанием новых опциональных полей `options.*` в теле запроса, привести примеры payload с и без overrides.
 
 ### Frontend
 - [ ] Добавить в UI управления (sliders/inputs) для `temperature`, `topP`, `maxTokens` в обоих режимах (`stream` и `structured`), инициализировать их значениями из каталога провайдера; предусмотреть кнопку сброса к дефолтам.
