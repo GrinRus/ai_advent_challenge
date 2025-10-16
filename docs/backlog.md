@@ -137,3 +137,56 @@
 1. **Стратегия + фабрика (рекомендуется)** — единая `ChatClientFactory`, регистрирующая стратегии провайдеров через Spring (`@Component`/`@ConfigurationProperties`). Простой в сопровождении, позволяет быстро добавлять новые провайдеры, дружит с профилями и конфигурациями, повторно использует `ChatClient.builder(model)` и runtime-опции (`chatClient.prompt().options(...)`) для подстановки модели.
 2. **Каталог провайдеров как конфиг** — хранить описания провайдеров и моделей в конфигурации или БД, динамически поднимать адаптеры на старте. Подходит, если планируется расширение списка провайдеров и нужен UI для управления.
 3. **Унифицированный OpenAI-слой** — использовать один OpenAI-compatible клиент Spring AI с кастомизацией через `ClientCustomizer`. Минимальные изменения кода, но сложнее учесть несовместимости (стриминг, лимиты, специфичные параметры) и отдельные свойства `spring.ai.zhipuai.chat.options.*`.
+
+## Wave 4 — Structured Sync Response
+### Backend
+- [ ] Зафиксировать отдельный стек синхронных DTO: `ChatSyncRequest`, `StructuredSyncResponse`, вложенные `StructuredSyncAnswer`/`StructuredSyncItem`/`UsageStats`, `StructuredSyncStatus`, и задокументировать JSON пример в `docs/infra.md`.
+- [ ] Добавить `BeanOutputConverter<StructuredSyncResponse>` в конфигурацию (при необходимости `ParameterizedTypeReference` для коллекций) и описать, как получаем JSON Schema/format для промпта.
+- [ ] Реализовать новый `ChatSyncController` с POST `/api/llm/chat/sync`: валидация входа, регистрация `registerUserMessage`, вызов синхронного сервиса, возврат `StructuredSyncResponse`.
+- [ ] Создать `StructuredSyncService`, который выбирает провайдера/модель, собирает `ChatOptions`, вызывает `chatProviderService.chatClient(...).prompt()...call().entity(StructuredSyncResponse.class)` с `BeanOutputConverter`, прокидывает conversation/system контекст и регистрирует ответ ассистента.
+- [ ] Сохранить текущие стриминговые эндпоинты без изменений: никаких требований structured output для `/api/llm/chat/stream` и связанных опций.
+- [ ] Расширить адаптеры провайдеров для sync-режима: OpenAI — `responseFormat(JSON_SCHEMA)` + `strict=true`, ZhiPu — добавление `beanOutputConverter.getFormat()` в промпт и валидация десериализации.
+- [ ] Настроить ретраи (3 попытки, экспоненциальный backoff 250→1000 мс) на 429/5xx и ошибки схемы, при окончательном провале отдавать 422.
+- [ ] Обновить OpenAPI и `docs/infra.md`: новое API, требования к JSON, поведение провайдеров, без телеметрии на первом этапе.
+
+**JSON ответа (черновик)**
+```json
+{
+  "requestId": "4bd0f474-78e8-4ffd-a990-3aa54f0704c3",
+  "status": "success",
+  "provider": {
+    "type": "ZHI_PU",
+    "model": "glm-4.6"
+  },
+  "answer": {
+    "summary": "Краткое описание ответа.",
+    "items": [
+      {
+        "title": "Основная рекомендация",
+        "details": "Расширенный текст ответа.",
+        "tags": ["insight", "priority"]
+      }
+    ],
+    "confidence": 0.82
+  },
+  "usage": {
+    "promptTokens": 350,
+    "completionTokens": 512,
+    "totalTokens": 862
+  },
+  "latencyMs": 1240,
+  "timestamp": "2024-05-24T10:15:30Z"
+}
+```
+
+### Frontend
+- [ ] Добавить новую вкладку `Structured` на странице чата, переключающуюся между стриминговым и синхронным режимами.
+- [ ] Реализовать форму отправки в синхронный эндпоинт с отображением состояния загрузки и ошибок.
+- [ ] Отрисовать структурированный ответ: summary, список `items` (карточки), блок статистики `usage`, технические метаданные (provider, latency).
+- [ ] Обновить клиентский слой API, добавить типы/интерфейсы под новую структуру ответа.
+- [ ] Написать e2e сценарий (Playwright / Cypress) на создание structured-запроса и проверку UI.
+
+### Документация
+- [ ] Обновить `README.md` и `docs/infra.md` с описанием нового режима, ссылками на Spring AI `BeanOutputConverter`/`ChatClient` и примерами конфигурации `spring.ai.openai.chat.options.response-format`.
+- [ ] Добавить в `docs/processes.md` рекомендации по тестированию/наблюдаемости: проверка JSON Schema, fallback при провале автоконвертера, метрики latency и token usage.
+- [ ] Подготовить follow-up (persist structured answers, retries для schema violations) и зафиксировать отдельными задачами в backlog.
