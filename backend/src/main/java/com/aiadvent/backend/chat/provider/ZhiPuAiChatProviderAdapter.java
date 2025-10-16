@@ -8,6 +8,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.zhipuai.ZhiPuAiChatModel;
 import org.springframework.ai.zhipuai.ZhiPuAiChatOptions;
 import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
@@ -87,6 +88,19 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
 
   @Override
   public ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides) {
+    return configureBuilder(selection, overrides).build();
+  }
+
+  @Override
+  public ChatOptions buildStructuredOptions(
+      ChatProviderSelection selection,
+      ChatRequestOverrides overrides,
+      BeanOutputConverter<?> outputConverter) {
+    return configureBuilder(selection, overrides).build();
+  }
+
+  private ZhiPuAiChatOptions.Builder configureBuilder(
+      ChatProviderSelection selection, ChatRequestOverrides overrides) {
     ChatRequestOverrides effectiveOverrides = overrides != null ? overrides : ChatRequestOverrides.empty();
     ZhiPuAiChatOptions.Builder builder = ZhiPuAiChatOptions.builder().model(selection.modelId());
 
@@ -112,6 +126,6 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
       builder.maxTokens(maxTokens);
     }
 
-    return builder.build();
+    return builder;
   }
 }

@@ -10,6 +10,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.BeanOutputConverter;
 
 public class ChatProviderService {
 
@@ -42,6 +43,18 @@ public class ChatProviderService {
           "No chat client adapter registered for provider '" + selection.providerId() + "'");
     }
     return adapter.buildOptions(selection, overrides);
+  }
+
+  public ChatOptions buildStructuredOptions(
+      ChatProviderSelection selection,
+      ChatRequestOverrides overrides,
+      BeanOutputConverter<?> outputConverter) {
+    ChatProviderAdapter adapter = adaptersById.get(selection.providerId());
+    if (adapter == null) {
+      throw new IllegalArgumentException(
+          "No chat client adapter registered for provider '" + selection.providerId() + "'");
+    }
+    return adapter.buildStructuredOptions(selection, overrides, outputConverter);
   }
 
   public ChatProvidersProperties.Provider provider(String providerId) {

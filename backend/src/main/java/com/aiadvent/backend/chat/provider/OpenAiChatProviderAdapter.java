@@ -8,9 +8,11 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.api.common.ResponseFormat;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -87,6 +89,24 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
 
   @Override
   public ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides) {
+    return configureBuilder(selection, overrides).build();
+  }
+
+  @Override
+  public ChatOptions buildStructuredOptions(
+      ChatProviderSelection selection,
+      ChatRequestOverrides overrides,
+      BeanOutputConverter<?> outputConverter) {
+    OpenAiChatOptions.Builder builder = configureBuilder(selection, overrides);
+    ResponseFormat responseFormat =
+        new ResponseFormat(ResponseFormat.Type.JSON_SCHEMA, outputConverter.getJsonSchema());
+    builder.responseFormat(responseFormat);
+    builder.strict(true);
+    return builder.build();
+  }
+
+  private OpenAiChatOptions.Builder configureBuilder(
+      ChatProviderSelection selection, ChatRequestOverrides overrides) {
     ChatRequestOverrides effectiveOverrides = overrides != null ? overrides : ChatRequestOverrides.empty();
     OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder();
     builder.model(selection.modelId());
@@ -113,6 +133,6 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
       builder.maxTokens(maxTokens);
     }
 
-    return builder.build();
+    return builder;
   }
 }

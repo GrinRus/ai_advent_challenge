@@ -4,6 +4,7 @@ import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.BeanOutputConverter;
 
 public interface ChatProviderAdapter {
 
@@ -12,4 +13,11 @@ public interface ChatProviderAdapter {
   ChatClient chatClient();
 
   ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides);
+
+  default ChatOptions buildStructuredOptions(
+      ChatProviderSelection selection,
+      ChatRequestOverrides overrides,
+      BeanOutputConverter<?> outputConverter) {
+    return buildOptions(selection, overrides);
+  }
 }

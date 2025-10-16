@@ -3,7 +3,10 @@ import type { FormEvent } from 'react';
 import {
   CHAT_STREAM_URL,
   fetchChatProviders,
+  requestStructuredSync,
   type ChatProvidersResponse,
+  type ChatSyncRequest,
+  type StructuredSyncResponse,
 } from '../lib/apiClient';
 import './LLMChat.css';
 
@@ -28,6 +31,41 @@ type StreamPayload = {
 type DrainResult = {
   buffer: string;
   stop: boolean;
+};
+
+type ActiveTab = 'stream' | 'structured';
+
+const formatConfidence = (value?: number | null) => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  return `${Math.round(value * 100)}%`;
+};
+
+const formatTimestamp = (iso?: string) => {
+  if (!iso) {
+    return '—';
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString();
+};
+
+const formatTokens = (value?: number | null) => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  return value.toLocaleString();
+};
+
+const formatProviderType = (type?: string) => {
+  if (!type) {
+    return '—';
+  }
+  const normalized = type.replace(/_/g, ' ').toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 };
 
 const generateId = () =>
@@ -100,6 +138,7 @@ const drainSseBuffer = (
 };
 
 const LLMChat = () => {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('stream');
   const [providerCatalog, setProviderCatalog] = useState<ChatProvidersResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -113,6 +152,11 @@ const LLMChat = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [structuredInput, setStructuredInput] = useState('');
+  const [structuredResponse, setStructuredResponse] = useState<StructuredSyncResponse | null>(null);
+  const [isStructuredLoading, setIsStructuredLoading] = useState(false);
+  const [structuredError, setStructuredError] = useState<string | null>(null);
+  const [structuredNotice, setStructuredNotice] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -169,11 +213,14 @@ const LLMChat = () => {
   }, []);
 
   useEffect(() => {
+    if (activeTab !== 'stream') {
+      return;
+    }
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop =
         messagesContainerRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, activeTab]);
 
   const providerOptions = providerCatalog?.providers ?? [];
   const currentProvider =
@@ -188,6 +235,7 @@ const LLMChat = () => {
         !catalogError &&
         !isCatalogLoading,
     );
+
 
   const resolveProviderName = (providerId?: string | null) => {
     if (!providerId) {
@@ -209,10 +257,20 @@ const LLMChat = () => {
     return model?.displayName ?? modelId;
   };
 
+  const structuredModelLabel = structuredResponse
+    ? resolveModelName(
+        selectedProvider,
+        structuredResponse.provider?.model ?? selectedModel,
+      ) || structuredResponse.provider?.model || ''
+    : '';
+
   const handleProviderChange = (providerId: string) => {
     setSelectedProvider(providerId);
     setInfo(null);
     setError(null);
+    setStructuredNotice(null);
+    setStructuredError(null);
+    setStructuredResponse(null);
     if (!providerCatalog) {
       setSelectedModel('');
       return;
@@ -238,6 +296,9 @@ const LLMChat = () => {
     setSelectedModel(modelId);
     setInfo(null);
     setError(null);
+    setStructuredNotice(null);
+    setStructuredError(null);
+    setStructuredResponse(null);
   };
 
   const resetChat = () => {
@@ -251,12 +312,33 @@ const LLMChat = () => {
     setInfo(null);
     setLastProvider(null);
     setLastModel(null);
+    setStructuredResponse(null);
+    setStructuredError(null);
+    setStructuredNotice(null);
+    setStructuredInput('');
   };
 
   const stopStreaming = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+    }
+  };
+
+  const handleTabChange = (tab: ActiveTab) => {
+    if (tab === activeTab) {
+      return;
+    }
+    if (tab === 'structured' && isStreaming) {
+      stopStreaming();
+    }
+    setActiveTab(tab);
+    if (tab === 'stream') {
+      setStructuredError(null);
+      setStructuredNotice(null);
+    } else {
+      setError(null);
+      setInfo(null);
     }
   };
 
@@ -274,6 +356,78 @@ const LLMChat = () => {
 
     setInput('');
     await streamMessage(trimmed);
+  };
+
+  const handleStructuredSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = structuredInput.trim();
+    if (!trimmed || isStructuredLoading) {
+      return;
+    }
+
+    if (!canSendMessage) {
+      setStructuredNotice('Дождитесь готовности конфигурации перед отправкой запроса.');
+      return;
+    }
+
+    setStructuredError(null);
+    setStructuredNotice(null);
+    setIsStructuredLoading(true);
+
+    const payload: ChatSyncRequest = { message: trimmed };
+    if (sessionId) {
+      payload.sessionId = sessionId;
+    }
+    if (selectedProvider) {
+      payload.provider = selectedProvider;
+    }
+    if (selectedModel) {
+      payload.model = selectedModel;
+    }
+
+    try {
+      const { body, sessionId: nextSessionId, newSession } =
+        await requestStructuredSync(payload);
+
+      if (nextSessionId) {
+        setSessionId(nextSessionId);
+      }
+
+      const providerLabel = resolveProviderName(selectedProvider);
+      const modelLabel = resolveModelName(
+        selectedProvider,
+        body.provider?.model ?? selectedModel,
+      );
+      const details = [providerLabel, modelLabel].filter(Boolean).join(' · ');
+      let notice: string | null = null;
+      if (newSession) {
+        notice = details
+          ? `Создан новый диалог (${details})`
+          : 'Создан новый диалог';
+      }
+
+      setStructuredNotice(
+        notice ?? (details ? `Получен ответ (${details})` : 'Получен ответ.'),
+      );
+      setStructuredResponse(body);
+      if (selectedProvider) {
+        setLastProvider(selectedProvider);
+      }
+      if (body.provider?.model) {
+        setLastModel(body.provider.model);
+      } else if (selectedModel) {
+        setLastModel(selectedModel);
+      }
+      setStructuredInput('');
+    } catch (syncError) {
+      const message =
+        syncError instanceof Error
+          ? syncError.message
+          : 'Не удалось получить структурированный ответ.';
+      setStructuredError(message);
+    } finally {
+      setIsStructuredLoading(false);
+    }
   };
 
   const streamMessage = async (message: string) => {
@@ -620,120 +774,327 @@ const LLMChat = () => {
           </div>
         </div>
 
-        <div ref={messagesContainerRef} className="llm-chat-messages">
-          {messages.length === 0 ? (
-            <div className="llm-chat-empty">
-              Введите сообщение, чтобы начать диалог с моделью.
-            </div>
-          ) : (
-            messages.map((message) => {
-              const providerLabel = message.provider
-                ? resolveProviderName(message.provider)
-                : '';
-              const modelLabel = message.model
-                ? resolveModelName(message.provider, message.model)
-                : '';
-              const hasMeta = Boolean(providerLabel || modelLabel);
+        <div className="llm-chat-tabs" role="tablist">
+          <button
+            type="button"
+            className={`llm-chat-tab ${activeTab === 'stream' ? 'active' : ''}`}
+            onClick={() => handleTabChange('stream')}
+            data-testid="tab-stream"
+          >
+            Streaming
+          </button>
+          <button
+            type="button"
+            className={`llm-chat-tab ${activeTab === 'structured' ? 'active' : ''}`}
+            onClick={() => handleTabChange('structured')}
+            data-testid="tab-structured"
+          >
+            Structured
+          </button>
+        </div>
 
-              return (
-                <div
-                  key={message.id}
-                  className={`llm-chat-message ${message.role}`}
-                >
-                  {hasMeta && (
-                    <div className="llm-chat-message-meta">
-                      {providerLabel && (
-                        <span className="llm-chat-meta-chip">
-                          {providerLabel}
-                        </span>
+        {activeTab === 'stream' ? (
+          <>
+            <div ref={messagesContainerRef} className="llm-chat-messages">
+              {messages.length === 0 ? (
+                <div className="llm-chat-empty">
+                  Введите сообщение, чтобы начать диалог с моделью.
+                </div>
+              ) : (
+                messages.map((message) => {
+                  const providerLabel = message.provider
+                    ? resolveProviderName(message.provider)
+                    : '';
+                  const modelLabel = message.model
+                    ? resolveModelName(message.provider, message.model)
+                    : '';
+                  const hasMeta = Boolean(providerLabel || modelLabel);
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={`llm-chat-message ${message.role}`}
+                    >
+                      {hasMeta && (
+                        <div className="llm-chat-message-meta">
+                          {providerLabel && (
+                            <span className="llm-chat-meta-chip">
+                              {providerLabel}
+                            </span>
+                          )}
+                          {modelLabel && (
+                            <span className="llm-chat-meta-chip secondary">
+                              {modelLabel}
+                            </span>
+                          )}
+                        </div>
                       )}
-                      {modelLabel && (
-                        <span className="llm-chat-meta-chip secondary">
-                          {modelLabel}
+                      <div className="llm-chat-bubble">{message.content}</div>
+                      {message.status === 'streaming' && (
+                        <span className="llm-chat-message-status">
+                          Модель отвечает…
                         </span>
                       )}
                     </div>
-                  )}
-                  <div className="llm-chat-bubble">{message.content}</div>
-                  {message.status === 'streaming' && (
-                    <span className="llm-chat-message-status">
-                      Модель отвечает…
+                  );
+                })
+              )}
+            </div>
+
+            {(catalogError ||
+              error ||
+              info ||
+              isStreaming ||
+              (isCatalogLoading && messages.length === 0)) && (
+              <div className="llm-chat-status">
+                {catalogError && (
+                  <span className="llm-chat-error">{catalogError}</span>
+                )}
+                {!catalogError && error && (
+                  <span className="llm-chat-error">{error}</span>
+                )}
+                {!catalogError && !error && info && (
+                  <span className="llm-chat-info">{info}</span>
+                )}
+                {!catalogError && !error && !info && isStreaming && (
+                  <span className="llm-chat-info">
+                    Получаем ответ от модели…
+                  </span>
+                )}
+                {!catalogError &&
+                  !error &&
+                  !info &&
+                  !isStreaming &&
+                  isCatalogLoading && (
+                    <span className="llm-chat-info">
+                      Загружаем конфигурацию чата…
                     </span>
                   )}
-                </div>
-              );
-            })
-          )}
-        </div>
+              </div>
+            )}
 
-        {(catalogError ||
-          error ||
-          info ||
-          isStreaming ||
-          (isCatalogLoading && messages.length === 0)) && (
-          <div className="llm-chat-status">
-            {catalogError && (
-              <span className="llm-chat-error">{catalogError}</span>
+            <form className="llm-chat-form" onSubmit={handleSubmit}>
+              <label className="llm-chat-label" htmlFor="llm-chat-input">
+                Сообщение
+              </label>
+              <textarea
+                id="llm-chat-input"
+                className="llm-chat-textarea"
+                placeholder="Напишите вопрос или запрос для модели…"
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                disabled={isStreaming}
+              />
+              <div className="llm-chat-actions">
+                <button
+                  type="submit"
+                  className="llm-chat-button primary"
+                  disabled={isStreaming || !input.trim() || !canSendMessage}
+                >
+                  Отправить
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button danger"
+                  onClick={stopStreaming}
+                  disabled={!isStreaming}
+                >
+                  Остановить
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button ghost"
+                  onClick={resetChat}
+                  disabled={isStreaming || messages.length === 0}
+                >
+                  Новый диалог
+                </button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <div className="llm-chat-structured">
+            <form className="llm-chat-form" onSubmit={handleStructuredSubmit}>
+              <label className="llm-chat-label" htmlFor="llm-chat-structured-input">
+                Запрос
+              </label>
+              <textarea
+                id="llm-chat-structured-input"
+                className="llm-chat-textarea"
+                placeholder="Опишите задачу для структурированного ответа…"
+                value={structuredInput}
+                onChange={(event) => setStructuredInput(event.target.value)}
+                disabled={isStructuredLoading}
+              />
+              <div className="llm-chat-actions">
+                <button
+                  type="submit"
+                  className="llm-chat-button primary"
+                  disabled={
+                    isStructuredLoading ||
+                    !structuredInput.trim() ||
+                    !canSendMessage
+                  }
+                >
+                  {isStructuredLoading ? 'Отправляем…' : 'Отправить'}
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button ghost"
+                  onClick={() => setStructuredInput('')}
+                  disabled={isStructuredLoading || structuredInput.length === 0}
+                >
+                  Очистить
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button ghost"
+                  onClick={resetChat}
+                  disabled={isStructuredLoading || (!sessionId && !structuredResponse)}
+                >
+                  Новый диалог
+                </button>
+              </div>
+            </form>
+
+            {(structuredError || structuredNotice || isStructuredLoading) && (
+              <div className="llm-chat-status">
+                {structuredError && (
+                  <span className="llm-chat-error">{structuredError}</span>
+                )}
+                {!structuredError && structuredNotice && (
+                  <span className="llm-chat-info">{structuredNotice}</span>
+                )}
+                {!structuredError &&
+                  !structuredNotice &&
+                  isStructuredLoading && (
+                    <span className="llm-chat-info">
+                      Получаем структурированный ответ…
+                    </span>
+                  )}
+              </div>
             )}
-            {!catalogError && error && (
-              <span className="llm-chat-error">{error}</span>
-            )}
-            {!catalogError && !error && info && (
-              <span className="llm-chat-info">{info}</span>
-            )}
-            {!catalogError && !error && !info && isStreaming && (
-              <span className="llm-chat-info">Получаем ответ от модели…</span>
-            )}
-            {!catalogError &&
-              !error &&
-              !info &&
-              !isStreaming &&
-              isCatalogLoading && (
-                <span className="llm-chat-info">
-                  Загружаем конфигурацию чата…
-                </span>
+
+            <div className="structured-response-card" data-testid="structured-response">
+              {structuredResponse ? (
+                <>
+                  <div className="structured-summary">
+                    <div className="structured-summary-header">
+                      <h3>Итог</h3>
+                      <span className="structured-status">
+                        {structuredResponse.status
+                          ? structuredResponse.status.toUpperCase()
+                          : '—'}
+                      </span>
+                    </div>
+                    <p data-testid="structured-summary-text">
+                      {structuredResponse.answer?.summary ??
+                        'Модель не вернула summary.'}
+                    </p>
+                    {structuredResponse.answer?.confidence !== undefined && (
+                      <span className="structured-confidence">
+                        Уверенность:{' '}
+                        {formatConfidence(
+                          structuredResponse.answer?.confidence,
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {structuredResponse.answer?.items &&
+                  structuredResponse.answer.items.length > 0 ? (
+                    <div className="structured-items">
+                      {structuredResponse.answer.items.map((item, index) => (
+                        <div
+                          key={`${item.title ?? 'item'}-${index}`}
+                          className="structured-item"
+                          data-testid="structured-item"
+                        >
+                          {item.title && (
+                            <h4 className="structured-item-title">{item.title}</h4>
+                          )}
+                          {item.details && (
+                            <p className="structured-item-details">
+                              {item.details}
+                            </p>
+                          )}
+                          {item.tags && item.tags.length > 0 && (
+                            <div className="structured-item-tags">
+                              {item.tags.map((tag) => (
+                                <span
+                                  key={`${tag}-${index}`}
+                                  className="structured-tag"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="structured-metadata">
+                    <div className="structured-metadata-group">
+                      <span className="structured-label">Провайдер</span>
+                      <span className="structured-value">
+                        {formatProviderType(structuredResponse.provider?.type)}
+                      </span>
+                    </div>
+                    <div className="structured-metadata-group">
+                      <span className="structured-label">Модель</span>
+                      <span className="structured-value">
+                        {structuredModelLabel || '—'}
+                      </span>
+                    </div>
+                    <div className="structured-metadata-group">
+                      <span className="structured-label">Задержка</span>
+                      <span className="structured-value">
+                        {structuredResponse.latencyMs !== undefined
+                          ? `${structuredResponse.latencyMs} мс`
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="structured-metadata-group">
+                      <span className="structured-label">Время</span>
+                      <span className="structured-value">
+                        {formatTimestamp(structuredResponse.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="structured-usage">
+                    <div className="structured-usage-metric">
+                      <span className="structured-label">Prompt</span>
+                      <span className="structured-value">
+                        {formatTokens(structuredResponse.usage?.promptTokens)}
+                      </span>
+                    </div>
+                    <div className="structured-usage-metric">
+                      <span className="structured-label">Completion</span>
+                      <span className="structured-value">
+                        {formatTokens(
+                          structuredResponse.usage?.completionTokens,
+                        )}
+                      </span>
+                    </div>
+                    <div className="structured-usage-metric">
+                      <span className="structured-label">Total</span>
+                      <span className="structured-value">
+                        {formatTokens(structuredResponse.usage?.totalTokens)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="structured-placeholder">
+                  Структурированный ответ появится здесь после отправки запроса.
+                </div>
               )}
+            </div>
           </div>
         )}
-
-        <form className="llm-chat-form" onSubmit={handleSubmit}>
-          <label className="llm-chat-label" htmlFor="llm-chat-input">
-            Сообщение
-          </label>
-          <textarea
-            id="llm-chat-input"
-            className="llm-chat-textarea"
-            placeholder="Напишите вопрос или запрос для модели…"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            disabled={isStreaming}
-          />
-          <div className="llm-chat-actions">
-            <button
-              type="submit"
-              className="llm-chat-button primary"
-              disabled={isStreaming || !input.trim() || !canSendMessage}
-            >
-              Отправить
-            </button>
-            <button
-              type="button"
-              className="llm-chat-button danger"
-              onClick={stopStreaming}
-              disabled={!isStreaming}
-            >
-              Остановить
-            </button>
-            <button
-              type="button"
-              className="llm-chat-button ghost"
-              onClick={resetChat}
-              disabled={isStreaming || messages.length === 0}
-            >
-              Новый диалог
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

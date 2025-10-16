@@ -1,5 +1,6 @@
 package com.aiadvent.backend.chat.config;
 
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.provider.ChatProviderAdapter;
 import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.beans.factory.ObjectProvider;
@@ -101,5 +103,10 @@ public class ChatProviderConfiguration {
   public ChatProviderService chatProviderService(
       ChatProviderRegistry registry, List<ChatProviderAdapter> adapters) {
     return new ChatProviderService(registry, adapters);
+  }
+
+  @Bean
+  public BeanOutputConverter<StructuredSyncResponse> structuredSyncResponseOutputConverter() {
+    return new BeanOutputConverter<>(StructuredSyncResponse.class);
   }
 }
