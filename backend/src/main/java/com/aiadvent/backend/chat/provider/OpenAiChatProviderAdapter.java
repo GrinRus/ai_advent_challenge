@@ -4,6 +4,13 @@ import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.HashSet;
+import java.util.Set;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
@@ -17,6 +24,8 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
+
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private final String providerId;
   private final ChatProvidersProperties.Provider providerConfig;
@@ -103,7 +112,7 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
             .type(ResponseFormat.Type.JSON_SCHEMA)
             .jsonSchema(
                 ResponseFormat.JsonSchema.builder()
-                    .schema(outputConverter.getJsonSchema())
+                    .schema(enforceRequiredProperties(outputConverter))
                     .strict(Boolean.TRUE)
                     .build())
             .build();
@@ -140,5 +149,56 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
     }
 
     return builder;
+  }
+
+  private String enforceRequiredProperties(BeanOutputConverter<?> outputConverter) {
+    String jsonSchema = outputConverter.getJsonSchema();
+    try {
+      JsonNode root = OBJECT_MAPPER.readTree(jsonSchema);
+      ensureRequiredRecursively(root);
+      return OBJECT_MAPPER.writeValueAsString(root);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Failed to prepare strict JSON schema for OpenAI", exception);
+    }
+  }
+
+  private void ensureRequiredRecursively(JsonNode node) {
+    if (node == null) {
+      return;
+    }
+
+    if (node.isObject()) {
+      ObjectNode objectNode = (ObjectNode) node;
+      if (objectNode.has("properties") && objectNode.get("properties").isObject()) {
+        ObjectNode propertiesNode = (ObjectNode) objectNode.get("properties");
+
+        ArrayNode requiredNode;
+        if (objectNode.has("required") && objectNode.get("required").isArray()) {
+          requiredNode = (ArrayNode) objectNode.get("required");
+        } else {
+          requiredNode = objectNode.putArray("required");
+        }
+
+        Set<String> requiredNames = new HashSet<>();
+        requiredNode.elements().forEachRemaining(element -> requiredNames.add(element.asText()));
+
+        propertiesNode
+            .fieldNames()
+            .forEachRemaining(
+                fieldName -> {
+                  if (!requiredNames.contains(fieldName)) {
+                    requiredNode.add(fieldName);
+                    requiredNames.add(fieldName);
+                  }
+                  ensureRequiredRecursively(propertiesNode.get(fieldName));
+                });
+      }
+
+      if (objectNode.has("items")) {
+        ensureRequiredRecursively(objectNode.get("items"));
+      }
+    } else if (node.isArray()) {
+      node.forEach(this::ensureRequiredRecursively);
+    }
   }
 }
