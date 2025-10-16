@@ -33,6 +33,13 @@ jobs:
           JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
           TESTCONTAINERS_RYUK_DISABLED: 'true'
 
+      - name: Run backend smoke tests
+        run: ./gradlew smokeTest
+        working-directory: backend
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          TESTCONTAINERS_RYUK_DISABLED: 'true'
+
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest

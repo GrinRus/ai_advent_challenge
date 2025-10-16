@@ -49,8 +49,36 @@ dependencies {
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
+sourceSets {
+	smokeTest {
+		java {
+			srcDir 'src/smokeTest/java'
+		}
+		resources {
+			srcDir 'src/smokeTest/resources'
+		}
+		compileClasspath += sourceSets.main.output + sourceSets.test.output + configurations.testRuntimeClasspath
+		runtimeClasspath += output + sourceSets.main.output + sourceSets.test.output + configurations.testRuntimeClasspath
+	}
+}
+
+configurations {
+	smokeTestImplementation.extendsFrom testImplementation
+	smokeTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+tasks.register('smokeTest', Test) {
+	group = 'verification'
+	description = 'Runs smoke tests for chat providers'
+	testClassesDirs = sourceSets.smokeTest.output.classesDirs
+	classpath = sourceSets.smokeTest.runtimeClasspath
+	useJUnitPlatform()
+	dependsOn(tasks.named('testClasses'))
+	shouldRunAfter(tasks.named('test'))
 }
 
 spotless {

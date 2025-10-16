@@ -34,6 +34,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -202,6 +203,39 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
             sessionId);
 
     assertThat(memoryMessages).containsExactly("Previous answer", "Next question from user", "follow-up");
+  }
+
+  @Test
+  void streamHonoursExplicitProviderAndModel() throws Exception {
+    StubChatClientState.setTokens(List.of("alt sequence"));
+
+    ChatStreamRequest request =
+        new ChatStreamRequest(
+            null, "Switch provider please", "alternate", "alt-model-pro", null);
+
+    List<ChatStreamEvent> events = performChatStream(request);
+
+    assertThat(events)
+        .extracting(ChatStreamEvent::type)
+        .containsExactly("session", "token", "complete");
+
+    assertThat(events)
+        .extracting(ChatStreamEvent::provider)
+        .containsExactly("alternate", "alternate", "alternate");
+    assertThat(events).extracting(ChatStreamEvent::model).containsExactly("alt-model-pro", "alt-model-pro", "alt-model-pro");
+
+    ChatSession session = chatSessionRepository.findAll().getFirst();
+    List<ChatMessage> messages =
+        chatMessageRepository.findBySessionOrderBySequenceNumberAsc(session);
+
+    assertThat(messages).hasSize(2);
+    assertThat(messages).extracting(ChatMessage::getProvider).containsOnly("alternate");
+    assertThat(messages).extracting(ChatMessage::getModel).containsOnly("alt-model-pro");
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    assertThat(((OpenAiChatOptions) prompt.getOptions()).getModel()).isEqualTo("alt-model-pro");
   }
 
   private List<SseFrame> parseSsePayload(String responseBody) {

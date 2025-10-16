@@ -60,16 +60,32 @@ public class StubChatClientConfiguration {
     ChatProvidersProperties properties = new ChatProvidersProperties();
     properties.setDefaultProvider("stub");
 
-    ChatProvidersProperties.Provider provider = new ChatProvidersProperties.Provider();
-    provider.setType(ChatProviderType.OPENAI);
-    provider.setDefaultModel("stub-model");
-    provider.setTemperature(0.7);
-    provider.setTopP(1.0);
-    provider.setMaxTokens(1024);
-    ChatProvidersProperties.Model model = new ChatProvidersProperties.Model();
-    model.setDisplayName("Stub Model");
-    provider.getModels().put("stub-model", model);
-    properties.getProviders().put("stub", provider);
+    ChatProvidersProperties.Provider primaryProvider = new ChatProvidersProperties.Provider();
+    primaryProvider.setType(ChatProviderType.OPENAI);
+    primaryProvider.setDisplayName("Stub Primary");
+    primaryProvider.setDefaultModel("stub-model");
+    primaryProvider.setTemperature(0.7);
+    primaryProvider.setTopP(1.0);
+    primaryProvider.setMaxTokens(1024);
+    primaryProvider.getModels().put("stub-model", model("Stub Model", "standard"));
+    primaryProvider
+        .getModels()
+        .put("stub-model-fast", model("Stub Model Fast", "budget"));
+
+    ChatProvidersProperties.Provider alternateProvider = new ChatProvidersProperties.Provider();
+    alternateProvider.setType(ChatProviderType.OPENAI);
+    alternateProvider.setDisplayName("Stub Alternate");
+    alternateProvider.setDefaultModel("alt-model");
+    alternateProvider.setTemperature(0.6);
+    alternateProvider.setTopP(0.9);
+    alternateProvider.setMaxTokens(2048);
+    alternateProvider.getModels().put("alt-model", model("Alt Model", "standard"));
+    alternateProvider
+        .getModels()
+        .put("alt-model-pro", model("Alt Model Pro", "pro"));
+
+    properties.getProviders().put("stub", primaryProvider);
+    properties.getProviders().put("alternate", alternateProvider);
 
     ChatProviderRegistry registry = new ChatProviderRegistry(properties);
 
@@ -78,26 +94,37 @@ public class StubChatClientConfiguration {
             .defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor)
             .build();
 
-    ChatProviderAdapter adapter =
-        new ChatProviderAdapter() {
-          @Override
-          public String providerId() {
-            return "stub";
-          }
+    ChatProviderAdapter stubAdapter = adapter("stub", chatClient);
+    ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient);
 
-          @Override
-          public ChatClient chatClient() {
-            return chatClient;
-          }
+    return new ChatProviderService(registry, List.of(stubAdapter, alternateAdapter));
+  }
 
-          @Override
-          public ChatOptions buildOptions(
-              ChatProviderSelection selection, ChatRequestOverrides overrides) {
-            return OpenAiChatOptions.builder().model(selection.modelId()).build();
-          }
-        };
+  private static ChatProvidersProperties.Model model(String displayName, String tier) {
+    ChatProvidersProperties.Model model = new ChatProvidersProperties.Model();
+    model.setDisplayName(displayName);
+    model.setTier(tier);
+    return model;
+  }
 
-    return new ChatProviderService(registry, List.of(adapter));
+  private static ChatProviderAdapter adapter(String providerId, ChatClient chatClient) {
+    return new ChatProviderAdapter() {
+      @Override
+      public String providerId() {
+        return providerId;
+      }
+
+      @Override
+      public ChatClient chatClient() {
+        return chatClient;
+      }
+
+      @Override
+      public ChatOptions buildOptions(
+          ChatProviderSelection selection, ChatRequestOverrides overrides) {
+        return OpenAiChatOptions.builder().model(selection.modelId()).build();
+      }
+    };
   }
 
   static class StubChatModel implements ChatModel {

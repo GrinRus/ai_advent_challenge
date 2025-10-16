@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { CHAT_STREAM_URL } from '../lib/apiClient';
+import {
+  CHAT_STREAM_URL,
+  fetchChatProviders,
+  type ChatProvidersResponse,
+} from '../lib/apiClient';
 import './LLMChat.css';
 
 type ChatMessage = {
@@ -8,6 +12,8 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
   status?: 'streaming' | 'complete';
+  provider?: string;
+  model?: string;
 };
 
 type StreamPayload = {
@@ -15,6 +21,8 @@ type StreamPayload = {
   type?: 'session' | 'token' | 'complete' | 'error';
   content?: string | null;
   newSession?: boolean;
+  provider?: string | null;
+  model?: string | null;
 };
 
 type DrainResult = {
@@ -92,6 +100,13 @@ const drainSseBuffer = (
 };
 
 const LLMChat = () => {
+  const [providerCatalog, setProviderCatalog] = useState<ChatProvidersResponse | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [lastProvider, setLastProvider] = useState<string | null>(null);
+  const [lastModel, setLastModel] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -102,11 +117,128 @@ const LLMChat = () => {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    const loadProviders = async () => {
+      try {
+        setCatalogError(null);
+        setIsCatalogLoading(true);
+
+        const catalog = await fetchChatProviders();
+        if (isCancelled) {
+          return;
+        }
+
+        if (!catalog.providers || catalog.providers.length === 0) {
+          throw new Error('Провайдеры не сконфигурированы на сервере.');
+        }
+
+        const defaultProvider =
+          catalog.providers.find((provider) => provider.id === catalog.defaultProvider) ??
+          catalog.providers[0];
+
+        const defaultModel =
+          defaultProvider.models.find((model) => model.id === defaultProvider.defaultModel) ??
+          defaultProvider.models[0] ??
+          null;
+
+        setProviderCatalog(catalog);
+        setSelectedProvider(defaultProvider.id);
+        setSelectedModel(defaultModel ? defaultModel.id : '');
+      } catch (loadError) {
+        if (isCancelled) {
+          return;
+        }
+        const message =
+          loadError instanceof Error
+            ? loadError.message
+            : 'Неизвестная ошибка при загрузке провайдеров.';
+        setCatalogError(`Не удалось загрузить провайдеры: ${message}`);
+      } finally {
+        if (!isCancelled) {
+          setIsCatalogLoading(false);
+        }
+      }
+    };
+
+    loadProviders();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop =
         messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const providerOptions = providerCatalog?.providers ?? [];
+  const currentProvider =
+    providerOptions.find((provider) => provider.id === selectedProvider) ??
+    providerOptions[0] ??
+    null;
+  const modelOptions = currentProvider?.models ?? [];
+  const canSendMessage =
+    Boolean(
+      selectedProvider &&
+        selectedModel &&
+        !catalogError &&
+        !isCatalogLoading,
+    );
+
+  const resolveProviderName = (providerId?: string | null) => {
+    if (!providerId) {
+      return '';
+    }
+    const provider =
+      providerOptions.find((item) => item.id === providerId) ?? null;
+    return provider?.displayName ?? providerId;
+  };
+
+  const resolveModelName = (providerId?: string | null, modelId?: string | null) => {
+    if (!providerId || !modelId) {
+      return '';
+    }
+    const provider =
+      providerOptions.find((item) => item.id === providerId) ?? null;
+    const model =
+      provider?.models.find((item) => item.id === modelId) ?? null;
+    return model?.displayName ?? modelId;
+  };
+
+  const handleProviderChange = (providerId: string) => {
+    setSelectedProvider(providerId);
+    setInfo(null);
+    setError(null);
+    if (!providerCatalog) {
+      setSelectedModel('');
+      return;
+    }
+
+    const providerEntry =
+      providerCatalog.providers.find((provider) => provider.id === providerId) ??
+      null;
+
+    if (!providerEntry) {
+      setSelectedModel('');
+      return;
+    }
+
+    const nextModel =
+      providerEntry.models.find((model) => model.id === providerEntry.defaultModel) ??
+      providerEntry.models[0] ??
+      null;
+    setSelectedModel(nextModel ? nextModel.id : '');
+  };
+
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+    setInfo(null);
+    setError(null);
+  };
 
   const resetChat = () => {
     if (isStreaming) {
@@ -117,6 +249,8 @@ const LLMChat = () => {
     setMessages([]);
     setError(null);
     setInfo(null);
+    setLastProvider(null);
+    setLastModel(null);
   };
 
   const stopStreaming = () => {
@@ -130,6 +264,11 @@ const LLMChat = () => {
     event.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || isStreaming) {
+      return;
+    }
+
+    if (!canSendMessage) {
+      setInfo('Дождитесь готовности конфигурации перед отправкой запроса.');
       return;
     }
 
@@ -147,6 +286,8 @@ const LLMChat = () => {
       role: 'user',
       content: message,
       status: 'complete',
+      provider: selectedProvider,
+      model: selectedModel,
     };
     setMessages((prev) => [...prev, userMessage]);
 
@@ -157,11 +298,21 @@ const LLMChat = () => {
     if (sessionId) {
       payload.sessionId = sessionId;
     }
+    if (selectedProvider) {
+      payload.provider = selectedProvider;
+    }
+    if (selectedModel) {
+      payload.model = selectedModel;
+    }
 
     let assistantMessageId: string | null = null;
     let aborted = false;
 
-    const appendAssistantChunk = (chunk: string) => {
+    const appendAssistantChunk = (
+      chunk: string,
+      provider?: string | null,
+      model?: string | null,
+    ) => {
       if (!chunk) {
         return;
       }
@@ -175,6 +326,8 @@ const LLMChat = () => {
             role: 'assistant',
             content: chunk,
             status: 'streaming',
+            provider: provider ?? undefined,
+            model: model ?? undefined,
           },
         ]);
         return;
@@ -189,6 +342,8 @@ const LLMChat = () => {
             role: 'assistant',
             content: chunk,
             status: 'streaming',
+            provider: provider ?? undefined,
+            model: model ?? undefined,
           });
           return next;
         }
@@ -197,12 +352,18 @@ const LLMChat = () => {
         next[index] = {
           ...current,
           content: current.content + chunk,
+          provider: provider ?? current.provider,
+          model: model ?? current.model,
         };
         return next;
       });
     };
 
-    const finalizeAssistantMessage = (fullContent?: string | null) => {
+    const finalizeAssistantMessage = (
+      fullContent?: string | null,
+      provider?: string | null,
+      model?: string | null,
+    ) => {
       if (!assistantMessageId) {
         assistantMessageId = generateId();
         setMessages((prev) => [
@@ -212,6 +373,8 @@ const LLMChat = () => {
             role: 'assistant',
             content: fullContent ?? '',
             status: 'complete',
+            provider: provider ?? undefined,
+            model: model ?? undefined,
           },
         ]);
         return;
@@ -226,6 +389,8 @@ const LLMChat = () => {
             role: 'assistant',
             content: fullContent ?? '',
             status: 'complete',
+            provider: provider ?? undefined,
+            model: model ?? undefined,
           });
           return next;
         }
@@ -235,6 +400,8 @@ const LLMChat = () => {
           ...current,
           content: fullContent ?? current.content,
           status: 'complete',
+          provider: provider ?? current.provider,
+          model: model ?? current.model,
         };
         return next;
       });
@@ -246,23 +413,58 @@ const LLMChat = () => {
           if (event.sessionId) {
             setSessionId(event.sessionId);
             if (event.newSession) {
-              setInfo('Создан новый диалог');
+              const providerLabel = resolveProviderName(event.provider ?? undefined);
+              const modelLabel = resolveModelName(
+                event.provider ?? undefined,
+                event.model ?? undefined,
+              );
+              const details =
+                [providerLabel, modelLabel].filter(Boolean).join(' · ');
+              setInfo(
+                details
+                  ? `Создан новый диалог (${details})`
+                  : 'Создан новый диалог',
+              );
             }
+          }
+          if (event.provider) {
+            setLastProvider(event.provider);
+          }
+          if (event.model) {
+            setLastModel(event.model);
           }
           return false;
         }
         case 'token': {
           if (event.content) {
-            appendAssistantChunk(event.content);
+            if (event.provider) {
+              setLastProvider(event.provider);
+            }
+            if (event.model) {
+              setLastModel(event.model);
+            }
+            appendAssistantChunk(event.content, event.provider, event.model);
           }
           return false;
         }
         case 'complete': {
-          finalizeAssistantMessage(event.content);
+          if (event.provider) {
+            setLastProvider(event.provider);
+          }
+          if (event.model) {
+            setLastModel(event.model);
+          }
+          finalizeAssistantMessage(event.content, event.provider, event.model);
           return false;
         }
         case 'error': {
-          finalizeAssistantMessage();
+          finalizeAssistantMessage(undefined, event.provider, event.model);
+          if (event.provider) {
+            setLastProvider(event.provider);
+          }
+          if (event.model) {
+            setLastModel(event.model);
+          }
           setError(
             event.content ??
               'Не удалось получить ответ от модели. Попробуйте ещё раз позже.',
@@ -340,12 +542,82 @@ const LLMChat = () => {
     <div className="llm-chat">
       <div className="llm-chat-panel">
         <div className="llm-chat-header">
-          <h2>LLM Chat</h2>
+          <div className="llm-chat-header-main">
+            <h2>LLM Chat</h2>
+            {lastProvider && (
+              <span className="llm-chat-selection">
+                {resolveProviderName(lastProvider)}
+                {lastModel
+                  ? ` · ${resolveModelName(lastProvider, lastModel)}`
+                  : ''}
+              </span>
+            )}
+          </div>
           {sessionId && (
             <span className="llm-chat-session">
               Сессия: <code>{sessionId}</code>
             </span>
           )}
+        </div>
+
+        <div className="llm-chat-settings">
+          <div className="llm-chat-field">
+            <label className="llm-chat-label" htmlFor="llm-chat-provider">
+              Провайдер
+            </label>
+            <select
+              id="llm-chat-provider"
+              className="llm-chat-select"
+              value={selectedProvider}
+              onChange={(event) => handleProviderChange(event.target.value)}
+              disabled={
+                isCatalogLoading || isStreaming || providerOptions.length === 0
+              }
+            >
+              {providerOptions.length === 0 ? (
+                <option value="">
+                  {isCatalogLoading
+                    ? 'Загрузка…'
+                    : 'Нет доступных провайдеров'}
+                </option>
+              ) : null}
+              {providerOptions.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.displayName ?? provider.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="llm-chat-field">
+            <label className="llm-chat-label" htmlFor="llm-chat-model">
+              Модель
+            </label>
+            <select
+              id="llm-chat-model"
+              className="llm-chat-select"
+              value={selectedModel}
+              onChange={(event) => handleModelChange(event.target.value)}
+              disabled={
+                isCatalogLoading || isStreaming || modelOptions.length === 0
+              }
+            >
+              {modelOptions.length === 0 ? (
+                <option value="">
+                  {isCatalogLoading
+                    ? 'Загрузка…'
+                    : currentProvider
+                    ? 'Модели недоступны'
+                    : 'Выберите провайдера'}
+                </option>
+              ) : null}
+              {modelOptions.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.displayName ?? model.id}
+                  {model.tier ? ` · ${model.tier}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div ref={messagesContainerRef} className="llm-chat-messages">
@@ -354,29 +626,73 @@ const LLMChat = () => {
               Введите сообщение, чтобы начать диалог с моделью.
             </div>
           ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`llm-chat-message ${message.role}`}
-              >
-                <div className="llm-chat-bubble">{message.content}</div>
-                {message.status === 'streaming' && (
-                  <span className="llm-chat-message-status">
-                    Модель отвечает…
-                  </span>
-                )}
-              </div>
-            ))
+            messages.map((message) => {
+              const providerLabel = message.provider
+                ? resolveProviderName(message.provider)
+                : '';
+              const modelLabel = message.model
+                ? resolveModelName(message.provider, message.model)
+                : '';
+              const hasMeta = Boolean(providerLabel || modelLabel);
+
+              return (
+                <div
+                  key={message.id}
+                  className={`llm-chat-message ${message.role}`}
+                >
+                  {hasMeta && (
+                    <div className="llm-chat-message-meta">
+                      {providerLabel && (
+                        <span className="llm-chat-meta-chip">
+                          {providerLabel}
+                        </span>
+                      )}
+                      {modelLabel && (
+                        <span className="llm-chat-meta-chip secondary">
+                          {modelLabel}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <div className="llm-chat-bubble">{message.content}</div>
+                  {message.status === 'streaming' && (
+                    <span className="llm-chat-message-status">
+                      Модель отвечает…
+                    </span>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
-        {(error || info || isStreaming) && (
+        {(catalogError ||
+          error ||
+          info ||
+          isStreaming ||
+          (isCatalogLoading && messages.length === 0)) && (
           <div className="llm-chat-status">
-            {error && <span className="llm-chat-error">{error}</span>}
-            {!error && info && <span className="llm-chat-info">{info}</span>}
-            {!error && !info && isStreaming && (
+            {catalogError && (
+              <span className="llm-chat-error">{catalogError}</span>
+            )}
+            {!catalogError && error && (
+              <span className="llm-chat-error">{error}</span>
+            )}
+            {!catalogError && !error && info && (
+              <span className="llm-chat-info">{info}</span>
+            )}
+            {!catalogError && !error && !info && isStreaming && (
               <span className="llm-chat-info">Получаем ответ от модели…</span>
             )}
+            {!catalogError &&
+              !error &&
+              !info &&
+              !isStreaming &&
+              isCatalogLoading && (
+                <span className="llm-chat-info">
+                  Загружаем конфигурацию чата…
+                </span>
+              )}
           </div>
         )}
 
@@ -396,7 +712,7 @@ const LLMChat = () => {
             <button
               type="submit"
               className="llm-chat-button primary"
-              disabled={isStreaming || !input.trim()}
+              disabled={isStreaming || !input.trim() || !canSendMessage}
             >
               Отправить
             </button>

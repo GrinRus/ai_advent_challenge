@@ -142,4 +142,55 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             sessionEvent.sessionId());
     assertThat(memoryEntries).isEqualTo(2);
   }
+
+  @Test
+  void streamSupportsCustomProviderAndModel() {
+    StubChatClientState.setTokens(List.of("alternate ", "provider"));
+
+    FluxExchangeResult<ChatStreamEvent> exchangeResult =
+        webTestClient
+            .post()
+            .uri("/api/llm/chat/stream")
+            .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.TEXT_EVENT_STREAM)
+            .bodyValue(
+                new ChatStreamRequest(
+                    null, "Invoke alternate provider", "alternate", "alt-model-pro", null))
+            .exchange()
+            .expectStatus()
+            .isOk()
+            .expectHeader()
+            .contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM)
+            .returnResult(ChatStreamEvent.class);
+
+    List<ChatStreamEvent> events =
+        exchangeResult.getResponseBody().collectList().block(Duration.ofSeconds(5));
+
+    assertThat(events).isNotNull();
+    assertThat(events)
+        .extracting(ChatStreamEvent::type)
+        .containsExactly("session", "token", "token", "complete");
+
+    ChatStreamEvent sessionEvent = events.getFirst();
+    assertThat(sessionEvent.provider()).isEqualTo("alternate");
+    assertThat(sessionEvent.model()).isEqualTo("alt-model-pro");
+
+    List<ChatStreamEvent> responseEvents = events.subList(1, events.size());
+    assertThat(responseEvents).extracting(ChatStreamEvent::provider).containsOnly("alternate");
+    assertThat(responseEvents).extracting(ChatStreamEvent::model).containsOnly("alt-model-pro");
+
+    ChatSession persistedSession =
+        chatSessionRepository.findById(sessionEvent.sessionId()).orElseThrow();
+
+    List<ChatMessage> history =
+        chatMessageRepository.findBySessionOrderBySequenceNumberAsc(persistedSession);
+
+    assertThat(history)
+        .hasSize(2)
+        .extracting(ChatMessage::getProvider)
+        .containsOnly("alternate");
+    assertThat(history)
+        .extracting(ChatMessage::getModel)
+        .containsOnly("alt-model-pro");
+  }
 }

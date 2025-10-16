@@ -3,6 +3,7 @@ package com.aiadvent.backend.chat.provider;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -53,5 +54,9 @@ public class ChatProviderService {
 
   public String defaultProvider() {
     return registry.defaultProvider();
+  }
+
+  public Map<String, ChatProvidersProperties.Provider> providers() {
+    return Collections.unmodifiableMap(registry.providers());
   }
 }

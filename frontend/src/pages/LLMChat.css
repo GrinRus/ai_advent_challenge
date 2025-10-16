@@ -21,6 +21,25 @@
   gap: 1rem;
 }
 
+.llm-chat-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.llm-chat-selection {
+  font-size: 0.85rem;
+  color: #3730a3;
+  background-color: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .llm-chat-session {
   font-size: 0.85rem;
   color: #475569;
@@ -45,6 +64,19 @@
   border: 1px solid #e2e8f0;
   background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
   padding: 1rem;
+}
+
+.llm-chat-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.llm-chat-field {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .llm-chat-empty {
@@ -92,6 +124,32 @@
   background-color: #f1f5f9;
   color: #0f172a;
   border-bottom-left-radius: 0.35rem;
+}
+
+.llm-chat-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.llm-chat-message.user .llm-chat-message-meta {
+  justify-content: flex-end;
+}
+
+.llm-chat-meta-chip {
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  line-height: 1.25;
+}
+
+.llm-chat-meta-chip.secondary {
+  background-color: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
 }
 
 .llm-chat-message-status {
@@ -143,6 +201,28 @@
   line-height: 1.5;
   font-family: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.llm-chat-select {
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.75rem;
+  border: 1px solid #cbd5f5;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background-color: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.llm-chat-select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.llm-chat-select:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .llm-chat-textarea:focus {
