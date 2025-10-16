@@ -1,13 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
-import type { FormEvent, KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import {
   CHAT_STREAM_URL,
   fetchChatProviders,
   requestStructuredSync,
   type ChatProvidersResponse,
-  type ChatSyncRequest,
   type StructuredSyncResponse,
 } from '../lib/apiClient';
+import {
+  SAMPLING_RANGE,
+  buildChatPayload,
+  diffOverridesAgainstDefaults,
+  hasOverrides as hasSamplingOverrides,
+  type SamplingDefaults,
+  type SamplingKey,
+  type SamplingOverrides,
+  type SamplingSnapshot,
+} from '../lib/chatPayload';
 import './LLMChat.css';
 
 type ChatMessage = {
@@ -19,6 +28,7 @@ type ChatMessage = {
   model?: string;
   structured?: StructuredSyncResponse | null;
   relatedMessageId?: string;
+  options?: SamplingSnapshot | null;
 };
 
 type StreamPayload = {
@@ -36,6 +46,58 @@ type DrainResult = {
 };
 
 type ActiveTab = 'stream' | 'structured';
+
+const SAMPLING_KEYS: SamplingKey[] = ['temperature', 'topP', 'maxTokens'];
+
+const DEFAULT_SAMPLING_DISPLAY: Record<SamplingKey, number> = {
+  temperature: 0.7,
+  topP: 1,
+  maxTokens: 1024,
+};
+
+const SAMPLING_LABELS: Record<SamplingKey, string> = {
+  temperature: 'Temp',
+  topP: 'TopP',
+  maxTokens: 'Max',
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const approxEqual = (first?: number | null, second?: number | null) => {
+  if (first == null || second == null) {
+    return false;
+  }
+  return Math.abs(first - second) < 1e-9;
+};
+
+const formatOptionValue = (key: SamplingKey, value?: number | null) => {
+  if (value == null || Number.isNaN(value)) {
+    return '—';
+  }
+  if (key === 'maxTokens') {
+    return Math.round(value).toString();
+  }
+  return value.toFixed(2).replace(/\.0+$/, '').replace(/\.([1-9])0$/, '.$1');
+};
+
+const formatSamplingSummary = (options?: SamplingSnapshot | null) =>
+  SAMPLING_KEYS.map((key) => `${SAMPLING_LABELS[key]} ${formatOptionValue(key, options?.[key])}`).join(' · ');
+
+const computeDisplayValues = (defaults: SamplingDefaults | null) => ({
+  temperature:
+      defaults?.temperature != null
+        ? defaults.temperature
+        : DEFAULT_SAMPLING_DISPLAY.temperature,
+  topP:
+      defaults?.topP != null
+        ? defaults.topP
+        : DEFAULT_SAMPLING_DISPLAY.topP,
+  maxTokens:
+      defaults?.maxTokens != null
+        ? defaults.maxTokens
+        : DEFAULT_SAMPLING_DISPLAY.maxTokens,
+});
 
 const formatConfidence = (value?: number | null) => {
   if (value === undefined || value === null || Number.isNaN(value)) {
@@ -145,6 +207,7 @@ type StructuredResponseCardProps = {
   modelLabel?: string;
   highlight?: boolean;
   onSelect?: () => void;
+  optionsLabel?: string;
 };
 
 const StructuredResponseCard = ({
@@ -153,6 +216,7 @@ const StructuredResponseCard = ({
   modelLabel = '—',
   highlight,
   onSelect,
+  optionsLabel,
 }: StructuredResponseCardProps) => {
   const className = [
     'structured-response-card',
@@ -193,6 +257,11 @@ const StructuredResponseCard = ({
         <p data-testid="structured-summary-text">
           {response.answer?.summary ?? 'Модель не вернула summary.'}
         </p>
+        {optionsLabel && (
+          <span className="structured-options" data-testid="structured-options">
+            {optionsLabel}
+          </span>
+        )}
         {response.answer?.confidence !== undefined && (
           <span className="structured-confidence">
             Уверенность: {formatConfidence(response.answer?.confidence)}
@@ -303,6 +372,11 @@ const LLMChat = () => {
   const [isStructuredLoading, setIsStructuredLoading] = useState(false);
   const [structuredError, setStructuredError] = useState<string | null>(null);
   const [structuredNotice, setStructuredNotice] = useState<string | null>(null);
+  const [samplingDefaults, setSamplingDefaults] = useState<SamplingDefaults | null>(null);
+  const [samplingDisplay, setSamplingDisplay] = useState<Record<SamplingKey, number>>(
+    DEFAULT_SAMPLING_DISPLAY,
+  );
+  const [samplingOverrides, setSamplingOverrides] = useState<SamplingOverrides>({});
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -335,6 +409,15 @@ const LLMChat = () => {
         setProviderCatalog(catalog);
         setSelectedProvider(defaultProvider.id);
         setSelectedModel(defaultModel ? defaultModel.id : '');
+
+        const providerDefaults: SamplingDefaults = {
+          temperature: defaultProvider.temperature ?? null,
+          topP: defaultProvider.topP ?? null,
+          maxTokens: defaultProvider.maxTokens ?? null,
+        };
+        setSamplingDefaults(providerDefaults);
+        setSamplingDisplay(computeDisplayValues(providerDefaults));
+        setSamplingOverrides({});
       } catch (loadError) {
         if (isCancelled) {
           return;
@@ -382,6 +465,19 @@ const LLMChat = () => {
         !isCatalogLoading,
     );
 
+  const samplingControlsDisabled =
+    isCatalogLoading || isStreaming || isStructuredLoading;
+
+  const normalizedSamplingOverrides = useMemo(
+    () => diffOverridesAgainstDefaults(samplingOverrides, samplingDefaults),
+    [samplingOverrides, samplingDefaults],
+  );
+
+  const samplingOverridesActive = useMemo(
+    () => hasSamplingOverrides(normalizedSamplingOverrides),
+    [normalizedSamplingOverrides],
+  );
+
   const structuredMessages = messages.filter(
     (message): message is ChatMessage & { structured: StructuredSyncResponse } =>
       message.role === 'assistant' && Boolean(message.structured),
@@ -415,6 +511,56 @@ const LLMChat = () => {
     return model?.displayName ?? modelId;
   };
 
+  const resetSamplingToDefaults = useCallback(() => {
+    const defaults = computeDisplayValues(samplingDefaults ?? null);
+    setSamplingDisplay(defaults);
+    setSamplingOverrides({});
+  }, [samplingDefaults]);
+
+  const updateSamplingValue = useCallback(
+    (key: SamplingKey, value: number) => {
+      const range = SAMPLING_RANGE[key];
+      const clamped = clamp(value, range.min, range.max);
+      setSamplingDisplay((prev) => ({ ...prev, [key]: clamped }));
+      setSamplingOverrides((prev) => {
+        const next = { ...prev };
+        const defaultValue = samplingDefaults?.[key] ?? null;
+        if (approxEqual(clamped, defaultValue)) {
+          delete next[key];
+        } else {
+          next[key] = clamped;
+        }
+        return next;
+      });
+    },
+    [samplingDefaults],
+  );
+
+  const handleSamplingSliderChange = (key: SamplingKey) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      updateSamplingValue(key, Number(event.target.value));
+    };
+
+  const handleSamplingNumberChange = (key: SamplingKey) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = event.target.value;
+      if (raw === '') {
+        const fallback = samplingDefaults?.[key] ?? DEFAULT_SAMPLING_DISPLAY[key];
+        setSamplingDisplay((prev) => ({ ...prev, [key]: fallback }));
+        setSamplingOverrides((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        return;
+      }
+      const numeric = Number(raw);
+      if (Number.isNaN(numeric)) {
+        return;
+      }
+      updateSamplingValue(key, numeric);
+    };
+
   const handleProviderChange = (providerId: string) => {
     setSelectedProvider(providerId);
     setInfo(null);
@@ -441,6 +587,15 @@ const LLMChat = () => {
       providerEntry.models[0] ??
       null;
     setSelectedModel(nextModel ? nextModel.id : '');
+
+    const providerDefaults: SamplingDefaults = {
+      temperature: providerEntry.temperature ?? null,
+      topP: providerEntry.topP ?? null,
+      maxTokens: providerEntry.maxTokens ?? null,
+    };
+    setSamplingDefaults(providerDefaults);
+    setSamplingDisplay(computeDisplayValues(providerDefaults));
+    setSamplingOverrides({});
   };
 
   const handleModelChange = (modelId: string) => {
@@ -450,6 +605,17 @@ const LLMChat = () => {
     setStructuredNotice(null);
     setStructuredError(null);
     setActiveStructuredMessageId(null);
+
+    if (currentProvider) {
+      const providerDefaults: SamplingDefaults = {
+        temperature: currentProvider.temperature ?? null,
+        topP: currentProvider.topP ?? null,
+        maxTokens: currentProvider.maxTokens ?? null,
+      };
+      setSamplingDefaults(providerDefaults);
+      setSamplingDisplay(computeDisplayValues(providerDefaults));
+      setSamplingOverrides({});
+    }
   };
 
   const resetChat = () => {
@@ -536,16 +702,15 @@ const LLMChat = () => {
     };
     setMessages((prev) => [...prev, structuredUserMessage]);
 
-    const payload: ChatSyncRequest = { message: trimmed };
-    if (sessionId) {
-      payload.sessionId = sessionId;
-    }
-    if (selectedProvider) {
-      payload.provider = selectedProvider;
-    }
-    if (selectedModel) {
-      payload.model = selectedModel;
-    }
+    const { payload, effectiveOptions } = buildChatPayload({
+      message: trimmed,
+      sessionId,
+      provider: selectedProvider,
+      model: selectedModel,
+      overrides: normalizedSamplingOverrides,
+      defaults: samplingDefaults,
+    });
+    const optionsSnapshot = effectiveOptions;
 
     try {
       const { body, sessionId: nextSessionId, newSession } =
@@ -581,6 +746,7 @@ const LLMChat = () => {
         model: messageModel,
         structured: body,
         relatedMessageId: requestMessageId,
+        options: optionsSnapshot,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setActiveStructuredMessageId(assistantMessage.id);
@@ -620,16 +786,15 @@ const LLMChat = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const payload: Record<string, unknown> = { message };
-    if (sessionId) {
-      payload.sessionId = sessionId;
-    }
-    if (selectedProvider) {
-      payload.provider = selectedProvider;
-    }
-    if (selectedModel) {
-      payload.model = selectedModel;
-    }
+    const { payload, effectiveOptions } = buildChatPayload({
+      message,
+      sessionId,
+      provider: selectedProvider,
+      model: selectedModel,
+      overrides: normalizedSamplingOverrides,
+      defaults: samplingDefaults,
+    });
+    const optionsSnapshot = effectiveOptions;
 
     let assistantMessageId: string | null = null;
     let aborted = false;
@@ -654,6 +819,7 @@ const LLMChat = () => {
             status: 'streaming',
             provider: provider ?? undefined,
             model: model ?? undefined,
+            options: optionsSnapshot,
           },
         ]);
         return;
@@ -670,6 +836,7 @@ const LLMChat = () => {
             status: 'streaming',
             provider: provider ?? undefined,
             model: model ?? undefined,
+            options: optionsSnapshot,
           });
           return next;
         }
@@ -701,6 +868,7 @@ const LLMChat = () => {
             status: 'complete',
             provider: provider ?? undefined,
             model: model ?? undefined,
+            options: optionsSnapshot,
           },
         ]);
         return;
@@ -717,6 +885,7 @@ const LLMChat = () => {
             status: 'complete',
             provider: provider ?? undefined,
             model: model ?? undefined,
+            options: optionsSnapshot,
           });
           return next;
         }
@@ -728,6 +897,7 @@ const LLMChat = () => {
           status: 'complete',
           provider: provider ?? current.provider,
           model: model ?? current.model,
+          options: current.options ?? optionsSnapshot,
         };
         return next;
       });
@@ -946,6 +1116,92 @@ const LLMChat = () => {
           </div>
         </div>
 
+        <div className="llm-chat-sampling">
+          <div className="llm-chat-sampling-header">
+            <span>Параметры sampling</span>
+            <button
+              type="button"
+              className="llm-chat-button ghost"
+              onClick={resetSamplingToDefaults}
+              disabled={!samplingOverridesActive || samplingControlsDisabled}
+            >
+              Сбросить к дефолтам
+            </button>
+          </div>
+          <div className="llm-chat-sampling-grid">
+            {SAMPLING_KEYS.map((key) => {
+              const range = SAMPLING_RANGE[key];
+              const sliderValue = samplingDisplay[key];
+              const defaultValue = samplingDefaults?.[key] ?? null;
+              const overrideIsActive = Object.prototype.hasOwnProperty.call(
+                normalizedSamplingOverrides,
+                key,
+              );
+
+              const numberValue =
+                key === 'maxTokens'
+                  ? Math.round(sliderValue)
+                  : Number(sliderValue.toFixed(2));
+
+              const defaultLabel = formatOptionValue(key, defaultValue);
+              const currentLabel = formatOptionValue(key, sliderValue);
+
+              return (
+                <div key={key} className="llm-chat-sampling-field">
+                  <div className="llm-chat-sampling-top">
+                    <label className="llm-chat-label" htmlFor={`llm-chat-${key}`}>
+                      {key === 'temperature'
+                        ? 'Temperature'
+                        : key === 'topP'
+                        ? 'Top P'
+                        : 'Max tokens'}
+                    </label>
+                    <span
+                      className={
+                        overrideIsActive
+                          ? 'llm-chat-sampling-value override'
+                          : 'llm-chat-sampling-value'
+                      }
+                    >
+                      {currentLabel}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    id={`llm-chat-${key}-slider`}
+                    className="llm-chat-sampling-slider"
+                    min={range.min}
+                    max={range.max}
+                    step={range.step}
+                    value={sliderValue}
+                    onChange={handleSamplingSliderChange(key)}
+                    disabled={samplingControlsDisabled}
+                  />
+                  <div className="llm-chat-sampling-controls">
+                    <input
+                      type="number"
+                      id={`llm-chat-${key}`}
+                      className="llm-chat-sampling-number"
+                      value={numberValue}
+                      onChange={handleSamplingNumberChange(key)}
+                      step={range.step}
+                      min={range.min}
+                      max={range.max}
+                      disabled={samplingControlsDisabled}
+                    />
+                    <span className="llm-chat-sampling-default">
+                      По умолчанию: {defaultLabel}
+                    </span>
+                    {overrideIsActive ? (
+                      <span className="llm-chat-sampling-status">Переопределено</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="llm-chat-tabs" role="tablist">
           <button
             type="button"
@@ -980,7 +1236,9 @@ const LLMChat = () => {
                   const modelLabel = message.model
                     ? resolveModelName(message.provider, message.model)
                     : '';
-                  const hasMeta = Boolean(providerLabel || modelLabel);
+                  const samplingSummary = formatSamplingSummary(message.options);
+                  const hasSamplingMeta = Boolean(message.options);
+                  const hasMeta = Boolean(providerLabel || modelLabel || hasSamplingMeta);
 
                   return (
                     <div
@@ -999,6 +1257,14 @@ const LLMChat = () => {
                               {modelLabel}
                             </span>
                           )}
+                          {hasSamplingMeta && (
+                            <span
+                              className="llm-chat-meta-chip options"
+                              data-testid="sampling-meta"
+                            >
+                              {samplingSummary}
+                            </span>
+                          )}
                         </div>
                       )}
                       <div className="llm-chat-bubble">{message.content}</div>
@@ -1011,6 +1277,7 @@ const LLMChat = () => {
                             message.structured.provider?.model ??
                             ''
                           }
+                          optionsLabel={message.options ? formatSamplingSummary(message.options) : undefined}
                           onSelect={() => setActiveStructuredMessageId(message.id)}
                           highlight={message.id === activeStructuredMessage?.id}
                         />
@@ -1194,6 +1461,11 @@ const LLMChat = () => {
                         providerLabel={providerLabel}
                         modelLabel={modelLabel}
                         highlight={isActive}
+                        optionsLabel={
+                          message.options
+                            ? formatSamplingSummary(message.options)
+                            : undefined
+                        }
                         onSelect={() => setActiveStructuredMessageId(message.id)}
                       />
                     </div>

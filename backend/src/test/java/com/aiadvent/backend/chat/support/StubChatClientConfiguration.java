@@ -20,6 +20,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -94,8 +95,8 @@ public class StubChatClientConfiguration {
             .defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor)
             .build();
 
-    ChatProviderAdapter stubAdapter = adapter("stub", chatClient);
-    ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient);
+    ChatProviderAdapter stubAdapter = adapter("stub", chatClient, primaryProvider);
+    ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient, alternateProvider);
 
     return new ChatProviderService(registry, List.of(stubAdapter, alternateAdapter));
   }
@@ -107,7 +108,8 @@ public class StubChatClientConfiguration {
     return model;
   }
 
-  private static ChatProviderAdapter adapter(String providerId, ChatClient chatClient) {
+  private static ChatProviderAdapter adapter(
+      String providerId, ChatClient chatClient, ChatProvidersProperties.Provider providerConfig) {
     return new ChatProviderAdapter() {
       @Override
       public String providerId() {
@@ -122,7 +124,41 @@ public class StubChatClientConfiguration {
       @Override
       public ChatOptions buildOptions(
           ChatProviderSelection selection, ChatRequestOverrides overrides) {
-        return OpenAiChatOptions.builder().model(selection.modelId()).build();
+        return configureOptions(selection, overrides).build();
+      }
+
+      @Override
+      public ChatOptions buildStructuredOptions(
+          ChatProviderSelection selection,
+          ChatRequestOverrides overrides,
+          BeanOutputConverter<?> outputConverter) {
+        return configureOptions(selection, overrides).build();
+      }
+
+      private OpenAiChatOptions.Builder configureOptions(
+          ChatProviderSelection selection, ChatRequestOverrides overrides) {
+        ChatRequestOverrides effective =
+            overrides != null ? overrides : ChatRequestOverrides.empty();
+        OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder().model(selection.modelId());
+
+        Double temperature =
+            effective.temperature() != null ? effective.temperature() : providerConfig.getTemperature();
+        if (temperature != null) {
+          builder.temperature(temperature);
+        }
+
+        Double topP = effective.topP() != null ? effective.topP() : providerConfig.getTopP();
+        if (topP != null) {
+          builder.topP(topP);
+        }
+
+        Integer maxTokens =
+            effective.maxTokens() != null ? effective.maxTokens() : providerConfig.getMaxTokens();
+        if (maxTokens != null) {
+          builder.maxTokens(maxTokens);
+        }
+
+        return builder;
       }
     };
   }

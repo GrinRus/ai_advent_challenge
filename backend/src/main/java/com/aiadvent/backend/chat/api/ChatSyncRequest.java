@@ -9,7 +9,20 @@ import java.util.UUID;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(
     description =
-        "Payload for requesting a structured synchronous chat response. Mirrors the streaming request format and optionally carries overrides.")
+        "Payload for requesting a structured synchronous chat response. Mirrors the streaming request format and optionally carries overrides.",
+    example =
+        """
+        {
+          "message": "Summarize the discussion into key actions.",
+          "provider": "zhipu",
+          "model": "glm-4.6",
+          "options": {
+            "temperature": 0.1,
+            "topP": 0.9,
+            "maxTokens": 400
+          }
+        }
+        """)
 public record ChatSyncRequest(
     @Schema(description = "Existing chat session identifier.") UUID sessionId,
     @Schema(

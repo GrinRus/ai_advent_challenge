@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.aiadvent.backend.chat.api.ChatStreamEvent;
 import com.aiadvent.backend.chat.api.ChatStreamRequest;
+import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.domain.ChatMessage;
 import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
@@ -236,6 +237,46 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     assertThat(prompt).isNotNull();
     assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
     assertThat(((OpenAiChatOptions) prompt.getOptions()).getModel()).isEqualTo("alt-model-pro");
+  }
+
+  @Test
+  void streamAppliesSamplingOverrides() throws Exception {
+    StubChatClientState.setTokens(List.of("overridden response"));
+
+    ChatStreamRequest request =
+        new ChatStreamRequest(
+            null,
+            "Tune sampling",
+            null,
+            null,
+            new ChatStreamRequestOptions(0.25, 0.8, 256));
+
+    performChatStream(request);
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+    assertThat(options.getTemperature()).isEqualTo(0.25);
+    assertThat(options.getTopP()).isEqualTo(0.8);
+    assertThat(options.getMaxTokens()).isEqualTo(256);
+  }
+
+  @Test
+  void streamFallsBackToProviderDefaultsWhenOverridesMissing() throws Exception {
+    StubChatClientState.setTokens(List.of("default response"));
+
+    ChatStreamRequest request = new ChatStreamRequest(null, "Use defaults", null, null, null);
+
+    performChatStream(request);
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+    assertThat(options.getTemperature()).isEqualTo(0.7);
+    assertThat(options.getTopP()).isEqualTo(1.0);
+    assertThat(options.getMaxTokens()).isEqualTo(1024);
   }
 
   private List<SseFrame> parseSsePayload(String responseBody) {

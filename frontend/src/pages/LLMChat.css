@@ -72,6 +72,95 @@
   gap: 1rem;
 }
 
+.llm-chat-sampling {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.llm-chat-sampling-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.llm-chat-sampling-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.llm-chat-sampling-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.llm-chat-sampling-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.llm-chat-sampling-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.llm-chat-sampling-value.override {
+  color: #2563eb;
+}
+
+.llm-chat-sampling-slider {
+  width: 100%;
+  accent-color: #4f46e5;
+}
+
+.llm-chat-sampling-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.llm-chat-sampling-number {
+  border: 1px solid #cbd5f5;
+  border-radius: 0.6rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+.llm-chat-sampling-number:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.llm-chat-sampling-number:disabled {
+  background-color: #f8fafc;
+  cursor: not-allowed;
+}
+
+.llm-chat-sampling-default {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.llm-chat-sampling-status {
+  font-size: 0.75rem;
+  color: #2563eb;
+  font-weight: 600;
+}
+
 .llm-chat-tabs {
   display: inline-flex;
   gap: 0.5rem;
@@ -183,6 +272,12 @@
   background-color: #eef2ff;
   border-color: #c7d2fe;
   color: #4338ca;
+}
+
+.llm-chat-meta-chip.options {
+  background-color: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #047857;
 }
 
 .llm-chat-message-status {
@@ -393,6 +488,20 @@
   color: #0f172a;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.structured-options {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #047857;
+  background-color: #ecfdf5;
+  border: 1px solid #bbf7d0;
 }
 
 .structured-status {

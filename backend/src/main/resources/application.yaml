@@ -34,6 +34,13 @@ spring:
           top-p: ${ZHIPU_TOP_P:0.95}
           max-tokens: ${ZHIPU_MAX_TOKENS:1024}
 
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    displayRequestDuration: true
+    tagsSorter: alpha
+
 logging:
   level:
     com.aiadvent.backend.chat: DEBUG

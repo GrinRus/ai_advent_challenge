@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.domain.ChatMessage;
@@ -35,6 +36,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatOptions;
 
 @SpringBootTest(
     properties = {
@@ -130,6 +133,59 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
 
     assertThat(response.answer().summary()).isEqualTo("Summarized response");
     assertThat(StubChatClientState.syncCallCount()).isEqualTo(1);
+  }
+
+  @Test
+  void syncAppliesSamplingOverrides() throws Exception {
+    StubChatClientState.setSyncResponses(
+        List.of("{\"answer\":{\"summary\":\"Overrides applied\",\"items\":[]}}"));
+
+    ChatSyncRequest request =
+        new ChatSyncRequest(
+            null,
+            "Tune sampling for structured call",
+            null,
+            null,
+            new ChatStreamRequestOptions(0.3, 0.85, 640));
+
+    mockMvc
+        .perform(
+            post(SYNC_ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk());
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+    assertThat(options.getTemperature()).isEqualTo(0.3);
+    assertThat(options.getTopP()).isEqualTo(0.85);
+    assertThat(options.getMaxTokens()).isEqualTo(640);
+  }
+
+  @Test
+  void syncUsesProviderDefaultsWhenOverridesMissing() throws Exception {
+    StubChatClientState.setSyncResponses(
+        List.of("{\"answer\":{\"summary\":\"Default sampling\",\"items\":[]}}"));
+
+    ChatSyncRequest request =
+        new ChatSyncRequest(null, "Use provider defaults", null, null, null);
+
+    mockMvc
+        .perform(
+            post(SYNC_ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk());
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+    assertThat(options.getTemperature()).isEqualTo(0.7);
+    assertThat(options.getTopP()).isEqualTo(1.0);
+    assertThat(options.getMaxTokens()).isEqualTo(1024);
   }
 
   @Test

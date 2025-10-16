@@ -61,6 +61,31 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - Метрики `chat_memory_evictions_total` и `chat_memory_conversations` доступны через Spring Boot Actuator.
 - Для frontend достаточно установить `VITE_API_BASE_URL` (по умолчанию `/api`). SSE-подписка выполняется на эндпоинт `POST /api/llm/chat/stream`.
 
+Оба LLM-эндпоинта (`/stream`, `/sync`) принимают опциональный блок `options` с параметрами sampling. Если оставить его пустым или удалить ключи, сервис применит значения по умолчанию из `app.chat.providers.<provider>`. Диапазоны: `temperature` — `0..2`, `topP` — `0..1`, `maxTokens` ≥ `1`.
+
+```json
+// Запрос без overrides (используются дефолты провайдера)
+{
+  "message": "Give me a project status update",
+  "provider": "openai",
+  "model": "gpt-4o"
+}
+
+// Запрос с переопределёнными sampling-настройками
+{
+  "message": "Summarize the backlog risks",
+  "provider": "zhipu",
+  "model": "glm-4.6",
+  "options": {
+    "temperature": 0.2,
+    "topP": 0.9,
+    "maxTokens": 400
+  }
+}
+```
+
+Подробная схема доступна в OpenAPI (`/v3/api-docs`, swagger-ui настраивается через `backend/src/main/resources/application.yaml`).
+
 ### Синхронный структурированный ответ
 - Новый эндпоинт `POST /api/llm/chat/sync` принимает `ChatSyncRequest` (тот же формат, что и стриминг: `sessionId`, `message`, `provider`, `model`, `options`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
 - Backend использует `BeanOutputConverter<StructuredSyncResponse>` из Spring AI: для OpenAI схема пробрасывается через `responseFormat(JSON_SCHEMA)` и `strict=true`, для остальных провайдеров (например, ZhiPu) генерация схемы подмешивается в промпт.
