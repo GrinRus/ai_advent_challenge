@@ -44,7 +44,7 @@ public class ChatProvidersProperties {
     private String apiKey;
     private String completionsPath;
     private String embeddingsPath;
-    private Duration timeout = Duration.ofSeconds(30);
+    private Duration timeout = Duration.ofMinutes(2);
     private Integer maxTokens;
     private Double temperature;
     private Double topP;
