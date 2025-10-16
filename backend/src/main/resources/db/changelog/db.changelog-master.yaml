@@ -202,3 +202,24 @@ databaseChangeLog:
               ) latest
               WHERE latest.rn <= 20
               ORDER BY latest.session_id, latest.message_order;
+  - changeSet:
+      id: 0006-extend-chat-message-with-provider
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: chat_message
+            columns:
+              - column:
+                  name: provider
+                  type: VARCHAR(64)
+              - column:
+                  name: model
+                  type: VARCHAR(128)
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              UPDATE chat_message
+              SET provider = COALESCE(provider, 'z.ai'),
+                  model = COALESCE(model, 'glm-4.6');

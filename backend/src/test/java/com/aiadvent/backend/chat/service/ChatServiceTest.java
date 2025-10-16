@@ -48,10 +48,12 @@ class ChatServiceTest {
     when(chatMessageRepository.findTopBySessionOrderBySequenceNumberDesc(savedSession))
         .thenReturn(Optional.empty());
 
-    ChatMessage persistedMessage = new ChatMessage(savedSession, ChatRole.USER, "Привет", 1);
+    ChatMessage persistedMessage =
+        new ChatMessage(savedSession, ChatRole.USER, "Привет", 1, "z.ai", "glm");
     when(chatMessageRepository.save(any(ChatMessage.class))).thenReturn(persistedMessage);
 
-    ConversationContext context = chatService.registerUserMessage(null, "Привет");
+    ConversationContext context =
+        chatService.registerUserMessage(null, "Привет", "z.ai", "glm");
 
     assertThat(context.sessionId()).isEqualTo(sessionId);
     assertThat(context.newSession()).isTrue();
@@ -61,6 +63,8 @@ class ChatServiceTest {
     ChatMessage value = messageCaptor.getValue();
     assertThat(value.getSequenceNumber()).isEqualTo(1);
     assertThat(value.getRole()).isEqualTo(ChatRole.USER);
+    assertThat(value.getProvider()).isEqualTo("z.ai");
+    assertThat(value.getModel()).isEqualTo("glm");
   }
 
   @Test
@@ -68,7 +72,7 @@ class ChatServiceTest {
     UUID missingSession = UUID.randomUUID();
     when(chatSessionRepository.findById(missingSession)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> chatService.registerUserMessage(missingSession, "test"))
+    assertThatThrownBy(() -> chatService.registerUserMessage(missingSession, "test", "z.ai", "glm"))
         .isInstanceOf(ResponseStatusException.class)
         .extracting(ex -> ((ResponseStatusException) ex).getStatusCode())
         .isEqualTo(HttpStatus.NOT_FOUND);
@@ -76,7 +80,7 @@ class ChatServiceTest {
 
   @Test
   void registerAssistantMessageSkipsEmptyContent() {
-    chatService.registerAssistantMessage(UUID.randomUUID(), "  ");
+    chatService.registerAssistantMessage(UUID.randomUUID(), "  ", "z.ai", "glm");
     verify(chatSessionRepository, never()).findById(any());
   }
 
@@ -88,11 +92,11 @@ class ChatServiceTest {
 
     when(chatSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
     when(chatMessageRepository.findTopBySessionOrderBySequenceNumberDesc(session))
-        .thenReturn(Optional.of(new ChatMessage(session, ChatRole.USER, "msg", 1)));
+        .thenReturn(Optional.of(new ChatMessage(session, ChatRole.USER, "msg", 1, "z.ai", "glm")));
     when(chatMessageRepository.save(any(ChatMessage.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    chatService.registerAssistantMessage(sessionId, "Ответ бота");
+    chatService.registerAssistantMessage(sessionId, "Ответ бота", "z.ai", "glm");
 
     ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
     verify(chatMessageRepository).save(messageCaptor.capture());
@@ -100,5 +104,7 @@ class ChatServiceTest {
     assertThat(saved.getRole()).isEqualTo(ChatRole.ASSISTANT);
     assertThat(saved.getSequenceNumber()).isEqualTo(2);
     assertThat(saved.getContent()).isEqualTo("Ответ бота");
+    assertThat(saved.getProvider()).isEqualTo("z.ai");
+    assertThat(saved.getModel()).isEqualTo("glm");
   }
 }

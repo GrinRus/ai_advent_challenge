@@ -35,16 +35,30 @@ public class ChatMessage {
   @Column(name = "sequence_number", nullable = false)
   private Integer sequenceNumber;
 
+  @Column(name = "provider", length = 64)
+  private String provider;
+
+  @Column(name = "model", length = 128)
+  private String model;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
   protected ChatMessage() {}
 
-  public ChatMessage(ChatSession session, ChatRole role, String content, Integer sequenceNumber) {
+  public ChatMessage(
+      ChatSession session,
+      ChatRole role,
+      String content,
+      Integer sequenceNumber,
+      String provider,
+      String model) {
     this.session = session;
     this.role = role;
     this.content = content;
     this.sequenceNumber = sequenceNumber;
+    this.provider = provider;
+    this.model = model;
   }
 
   @PrePersist
@@ -70,6 +84,14 @@ public class ChatMessage {
 
   public Integer getSequenceNumber() {
     return sequenceNumber;
+  }
+
+  public String getProvider() {
+    return provider;
+  }
+
+  public String getModel() {
+    return model;
   }
 
   public Instant getCreatedAt() {

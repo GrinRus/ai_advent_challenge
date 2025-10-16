@@ -25,7 +25,8 @@ public class ChatService {
   }
 
   @Transactional
-  public ConversationContext registerUserMessage(UUID sessionId, String content) {
+  public ConversationContext registerUserMessage(
+      UUID sessionId, String content, String provider, String model) {
     if (!StringUtils.hasText(content)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be empty");
     }
@@ -47,13 +48,14 @@ public class ChatService {
     }
 
     int nextSequence = nextSequenceNumber(session);
-    chatMessageRepository.save(new ChatMessage(session, ChatRole.USER, content, nextSequence));
+    chatMessageRepository.save(
+        new ChatMessage(session, ChatRole.USER, content, nextSequence, provider, model));
 
     return new ConversationContext(session.getId(), newSession);
   }
 
   @Transactional
-  public void registerAssistantMessage(UUID sessionId, String content) {
+  public void registerAssistantMessage(UUID sessionId, String content, String provider, String model) {
     if (!StringUtils.hasText(content)) {
       return;
     }
@@ -67,7 +69,8 @@ public class ChatService {
                         HttpStatus.NOT_FOUND, "Chat session not found: " + sessionId));
 
     int nextSequence = nextSequenceNumber(session);
-    chatMessageRepository.save(new ChatMessage(session, ChatRole.ASSISTANT, content, nextSequence));
+    chatMessageRepository.save(
+        new ChatMessage(session, ChatRole.ASSISTANT, content, nextSequence, provider, model));
   }
 
   private int nextSequenceNumber(ChatSession session) {

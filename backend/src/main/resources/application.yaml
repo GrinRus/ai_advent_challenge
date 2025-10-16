@@ -5,19 +5,30 @@ spring:
   application:
     name: backend
   ai:
+    chat:
+      client:
+        enabled: false
     openai:
-      base-url: ${LLM_BASE_URL:https://api.z.ai}
-      api-key: ${LLM_API_KEY:}
+      api-key: ${OPENAI_API_KEY:demo-openai-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       chat:
-        completions-path: ${LLM_CHAT_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
         options:
-          model: ${LLM_MODEL:glm-4.6}
-          temperature: ${LLM_TEMPERATURE:0.7}
-          top-p: ${LLM_TOP_P:1.0}
-          max-tokens: ${LLM_MAX_TOKENS:1024}
-          stream: true
+          model: ${OPENAI_DEFAULT_MODEL:gpt-4o-mini}
+          temperature: ${OPENAI_TEMPERATURE:0.7}
+          top-p: ${OPENAI_TOP_P:1.0}
+          max-tokens: ${OPENAI_MAX_TOKENS:1024}
       log-request: true
       log-response: true
+    zhipuai:
+      api-key: ${ZHIPU_API_KEY:demo-zhipu-key}
+      base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn}
+      chat:
+        completions-path: ${ZHIPU_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
+        options:
+          model: ${ZHIPU_DEFAULT_MODEL:glm-4-air}
+          temperature: ${ZHIPU_TEMPERATURE:0.7}
+          top-p: ${ZHIPU_TOP_P:0.95}
+          max-tokens: ${ZHIPU_MAX_TOKENS:1024}
 
 logging:
   level:
@@ -25,12 +36,58 @@ logging:
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
     org.springframework.ai.chat.client.advisor: DEBUG
-#    org.springframework.web.client.RestTemplate: DEBUG
-#    reactor.netty.http.client: DEBUG
-#    org.springframework.ai.openai: DEBUG
 
 app:
   chat:
+    default-provider: zhipu
+    providers:
+      zhipu:
+        type: ZHIPUAI
+        display-name: "zhipu.ai"
+        base-url: ${ZHIPU_BASE_URL:https://open.bigmodel.cn}
+        api-key: ${ZHIPU_API_KEY:demo-zhipu-key}
+        completions-path: ${ZHIPU_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
+        timeout: ${ZHIPU_TIMEOUT:PT30S}
+        temperature: ${ZHIPU_TEMPERATURE:0.7}
+        top-p: ${ZHIPU_TOP_P:0.95}
+        max-tokens: ${ZHIPU_MAX_TOKENS:1024}
+        default-model: ${ZHIPU_DEFAULT_MODEL:glm-4-air}
+        models:
+          glm-4-air:
+            display-name: "GLM-4 Air"
+            tier: standard
+            pricing:
+              input-per-1k-tokens: 0.0008
+              output-per-1k-tokens: 0.0008
+          glm-4-flash:
+            display-name: "GLM-4 Flash"
+            tier: budget
+            pricing:
+              input-per-1k-tokens: 0.0004
+              output-per-1k-tokens: 0.0004
+      openai:
+        type: OPENAI
+        display-name: "OpenAI"
+        base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+        api-key: ${OPENAI_API_KEY:demo-openai-key}
+        timeout: ${OPENAI_TIMEOUT:PT30S}
+        temperature: ${OPENAI_TEMPERATURE:0.7}
+        top-p: ${OPENAI_TOP_P:1.0}
+        max-tokens: ${OPENAI_MAX_TOKENS:1024}
+        default-model: ${OPENAI_DEFAULT_MODEL:gpt-4o-mini}
+        models:
+          gpt-4o-mini:
+            display-name: "GPT-4o Mini"
+            tier: budget
+            pricing:
+              input-per-1k-tokens: 0.00015
+              output-per-1k-tokens: 0.0006
+          gpt-4o:
+            display-name: "GPT-4o"
+            tier: pro
+            pricing:
+              input-per-1k-tokens: 0.0012
+              output-per-1k-tokens: 0.0032
     memory:
       window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
       retention: ${CHAT_MEMORY_RETENTION:PT6H}

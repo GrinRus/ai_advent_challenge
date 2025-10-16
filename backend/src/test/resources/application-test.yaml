@@ -1,4 +1,13 @@
 spring:
+  ai:
+    openai:
+      api-key: test-openai-key
+      base-url: http://localhost
+    zhipuai:
+      api-key: test-zhipu-key
+      base-url: http://localhost
+      chat:
+        completions-path: /v4/chat/completions
   jpa:
     open-in-view: false
     hibernate:

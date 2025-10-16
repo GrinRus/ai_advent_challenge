@@ -51,7 +51,13 @@ import org.springframework.util.StringUtils;
       "spring.ai.openai.base-url=http://localhost",
       "app.chat.memory.window-size=3",
       "app.chat.memory.retention=PT24H",
-      "app.chat.memory.cleanup-interval=PT1H"
+      "app.chat.memory.cleanup-interval=PT1H",
+      "app.chat.default-provider=real",
+      "app.chat.providers.real.type=OPENAI",
+      "app.chat.providers.real.default-model=real-model",
+      "app.chat.providers.real.temperature=0.7",
+      "app.chat.providers.real.top-p=1.0",
+      "app.chat.providers.real.max-tokens=1024"
     })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -85,13 +91,20 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   void streamCreatesSessionAndPersistsHistory() throws Exception {
     StubChatClientState.setTokens(List.of("partial ", "answer"));
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Hello model");
+    ChatStreamRequest request = new ChatStreamRequest(null, "Hello model", null, null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
     assertThat(events)
         .extracting(ChatStreamEvent::type)
         .containsExactly("session", "token", "token", "complete");
+
+    assertThat(events)
+        .allSatisfy(
+            event -> {
+              assertThat(event.provider()).isEqualTo("stub");
+              assertThat(event.model()).isEqualTo("stub-model");
+            });
 
     assertThat(events)
         .first()
@@ -119,6 +132,12 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
 
     assertThat(messages.getFirst().getContent()).isEqualTo("Hello model");
     assertThat(messages.get(1).getContent()).isEqualTo("partial answer");
+    assertThat(messages)
+        .extracting(ChatMessage::getProvider)
+        .containsOnly("stub");
+    assertThat(messages)
+        .extracting(ChatMessage::getModel)
+        .containsOnly("stub-model");
 
     Integer memoryEntries =
         jdbcTemplate.queryForObject(
@@ -132,14 +151,14 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   void streamUsesChatMemoryWindowAcrossRequests() throws Exception {
     StubChatClientState.setTokens(List.of("Previous answer"));
     List<ChatStreamEvent> initialEvents =
-        performChatStream(new ChatStreamRequest(null, "Previous question"));
+        performChatStream(new ChatStreamRequest(null, "Previous question", null, null, null));
 
     UUID sessionId = initialEvents.getFirst().sessionId();
     ChatSession persistedSession = chatSessionRepository.findById(sessionId).orElseThrow();
 
     StubChatClientState.setTokens(List.of("follow-up"));
 
-    performChatStream(new ChatStreamRequest(sessionId, "Next question from user"));
+    performChatStream(new ChatStreamRequest(sessionId, "Next question from user", null, null, null));
 
     Prompt prompt = StubChatClientState.lastPrompt();
     assertThat(prompt).isNotNull();
@@ -169,6 +188,12 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
         .extracting(ChatMessage::getContent)
         .containsExactly(
             "Previous question", "Previous answer", "Next question from user", "follow-up");
+    assertThat(messages)
+        .extracting(ChatMessage::getProvider)
+        .containsOnly("stub");
+    assertThat(messages)
+        .extracting(ChatMessage::getModel)
+        .containsOnly("stub-model");
 
     List<String> memoryMessages =
         jdbcTemplate.query(

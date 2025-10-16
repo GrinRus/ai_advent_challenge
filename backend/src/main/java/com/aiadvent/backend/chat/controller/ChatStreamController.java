@@ -2,6 +2,10 @@ package com.aiadvent.backend.chat.controller;
 
 import com.aiadvent.backend.chat.api.ChatStreamEvent;
 import com.aiadvent.backend.chat.api.ChatStreamRequest;
+import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
+import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
 import jakarta.validation.Valid;
@@ -9,10 +13,8 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
@@ -33,16 +35,11 @@ import reactor.core.publisher.Flux;
 public class ChatStreamController {
 
   private final ChatService chatService;
-  private final ChatClient chatClient;
+  private final ChatProviderService chatProviderService;
 
-  public ChatStreamController(
-      ChatService chatService,
-      ChatClient.Builder chatClientBuilder,
-      SimpleLoggerAdvisor simpleLoggerAdvisor,
-      MessageChatMemoryAdvisor chatMemoryAdvisor) {
+  public ChatStreamController(ChatService chatService, ChatProviderService chatProviderService) {
     this.chatService = chatService;
-    this.chatClient =
-        chatClientBuilder.defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor).build();
+    this.chatProviderService = chatProviderService;
   }
 
   @PostMapping(
@@ -50,21 +47,34 @@ public class ChatStreamController {
       consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   public SseEmitter stream(@RequestBody @Valid ChatStreamRequest request) {
+    ChatProviderSelection selection =
+        chatProviderService.resolveSelection(request.provider(), request.model());
+
     ConversationContext context =
-        chatService.registerUserMessage(request.sessionId(), request.message());
+        chatService.registerUserMessage(
+            request.sessionId(), request.message(), selection.providerId(), selection.modelId());
 
     SseEmitter emitter = new SseEmitter(0L);
 
-    emit(emitter, "session", ChatStreamEvent.session(context.sessionId(), context.newSession()));
+    emit(
+        emitter,
+        "session",
+        ChatStreamEvent.session(
+            context.sessionId(), context.newSession(), selection.providerId(), selection.modelId()));
 
     StringBuilder assistantResponse = new StringBuilder();
+    ChatOptions chatOptions =
+        chatProviderService.buildOptions(selection, resolveOverrides(request.options()));
+
     Flux<ChatResponse> responseFlux =
-        chatClient
+        chatProviderService
+            .chatClient(selection.providerId())
             .prompt()
             .user(request.message())
             .advisors(
                 advisors ->
                     advisors.param(ChatMemory.CONVERSATION_ID, context.sessionId().toString()))
+            .options(chatOptions)
             .stream()
             .chatResponse();
 
@@ -72,9 +82,22 @@ public class ChatStreamController {
 
     Disposable subscription =
         responseFlux.subscribe(
-            response -> handleChunk(response, context.sessionId(), assistantResponse, emitter),
-            error -> handleError(error, context.sessionId(), emitter),
-            () -> handleCompletion(context.sessionId(), assistantResponse, emitter));
+            response ->
+                handleChunk(
+                    response,
+                    context.sessionId(),
+                    selection.providerId(),
+                    selection.modelId(),
+                    assistantResponse,
+                    emitter),
+            error -> handleError(error, context.sessionId(), selection, emitter),
+            () ->
+                handleCompletion(
+                    context.sessionId(),
+                    selection.providerId(),
+                    selection.modelId(),
+                    assistantResponse,
+                    emitter));
 
     subscriptionRef.set(subscription);
 
@@ -86,7 +109,10 @@ public class ChatStreamController {
               emitter,
               "error",
               ChatStreamEvent.error(
-                  context.sessionId(), "Stream timeout reached, closing connection."));
+                  context.sessionId(),
+                  "Stream timeout reached, closing connection.",
+                  selection.providerId(),
+                  selection.modelId()));
           emitter.complete();
         });
 
@@ -94,7 +120,12 @@ public class ChatStreamController {
   }
 
   private void handleChunk(
-      ChatResponse response, UUID sessionId, StringBuilder assistantResponse, SseEmitter emitter) {
+      ChatResponse response,
+      UUID sessionId,
+      String providerId,
+      String modelId,
+      StringBuilder assistantResponse,
+      SseEmitter emitter) {
     response
         .getResults()
         .forEach(
@@ -108,22 +139,36 @@ public class ChatStreamController {
               if (log.isDebugEnabled()) {
                 log.debug("Stream chunk for session {}: {}", sessionId, content);
               }
-              emit(emitter, "token", ChatStreamEvent.token(sessionId, content));
+              emit(
+                  emitter,
+                  "token",
+                  ChatStreamEvent.token(sessionId, content, providerId, modelId));
             });
   }
 
   private void handleCompletion(
-      UUID sessionId, StringBuilder assistantResponse, SseEmitter emitter) {
+      UUID sessionId,
+      String providerId,
+      String modelId,
+      StringBuilder assistantResponse,
+      SseEmitter emitter) {
     String content = assistantResponse.toString();
-    chatService.registerAssistantMessage(sessionId, content);
-    emit(emitter, "complete", ChatStreamEvent.complete(sessionId, content));
+    chatService.registerAssistantMessage(sessionId, content, providerId, modelId);
+    emit(
+        emitter,
+        "complete",
+        ChatStreamEvent.complete(sessionId, content, providerId, modelId));
     emitter.complete();
   }
 
-  private void handleError(Throwable error, UUID sessionId, SseEmitter emitter) {
+  private void handleError(
+      Throwable error, UUID sessionId, ChatProviderSelection selection, SseEmitter emitter) {
     String message = buildErrorMessage(error);
     logError(sessionId, error);
-    emit(emitter, "error", ChatStreamEvent.error(sessionId, message));
+    emit(
+        emitter,
+        "error",
+        ChatStreamEvent.error(sessionId, message, selection.providerId(), selection.modelId()));
     emitter.complete();
   }
 
@@ -189,5 +234,12 @@ public class ChatStreamController {
       return normalized;
     }
     return normalized.substring(0, maxLength) + "...";
+  }
+
+  private ChatRequestOverrides resolveOverrides(ChatStreamRequestOptions options) {
+    if (options == null) {
+      return ChatRequestOverrides.empty();
+    }
+    return new ChatRequestOverrides(options.temperature(), options.topP(), options.maxTokens());
   }
 }

@@ -34,7 +34,13 @@ import org.springframework.test.web.reactive.server.WebTestClient;
       "spring.ai.openai.base-url=http://localhost",
       "app.chat.memory.window-size=3",
       "app.chat.memory.retention=PT24H",
-      "app.chat.memory.cleanup-interval=PT1H"
+      "app.chat.memory.cleanup-interval=PT1H",
+      "app.chat.default-provider=real",
+      "app.chat.providers.real.type=OPENAI",
+      "app.chat.providers.real.default-model=real-model",
+      "app.chat.providers.real.temperature=0.7",
+      "app.chat.providers.real.top-p=1.0",
+      "app.chat.providers.real.max-tokens=1024"
     })
 @AutoConfigureWebTestClient
 @ActiveProfiles("test")
@@ -72,7 +78,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             .uri("/api/llm/chat/stream")
             .contentType(MediaType.APPLICATION_JSON)
             .accept(MediaType.TEXT_EVENT_STREAM)
-            .bodyValue(new ChatStreamRequest(null, "Hello over HTTP"))
+            .bodyValue(new ChatStreamRequest(null, "Hello over HTTP", null, null, null))
             .exchange()
             .expectStatus()
             .isOk()
@@ -90,6 +96,8 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
 
     ChatStreamEvent sessionEvent = events.getFirst();
     assertThat(sessionEvent.newSession()).isTrue();
+    assertThat(sessionEvent.provider()).isEqualTo("stub");
+    assertThat(sessionEvent.model()).isEqualTo("stub-model");
 
     List<ChatStreamEvent> subsequentEvents = events.subList(1, events.size());
     assertThat(subsequentEvents)
@@ -102,6 +110,12 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             org.assertj.core.api.Assertions.tuple("token", "via "),
             org.assertj.core.api.Assertions.tuple("token", "http"),
             org.assertj.core.api.Assertions.tuple("complete", "via http"));
+    assertThat(subsequentEvents)
+        .extracting(ChatStreamEvent::provider)
+        .containsOnly("stub");
+    assertThat(subsequentEvents)
+        .extracting(ChatStreamEvent::model)
+        .containsOnly("stub-model");
 
     ChatSession persistedSession =
         chatSessionRepository.findById(sessionEvent.sessionId()).orElseThrow();
@@ -114,6 +128,12 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
         .containsExactly(
             org.assertj.core.api.Assertions.tuple(ChatRole.USER, "Hello over HTTP"),
             org.assertj.core.api.Assertions.tuple(ChatRole.ASSISTANT, "via http"));
+    assertThat(history)
+        .extracting(ChatMessage::getProvider)
+        .containsOnly("stub");
+    assertThat(history)
+        .extracting(ChatMessage::getModel)
+        .containsOnly("stub-model");
 
     Integer memoryEntries =
         jdbcTemplate.queryForObject(
