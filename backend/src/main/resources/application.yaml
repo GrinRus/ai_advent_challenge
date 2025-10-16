@@ -25,7 +25,7 @@ spring:
       chat:
         completions-path: ${ZHIPU_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
         options:
-          model: ${ZHIPU_DEFAULT_MODEL:glm-4-6}
+          model: ${ZHIPU_DEFAULT_MODEL:glm-4.6}
           temperature: ${ZHIPU_TEMPERATURE:0.7}
           top-p: ${ZHIPU_TOP_P:0.95}
           max-tokens: ${ZHIPU_MAX_TOKENS:1024}
@@ -51,9 +51,9 @@ app:
         temperature: ${ZHIPU_TEMPERATURE:0.7}
         top-p: ${ZHIPU_TOP_P:0.95}
         max-tokens: ${ZHIPU_MAX_TOKENS:1024}
-        default-model: ${ZHIPU_DEFAULT_MODEL:glm-4-6}
+        default-model: ${ZHIPU_DEFAULT_MODEL:glm-4.6}
         models:
-          glm-4-6:
+          'glm-4.6':
             display-name: "GLM-4.6"
             tier: pro
             pricing:

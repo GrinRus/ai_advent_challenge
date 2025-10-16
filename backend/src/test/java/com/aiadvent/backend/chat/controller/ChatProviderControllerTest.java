@@ -51,7 +51,7 @@ class ChatProviderControllerTest {
     ChatProvidersProperties.Provider zhipu = new ChatProvidersProperties.Provider();
     zhipu.setType(ChatProviderType.ZHIPUAI);
     zhipu.setDisplayName("ZhiPu AI");
-    zhipu.setDefaultModel("glm-4-6");
+    zhipu.setDefaultModel("glm-4.6");
     zhipu.setTemperature(0.6);
     zhipu.setTopP(0.9);
     zhipu.setMaxTokens(2048);
@@ -61,7 +61,7 @@ class ChatProviderControllerTest {
     glm46.setTier("pro");
     glm46.getPricing().setInputPer1KTokens(new BigDecimal("0.0006"));
     glm46.getPricing().setOutputPer1KTokens(new BigDecimal("0.0022"));
-    zhipu.getModels().put("glm-4-6", glm46);
+    zhipu.getModels().put("glm-4.6", glm46);
 
     ChatProvidersProperties.Model glm4Air = new ChatProvidersProperties.Model();
     glm4Air.setDisplayName("GLM-4 Air");
@@ -92,8 +92,8 @@ class ChatProviderControllerTest {
         .andExpect(jsonPath("$.providers[0].models[0].displayName").value("GPT-4o Mini"))
         .andExpect(jsonPath("$.providers[0].models[0].tier").value("budget"))
         .andExpect(jsonPath("$.providers[1].id").value("zhipu"))
-        .andExpect(jsonPath("$.providers[1].defaultModel").value("glm-4-6"))
-        .andExpect(jsonPath("$.providers[1].models[0].id").value("glm-4-6"))
+        .andExpect(jsonPath("$.providers[1].defaultModel").value("glm-4.6"))
+        .andExpect(jsonPath("$.providers[1].models[0].id").value("glm-4.6"))
         .andExpect(jsonPath("$.providers[1].models[1].id").value("glm-4-air"));
   }
 }
