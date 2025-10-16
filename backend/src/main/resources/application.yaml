@@ -59,18 +59,18 @@ app:
             pricing:
               input-per-1k-tokens: 0.0006
               output-per-1k-tokens: 0.0022
-          glm-4-air:
-            display-name: "GLM-4 Air"
+          'glm-4.5':
+            display-name: "GLM-4.5"
             tier: standard
             pricing:
-              input-per-1k-tokens: 0.0008
-              output-per-1k-tokens: 0.0008
-          glm-4-flash:
-            display-name: "GLM-4 Flash"
+              input-per-1k-tokens: 0.00035
+              output-per-1k-tokens: 0.00155
+          'glm-4.5-air':
+            display-name: "GLM-4.5 Air"
             tier: budget
             pricing:
-              input-per-1k-tokens: 0.0004
-              output-per-1k-tokens: 0.0004
+              input-per-1k-tokens: 0.0002
+              output-per-1k-tokens: 0.0011
       openai:
         type: OPENAI
         display-name: "OpenAI"

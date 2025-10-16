@@ -34,8 +34,8 @@ Frontend контейнер проксирует все запросы `/api/*` 
   | Провайдер  | Модель        | Класс    | Стоимость (вход/выход, $ за 1K токенов) | Рекомендации |
   |------------|---------------|----------|------------------------------------------|--------------|
   | zhipu.ai   | GLM-4.6       | pro      | 0.0006 / 0.0022                          | расширенные сценарии, длинный контекст и код |
-  | zhipu.ai   | GLM-4 Air     | standard | 0.0008 / 0.0008                          | основной ассистент, баланс качества и цены |
-  | zhipu.ai   | GLM-4 Flash   | budget   | 0.0004 / 0.0004                          | черновые ответы, предпросмотры UI |
+  | zhipu.ai   | GLM-4.5       | standard | 0.00035 / 0.00155                        | основной ассистент, баланс качества и цены |
+  | zhipu.ai   | GLM-4.5 Air   | budget   | 0.0002 / 0.0011                          | черновые ответы, предпросмотры UI |
   | OpenAI     | GPT-4o Mini   | budget   | 0.00015 / 0.0006                         | быстрые пользовательские фичи, демо |
   | OpenAI     | GPT-4o        | pro      | 0.0012 / 0.0032                          | сложные задачи, критичные запросы |
 - UI может передавать `provider` и `model` на каждый запрос. Эти значения сохраняются в истории (`chat_message.provider`, `chat_message.model`) и приходят обратно в SSE-события (`session`, `token`, `complete`, `error`) для упрощённой диагностики.
@@ -45,6 +45,41 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - `CHAT_MEMORY_CLEANUP_INTERVAL` — периодичность фоновой задачи очистки (по умолчанию `PT30M`).
   - Метрики `chat_memory_evictions_total` и `chat_memory_conversations` доступны через Spring Boot Actuator.
 - Для frontend достаточно установить `VITE_API_BASE_URL` (по умолчанию `/api`). SSE-подписка выполняется на эндпоинт `POST /api/llm/chat/stream`.
+
+### Синхронный структурированный ответ
+- Новый эндпоинт `POST /api/llm/chat/sync` принимает `ChatSyncRequest` (тот же формат, что и стриминг: `sessionId`, `message`, `provider`, `model`, `options`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
+- Backend использует `BeanOutputConverter<StructuredSyncResponse>` из Spring AI: для OpenAI схема пробрасывается через `responseFormat(JSON_SCHEMA)` и `strict=true`, для остальных провайдеров (например, ZhiPu) генерация схемы подмешивается в промпт.
+- Запрос проходит через `StructuredSyncService`, который настраивает провайдера, повторяет вызов до трёх раз на 429/5xx и ошибки схемы (экспоненциальный backoff 250→1000 мс) и возвращает 422 при окончательном несоответствии JSON.
+- Ответ имеет фиксированную структуру `StructuredSyncResponse` и включает технические поля (`provider.type`, `provider.model`, `usage`) и полезную нагрузку в `answer`. Пример:
+
+```json
+{
+  "requestId": "4bd0f474-78e8-4ffd-a990-3aa54f0704c3",
+  "status": "success",
+  "provider": {
+    "type": "ZHIPUAI",
+    "model": "glm-4.6"
+  },
+  "answer": {
+    "summary": "Краткое описание ответа.",
+    "items": [
+      {
+        "title": "Основная рекомендация",
+        "details": "Расширенный текст ответа.",
+        "tags": ["insight", "priority"]
+      }
+    ],
+    "confidence": 0.82
+  },
+  "usage": {
+    "promptTokens": 350,
+    "completionTokens": 512,
+    "totalTokens": 862
+  },
+  "latencyMs": 1240,
+  "timestamp": "2024-05-24T10:15:30Z"
+}
+```
 
 ## Тестирование
 - `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.

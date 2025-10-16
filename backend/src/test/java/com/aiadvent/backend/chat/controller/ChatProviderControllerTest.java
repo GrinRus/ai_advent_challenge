@@ -63,12 +63,19 @@ class ChatProviderControllerTest {
     glm46.getPricing().setOutputPer1KTokens(new BigDecimal("0.0022"));
     zhipu.getModels().put("glm-4.6", glm46);
 
-    ChatProvidersProperties.Model glm4Air = new ChatProvidersProperties.Model();
-    glm4Air.setDisplayName("GLM-4 Air");
-    glm4Air.setTier("standard");
-    glm4Air.getPricing().setInputPer1KTokens(new BigDecimal("0.0008"));
-    glm4Air.getPricing().setOutputPer1KTokens(new BigDecimal("0.0008"));
-    zhipu.getModels().put("glm-4-air", glm4Air);
+    ChatProvidersProperties.Model glm45 = new ChatProvidersProperties.Model();
+    glm45.setDisplayName("GLM-4.5");
+    glm45.setTier("standard");
+    glm45.getPricing().setInputPer1KTokens(new BigDecimal("0.00035"));
+    glm45.getPricing().setOutputPer1KTokens(new BigDecimal("0.00155"));
+    zhipu.getModels().put("glm-4.5", glm45);
+
+    ChatProvidersProperties.Model glm45Air = new ChatProvidersProperties.Model();
+    glm45Air.setDisplayName("GLM-4.5 Air");
+    glm45Air.setTier("budget");
+    glm45Air.getPricing().setInputPer1KTokens(new BigDecimal("0.0002"));
+    glm45Air.getPricing().setOutputPer1KTokens(new BigDecimal("0.0011"));
+    zhipu.getModels().put("glm-4.5-air", glm45Air);
 
     Map<String, ChatProvidersProperties.Provider> providers = new LinkedHashMap<>();
     providers.put("openai", openai);
@@ -94,6 +101,7 @@ class ChatProviderControllerTest {
         .andExpect(jsonPath("$.providers[1].id").value("zhipu"))
         .andExpect(jsonPath("$.providers[1].defaultModel").value("glm-4.6"))
         .andExpect(jsonPath("$.providers[1].models[0].id").value("glm-4.6"))
-        .andExpect(jsonPath("$.providers[1].models[1].id").value("glm-4-air"));
+        .andExpect(jsonPath("$.providers[1].models[1].id").value("glm-4.5"))
+        .andExpect(jsonPath("$.providers[1].models[2].id").value("glm-4.5-air"));
   }
 }

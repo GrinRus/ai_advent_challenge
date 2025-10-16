@@ -121,7 +121,7 @@
 ### Конфигурация и инфраструктура
 - [x] Описать в `application.yaml` и профилях структуру настроек провайдеров: base URL, ключ, таймауты, лимиты токенов, список доступных моделей (id, отображаемое имя, оценочная стоимость).
 - [x] Синхронизировать переменные окружения в `.env.example` и `docker-compose.yml`, обеспечить независимое управление ключами для обоих провайдеров.
-- [x] Задокументировать поддерживаемые свойства `spring.ai.openai.*` и `spring.ai.zhipuai.*`, включая runtime-перекрытия `chat.options.*`, и добавить рекомендации по выбору моделей (`gpt-4o`, `gpt-4o-mini`, `GLM-4.6`, `GLM-4-Air`, `GLM-4-Flash` и др.).
+- [x] Задокументировать поддерживаемые свойства `spring.ai.openai.*` и `spring.ai.zhipuai.*`, включая runtime-перекрытия `chat.options.*`, и добавить рекомендации по выбору моделей (`gpt-4o`, `gpt-4o-mini`, `GLM-4.6`, `GLM-4.5`, `GLM-4.5 Air` и др.).
 - [x] Обновить документацию (`docs/infra.md`, `README.md`) с таблицей моделей: класс (budget/standard/pro), ориентировочная стоимость и рекомендуемые сценарии.
 - [x] Зафиксировать требования по актуализации документации при добавлении новых провайдеров/моделей (инструкции в `docs/processes.md` или ADR).
 
@@ -140,13 +140,13 @@
 
 ## Wave 4 — Structured Sync Response
 ### Backend
-- [ ] Зафиксировать отдельный стек синхронных DTO: `ChatSyncRequest`, `StructuredSyncResponse`, вложенные `StructuredSyncAnswer`/`StructuredSyncItem`/`UsageStats`, `StructuredSyncStatus`, и задокументировать JSON пример в `docs/infra.md`.
-- [ ] Добавить `BeanOutputConverter<StructuredSyncResponse>` в конфигурацию (при необходимости `ParameterizedTypeReference` для коллекций) и описать, как получаем JSON Schema/format для промпта.
-- [ ] Реализовать новый `ChatSyncController` с POST `/api/llm/chat/sync`: валидация входа, регистрация `registerUserMessage`, вызов синхронного сервиса, возврат `StructuredSyncResponse`.
-- [ ] Создать `StructuredSyncService`, который выбирает провайдера/модель, собирает `ChatOptions`, вызывает `chatProviderService.chatClient(...).prompt()...call().entity(StructuredSyncResponse.class)` с `BeanOutputConverter`, прокидывает conversation/system контекст и регистрирует ответ ассистента.
-- [ ] Сохранить текущие стриминговые эндпоинты без изменений: никаких требований structured output для `/api/llm/chat/stream` и связанных опций.
-- [ ] Расширить адаптеры провайдеров для sync-режима: OpenAI — `responseFormat(JSON_SCHEMA)` + `strict=true`, ZhiPu — добавление `beanOutputConverter.getFormat()` в промпт и валидация десериализации.
-- [ ] Настроить ретраи (3 попытки, экспоненциальный backoff 250→1000 мс) на 429/5xx и ошибки схемы, при окончательном провале отдавать 422.
+- [x] Зафиксировать отдельный стек синхронных DTO: `ChatSyncRequest`, `StructuredSyncResponse`, вложенные `StructuredSyncAnswer`/`StructuredSyncItem`/`UsageStats`, `StructuredSyncStatus`, и задокументировать JSON пример в `docs/infra.md`.
+- [x] Добавить `BeanOutputConverter<StructuredSyncResponse>` в конфигурацию (при необходимости `ParameterizedTypeReference` для коллекций) и описать, как получаем JSON Schema/format для промпта.
+- [x] Реализовать новый `ChatSyncController` с POST `/api/llm/chat/sync`: валидация входа, регистрация `registerUserMessage`, вызов синхронного сервиса, возврат `StructuredSyncResponse`.
+- [x] Создать `StructuredSyncService`, который выбирает провайдера/модель, собирает `ChatOptions`, вызывает `chatProviderService.chatClient(...).prompt()...call().entity(StructuredSyncResponse.class)` с `BeanOutputConverter`, прокидывает conversation/system контекст и регистрирует ответ ассистента.
+- [x] Сохранить текущие стриминговые эндпоинты без изменений: никаких требований structured output для `/api/llm/chat/stream` и связанных опций.
+- [x] Расширить адаптеры провайдеров для sync-режима: OpenAI — `responseFormat(JSON_SCHEMA)` + `strict=true`, ZhiPu — добавление `beanOutputConverter.getFormat()` в промпт и валидация десериализации.
+- [x] Настроить ретраи (3 попытки, экспоненциальный backoff 250→1000 мс) на 429/5xx и ошибки схемы, при окончательном провале отдавать 422.
 - [ ] Обновить OpenAPI и `docs/infra.md`: новое API, требования к JSON, поведение провайдеров, без телеметрии на первом этапе.
 
 **JSON ответа (черновик)**
