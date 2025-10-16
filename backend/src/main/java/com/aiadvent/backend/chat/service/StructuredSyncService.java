@@ -39,7 +39,8 @@ public class StructuredSyncService {
   private static final Logger log = LoggerFactory.getLogger(StructuredSyncService.class);
 
   private static final String JSON_INSTRUCTION_TEMPLATE =
-      """Ты отвечаешь строгим JSON без какого-либо текста до или после структуры.
+      """
+      Ты отвечаешь строгим JSON без какого-либо текста до или после структуры.
       Используй следующую схему и заполняй все обязательные поля:
       %s
       """;
@@ -119,7 +120,8 @@ public class StructuredSyncService {
                 advisors ->
                     advisors.param(ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()))
             .options(options)
-            .call();
+            .call()
+            .chatResponse();
 
     String content = extractContent(response);
     if (!StringUtils.hasText(content)) {

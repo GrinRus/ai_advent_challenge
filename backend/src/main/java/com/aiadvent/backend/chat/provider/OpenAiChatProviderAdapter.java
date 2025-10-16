@@ -12,7 +12,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.openai.api.common.ResponseFormat;
+import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -99,9 +99,15 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
       BeanOutputConverter<?> outputConverter) {
     OpenAiChatOptions.Builder builder = configureBuilder(selection, overrides);
     ResponseFormat responseFormat =
-        new ResponseFormat(ResponseFormat.Type.JSON_SCHEMA, outputConverter.getJsonSchema());
+        ResponseFormat.builder()
+            .type(ResponseFormat.Type.JSON_SCHEMA)
+            .jsonSchema(
+                ResponseFormat.JsonSchema.builder()
+                    .schema(outputConverter.getJsonSchema())
+                    .strict(Boolean.TRUE)
+                    .build())
+            .build();
     builder.responseFormat(responseFormat);
-    builder.strict(true);
     return builder.build();
   }
 
