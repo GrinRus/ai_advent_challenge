@@ -12,6 +12,8 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,5 +108,30 @@ class ChatServiceTest {
     assertThat(saved.getContent()).isEqualTo("Ответ бота");
     assertThat(saved.getProvider()).isEqualTo("z.ai");
     assertThat(saved.getModel()).isEqualTo("glm");
+  }
+
+  @Test
+  void registerAssistantMessageStoresStructuredPayload() {
+    ChatSession session = new ChatSession();
+    UUID sessionId = UUID.randomUUID();
+    ReflectionTestUtils.setField(session, "id", sessionId);
+
+    when(chatSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+    when(chatMessageRepository.findTopBySessionOrderBySequenceNumberDesc(session))
+        .thenReturn(Optional.of(new ChatMessage(session, ChatRole.USER, "msg", 1, "z.ai", "glm")));
+    when(chatMessageRepository.save(any(ChatMessage.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    ObjectMapper mapper = new ObjectMapper();
+    ObjectNode payload = mapper.createObjectNode();
+    payload.put("status", "success");
+
+    chatService.registerAssistantMessage(
+        sessionId, "{\"status\":\"success\"}", "z.ai", "glm", payload);
+
+    ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+    verify(chatMessageRepository).save(messageCaptor.capture());
+    ChatMessage saved = messageCaptor.getValue();
+    assertThat(saved.getStructuredPayload()).isEqualTo(payload);
   }
 }

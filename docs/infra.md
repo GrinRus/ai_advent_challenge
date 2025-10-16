@@ -29,6 +29,21 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - OpenAI: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL`, `OPENAI_TEMPERATURE`, `OPENAI_TOP_P`, `OPENAI_MAX_TOKENS`, `OPENAI_TIMEOUT`.
   - Zhipu (z.ai): `ZHIPU_BASE_URL`, `ZHIPU_COMPLETIONS_PATH`, `ZHIPU_API_KEY`, `ZHIPU_DEFAULT_MODEL`, `ZHIPU_TEMPERATURE`, `ZHIPU_TOP_P`, `ZHIPU_MAX_TOKENS`, `ZHIPU_TIMEOUT`.
   Переменные заданы в `.env.example` и автоматически прокидываются в контейнер backend через `docker-compose.yml`.
+- Каждому провайдеру можно задать стратегию ретраев через секцию `retry` в `application.yaml` (параметры также доступны как env-переменные `*_RETRY_*`). Структура:
+
+  ```yaml
+  app:
+    chat:
+      providers:
+        openai:
+          retry:
+            attempts: 3            # максимум попыток
+            initial-delay: 250ms   # стартовый backoff (Duration)
+            multiplier: 2.0        # коэффициент при экспоненциальном росте
+            retryable-statuses: 429,500,502,503,504
+  ```
+
+  RetryTemplate собирается на лету для каждого провайдера: WebClient ошибки сравниваются со списком статусов, ошибки схемы (`422`) также участвуют в ретраях до исчерпания попыток. Финальный статус/причина логируются в `StructuredSyncService`.
 - Ориентировочные тарифы и сценарии использования:
 
   | Провайдер  | Модель        | Класс    | Стоимость (вход/выход, $ за 1K токенов) | Рекомендации |
@@ -49,8 +64,9 @@ Frontend контейнер проксирует все запросы `/api/*` 
 ### Синхронный структурированный ответ
 - Новый эндпоинт `POST /api/llm/chat/sync` принимает `ChatSyncRequest` (тот же формат, что и стриминг: `sessionId`, `message`, `provider`, `model`, `options`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
 - Backend использует `BeanOutputConverter<StructuredSyncResponse>` из Spring AI: для OpenAI схема пробрасывается через `responseFormat(JSON_SCHEMA)` и `strict=true`, для остальных провайдеров (например, ZhiPu) генерация схемы подмешивается в промпт.
-- Запрос проходит через `StructuredSyncService`, который настраивает провайдера, повторяет вызов до трёх раз на 429/5xx и ошибки схемы (экспоненциальный backoff 250→1000 мс) и возвращает 422 при окончательном несоответствии JSON.
+- Запрос проходит через `StructuredSyncService`, который собирает RetryTemplate на основе конфигурации провайдера, повторяет вызов на указанных статусах/ошибках схемы и логирует номер попытки/причину остановки. Финальный 422 отдается при окончательном несоответствии JSON.
 - Ответ имеет фиксированную структуру `StructuredSyncResponse` и включает технические поля (`provider.type`, `provider.model`, `usage`) и полезную нагрузку в `answer`. Пример:
+- Сериализованный ответ сохраняется в `chat_message.structured_payload` (тип `JSONB`), что позволяет фронтенду получать карточки истории из базы. Колонка индексирована по `(session_id, created_at)` для быстрых выборок.
 
 ```json
 {

@@ -12,10 +12,16 @@ import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -28,6 +34,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.http.HttpStatus;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.support.RetryTemplate;
+import org.springframework.retry.support.RetryTemplateBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -37,6 +44,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class StructuredSyncService {
 
   private static final Logger log = LoggerFactory.getLogger(StructuredSyncService.class);
+  private static final long MAX_BACKOFF_MS = 10_000L;
 
   private static final String JSON_INSTRUCTION_TEMPLATE =
       """
@@ -48,22 +56,18 @@ public class StructuredSyncService {
   private final ChatProviderService chatProviderService;
   private final ChatService chatService;
   private final BeanOutputConverter<StructuredSyncResponse> outputConverter;
-  private final RetryTemplate retryTemplate;
+  private final ObjectMapper objectMapper;
+  private final ConcurrentMap<String, RetryTemplate> retryTemplates = new ConcurrentHashMap<>();
 
   public StructuredSyncService(
       ChatProviderService chatProviderService,
       ChatService chatService,
-      BeanOutputConverter<StructuredSyncResponse> outputConverter) {
+      BeanOutputConverter<StructuredSyncResponse> outputConverter,
+      ObjectMapper objectMapper) {
     this.chatProviderService = chatProviderService;
     this.chatService = chatService;
     this.outputConverter = outputConverter;
-    this.retryTemplate =
-        RetryTemplate.builder()
-            .maxAttempts(3)
-            .exponentialBackoff(250, 2.0, 1000)
-            .retryOn(WebClientResponseException.class)
-            .retryOn(SchemaValidationException.class)
-            .build();
+    this.objectMapper = objectMapper;
   }
 
   public StructuredSyncResult sync(ChatSyncRequest request) {
@@ -79,19 +83,27 @@ public class StructuredSyncService {
             selection.modelId());
     UUID requestId = UUID.randomUUID();
 
-    StructuredSyncResponse response =
-        retryTemplate.execute(
-        retryContext ->
-            executeAttempt(
-                request,
-                context,
-                selection,
-                provider,
-                overrides,
-                requestId,
-                retryContext),
-        recovery -> handleFailure(recovery.getLastThrowable()));
-    return new StructuredSyncResult(context, response);
+    RetryTemplate retryTemplate = resolveRetryTemplate(selection.providerId(), provider);
+
+    try {
+      StructuredSyncResponse response =
+          retryTemplate.execute(
+              retryContext ->
+                  executeAttempt(
+                      request,
+                      context,
+                      selection,
+                      provider,
+                      overrides,
+                      requestId,
+                      retryContext),
+              recovery -> handleFailure(recovery));
+      return new StructuredSyncResult(context, response);
+    } catch (RuntimeException ex) {
+      chatService.rollbackUserMessage(
+          context.sessionId(), context.messageId(), context.newSession());
+      throw ex;
+    }
   }
 
   private StructuredSyncResponse executeAttempt(
@@ -101,7 +113,13 @@ public class StructuredSyncService {
       ChatProvidersProperties.Provider provider,
       ChatRequestOverrides overrides,
       UUID requestId,
-      RetryContext retryContext) {
+      RetryContext retryContext)
+      throws ResponseStatusException {
+    if (retryContext != null) {
+      retryContext.setAttribute("sessionId", conversation.sessionId());
+      retryContext.setAttribute("providerId", selection.providerId());
+    }
+
     Instant attemptStart = Instant.now();
     ChatOptions options =
         chatProviderService.buildStructuredOptions(selection, overrides, outputConverter);
@@ -110,60 +128,90 @@ public class StructuredSyncService {
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());
     String userPrompt = enrichUserPrompt(request.message(), provider.getType());
 
-    ChatResponse response =
-        chatProviderService
-            .chatClient(selection.providerId())
-            .prompt()
-            .system(systemInstruction)
-            .user(userPrompt)
-            .advisors(
-                advisors ->
-                    advisors.param(ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()))
-            .options(options)
-            .call()
-            .chatResponse();
+    try {
+      ChatResponse response =
+          chatProviderService
+              .chatClient(selection.providerId())
+              .prompt()
+              .system(systemInstruction)
+              .user(userPrompt)
+              .advisors(
+                  advisors ->
+                      advisors.param(
+                          ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()))
+              .options(options)
+              .call()
+              .chatResponse();
 
-    String content = extractContent(response);
-    if (!StringUtils.hasText(content)) {
-      throw new SchemaValidationException("Model returned empty response for structured sync");
-    }
+      String content = extractContent(response);
+      if (!StringUtils.hasText(content)) {
+        throw new SchemaValidationException("Model returned empty response for structured sync");
+      }
 
-    StructuredSyncResponse payload = convert(content);
-    StructuredSyncUsageStats usage = resolveUsage(response.getMetadata());
-    long latencyMs = Duration.between(attemptStart, Instant.now()).toMillis();
+      StructuredSyncResponse payload = convert(content);
+      StructuredSyncUsageStats usage = resolveUsage(response.getMetadata());
+      long latencyMs = Duration.between(attemptStart, Instant.now()).toMillis();
 
-    StructuredSyncStatus status =
-        payload.status() != null ? payload.status() : StructuredSyncStatus.SUCCESS;
-    StructuredSyncAnswer answer = payload.answer();
-    if (answer == null) {
-      throw new SchemaValidationException("Structured answer is missing in the model response");
-    }
+      StructuredSyncStatus status =
+          payload.status() != null ? payload.status() : StructuredSyncStatus.SUCCESS;
+      StructuredSyncAnswer answer = payload.answer();
+      if (answer == null) {
+        throw new SchemaValidationException(
+            "Structured answer is missing in the model response");
+      }
 
-    StructuredSyncResponse finalResponse =
-        new StructuredSyncResponse(
-            payload.requestId() != null ? payload.requestId() : requestId,
-            status,
-            new StructuredSyncProvider(provider.getType().name(), selection.modelId()),
-            answer,
-            usage,
-            latencyMs,
-            Instant.now());
+      StructuredSyncResponse finalResponse =
+          new StructuredSyncResponse(
+              payload.requestId() != null ? payload.requestId() : requestId,
+              status,
+              new StructuredSyncProvider(provider.getType().name(), selection.modelId()),
+              answer,
+              usage,
+              latencyMs,
+              Instant.now());
 
-    chatService.registerAssistantMessage(
-        conversation.sessionId(), content, selection.providerId(), selection.modelId());
-
-    if (log.isDebugEnabled()) {
-      log.debug(
-          "Structured sync attempt {} succeeded for session {} using provider {}",
-          retryContext.getRetryCount() + 1,
+      JsonNode structuredPayload = serializePayload(finalResponse);
+      chatService.registerAssistantMessage(
           conversation.sessionId(),
-          selection.providerId());
-    }
+          content,
+          selection.providerId(),
+          selection.modelId(),
+          structuredPayload);
 
-    return finalResponse;
+      logAttemptSuccess(retryContext, conversation.sessionId(), selection.providerId());
+      return finalResponse;
+    } catch (RuntimeException ex) {
+      logAttemptFailure(retryContext, conversation.sessionId(), selection.providerId(), ex);
+      throw ex;
+    }
   }
 
-  private StructuredSyncResponse handleFailure(Throwable lastThrowable) {
+  private StructuredSyncResponse handleFailure(RetryContext retryContext) {
+    Throwable lastThrowable = retryContext != null ? retryContext.getLastThrowable() : null;
+    UUID sessionId = retryContext != null ? (UUID) retryContext.getAttribute("sessionId") : null;
+    String providerId =
+        retryContext != null ? (String) retryContext.getAttribute("providerId") : null;
+    int attempts = retryContext != null ? retryContext.getRetryCount() + 1 : 0;
+
+    if (lastThrowable != null) {
+      log.warn(
+          "Structured sync failed after {} attempt(s) for session {} using provider {}: {}",
+          attempts,
+          sessionId,
+          providerId,
+          lastThrowable.getMessage());
+    } else {
+      log.warn(
+          "Structured sync failed after {} attempt(s) for session {} using provider {}",
+          attempts,
+          sessionId,
+          providerId);
+    }
+
+    return mapFailure(lastThrowable);
+  }
+
+  private StructuredSyncResponse mapFailure(Throwable lastThrowable) {
     if (lastThrowable instanceof SchemaValidationException schemaError) {
       throw new ResponseStatusException(
           HttpStatus.UNPROCESSABLE_ENTITY, schemaError.getMessage(), schemaError);
@@ -239,6 +287,127 @@ public class StructuredSyncService {
       return ChatRequestOverrides.empty();
     }
     return new ChatRequestOverrides(options.temperature(), options.topP(), options.maxTokens());
+  }
+
+  private RetryTemplate resolveRetryTemplate(
+      String providerId, ChatProvidersProperties.Provider providerConfig) {
+    return retryTemplates.computeIfAbsent(
+        providerId, key -> buildRetryTemplate(providerConfig));
+  }
+
+  private RetryTemplate buildRetryTemplate(ChatProvidersProperties.Provider providerConfig) {
+    ChatProvidersProperties.Retry retryConfig =
+        providerConfig != null ? providerConfig.getRetry() : null;
+
+    int attempts = retryConfig != null ? Math.max(1, retryConfig.getAttempts()) : 3;
+    long initialInterval =
+        retryConfig != null && retryConfig.getInitialDelay() != null
+            ? Math.max(1L, retryConfig.getInitialDelay().toMillis())
+            : 250L;
+    Double configuredMultiplier = retryConfig != null ? retryConfig.getMultiplier() : null;
+    boolean useExponential =
+        configuredMultiplier != null && configuredMultiplier > 1.0;
+    double multiplier = useExponential ? configuredMultiplier : 2.0;
+    long maxInterval = useExponential ? computeMaxInterval(initialInterval, multiplier, attempts) : initialInterval;
+
+    Set<Integer> retryableStatuses =
+        retryConfig != null && retryConfig.getRetryableStatuses() != null
+            ? new HashSet<>(retryConfig.getRetryableStatuses())
+            : new HashSet<>(List.of(429, 500, 502, 503, 504));
+
+    RetryTemplateBuilder builder = RetryTemplate.builder().maxAttempts(attempts);
+
+    if (useExponential) {
+      builder = builder.exponentialBackoff(initialInterval, multiplier, maxInterval);
+    } else {
+      builder = builder.fixedBackoff(initialInterval);
+    }
+
+    if (!retryableStatuses.isEmpty()) {
+      builder =
+          builder.retryOn(
+              throwable ->
+                  throwable instanceof SchemaValidationException
+                      || (throwable instanceof WebClientResponseException webClientException
+                          && retryableStatuses.contains(webClientException.getStatusCode().value())));
+    } else {
+      builder = builder.retryOn(
+          throwable ->
+              throwable instanceof SchemaValidationException
+                  || throwable instanceof WebClientResponseException);
+    }
+
+    return builder.build();
+  }
+
+  private long computeMaxInterval(long initialInterval, double multiplier, int attempts) {
+    double current = initialInterval;
+    double max = initialInterval;
+    for (int i = 1; i < attempts; i++) {
+      current = Math.min(current * multiplier, MAX_BACKOFF_MS);
+      if (current > max) {
+        max = current;
+      }
+    }
+    long result = (long) Math.max(initialInterval, Math.min(max, MAX_BACKOFF_MS));
+    return result > 0 ? result : initialInterval;
+  }
+
+  private JsonNode serializePayload(StructuredSyncResponse response) {
+    if (response == null) {
+      return null;
+    }
+    try {
+      return objectMapper.valueToTree(response);
+    } catch (IllegalArgumentException ex) {
+      log.warn(
+          "Failed to serialize structured payload for request {}: {}",
+          response.requestId(),
+          ex.getMessage());
+      return null;
+    }
+  }
+
+  private void logAttemptSuccess(RetryContext context, UUID sessionId, String providerId) {
+    int attempt = context != null ? context.getRetryCount() + 1 : 1;
+    if (attempt > 1) {
+      log.info(
+          "Structured sync attempt {} succeeded for session {} using provider {}",
+          attempt,
+          sessionId,
+          providerId);
+    } else if (log.isDebugEnabled()) {
+      log.debug(
+          "Structured sync attempt {} succeeded for session {} using provider {}",
+          attempt,
+          sessionId,
+          providerId);
+    }
+  }
+
+  private void logAttemptFailure(
+      RetryContext context, UUID sessionId, String providerId, Throwable throwable) {
+    if (throwable == null) {
+      return;
+    }
+    int attempt = context != null ? context.getRetryCount() + 1 : 1;
+    String message = throwable.getMessage();
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "Structured sync attempt {} failed for session {} using provider {}: {}",
+          attempt,
+          sessionId,
+          providerId,
+          message,
+          throwable);
+    } else {
+      log.info(
+          "Structured sync attempt {} failed for session {} using provider {}: {}",
+          attempt,
+          sessionId,
+          providerId,
+          message);
+    }
   }
 
   private static final class SchemaValidationException extends RuntimeException {

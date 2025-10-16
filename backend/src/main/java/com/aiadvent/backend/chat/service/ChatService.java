@@ -5,6 +5,7 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -48,15 +49,26 @@ public class ChatService {
     }
 
     int nextSequence = nextSequenceNumber(session);
-    chatMessageRepository.save(
-        new ChatMessage(session, ChatRole.USER, content, nextSequence, provider, model));
+    ChatMessage saved =
+        chatMessageRepository.save(
+            new ChatMessage(session, ChatRole.USER, content, nextSequence, provider, model));
 
-    return new ConversationContext(session.getId(), newSession);
+    return new ConversationContext(session.getId(), newSession, saved.getId());
   }
 
   @Transactional
   public void registerAssistantMessage(UUID sessionId, String content, String provider, String model) {
-    if (!StringUtils.hasText(content)) {
+    registerAssistantMessage(sessionId, content, provider, model, null);
+  }
+
+  @Transactional
+  public void registerAssistantMessage(
+      UUID sessionId,
+      String content,
+      String provider,
+      String model,
+      JsonNode structuredPayload) {
+    if (!StringUtils.hasText(content) && structuredPayload == null) {
       return;
     }
 
@@ -70,7 +82,8 @@ public class ChatService {
 
     int nextSequence = nextSequenceNumber(session);
     chatMessageRepository.save(
-        new ChatMessage(session, ChatRole.ASSISTANT, content, nextSequence, provider, model));
+        new ChatMessage(
+            session, ChatRole.ASSISTANT, content, nextSequence, provider, model, structuredPayload));
   }
 
   private int nextSequenceNumber(ChatSession session) {
@@ -79,5 +92,19 @@ public class ChatService {
             .map(ChatMessage::getSequenceNumber)
             .orElse(0)
         + 1;
+  }
+
+  @Transactional
+  public void rollbackUserMessage(UUID sessionId, UUID messageId, boolean newSession) {
+    if (sessionId == null) {
+      return;
+    }
+    if (newSession) {
+      chatSessionRepository.deleteById(sessionId);
+      return;
+    }
+    if (messageId != null && chatMessageRepository.existsById(messageId)) {
+      chatMessageRepository.deleteById(messageId);
+    }
   }
 }

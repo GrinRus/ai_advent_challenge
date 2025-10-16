@@ -6,6 +6,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 @Slf4j
 @RestControllerAdvice
@@ -18,5 +19,10 @@ public class GlobalExceptionHandler {
     problem.setTitle("Unexpected error");
     problem.setDetail("Произошла непредвиденная ошибка. Попробуйте повторить запрос позже.");
     return ResponseEntity.internalServerError().body(problem);
+  }
+
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ProblemDetail> handleResponseStatusException(ResponseStatusException ex) {
+    return ResponseEntity.status(ex.getStatusCode()).body(ex.getBody());
   }
 }

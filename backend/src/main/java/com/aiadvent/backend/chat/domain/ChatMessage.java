@@ -1,5 +1,6 @@
 package com.aiadvent.backend.chat.domain;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,7 +14,9 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "chat_message")
@@ -41,6 +44,10 @@ public class ChatMessage {
   @Column(name = "model", length = 128)
   private String model;
 
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "structured_payload")
+  private JsonNode structuredPayload;
+
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
@@ -53,12 +60,24 @@ public class ChatMessage {
       Integer sequenceNumber,
       String provider,
       String model) {
+    this(session, role, content, sequenceNumber, provider, model, null);
+  }
+
+  public ChatMessage(
+      ChatSession session,
+      ChatRole role,
+      String content,
+      Integer sequenceNumber,
+      String provider,
+      String model,
+      JsonNode structuredPayload) {
     this.session = session;
     this.role = role;
     this.content = content;
     this.sequenceNumber = sequenceNumber;
     this.provider = provider;
     this.model = model;
+    this.structuredPayload = structuredPayload;
   }
 
   @PrePersist
@@ -92,6 +111,10 @@ public class ChatMessage {
 
   public String getModel() {
     return model;
+  }
+
+  public JsonNode getStructuredPayload() {
+    return structuredPayload;
   }
 
   public Instant getCreatedAt() {

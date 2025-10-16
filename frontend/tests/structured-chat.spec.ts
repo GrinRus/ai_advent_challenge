@@ -91,9 +91,9 @@ test('structured chat request renders structured response', async ({ page }) => 
 
   await page.getByRole('button', { name: /Отправ/ }).click();
 
-  await expect(page.getByTestId('structured-summary-text')).toHaveText(
-    structuredResponseFixture.answer.summary,
-  );
+  await expect(
+    page.getByTestId('structured-summary-text').first(),
+  ).toHaveText(structuredResponseFixture.answer.summary);
 
   const firstItem = page.getByTestId('structured-item').first();
   await expect(firstItem.locator('.structured-item-title')).toHaveText(
@@ -108,4 +108,11 @@ test('structured chat request renders structured response', async ({ page }) => 
   ).toBeVisible();
   await expect(page.getByText('Prompt')).toBeVisible();
   await expect(page.getByText('Total')).toBeVisible();
+
+  await expect(
+    page.locator('.structured-request-preview').first(),
+  ).toContainText('Сформируй план запуска');
+
+  await page.getByTestId('tab-stream').click();
+  await expect(page.getByTestId('structured-response-card').first()).toBeVisible();
 });

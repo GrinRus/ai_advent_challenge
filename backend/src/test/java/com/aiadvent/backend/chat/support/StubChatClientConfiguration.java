@@ -132,7 +132,17 @@ public class StubChatClientConfiguration {
     @Override
     public ChatResponse call(Prompt prompt) {
       StubChatClientState.capturePrompt(prompt);
-      String aggregated = String.join("", StubChatClientState.currentTokens());
+      StubChatClientState.incrementSyncCall();
+      Object override = StubChatClientState.pollSyncResponse();
+      if (override instanceof RuntimeException runtimeException) {
+        throw runtimeException;
+      }
+      String aggregated;
+      if (override instanceof String customResponse) {
+        aggregated = customResponse;
+      } else {
+        aggregated = String.join("", StubChatClientState.currentTokens());
+      }
       Generation generation = new Generation(AssistantMessage.builder().content(aggregated).build());
       return new ChatResponse(java.util.List.of(generation));
     }

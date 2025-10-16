@@ -223,3 +223,22 @@ databaseChangeLog:
               UPDATE chat_message
               SET provider = COALESCE(provider, 'z.ai'),
                   model = COALESCE(model, 'glm-4.6');
+  - changeSet:
+      id: 0007-add-structured-payload-to-chat-message
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: chat_message
+            columns:
+              - column:
+                  name: structured_payload
+                  type: JSONB
+        - createIndex:
+            tableName: chat_message
+            indexName: idx_chat_message_session_created_at
+            columns:
+              - column:
+                  name: session_id
+              - column:
+                  name: created_at

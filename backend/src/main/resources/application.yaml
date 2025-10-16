@@ -56,6 +56,11 @@ app:
         top-p: ${ZHIPU_TOP_P:0.95}
         max-tokens: ${ZHIPU_MAX_TOKENS:1024}
         default-model: ${ZHIPU_DEFAULT_MODEL:glm-4.6}
+        retry:
+          attempts: ${ZHIPU_RETRY_ATTEMPTS:3}
+          initial-delay: ${ZHIPU_RETRY_INITIAL_DELAY:250ms}
+          multiplier: ${ZHIPU_RETRY_MULTIPLIER:2.0}
+          retryable-statuses: ${ZHIPU_RETRY_STATUS_CODES:429,500,502,503,504}
         models:
           "[glm-4.6]":
             display-name: "GLM-4.6"
@@ -85,6 +90,11 @@ app:
         top-p: ${OPENAI_TOP_P:1.0}
         max-tokens: ${OPENAI_MAX_TOKENS:1024}
         default-model: ${OPENAI_DEFAULT_MODEL:gpt-4o-mini}
+        retry:
+          attempts: ${OPENAI_RETRY_ATTEMPTS:3}
+          initial-delay: ${OPENAI_RETRY_INITIAL_DELAY:250ms}
+          multiplier: ${OPENAI_RETRY_MULTIPLIER:2.0}
+          retryable-statuses: ${OPENAI_RETRY_STATUS_CODES:429,500,502,503,504}
         models:
           gpt-4o-mini:
             display-name: "GPT-4o Mini"

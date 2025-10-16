@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, KeyboardEvent } from 'react';
 import {
   CHAT_STREAM_URL,
   fetchChatProviders,
@@ -17,6 +17,8 @@ type ChatMessage = {
   status?: 'streaming' | 'complete';
   provider?: string;
   model?: string;
+  structured?: StructuredSyncResponse | null;
+  relatedMessageId?: string;
 };
 
 type StreamPayload = {
@@ -137,6 +139,150 @@ const drainSseBuffer = (
   return { buffer: working, stop };
 };
 
+type StructuredResponseCardProps = {
+  response: StructuredSyncResponse;
+  providerLabel?: string;
+  modelLabel?: string;
+  highlight?: boolean;
+  onSelect?: () => void;
+};
+
+const StructuredResponseCard = ({
+  response,
+  providerLabel = '—',
+  modelLabel = '—',
+  highlight,
+  onSelect,
+}: StructuredResponseCardProps) => {
+  const className = [
+    'structured-response-card',
+    highlight ? 'highlight' : '',
+    onSelect ? 'interactive' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onSelect) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect();
+    }
+  };
+
+  return (
+    <div
+      className={className}
+      onClick={onSelect ?? undefined}
+      onKeyDown={handleKeyDown}
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      data-testid="structured-response-card"
+    >
+      <div className="structured-summary">
+        <div className="structured-summary-header">
+          <h3>Структурированный ответ</h3>
+          {response.status && (
+            <span className="structured-status">
+              {response.status.toUpperCase()}
+            </span>
+          )}
+        </div>
+        <p data-testid="structured-summary-text">
+          {response.answer?.summary ?? 'Модель не вернула summary.'}
+        </p>
+        {response.answer?.confidence !== undefined && (
+          <span className="structured-confidence">
+            Уверенность: {formatConfidence(response.answer?.confidence)}
+          </span>
+        )}
+      </div>
+
+      {response.answer?.items && response.answer.items.length > 0 ? (
+        <div className="structured-items">
+          {response.answer.items.map((item, index) => (
+            <div
+              key={`${item.title ?? 'item'}-${index}`}
+              className="structured-item"
+              data-testid="structured-item"
+            >
+              {item.title && (
+                <h4 className="structured-item-title">{item.title}</h4>
+              )}
+              {item.details && (
+                <p className="structured-item-details">{item.details}</p>
+              )}
+              {item.tags && item.tags.length > 0 && (
+                <div className="structured-item-tags">
+                  {item.tags.map((tag) => (
+                    <span key={`${tag}-${index}`} className="structured-tag">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="structured-metadata">
+        <div className="structured-metadata-group">
+          <span className="structured-label">Провайдер</span>
+          <span className="structured-value">
+            {formatProviderType(response.provider?.type)}
+          </span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Отображение</span>
+          <span className="structured-value">{providerLabel || '—'}</span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Модель</span>
+          <span className="structured-value">{modelLabel || '—'}</span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Задержка</span>
+          <span className="structured-value">
+            {response.latencyMs !== undefined
+              ? `${response.latencyMs} мс`
+              : '—'}
+          </span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Время</span>
+          <span className="structured-value">
+            {formatTimestamp(response.timestamp)}
+          </span>
+        </div>
+      </div>
+
+      <div className="structured-usage">
+        <div className="structured-usage-metric">
+          <span className="structured-label">Prompt</span>
+          <span className="structured-value">
+            {formatTokens(response.usage?.promptTokens)}
+          </span>
+        </div>
+        <div className="structured-usage-metric">
+          <span className="structured-label">Completion</span>
+          <span className="structured-value">
+            {formatTokens(response.usage?.completionTokens)}
+          </span>
+        </div>
+        <div className="structured-usage-metric">
+          <span className="structured-label">Total</span>
+          <span className="structured-value">
+            {formatTokens(response.usage?.totalTokens)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const LLMChat = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('stream');
   const [providerCatalog, setProviderCatalog] = useState<ChatProvidersResponse | null>(null);
@@ -153,7 +299,7 @@ const LLMChat = () => {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [structuredInput, setStructuredInput] = useState('');
-  const [structuredResponse, setStructuredResponse] = useState<StructuredSyncResponse | null>(null);
+  const [activeStructuredMessageId, setActiveStructuredMessageId] = useState<string | null>(null);
   const [isStructuredLoading, setIsStructuredLoading] = useState(false);
   const [structuredError, setStructuredError] = useState<string | null>(null);
   const [structuredNotice, setStructuredNotice] = useState<string | null>(null);
@@ -236,6 +382,18 @@ const LLMChat = () => {
         !isCatalogLoading,
     );
 
+  const structuredMessages = messages.filter(
+    (message): message is ChatMessage & { structured: StructuredSyncResponse } =>
+      message.role === 'assistant' && Boolean(message.structured),
+  );
+
+  const activeStructuredMessage =
+    structuredMessages.find(
+      (message) => message.id === activeStructuredMessageId,
+    ) ??
+    (structuredMessages.length > 0
+      ? structuredMessages[structuredMessages.length - 1]
+      : null);
 
   const resolveProviderName = (providerId?: string | null) => {
     if (!providerId) {
@@ -257,20 +415,13 @@ const LLMChat = () => {
     return model?.displayName ?? modelId;
   };
 
-  const structuredModelLabel = structuredResponse
-    ? resolveModelName(
-        selectedProvider,
-        structuredResponse.provider?.model ?? selectedModel,
-      ) || structuredResponse.provider?.model || ''
-    : '';
-
   const handleProviderChange = (providerId: string) => {
     setSelectedProvider(providerId);
     setInfo(null);
     setError(null);
     setStructuredNotice(null);
     setStructuredError(null);
-    setStructuredResponse(null);
+    setActiveStructuredMessageId(null);
     if (!providerCatalog) {
       setSelectedModel('');
       return;
@@ -298,7 +449,7 @@ const LLMChat = () => {
     setError(null);
     setStructuredNotice(null);
     setStructuredError(null);
-    setStructuredResponse(null);
+    setActiveStructuredMessageId(null);
   };
 
   const resetChat = () => {
@@ -312,7 +463,7 @@ const LLMChat = () => {
     setInfo(null);
     setLastProvider(null);
     setLastModel(null);
-    setStructuredResponse(null);
+    setActiveStructuredMessageId(null);
     setStructuredError(null);
     setStructuredNotice(null);
     setStructuredInput('');
@@ -374,6 +525,17 @@ const LLMChat = () => {
     setStructuredNotice(null);
     setIsStructuredLoading(true);
 
+    const requestMessageId = generateId();
+    const structuredUserMessage: ChatMessage = {
+      id: requestMessageId,
+      role: 'user',
+      content: trimmed,
+      status: 'complete',
+      provider: selectedProvider,
+      model: selectedModel,
+    };
+    setMessages((prev) => [...prev, structuredUserMessage]);
+
     const payload: ChatSyncRequest = { message: trimmed };
     if (sessionId) {
       payload.sessionId = sessionId;
@@ -409,14 +571,24 @@ const LLMChat = () => {
       setStructuredNotice(
         notice ?? (details ? `Получен ответ (${details})` : 'Получен ответ.'),
       );
-      setStructuredResponse(body);
+      const messageModel = body.provider?.model ?? selectedModel;
+      const assistantMessage: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: body.answer?.summary ?? 'Структурированный ответ.',
+        status: 'complete',
+        provider: selectedProvider,
+        model: messageModel,
+        structured: body,
+        relatedMessageId: requestMessageId,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+      setActiveStructuredMessageId(assistantMessage.id);
       if (selectedProvider) {
         setLastProvider(selectedProvider);
       }
-      if (body.provider?.model) {
-        setLastModel(body.provider.model);
-      } else if (selectedModel) {
-        setLastModel(selectedModel);
+      if (messageModel) {
+        setLastModel(messageModel);
       }
       setStructuredInput('');
     } catch (syncError) {
@@ -830,6 +1002,19 @@ const LLMChat = () => {
                         </div>
                       )}
                       <div className="llm-chat-bubble">{message.content}</div>
+                      {message.structured ? (
+                        <StructuredResponseCard
+                          response={message.structured}
+                          providerLabel={resolveProviderName(message.provider)}
+                          modelLabel={
+                            resolveModelName(message.provider, message.model) ??
+                            message.structured.provider?.model ??
+                            ''
+                          }
+                          onSelect={() => setActiveStructuredMessageId(message.id)}
+                          highlight={message.id === activeStructuredMessage?.id}
+                        />
+                      ) : null}
                       {message.status === 'streaming' && (
                         <span className="llm-chat-message-status">
                           Модель отвечает…
@@ -950,7 +1135,10 @@ const LLMChat = () => {
                   type="button"
                   className="llm-chat-button ghost"
                   onClick={resetChat}
-                  disabled={isStructuredLoading || (!sessionId && !structuredResponse)}
+                  disabled={
+                    isStructuredLoading ||
+                    (messages.length === 0 && structuredMessages.length === 0)
+                  }
                 >
                   Новый диалог
                 </button>
@@ -975,124 +1163,48 @@ const LLMChat = () => {
               </div>
             )}
 
-            <div className="structured-response-card" data-testid="structured-response">
-              {structuredResponse ? (
-                <>
-                  <div className="structured-summary">
-                    <div className="structured-summary-header">
-                      <h3>Итог</h3>
-                      <span className="structured-status">
-                        {structuredResponse.status
-                          ? structuredResponse.status.toUpperCase()
-                          : '—'}
-                      </span>
-                    </div>
-                    <p data-testid="structured-summary-text">
-                      {structuredResponse.answer?.summary ??
-                        'Модель не вернула summary.'}
-                    </p>
-                    {structuredResponse.answer?.confidence !== undefined && (
-                      <span className="structured-confidence">
-                        Уверенность:{' '}
-                        {formatConfidence(
-                          structuredResponse.answer?.confidence,
-                        )}
-                      </span>
-                    )}
-                  </div>
-
-                  {structuredResponse.answer?.items &&
-                  structuredResponse.answer.items.length > 0 ? (
-                    <div className="structured-items">
-                      {structuredResponse.answer.items.map((item, index) => (
-                        <div
-                          key={`${item.title ?? 'item'}-${index}`}
-                          className="structured-item"
-                          data-testid="structured-item"
-                        >
-                          {item.title && (
-                            <h4 className="structured-item-title">{item.title}</h4>
-                          )}
-                          {item.details && (
-                            <p className="structured-item-details">
-                              {item.details}
-                            </p>
-                          )}
-                          {item.tags && item.tags.length > 0 && (
-                            <div className="structured-item-tags">
-                              {item.tags.map((tag) => (
-                                <span
-                                  key={`${tag}-${index}`}
-                                  className="structured-tag"
-                                >
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
+            {structuredMessages.length > 0 ? (
+              <div className="structured-history">
+                {structuredMessages.map((message) => {
+                  const related =
+                    message.relatedMessageId &&
+                    messages.find((item) => item.id === message.relatedMessageId);
+                  const providerLabel = resolveProviderName(message.provider);
+                  const modelLabel =
+                    resolveModelName(message.provider, message.model) ||
+                    message.structured?.provider?.model ||
+                    '';
+                  const isActive =
+                    activeStructuredMessage?.id === message.id;
+                  return (
+                    <div
+                      key={message.id}
+                      className={`structured-history-entry${
+                        isActive ? ' active' : ''
+                      }`}
+                    >
+                      {related && (
+                        <div className="structured-request-preview">
+                          <span className="structured-label">Запрос</span>
+                          <p className="structured-value">{related.content}</p>
                         </div>
-                      ))}
+                      )}
+                      <StructuredResponseCard
+                        response={message.structured}
+                        providerLabel={providerLabel}
+                        modelLabel={modelLabel}
+                        highlight={isActive}
+                        onSelect={() => setActiveStructuredMessageId(message.id)}
+                      />
                     </div>
-                  ) : null}
-
-                  <div className="structured-metadata">
-                    <div className="structured-metadata-group">
-                      <span className="structured-label">Провайдер</span>
-                      <span className="structured-value">
-                        {formatProviderType(structuredResponse.provider?.type)}
-                      </span>
-                    </div>
-                    <div className="structured-metadata-group">
-                      <span className="structured-label">Модель</span>
-                      <span className="structured-value">
-                        {structuredModelLabel || '—'}
-                      </span>
-                    </div>
-                    <div className="structured-metadata-group">
-                      <span className="structured-label">Задержка</span>
-                      <span className="structured-value">
-                        {structuredResponse.latencyMs !== undefined
-                          ? `${structuredResponse.latencyMs} мс`
-                          : '—'}
-                      </span>
-                    </div>
-                    <div className="structured-metadata-group">
-                      <span className="structured-label">Время</span>
-                      <span className="structured-value">
-                        {formatTimestamp(structuredResponse.timestamp)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="structured-usage">
-                    <div className="structured-usage-metric">
-                      <span className="structured-label">Prompt</span>
-                      <span className="structured-value">
-                        {formatTokens(structuredResponse.usage?.promptTokens)}
-                      </span>
-                    </div>
-                    <div className="structured-usage-metric">
-                      <span className="structured-label">Completion</span>
-                      <span className="structured-value">
-                        {formatTokens(
-                          structuredResponse.usage?.completionTokens,
-                        )}
-                      </span>
-                    </div>
-                    <div className="structured-usage-metric">
-                      <span className="structured-label">Total</span>
-                      <span className="structured-value">
-                        {formatTokens(structuredResponse.usage?.totalTokens)}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="structured-placeholder">
-                  Структурированный ответ появится здесь после отправки запроса.
-                </div>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="structured-placeholder">
+                Структурированный ответ появится здесь после отправки запроса.
+              </div>
+            )}
           </div>
         )}
       </div>

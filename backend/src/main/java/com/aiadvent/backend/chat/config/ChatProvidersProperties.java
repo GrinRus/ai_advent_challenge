@@ -3,7 +3,9 @@ package com.aiadvent.backend.chat.config;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
@@ -50,6 +52,7 @@ public class ChatProvidersProperties {
     private Double topP;
     private String defaultModel;
     private Map<String, Model> models = new LinkedHashMap<>();
+    private Retry retry = new Retry();
 
     public ChatProviderType getType() {
       return type;
@@ -146,6 +149,14 @@ public class ChatProvidersProperties {
     public void setModels(Map<String, Model> models) {
       this.models = models;
     }
+
+    public Retry getRetry() {
+      return retry;
+    }
+
+    public void setRetry(Retry retry) {
+      this.retry = retry;
+    }
   }
 
   public static class Model {
@@ -205,6 +216,46 @@ public class ChatProvidersProperties {
 
     public void setOutputPer1KTokens(BigDecimal outputPer1KTokens) {
       this.outputPer1KTokens = outputPer1KTokens;
+    }
+  }
+
+  public static class Retry {
+    private int attempts = 3;
+    private Duration initialDelay = Duration.ofMillis(250);
+    private double multiplier = 2.0;
+    private List<Integer> retryableStatuses =
+        new ArrayList<>(List.of(429, 500, 502, 503, 504));
+
+    public int getAttempts() {
+      return attempts;
+    }
+
+    public void setAttempts(int attempts) {
+      this.attempts = attempts;
+    }
+
+    public Duration getInitialDelay() {
+      return initialDelay;
+    }
+
+    public void setInitialDelay(Duration initialDelay) {
+      this.initialDelay = initialDelay;
+    }
+
+    public double getMultiplier() {
+      return multiplier;
+    }
+
+    public void setMultiplier(double multiplier) {
+      this.multiplier = multiplier;
+    }
+
+    public List<Integer> getRetryableStatuses() {
+      return retryableStatuses;
+    }
+
+    public void setRetryableStatuses(List<Integer> retryableStatuses) {
+      this.retryableStatuses = retryableStatuses != null ? new ArrayList<>(retryableStatuses) : new ArrayList<>();
     }
   }
 }
