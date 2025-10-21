@@ -14,6 +14,11 @@ public interface ChatProviderAdapter {
 
   ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides);
 
+  default ChatOptions buildStreamingOptions(
+      ChatProviderSelection selection, ChatRequestOverrides overrides) {
+    return buildOptions(selection, overrides);
+  }
+
   default ChatOptions buildStructuredOptions(
       ChatProviderSelection selection,
       ChatRequestOverrides overrides,

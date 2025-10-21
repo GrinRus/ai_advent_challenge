@@ -35,7 +35,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,6 +45,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.util.StringUtils;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 
 @SpringBootTest(
     properties = {
@@ -127,6 +128,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     assertThat(events.get(3).cost().total()).isNotNull();
     assertThat(events.get(3).cost().total()).isEqualByComparingTo("0");
     assertThat(events.get(3).cost().currency()).isEqualTo("USD");
+    assertThat(events.get(3).usageSource()).isEqualTo("native");
 
     List<ChatSession> sessions = chatSessionRepository.findAll();
     assertThat(sessions).hasSize(1);
@@ -154,6 +156,38 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
             Integer.class,
             sessions.getFirst().getId());
     assertThat(memoryEntries).isEqualTo(2);
+  }
+
+  @Test
+  void streamHandlesUsageChunkWithoutAdditionalTokens() throws Exception {
+    StubChatClientState.setTokens(List.of("first ", "second"));
+    StubChatClientState.setUsage(10, 14, 24, true);
+
+    ChatStreamRequest request = new ChatStreamRequest(null, "Usage please", null, null, null);
+
+    List<ChatStreamEvent> events = performChatStream(request);
+
+    assertThat(events)
+        .extracting(ChatStreamEvent::type)
+        .containsExactly("session", "token", "token", "complete");
+
+    long tokenEvents = events.stream().filter(event -> "token".equals(event.type())).count();
+    assertThat(tokenEvents).isEqualTo(2);
+
+    ChatStreamEvent completion = events.get(events.size() - 1);
+    assertThat(completion.usage()).isNotNull();
+    assertThat(completion.usage().promptTokens()).isEqualTo(10);
+    assertThat(completion.usage().completionTokens()).isEqualTo(14);
+    assertThat(completion.usage().totalTokens()).isEqualTo(24);
+    assertThat(completion.content()).isEqualTo("first second");
+    assertThat(completion.usageSource()).isEqualTo("native");
+
+    Prompt prompt = StubChatClientState.lastPrompt();
+    assertThat(prompt).isNotNull();
+    assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
+    OpenAiChatOptions options = (OpenAiChatOptions) prompt.getOptions();
+    assertThat(options.getStreamOptions())
+        .isSameAs(OpenAiApi.ChatCompletionRequest.StreamOptions.INCLUDE_USAGE);
   }
 
   @Test
@@ -229,6 +263,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   @Test
   void streamHonoursExplicitProviderAndModel() throws Exception {
     StubChatClientState.setTokens(List.of("alt sequence"));
+    StubChatClientState.setUsage(null, null, null);
 
     ChatStreamRequest request =
         new ChatStreamRequest(
@@ -244,6 +279,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
         .extracting(ChatStreamEvent::provider)
         .containsExactly("alternate", "alternate", "alternate");
     assertThat(events).extracting(ChatStreamEvent::model).containsExactly("alt-model-pro", "alt-model-pro", "alt-model-pro");
+    assertThat(events.get(events.size() - 1).usageSource()).isEqualTo("fallback");
 
     ChatSession session = chatSessionRepository.findAll().getFirst();
     List<ChatMessage> messages =
@@ -257,6 +293,22 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     assertThat(prompt).isNotNull();
     assertThat(prompt.getOptions()).isInstanceOf(OpenAiChatOptions.class);
     assertThat(((OpenAiChatOptions) prompt.getOptions()).getModel()).isEqualTo("alt-model-pro");
+  }
+
+  @Test
+  void streamFallsBackToEstimatorWhenProviderDoesNotReturnUsage() throws Exception {
+    StubChatClientState.setTokens(List.of("fallback response"));
+    StubChatClientState.setUsage(null, null, null);
+
+    ChatStreamRequest request =
+        new ChatStreamRequest(null, "Trigger fallback", null, "stub-model-fast", null);
+
+    List<ChatStreamEvent> events = performChatStream(request);
+
+    ChatStreamEvent completion = events.get(events.size() - 1);
+    assertThat(completion.usage()).isNotNull();
+    assertThat(completion.usage().totalTokens()).isGreaterThan(0);
+    assertThat(completion.usageSource()).isEqualTo("fallback");
   }
 
   @Test

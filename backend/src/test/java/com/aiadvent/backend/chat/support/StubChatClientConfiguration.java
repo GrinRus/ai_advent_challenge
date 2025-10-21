@@ -7,6 +7,8 @@ import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.chat.token.TokenUsageEstimator;
+import com.aiadvent.backend.chat.token.TokenUsageMetrics;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
 import javax.sql.DataSource;
@@ -59,7 +61,10 @@ public class StubChatClientConfiguration {
   @Bean
   @Primary
   public ChatProviderService stubChatProviderService(
-      SimpleLoggerAdvisor simpleLoggerAdvisor, MessageChatMemoryAdvisor chatMemoryAdvisor) {
+      SimpleLoggerAdvisor simpleLoggerAdvisor,
+      MessageChatMemoryAdvisor chatMemoryAdvisor,
+      TokenUsageEstimator tokenUsageEstimator,
+      TokenUsageMetrics tokenUsageMetrics) {
     ChatProvidersProperties properties = new ChatProvidersProperties();
     properties.setDefaultProvider("stub");
 
@@ -70,10 +75,13 @@ public class StubChatClientConfiguration {
     primaryProvider.setTemperature(0.7);
     primaryProvider.setTopP(1.0);
     primaryProvider.setMaxTokens(1024);
-    primaryProvider.getModels().put("stub-model", model("Stub Model", "standard"));
-    primaryProvider
-        .getModels()
-        .put("stub-model-fast", model("Stub Model Fast", "budget"));
+    ChatProvidersProperties.Model defaultModel = model("Stub Model", "standard");
+    defaultModel.getUsage().setMode(ChatProvidersProperties.UsageMode.NATIVE);
+    primaryProvider.getModels().put("stub-model", defaultModel);
+    ChatProvidersProperties.Model fastModel = model("Stub Model Fast", "budget");
+    fastModel.getUsage().setMode(ChatProvidersProperties.UsageMode.FALLBACK);
+    fastModel.getUsage().setFallbackTokenizer("cl100k_base");
+    primaryProvider.getModels().put("stub-model-fast", fastModel);
 
     ChatProvidersProperties.Provider alternateProvider = new ChatProvidersProperties.Provider();
     alternateProvider.setType(ChatProviderType.OPENAI);
@@ -82,10 +90,13 @@ public class StubChatClientConfiguration {
     alternateProvider.setTemperature(0.6);
     alternateProvider.setTopP(0.9);
     alternateProvider.setMaxTokens(2048);
-    alternateProvider.getModels().put("alt-model", model("Alt Model", "standard"));
-    alternateProvider
-        .getModels()
-        .put("alt-model-pro", model("Alt Model Pro", "pro"));
+    ChatProvidersProperties.Model altModel = model("Alt Model", "standard");
+    altModel.getUsage().setMode(ChatProvidersProperties.UsageMode.NATIVE);
+    alternateProvider.getModels().put("alt-model", altModel);
+    ChatProvidersProperties.Model altPro = model("Alt Model Pro", "pro");
+    altPro.getUsage().setMode(ChatProvidersProperties.UsageMode.FALLBACK);
+    altPro.getUsage().setFallbackTokenizer("cl100k_base");
+    alternateProvider.getModels().put("alt-model-pro", altPro);
     ChatProvidersProperties.Model syncOnlyModel = model("Alt Model Sync Only", "enterprise");
     syncOnlyModel.setStreamingEnabled(false);
     alternateProvider.getModels().put("alt-model-sync-only", syncOnlyModel);
@@ -103,7 +114,7 @@ public class StubChatClientConfiguration {
     ChatProviderAdapter stubAdapter = adapter("stub", chatClient, primaryProvider);
     ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient, alternateProvider);
 
-    return new ChatProviderService(registry, List.of(stubAdapter, alternateAdapter));
+    return new ChatProviderService(registry, List.of(stubAdapter, alternateAdapter), tokenUsageEstimator, tokenUsageMetrics);
   }
 
   private static ChatProvidersProperties.Model model(String displayName, String tier) {
@@ -130,6 +141,12 @@ public class StubChatClientConfiguration {
       public ChatOptions buildOptions(
           ChatProviderSelection selection, ChatRequestOverrides overrides) {
         return configureOptions(selection, overrides).build();
+      }
+
+      @Override
+      public ChatOptions buildStreamingOptions(
+          ChatProviderSelection selection, ChatRequestOverrides overrides) {
+        return configureOptions(selection, overrides).streamUsage(true).build();
       }
 
       @Override

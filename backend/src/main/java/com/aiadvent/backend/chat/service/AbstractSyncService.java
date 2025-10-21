@@ -179,8 +179,8 @@ abstract class AbstractSyncService {
   }
 
   protected UsageCostEstimate estimateUsageCost(
-      ChatProviderSelection selection, Usage usageMetadata) {
-    return chatProviderService.estimateUsageCost(selection, usageMetadata);
+      ChatProviderSelection selection, Usage usageMetadata, String promptText, String completionText) {
+    return chatProviderService.estimateUsageCost(selection, usageMetadata, promptText, completionText);
   }
 
   protected StructuredSyncUsageStats toUsageStats(UsageCostEstimate usageCost) {

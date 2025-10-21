@@ -6,6 +6,8 @@ import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.OpenAiChatProviderAdapter;
 import com.aiadvent.backend.chat.provider.ZhiPuAiChatProviderAdapter;
+import com.aiadvent.backend.chat.token.TokenUsageEstimator;
+import com.aiadvent.backend.chat.token.TokenUsageMetrics;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -101,8 +103,11 @@ public class ChatProviderConfiguration {
 
   @Bean
   public ChatProviderService chatProviderService(
-      ChatProviderRegistry registry, List<ChatProviderAdapter> adapters) {
-    return new ChatProviderService(registry, adapters);
+      ChatProviderRegistry registry,
+      List<ChatProviderAdapter> adapters,
+      TokenUsageEstimator tokenUsageEstimator,
+      TokenUsageMetrics tokenUsageMetrics) {
+    return new ChatProviderService(registry, adapters, tokenUsageEstimator, tokenUsageMetrics);
   }
 
   @Bean

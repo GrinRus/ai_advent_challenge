@@ -349,6 +349,43 @@
   color: #0f172a;
 }
 
+.llm-chat-usage-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.llm-chat-usage-source-label {
+  font-weight: 500;
+  color: #475569;
+}
+
+.llm-chat-usage-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.llm-chat-usage-source-badge.native {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.llm-chat-usage-source-badge.fallback {
+  background: #fff7ed;
+  color: #b45309;
+}
+
+.llm-chat-usage-source-badge.unknown {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
 .llm-chat-message-meta {
   display: flex;
   flex-wrap: wrap;

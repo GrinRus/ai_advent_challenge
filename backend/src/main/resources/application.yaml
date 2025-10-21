@@ -77,6 +77,9 @@ app:
             pricing:
               input-per-1k-tokens: 0.0006
               output-per-1k-tokens: 0.0022
+            usage:
+              mode: fallback
+              fallback-tokenizer: cl100k_base
           "[glm-4.5]":
             display-name: "GLM-4.5"
             tier: standard
@@ -85,6 +88,9 @@ app:
             pricing:
               input-per-1k-tokens: 0.00035
               output-per-1k-tokens: 0.00155
+            usage:
+              mode: fallback
+              fallback-tokenizer: cl100k_base
           "[glm-4.5-air]":
             display-name: "GLM-4.5 Air"
             tier: budget
@@ -93,6 +99,9 @@ app:
             pricing:
               input-per-1k-tokens: 0.0002
               output-per-1k-tokens: 0.0011
+            usage:
+              mode: fallback
+              fallback-tokenizer: cl100k_base
           "[glm-4-32b-0414-128k]":
             display-name: "GLM-4 32B 0414 (128K)"
             tier: flagship
@@ -103,6 +112,9 @@ app:
             pricing:
               input-per-1k-tokens: 0.0001
               output-per-1k-tokens: 0.0001
+            usage:
+              mode: fallback
+              fallback-tokenizer: cl100k_base
       openai:
         type: OPENAI
         display-name: "OpenAI"
@@ -129,6 +141,8 @@ app:
             pricing:
               input-per-1k-tokens: 0.00005
               output-per-1k-tokens: 0.0004
+            usage:
+              mode: native
           gpt-4o-mini:
             display-name: "GPT-4o Mini"
             tier: budget
@@ -138,6 +152,8 @@ app:
             pricing:
               input-per-1k-tokens: 0.00015
               output-per-1k-tokens: 0.0006
+            usage:
+              mode: native
           gpt-4o:
             display-name: "GPT-4o"
             tier: pro
@@ -147,6 +163,8 @@ app:
             pricing:
               input-per-1k-tokens: 0.0025
               output-per-1k-tokens: 0.01
+            usage:
+              mode: native
           gpt-5:
             display-name: "GPT-5"
             tier: flagship
@@ -157,7 +175,15 @@ app:
             pricing:
               input-per-1k-tokens: 0.00125
               output-per-1k-tokens: 0.01
+            usage:
+              mode: native
     memory:
       window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
       retention: ${CHAT_MEMORY_RETENTION:PT6H}
       cleanup-interval: ${CHAT_MEMORY_CLEANUP_INTERVAL:PT30M}
+    token-usage:
+      default-tokenizer: ${CHAT_TOKEN_USAGE_TOKENIZER:cl100k_base}
+      cache:
+        enabled: ${CHAT_TOKEN_USAGE_CACHE_ENABLED:false}
+        ttl: ${CHAT_TOKEN_USAGE_CACHE_TTL:PT15M}
+        key-prefix: ${CHAT_TOKEN_USAGE_CACHE_PREFIX:chat:usage}

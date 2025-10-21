@@ -78,7 +78,9 @@ public class ChatStreamController {
 
     StringBuilder assistantResponse = new StringBuilder();
     ChatOptions chatOptions =
-        chatProviderService.buildOptions(selection, resolveOverrides(request.options()));
+        chatProviderService.buildStreamingOptions(selection, resolveOverrides(request.options()));
+
+    String promptText = request.message();
 
     Flux<ChatResponse> responseFlux =
         chatProviderService
@@ -109,6 +111,7 @@ public class ChatStreamController {
                 handleCompletion(
                     context.sessionId(),
                     selection,
+                    promptText,
                     assistantResponse,
                     usageRef,
                     emitter));
@@ -140,24 +143,27 @@ public class ChatStreamController {
       StringBuilder assistantResponse,
       AtomicReference<Usage> usageRef,
       SseEmitter emitter) {
-    response
-        .getResults()
-        .forEach(
-            generation -> {
-              String content = generation.getOutput().getText();
-              if (!StringUtils.hasText(content)) {
-                return;
-              }
+    if (response.getResults() != null) {
+      response
+          .getResults()
+          .forEach(
+              generation -> {
+                String content = generation.getOutput().getText();
+                if (!StringUtils.hasText(content)) {
+                  return;
+                }
 
-              assistantResponse.append(content);
-              if (log.isDebugEnabled()) {
-                log.debug("Stream chunk for session {}: {}", sessionId, content);
-              }
-              emit(
-                  emitter,
-                  "token",
-                  ChatStreamEvent.token(sessionId, content, selection.providerId(), selection.modelId()));
-            });
+                assistantResponse.append(content);
+                if (log.isDebugEnabled()) {
+                  log.debug("Stream chunk for session {}: {}", sessionId, content);
+                }
+                emit(
+                    emitter,
+                    "token",
+                    ChatStreamEvent.token(
+                        sessionId, content, selection.providerId(), selection.modelId()));
+              });
+    }
 
     ChatResponseMetadata metadata = response.getMetadata();
     if (metadata != null && metadata.getUsage() != null) {
@@ -168,12 +174,22 @@ public class ChatStreamController {
   private void handleCompletion(
       UUID sessionId,
       ChatProviderSelection selection,
+      String promptText,
       StringBuilder assistantResponse,
       AtomicReference<Usage> usageRef,
       SseEmitter emitter) {
     String content = assistantResponse.toString();
     Usage usage = usageRef.get();
-    UsageCostEstimate usageCost = chatProviderService.estimateUsageCost(selection, usage);
+    UsageCostEstimate usageCost =
+        chatProviderService.estimateUsageCost(selection, usage, promptText, content);
+    if (log.isDebugEnabled() && usageCost != null) {
+      log.debug(
+          "Streaming complete for session {}: usageSource={}, promptTokens={}, completionTokens={}",
+          sessionId,
+          usageCost.source(),
+          usageCost.promptTokens(),
+          usageCost.completionTokens());
+    }
     chatService.registerAssistantMessage(
         sessionId, content, selection.providerId(), selection.modelId(), null, usageCost);
     emit(
@@ -185,7 +201,8 @@ public class ChatStreamController {
             selection.providerId(),
             selection.modelId(),
             toUsageStats(usageCost),
-            toCostDetails(usageCost)));
+            toCostDetails(usageCost),
+            usageCost != null ? usageCost.source().name().toLowerCase() : null));
     emitter.complete();
   }
 

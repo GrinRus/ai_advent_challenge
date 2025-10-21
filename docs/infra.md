@@ -9,6 +9,7 @@
 - Backend (Spring Boot) — сервис `backend`, порт `8080`.
 - Frontend (React + Vite + Nginx) — сервис `frontend`, порт `4179`.
 - Postgres + pgvector — сервис `postgres`, порт `5434` (наружный порт; внутри контейнера используется `5432`).
+- Redis (опционально для fallback-токенизации) — сервис `redis`, наружный порт `6380`, внутри контейнера `6379`.
 
 ## Docker Compose
 Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости.
@@ -23,6 +24,14 @@ docker compose up --build
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
 
+### Redis для fallback-оценки токенов
+- Сервис `redis` поднимается вместе с `docker compose` и хранит результаты подсчёта токенов для повторно используемых промптов. По умолчанию кэш выключен (`CHAT_TOKEN_USAGE_CACHE_ENABLED=false`), поэтому Redis безвреден при локальной разработке.
+- Чтобы задействовать кэш, установите переменную `CHAT_TOKEN_USAGE_CACHE_ENABLED=true` и при необходимости скорректируйте `CHAT_TOKEN_USAGE_CACHE_TTL` (Duration, по умолчанию `PT15M`) и `CHAT_TOKEN_USAGE_CACHE_PREFIX`.
+- Spring Boot использует стандартную автоконфигурацию Redis (`spring.data.redis.*`). В Docker хост переопределён значением `SPRING_DATA_REDIS_HOST=redis`, локально можно задать `localhost`.
+- Требования к Redis-кешу: держите TTL в диапазоне 15–60 минут (дефолт `PT15M`), при необходимости ограничьте память командой `maxmemory` и политикой `allkeys-lru`. Отсутствие Redis не приводит к ошибкам — кэш автоматически деградирует в no-op, но подсчёт токенов будет выполняться чаще.
+
+> ⚙️ Подсчёт токенов реализован через [`EncodingRegistry`](https://docs.spring.io/spring-ai/reference/api/chatclients/openai.html#_token_usage) Spring AI и библиотеку [jtokkit](https://github.com/knuddelsgmbh/jtokkit). Словари jtokkit поставляются на базе публичных токенизаторов OpenAI (лицензия Apache 2.0). Для большинства OpenAI-совместимых моделей используйте `cl100k_base`; для кастомных моделей выбирайте ближайший доступный словарь или зарегистрируйте собственный через `EncodingRegistry.register*`. Переменная `CHAT_TOKEN_USAGE_TOKENIZER` задаёт дефолт.
+
 ## Настройка LLM-чата
 - Backend использует Spring AI с фабрикой `ChatProviderService`, позволяющей переключаться между провайдерами без изменения прикладного кода. Конфигурация описана в `application.yaml` (`app.chat.providers`). По умолчанию активен `zhipu` (z.ai), параллельно доступен `openai`.
 - Каждый провайдер хранит параметры подключения: базовый URL, ключ, таймауты, дефолтную модель и список доступных моделей с оценочной стоимостью. Все значения можно переопределить переменными окружения:
@@ -30,6 +39,16 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - Zhipu (z.ai): `ZHIPU_BASE_URL`, `ZHIPU_COMPLETIONS_PATH`, `ZHIPU_API_KEY`, `ZHIPU_DEFAULT_MODEL`, `ZHIPU_TEMPERATURE`, `ZHIPU_TOP_P`, `ZHIPU_MAX_TOKENS`, `ZHIPU_TIMEOUT`.
   Переменные заданы в `.env.example` и автоматически прокидываются в контейнер backend через `docker-compose.yml`.
 - Для каждой модели теперь задаются три флага режима: `streaming-enabled`, `sync-enabled`, `structured-enabled`. Plain sync контроллер использует `syncEnabled`, структурированный — `structuredEnabled`. Модели вроде `glm-4-32b-0414-128k` имеют `streamingEnabled=false`, `structuredEnabled=false`, но допускают plain sync (`syncEnabled=true`).
+- Для каждой модели можно указать стратегию подсчёта usage:
+  - `usage.mode = native` — доверяем usage, который возвращает провайдер (подходит для OpenAI, где Spring AI отдаёт usage в финальном `stream_options.include_usage` чанке).
+  - `usage.mode = fallback` — провайдер usage не возвращает, используем jtokkit-оценку; обязательно укажите `usage.fallback-tokenizer`.
+  - `usage.mode = auto` — если провайдер вернул usage, используем native; иначе fallback.
+  Дополнительно можно настроить глобальные дефолты в секции `app.chat.token-usage` (`default-tokenizer`, TTL кэша и т.д.).
+- Поддержка `stream_options.include_usage` по провайдерам:
+  - **OpenAI / Azure OpenAI** — поддерживается полностью (Spring AI включает опцию через `OpenAiChatOptions.streamUsage(true)`), usage приходит в финальном SSE чанке.
+  - **zhipu.ai** — API не возвращает usage в stream-ответе; система всегда использует fallback-токенизацию.
+  - Для кастомных OpenAI-совместимых провайдеров повторно используйте ту же конфигурацию и проверяйте наличие финального usage перед включением `native` режима.
+- SSE-эндпоинт `/api/llm/chat/stream` теперь отправляет в финальном событии поле `usageSource` со значениями `native` или `fallback`. Это значение следует прокинуть на фронтенд, чтобы пользователь видел источник расчёта.
 - Каждому провайдеру можно задать стратегию ретраев через секцию `retry` в `application.yaml` (параметры также доступны как env-переменные `*_RETRY_*`). Структура:
 
   ```yaml

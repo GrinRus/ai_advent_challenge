@@ -71,6 +71,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
   @Test
   void streamOverHttpProducesSseAndPersistsConversation() {
     StubChatClientState.setTokens(List.of("via ", "http"));
+    StubChatClientState.setUsage(8, 12, 20);
 
     FluxExchangeResult<ChatStreamEvent> exchangeResult =
         webTestClient
@@ -116,6 +117,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
     assertThat(subsequentEvents)
         .extracting(ChatStreamEvent::model)
         .containsOnly("stub-model");
+    assertThat(subsequentEvents.getLast().usageSource()).isEqualTo("native");
 
     ChatSession persistedSession =
         chatSessionRepository.findById(sessionEvent.sessionId()).orElseThrow();
@@ -146,6 +148,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
   @Test
   void streamSupportsCustomProviderAndModel() {
     StubChatClientState.setTokens(List.of("alternate ", "provider"));
+    StubChatClientState.setUsage(null, null, null);
 
     FluxExchangeResult<ChatStreamEvent> exchangeResult =
         webTestClient
@@ -178,6 +181,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
     List<ChatStreamEvent> responseEvents = events.subList(1, events.size());
     assertThat(responseEvents).extracting(ChatStreamEvent::provider).containsOnly("alternate");
     assertThat(responseEvents).extracting(ChatStreamEvent::model).containsOnly("alt-model-pro");
+    assertThat(responseEvents.getLast().usageSource()).isEqualTo("fallback");
 
     ChatSession persistedSession =
         chatSessionRepository.findById(sessionEvent.sessionId()).orElseThrow();

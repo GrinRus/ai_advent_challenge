@@ -109,7 +109,7 @@ public class SyncChatService extends AbstractSyncService {
 
       ChatResponseMetadata metadata = response.getMetadata();
       Usage usageMetadata = extractUsage(metadata);
-      UsageCostEstimate usageCost = estimateUsageCost(selection, usageMetadata);
+      UsageCostEstimate usageCost = estimateUsageCost(selection, usageMetadata, userPrompt, content);
       StructuredSyncUsageStats usageStats = toUsageStats(usageCost);
       UsageCostDetails costDetails = toCostDetails(usageCost);
 

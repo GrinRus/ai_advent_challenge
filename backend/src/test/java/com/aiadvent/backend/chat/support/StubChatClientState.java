@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -31,6 +32,8 @@ public final class StubChatClientState {
 
   private static final AtomicReference<String> LAST_SYNC_MODE = new AtomicReference<>();
 
+  private static final AtomicBoolean USAGE_TRAILING_CHUNK = new AtomicBoolean(false);
+
   private StubChatClientState() {}
 
   public static void setTokens(List<String> tokens) {
@@ -54,6 +57,7 @@ public final class StubChatClientState {
     SYNC_CALLS.set(0);
     USAGE.set(null);
     LAST_SYNC_MODE.set(null);
+    USAGE_TRAILING_CHUNK.set(false);
   }
 
   public static void capturePrompt(Prompt prompt) {
@@ -76,8 +80,17 @@ public final class StubChatClientState {
   }
 
   public static void setUsage(Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    setUsage(promptTokens, completionTokens, totalTokens, false);
+  }
+
+  public static void setUsage(
+      Integer promptTokens,
+      Integer completionTokens,
+      Integer totalTokens,
+      boolean usageInSeparateChunk) {
     if (promptTokens == null && completionTokens == null && totalTokens == null) {
       USAGE.set(null);
+      USAGE_TRAILING_CHUNK.set(false);
       return;
     }
     Integer resolvedTotal =
@@ -87,6 +100,7 @@ public final class StubChatClientState {
                 ? promptTokens + completionTokens
                 : null;
     USAGE.set(new DefaultUsage(promptTokens, completionTokens, resolvedTotal));
+    USAGE_TRAILING_CHUNK.set(usageInSeparateChunk);
   }
 
   static Usage usage() {
@@ -96,15 +110,21 @@ public final class StubChatClientState {
   static Flux<ChatResponse> responseFlux() {
     List<String> tokens = TOKENS.get();
     Usage usage = USAGE.get();
+    boolean usageTrailingChunk = USAGE_TRAILING_CHUNK.get();
     List<ChatResponse> responses = new ArrayList<>(tokens.size());
     for (int index = 0; index < tokens.size(); index++) {
       Generation generation =
           new Generation(AssistantMessage.builder().content(tokens.get(index)).build());
       boolean last = index == tokens.size() - 1;
+      boolean attachUsageMetadata = usage != null && (!usageTrailingChunk && last);
       ChatResponseMetadata metadata =
-          last && usage != null ? ChatResponseMetadata.builder().usage(usage).build() : null;
+          attachUsageMetadata ? ChatResponseMetadata.builder().usage(usage).build() : null;
       responses.add(
           metadata != null ? new ChatResponse(List.of(generation), metadata) : new ChatResponse(List.of(generation)));
+    }
+    if (usageTrailingChunk && usage != null) {
+      ChatResponseMetadata metadata = ChatResponseMetadata.builder().usage(usage).build();
+      responses.add(new ChatResponse(List.<Generation>of(), metadata));
     }
     return Flux.fromIterable(responses);
   }

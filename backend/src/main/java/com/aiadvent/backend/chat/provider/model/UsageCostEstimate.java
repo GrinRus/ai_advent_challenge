@@ -9,10 +9,11 @@ public record UsageCostEstimate(
     BigDecimal inputCost,
     BigDecimal outputCost,
     BigDecimal totalCost,
-    String currency) {
+    String currency,
+    UsageSource source) {
 
   public static UsageCostEstimate empty() {
-    return new UsageCostEstimate(null, null, null, null, null, null, null);
+    return new UsageCostEstimate(null, null, null, null, null, null, null, UsageSource.UNKNOWN);
   }
 
   public boolean hasUsage() {
@@ -23,4 +24,3 @@ public record UsageCostEstimate(
     return inputCost != null || outputCost != null || totalCost != null;
   }
 }
-

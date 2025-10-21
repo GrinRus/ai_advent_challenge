@@ -93,6 +93,14 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
   }
 
   @Override
+  public ChatOptions buildStreamingOptions(
+      ChatProviderSelection selection, ChatRequestOverrides overrides) {
+    OpenAiChatOptions.Builder builder = configureBuilder(selection, overrides);
+    builder.streamUsage(true);
+    return builder.build();
+  }
+
+  @Override
   public ChatOptions buildStructuredOptions(
       ChatProviderSelection selection,
       ChatRequestOverrides overrides,

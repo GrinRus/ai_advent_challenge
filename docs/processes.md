@@ -17,6 +17,7 @@
   - unit-тесты сериализации/десериализации и конфигурации `RetryTemplate` (проверяем попытки, статусы, exponential backoff);
   - интеграционные проверки сохранения `chat_message.structured_payload`, поведения при 422/429/5xx и лимита попыток.
 - В e2e сценариях (Playwright/Cypress) проверяйте переключение вкладок чата, отображение структурированного ответа (summary/items/usage) и корректную обработку ошибок сервера.
+- При работе с fallback-токенизацией добавляйте модульные тесты на `TokenUsageEstimator` и проверяйте кэш Redis (TTL, graceful degradation). В потоковых тестах фиксируйте значение `usageSource` (`native|fallback`), чтобы исключить регрессии в UI.
 
 ## CI/CD
 - Workflow `.github/workflows/ci.yml` обязан проходить без модификации.
@@ -39,6 +40,8 @@
   - После релиза проверяйте `GET /api/llm/sessions/{id}/usage` и сравнивайте with billing dashboard провайдера; расхождения >5 % фиксируйте как баг.
   - Следите за валютой (`currency` из `ChatProvidersProperties.Model.pricing`). Если провайдер переключается на другую валюту, обновляйте конфигурацию и документацию.
   - В фронтенде не доверяйте кешу: при смене сессии запрашивайте usage повторно (см. `fetchSessionUsage`).
+  - Если провайдер не возвращает usage, контролируйте fallback: в логах и API должно отображаться `usageSource=fallback`, а Redis-хит/мисс собирается метриками (см. Wave 8).
+  - Метрики Micrometer: `chat.usage.native.count`/`chat.usage.fallback.count` (теги `provider`, `model`), `chat.usage.fallback.delta.tokens` (тег `segment = total|prompt|completion`) и `chat.token.cache.requests`/`chat.token.cache.latency` (тег `result = hit|miss|error|write|write_error`). Настройте алерты на рост доли `result=error` и абсолютное значение `fallback.delta`.
 
 ## Управление задачами
 - Волны (Wave) фиксируются в `docs/backlog.md`.

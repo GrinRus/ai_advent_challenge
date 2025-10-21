@@ -125,6 +125,7 @@ type ChatMessage = {
   cost?: UsageCostDetails | null;
   latencyMs?: number | null;
   timestamp?: string | null;
+  usageSource?: string | null;
 };
 
 type StreamPayload = {
@@ -136,6 +137,7 @@ type StreamPayload = {
   model?: string | null;
   usage?: StructuredSyncUsageStats | null;
   cost?: UsageCostDetails | null;
+  usageSource?: string | null;
 };
 
 type DrainResult = {
@@ -313,6 +315,21 @@ const capitalize = (value?: string | null) => {
     return '';
   }
   return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const describeUsageSource = (source?: string | null) => {
+  if (!source) {
+    return null;
+  }
+  const normalized = source.toLowerCase();
+  switch (normalized) {
+    case 'native':
+      return { label: 'провайдер', variant: 'native' as const };
+    case 'fallback':
+      return { label: 'fallback (jtokkit)', variant: 'fallback' as const };
+    default:
+      return { label: normalized, variant: 'unknown' as const };
+  }
 };
 
 const formatContextWindow = (value?: number | null) => {
@@ -1586,7 +1603,9 @@ const LLMChat = () => {
       model?: string | null,
       usage?: StructuredSyncUsageStats | null,
       cost?: UsageCostDetails | null,
+      usageSource?: string | null,
     ) => {
+      const normalizedSource = usageSource === undefined ? undefined : usageSource ?? null;
       if (!assistantMessageId) {
         assistantMessageId = generateId();
         setMessages((prev) => [
@@ -1602,6 +1621,7 @@ const LLMChat = () => {
             usage: usage ?? null,
             cost: cost ?? null,
             mode: 'stream',
+            usageSource: normalizedSource ?? null,
           },
         ]);
         return;
@@ -1622,6 +1642,7 @@ const LLMChat = () => {
             usage: usage ?? null,
             cost: cost ?? null,
             mode: 'stream',
+            usageSource: normalizedSource ?? null,
           });
           return next;
         }
@@ -1636,6 +1657,10 @@ const LLMChat = () => {
           options: current.options ?? optionsSnapshot,
           usage: usage ?? current.usage ?? null,
           cost: cost ?? current.cost ?? null,
+          usageSource:
+            normalizedSource !== undefined
+              ? normalizedSource
+              : current.usageSource ?? null,
         };
         return next;
       });
@@ -1699,6 +1724,7 @@ const LLMChat = () => {
             event.model,
             event.usage ?? null,
             event.cost ?? null,
+            event.usageSource,
           );
           const targetSessionId = streamSessionId ?? sessionId ?? null;
           if (targetSessionId) {
@@ -1713,6 +1739,7 @@ const LLMChat = () => {
             event.model,
             event.usage ?? null,
             event.cost ?? null,
+            event.usageSource,
           );
           if (event.provider) {
             setLastProvider(event.provider);
@@ -2172,6 +2199,24 @@ const LLMChat = () => {
                                   : ''}
                               </span>
                             )}
+                            {(() => {
+                              const descriptor = describeUsageSource(message.usageSource);
+                              if (!descriptor) {
+                                return null;
+                              }
+                              return (
+                                <span className="llm-chat-usage-source">
+                                  <span className="llm-chat-usage-source-label">
+                                    Источник usage:
+                                  </span>
+                                  <span
+                                    className={`llm-chat-usage-source-badge ${descriptor.variant}`}
+                                  >
+                                    {descriptor.label}
+                                  </span>
+                                </span>
+                              );
+                            })()}
                           </div>
                         )}
                       {message.structured ? (

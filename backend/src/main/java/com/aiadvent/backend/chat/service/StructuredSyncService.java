@@ -139,7 +139,7 @@ public class StructuredSyncService extends AbstractSyncService {
 
       StructuredSyncResponse payload = convert(content);
       Usage usageMetadata = extractUsage(response.getMetadata());
-      UsageCostEstimate usageCost = chatProviderService.estimateUsageCost(selection, usageMetadata);
+      UsageCostEstimate usageCost = estimateUsageCost(selection, usageMetadata, userPrompt, content);
       StructuredSyncUsageStats usageStats = toUsageStats(usageCost);
       UsageCostDetails costDetails = toCostDetails(usageCost);
       long latencyMs = Duration.between(attemptStart, Instant.now()).toMillis();

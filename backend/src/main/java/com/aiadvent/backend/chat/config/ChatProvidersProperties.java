@@ -169,6 +169,7 @@ public class ChatProvidersProperties {
     private boolean streamingEnabled = true;
     private boolean structuredEnabled = true;
     private boolean useCompletionTokens = false;
+    private Usage usage = new Usage();
 
     public String getDisplayName() {
       return displayName;
@@ -240,6 +241,14 @@ public class ChatProvidersProperties {
 
     public void setUseCompletionTokens(boolean useCompletionTokens) {
       this.useCompletionTokens = useCompletionTokens;
+    }
+
+    public Usage getUsage() {
+      return usage;
+    }
+
+    public void setUsage(Usage usage) {
+      this.usage = usage;
     }
   }
 
@@ -320,5 +329,32 @@ public class ChatProvidersProperties {
     public void setRetryableStatuses(List<Integer> retryableStatuses) {
       this.retryableStatuses = retryableStatuses != null ? new ArrayList<>(retryableStatuses) : new ArrayList<>();
     }
+  }
+
+  public static class Usage {
+    private UsageMode mode = UsageMode.AUTO;
+    private String fallbackTokenizer;
+
+    public UsageMode getMode() {
+      return mode;
+    }
+
+    public void setMode(UsageMode mode) {
+      this.mode = mode;
+    }
+
+    public String getFallbackTokenizer() {
+      return fallbackTokenizer;
+    }
+
+    public void setFallbackTokenizer(String fallbackTokenizer) {
+      this.fallbackTokenizer = fallbackTokenizer;
+    }
+  }
+
+  public enum UsageMode {
+    AUTO,
+    NATIVE,
+    FALLBACK
   }
 }

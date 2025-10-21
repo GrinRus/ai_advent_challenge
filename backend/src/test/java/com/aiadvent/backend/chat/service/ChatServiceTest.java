@@ -13,6 +13,7 @@ import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.chat.provider.model.UsageSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -160,7 +161,8 @@ class ChatServiceTest {
             new BigDecimal("0.01234567"),
             new BigDecimal("0.02469135"),
             new BigDecimal("0.03703702"),
-            "USD");
+            "USD",
+            UsageSource.NATIVE);
 
     chatService.registerAssistantMessage(
         sessionId, "cost aware", "openai", "gpt", null, usageCost);
