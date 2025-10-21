@@ -74,15 +74,6 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
     if (StringUtils.hasText(provider.getDefaultModel())) {
       builder.model(provider.getDefaultModel());
     }
-    if (provider.getTemperature() != null) {
-      builder.temperature(provider.getTemperature());
-    }
-    if (provider.getTopP() != null) {
-      builder.topP(provider.getTopP());
-    }
-    if (provider.getMaxTokens() != null) {
-      builder.maxTokens(provider.getMaxTokens());
-    }
     return builder.build();
   }
 
@@ -125,6 +116,8 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
     ChatRequestOverrides effectiveOverrides = overrides != null ? overrides : ChatRequestOverrides.empty();
     OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder();
     builder.model(selection.modelId());
+    ChatProvidersProperties.Model modelConfig = providerConfig.getModels().get(selection.modelId());
+    boolean useCompletionTokens = modelConfig != null && modelConfig.isUseCompletionTokens();
 
     Double temperature =
         effectiveOverrides.temperature() != null
@@ -145,7 +138,11 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
             ? effectiveOverrides.maxTokens()
             : providerConfig.getMaxTokens();
     if (maxTokens != null) {
-      builder.maxTokens(maxTokens);
+      if (useCompletionTokens) {
+        builder.maxCompletionTokens(maxTokens);
+      } else {
+        builder.maxTokens(maxTokens);
+      }
     }
 
     return builder;

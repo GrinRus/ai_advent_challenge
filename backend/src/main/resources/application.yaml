@@ -119,6 +119,7 @@ app:
             tier: economy
             context-window: 128000
             max-output-tokens: 8192
+            use-completion-tokens: true
             pricing:
               input-per-1k-tokens: 0.00005
               output-per-1k-tokens: 0.0004
@@ -143,6 +144,7 @@ app:
             tier: flagship
             context-window: 200000
             max-output-tokens: 32768
+            use-completion-tokens: true
             pricing:
               input-per-1k-tokens: 0.00125
               output-per-1k-tokens: 0.01

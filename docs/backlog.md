@@ -250,3 +250,26 @@
 - [x] Добавить в `docs/processes.md` рекомендации по контролю затрат (алерты в OpenAI/GLM usage, квоты по сегментам, лимиты токенов для дорогих моделей).
 - [x] Подготовить CHANGELOG/релизную заметку Wave 6 с сравнением сегментов и планом постепенного включения `gpt-5`/`glm-4` с fallback на более дешёвые варианты.
 - [x] Обновить `docs/infra.md` и `docs/processes.md`: формула расчёта стоимости (Input/Output per 1K → фактический счёт), нюансы округления, требования к конфигурации `pricing` для OpenAI и GLM, гайды по мониторингу и алертам.
+
+## Wave 7 — Разделение sync и structured API
+### Backend
+- [ ] Ввести отдельный сервис синхронных текстовых ответов (`SyncChatService`): использовать `ChatProviderService` и `ChatService` для plain-вызова без `BeanOutputConverter`, сформировать новый DTO `ChatSyncResponse` (текст, провайдер, задержка, usage/cost), сохранять ассистентские сообщения без `structuredPayload`.
+- [ ] Переписать `ChatSyncController`: эндпоинт `POST /api/llm/chat/sync` должен возвращать `ChatSyncResponse`, выставлять заголовки `X-Session-Id`/`X-New-Session`, проверять поддержку синхронного режима через новый флаг `syncEnabled` в `ChatProvidersProperties.Model` и его обработку в `ChatProviderRegistry`.
+- [ ] Вынести структурированный поток в отдельный `StructuredSyncController` с маршрутом `POST /api/llm/chat/sync/structured`, переиспользовать `StructuredSyncService`, добавить при необходимости временный alias для старого пути и явно пометить его как устаревший.
+- [ ] Вынести общую логику подготовки `Prompt`/`ChatOptions`, регистрации сообщений, подсчёта `UsageCostEstimate` и конфигурации retry в переиспользуемый компонент для обоих sync-сервисов, чтобы устранить дублирование и расхождения в поведении.
+- [ ] Обновить конфигурацию провайдеров: добавить свойство `sync-enabled` в YAML, актуализировать `structured-enabled` для моделей (например, `glm-4-32b-0414-128k` — только sync), синхронизировать значения в `application.yaml`, `.env.example` и документации.
+
+### Тестирование
+- [ ] Разделить интеграционные сценарии: переписать `ChatSyncControllerIntegrationTest` под plain sync (сохранение текста, подсчёт usage/cost, retry на 429/5xx) и вынести существующие проверки JSON-схемы в новый `StructuredSyncControllerIntegrationTest`.
+- [ ] Добавить unit-тесты для `SyncChatService` (успех, пустой ответ, обработка исключений) и обновить `StructuredSyncServiceTest` после выделения общей логики.
+- [ ] Расширить тестовый стенд (`StubChatClientState`, `StubChatClientConfiguration`): научить отличать plain/structured ответы, задавать usage для sync-вызова, проверять корректный выбор модели и флагов `syncEnabled`/`structuredEnabled`.
+
+### Frontend
+- [ ] Обновить `frontend/src/lib/apiClient.ts`: вынести `CHAT_STRUCTURED_SYNC_URL`, добавить `requestSync()` с типом `ChatSyncResponse`, переключить `requestStructuredSync()` на новый путь и скорректировать типы ответов.
+- [ ] Переработать страницу `LLMChat`: расширить табы до `'stream' | 'sync' | 'structured'`, реализовать UI для мгновенного текстового ответа (контент, latency, usage/cost, повторное использование `sessionId`), скрывать табы по флагам `syncEnabled`/`structuredEnabled`.
+- [ ] Обновить хранение и отображение сообщений: разделить plain/structured ответы, исключить попадание `structured` payload в обычные сообщения, добавить сообщения об ошибках для sync (429, 502, timeout) и синхронизировать e2e/визуальные тесты.
+
+### Документация
+- [ ] Обновить `README.md` и `docs/infra.md`: описать различия стримингового, plain sync и structured режимов, новые маршруты API (`/sync` vs `/sync/structured`), примеры запросов/ответов и матрицу поддерживаемых режимов по моделям.
+- [ ] Актуализировать `docs/processes.md`: дополнить чек-листы тестирования (валидация JSON-схемы, деградация до plain sync), добавить инструкции по включению/отключению режимов через конфигурацию.
+- [ ] Обновить описание API в OpenAPI/Swagger (теги, `@Operation`), задокументировать устаревание старого пути и убедиться, что Swagger UI отображает оба эндпоинта отдельно.
