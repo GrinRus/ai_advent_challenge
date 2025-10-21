@@ -794,7 +794,7 @@ const LLMChat = () => {
         setSamplingDefaults(providerDefaults);
         setSamplingDisplay(computeDisplayValues(providerDefaults));
         setSamplingOverrides({});
-        updateActiveTabForModel(nextModel);
+        updateActiveTabForModel(defaultModel);
       } catch (loadError) {
         if (isCancelled) {
           return;
