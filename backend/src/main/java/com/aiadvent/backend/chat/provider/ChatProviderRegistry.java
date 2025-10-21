@@ -82,6 +82,10 @@ public class ChatProviderRegistry {
     return requireModel(providerId, modelId).isStreamingEnabled();
   }
 
+  public boolean supportsSync(String providerId, String modelId) {
+    return requireModel(providerId, modelId).isSyncEnabled();
+  }
+
   public boolean supportsStructured(String providerId, String modelId) {
     return requireModel(providerId, modelId).isStructuredEnabled();
   }

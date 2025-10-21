@@ -165,6 +165,7 @@ public class ChatProvidersProperties {
     private Pricing pricing = new Pricing();
     private Integer contextWindow;
     private Integer maxOutputTokens;
+    private boolean syncEnabled = true;
     private boolean streamingEnabled = true;
     private boolean structuredEnabled = true;
     private boolean useCompletionTokens = false;
@@ -207,6 +208,14 @@ public class ChatProvidersProperties {
 
     public void setMaxOutputTokens(Integer maxOutputTokens) {
       this.maxOutputTokens = maxOutputTokens;
+    }
+
+    public boolean isSyncEnabled() {
+      return syncEnabled;
+    }
+
+    public void setSyncEnabled(boolean syncEnabled) {
+      this.syncEnabled = syncEnabled;
     }
 
     public boolean isStreamingEnabled() {

@@ -1,7 +1,8 @@
 package com.aiadvent.backend.chat.controller;
+
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
-import com.aiadvent.backend.chat.api.ChatSyncResponse;
-import com.aiadvent.backend.chat.service.SyncChatService;
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
+import com.aiadvent.backend.chat.service.StructuredSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -21,39 +22,39 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/llm/chat")
 @Validated
-@Tag(name = "Sync Chat", description = "Endpoints for plain synchronous responses.")
-public class ChatSyncController {
+@Tag(name = "Structured Chat", description = "Endpoints for synchronous structured responses.")
+public class StructuredSyncController {
 
   private static final String SESSION_ID_HEADER = "X-Session-Id";
   private static final String NEW_SESSION_HEADER = "X-New-Session";
 
-  private final SyncChatService syncChatService;
+  private final StructuredSyncService structuredSyncService;
 
-  public ChatSyncController(SyncChatService syncChatService) {
-    this.syncChatService = syncChatService;
+  public StructuredSyncController(StructuredSyncService structuredSyncService) {
+    this.structuredSyncService = structuredSyncService;
   }
 
   @PostMapping(
-      value = "/sync",
+      value = "/sync/structured",
       consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE)
   @Operation(
-      summary = "Request a plain synchronous response from the selected provider.",
+      summary = "Request a structured synchronous response from the selected provider.",
       description =
-          "Creates or reuses a chat session, invokes the provider without structured constraints, and returns the textual completion.")
+          "Creates or reuses a chat session, enforces JSON schema via Spring AI BeanOutputConverter, and returns the structured payload.")
   @ApiResponse(
       responseCode = "200",
-      description = "Synchronous response from the provider.",
+      description = "Structured response from the provider.",
       headers = {
         @Header(
             name = SESSION_ID_HEADER,
             description = "Identifier of the chat session associated with the response."),
         @Header(name = NEW_SESSION_HEADER, description = "Indicates whether the session is newly created.")
       },
-      content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = ChatSyncResponse.class)))
+      content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = StructuredSyncResponse.class)))
   @ApiResponse(
-      responseCode = "400",
-      description = "Invalid request payload.",
+      responseCode = "422",
+      description = "Provider response failed JSON schema validation.",
       content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE))
   @ApiResponse(
       responseCode = "429",
@@ -63,8 +64,8 @@ public class ChatSyncController {
       responseCode = "502",
       description = "Upstream provider returned an error.",
       content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE))
-  public ResponseEntity<ChatSyncResponse> sync(@Valid @RequestBody ChatSyncRequest request) {
-    SyncChatService.SyncChatResult result = syncChatService.sync(request);
+  public ResponseEntity<StructuredSyncResponse> sync(@Valid @RequestBody ChatSyncRequest request) {
+    StructuredSyncService.StructuredSyncResult result = structuredSyncService.sync(request);
 
     HttpHeaders headers = new HttpHeaders();
     headers.add(SESSION_ID_HEADER, result.context().sessionId().toString());

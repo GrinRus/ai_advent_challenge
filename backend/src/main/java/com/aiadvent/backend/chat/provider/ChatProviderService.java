@@ -85,6 +85,10 @@ public class ChatProviderService {
     return registry.supportsStreaming(selection.providerId(), selection.modelId());
   }
 
+  public boolean supportsSync(ChatProviderSelection selection) {
+    return registry.supportsSync(selection.providerId(), selection.modelId());
+  }
+
   public boolean supportsStructured(ChatProviderSelection selection) {
     return registry.supportsStructured(selection.providerId(), selection.modelId());
   }

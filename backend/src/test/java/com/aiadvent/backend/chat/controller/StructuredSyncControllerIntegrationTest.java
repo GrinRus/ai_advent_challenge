@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
-import com.aiadvent.backend.chat.api.ChatSyncResponse;
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.domain.ChatMessage;
 import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
@@ -16,6 +16,7 @@ import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.support.StubChatClientConfiguration;
 import com.aiadvent.backend.chat.support.StubChatClientState;
 import com.aiadvent.backend.support.PostgresTestContainer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -50,9 +51,9 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(StubChatClientConfiguration.class)
-class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
+class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
-  private static final String SYNC_ENDPOINT = "/api/llm/chat/sync";
+  private static final String SYNC_ENDPOINT = "/api/llm/chat/sync/structured";
 
   @Autowired private MockMvc mockMvc;
 
@@ -78,12 +79,28 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
   }
 
   @Test
-  void syncPersistsPlainResponse() throws Exception {
-    StubChatClientState.setSyncResponses(List.of("Plain assistant response."));
-    StubChatClientState.setUsage(12, 24, 36);
+  void syncPersistsStructuredPayload() throws Exception {
+    String structuredJson =
+        """
+        {
+          "requestId": "8f4e37f8-2c68-4f74-8c61-0f6be90485ce",
+          "status": "success",
+          "provider": {"type":"OPENAI","model":"stub-model"},
+          "answer": {
+            "summary": "Summarized response",
+            "items": [
+              {"title": "Key Action", "details": "Do something important", "tags": ["action"]}
+            ],
+            "confidence": 0.92
+          },
+          "usage": {"promptTokens": 10, "completionTokens": 20, "totalTokens": 30}
+        }
+        """;
+
+    StubChatClientState.setSyncResponses(List.of(structuredJson));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Provide a quick answer", null, null, null);
+        new ChatSyncRequest(null, "Provide a structured summary", null, null, null);
 
     MvcResult result =
         mockMvc
@@ -96,13 +113,9 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
             .andExpect(header().exists("X-New-Session"))
             .andReturn();
 
-    ChatSyncResponse response =
-        objectMapper.readValue(result.getResponse().getContentAsString(), ChatSyncResponse.class);
-
-    assertThat(response.content()).isEqualTo("Plain assistant response.");
-    assertThat(response.usage()).isNotNull();
-    assertThat(response.usage().promptTokens()).isEqualTo(12);
-    assertThat(response.cost()).isNull();
+    StructuredSyncResponse response =
+        objectMapper.readValue(
+            result.getResponse().getContentAsString(), StructuredSyncResponse.class);
 
     UUID sessionId = UUID.fromString(result.getResponse().getHeader("X-Session-Id"));
     ChatSession session =
@@ -116,18 +129,24 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
 
     ChatMessage assistantMessage = messages.get(1);
     assertThat(assistantMessage.getRole()).isEqualTo(ChatRole.ASSISTANT);
-    assertThat(assistantMessage.getContent()).isEqualTo("Plain assistant response.");
-    assertThat(assistantMessage.getStructuredPayload()).isNull();
+    assertThat(assistantMessage.getStructuredPayload()).isNotNull();
+    JsonNode payload = assistantMessage.getStructuredPayload();
+    assertThat(payload.get("answer").get("items")).hasSize(1);
+    assertThat(payload.get("provider").get("type").asText()).isEqualTo("OPENAI");
+
+    assertThat(response.answer().summary()).isEqualTo("Summarized response");
+    assertThat(StubChatClientState.syncCallCount()).isEqualTo(1);
   }
 
   @Test
   void syncAppliesSamplingOverrides() throws Exception {
-    StubChatClientState.setSyncResponses(List.of("Overrides applied"));
+    StubChatClientState.setSyncResponses(
+        List.of("{\"answer\":{\"summary\":\"Overrides applied\",\"items\":[]}}"));
 
     ChatSyncRequest request =
         new ChatSyncRequest(
             null,
-            "Tune sampling for sync call",
+            "Tune sampling for structured call",
             null,
             null,
             new ChatStreamRequestOptions(0.3, 0.85, 640));
@@ -150,7 +169,8 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
 
   @Test
   void syncUsesProviderDefaultsWhenOverridesMissing() throws Exception {
-    StubChatClientState.setSyncResponses(List.of("Default sampling"));
+    StubChatClientState.setSyncResponses(
+        List.of("{\"answer\":{\"summary\":\"Default sampling\",\"items\":[]}}"));
 
     ChatSyncRequest request =
         new ChatSyncRequest(null, "Use provider defaults", null, null, null);
@@ -181,7 +201,12 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
             new byte[0],
             StandardCharsets.UTF_8);
 
-    StubChatClientState.setSyncResponses(List.of(tooManyRequests, "Recovered response"));
+    String structuredJson =
+        """
+        {"answer":{"summary":"Recovered","items":[]}}
+        """;
+
+    StubChatClientState.setSyncResponses(List.of(tooManyRequests, structuredJson));
 
     ChatSyncRequest request =
         new ChatSyncRequest(null, "Provide resilient summary", null, null, null);
@@ -202,20 +227,26 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
         chatMessageRepository.findBySessionOrderBySequenceNumberAsc(session);
 
     assertThat(messages).hasSize(2);
-    assertThat(messages.get(1).getStructuredPayload()).isNull();
     assertThat(StubChatClientState.syncCallCount()).isEqualTo(2);
+    assertThat(messages.get(1).getStructuredPayload()).isNotNull();
   }
 
   @Test
-  void syncRejectsEmptyMessage() throws Exception {
-    ChatSyncRequest request = new ChatSyncRequest(null, "   ", null, null, null);
+  void syncReturns422OnSchemaViolation() throws Exception {
+    StubChatClientState.setSyncResponses(List.of("{\"unexpected\": true}"));
+
+    ChatSyncRequest request =
+        new ChatSyncRequest(null, "Return invalid structure", null, null, null);
 
     mockMvc
         .perform(
             post(SYNC_ENDPOINT)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isUnprocessableEntity());
+
+    assertThat(chatSessionRepository.findAll()).isEmpty();
+    assertThat(chatMessageRepository.findAll()).isEmpty();
   }
 
   @Test
