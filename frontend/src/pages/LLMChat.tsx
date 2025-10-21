@@ -4,8 +4,10 @@ import {
   CHAT_STREAM_URL,
   fetchChatProviders,
   fetchSessionUsage,
+  requestSync,
   requestStructuredSync,
   type ChatProvidersResponse,
+  type ChatSyncResponse,
   type SessionUsageResponse,
   type SessionUsageTotals,
   type StructuredSyncResponse,
@@ -114,11 +116,15 @@ type ChatMessage = {
   status?: 'streaming' | 'complete';
   provider?: string;
   model?: string;
+  mode?: 'stream' | 'sync' | 'structured';
   structured?: StructuredSyncResponse | null;
+  sync?: ChatSyncResponse | null;
   relatedMessageId?: string;
   options?: SamplingSnapshot | null;
   usage?: StructuredSyncUsageStats | null;
   cost?: UsageCostDetails | null;
+  latencyMs?: number | null;
+  timestamp?: string | null;
 };
 
 type StreamPayload = {
@@ -137,7 +143,7 @@ type DrainResult = {
   stop: boolean;
 };
 
-type ActiveTab = 'stream' | 'structured';
+type ActiveTab = 'stream' | 'sync' | 'structured';
 
 const SAMPLING_KEYS: SamplingKey[] = ['temperature', 'topP', 'maxTokens'];
 
@@ -428,6 +434,101 @@ const drainSseBuffer = (
   return { buffer: working, stop };
 };
 
+type SyncResponseCardProps = {
+  message: ChatMessage;
+  providerLabel?: string;
+  modelLabel?: string;
+  optionsLabel?: string;
+};
+
+const SyncResponseCard = ({
+  message,
+  providerLabel = '—',
+  modelLabel = '—',
+  optionsLabel,
+}: SyncResponseCardProps) => {
+  const derivedTotal =
+    message.cost?.total ??
+    (message.cost
+      ? (message.cost.input ?? 0) + (message.cost.output ?? 0)
+      : null);
+  const currencySuffix = message.cost?.currency ? ` ${message.cost.currency}` : '';
+
+  return (
+    <div className="structured-response-card" data-testid="sync-response-card">
+      <div className="structured-summary">
+        <div className="structured-summary-header">
+          <h3>Синхронный ответ</h3>
+        </div>
+        <p data-testid="sync-summary-text">
+          {message.content || 'Модель вернула пустой ответ.'}
+        </p>
+        {optionsLabel && (
+          <span className="structured-options" data-testid="sync-options">
+            {optionsLabel}
+          </span>
+        )}
+      </div>
+
+      <div className="structured-metadata">
+        <div className="structured-metadata-group">
+          <span className="structured-label">Провайдер</span>
+          <span className="structured-value">{providerLabel || '—'}</span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Модель</span>
+          <span className="structured-value">{modelLabel || '—'}</span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Задержка</span>
+          <span className="structured-value">
+            {message.latencyMs != null ? `${message.latencyMs} мс` : '—'}
+          </span>
+        </div>
+        <div className="structured-metadata-group">
+          <span className="structured-label">Время</span>
+          <span className="structured-value">
+            {formatTimestamp(message.timestamp ?? undefined)}
+          </span>
+        </div>
+        {message.cost && (
+          <div className="structured-metadata-group">
+            <span className="structured-label">Стоимость</span>
+            <span className="structured-value">
+              {formatCost(message.cost.input)} / {formatCost(message.cost.output)} /{' '}
+              {formatCost(derivedTotal)}
+              {currencySuffix}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {message.usage && (
+        <div className="structured-usage">
+          <div className="structured-usage-metric">
+            <span className="structured-label">Prompt</span>
+            <span className="structured-value">
+              {formatTokens(message.usage.promptTokens)}
+            </span>
+          </div>
+          <div className="structured-usage-metric">
+            <span className="structured-label">Completion</span>
+            <span className="structured-value">
+              {formatTokens(message.usage.completionTokens)}
+            </span>
+          </div>
+          <div className="structured-usage-metric">
+            <span className="structured-label">Total</span>
+            <span className="structured-value">
+              {formatTokens(message.usage.totalTokens)}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 type StructuredResponseCardProps = {
   response: StructuredSyncResponse;
   providerLabel?: string;
@@ -594,6 +695,10 @@ const LLMChat = () => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [syncInput, setSyncInput] = useState('');
+  const [isSyncLoading, setIsSyncLoading] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [structuredInput, setStructuredInput] = useState('');
   const [activeStructuredMessageId, setActiveStructuredMessageId] = useState<string | null>(null);
   const [isStructuredLoading, setIsStructuredLoading] = useState(false);
@@ -610,6 +715,46 @@ const LLMChat = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+
+  function updateActiveTabForModel(model: ProviderModel | null) {
+    if (!model) {
+      return;
+    }
+    const supportsStream = model.streamingEnabled !== false;
+    const supportsSync = model.syncEnabled !== false;
+    const supportsStructured = model.structuredEnabled !== false;
+
+    const currentSupported =
+      (activeTab === 'stream' && supportsStream) ||
+      (activeTab === 'sync' && supportsSync) ||
+      (activeTab === 'structured' && supportsStructured);
+
+    if (currentSupported) {
+      return;
+    }
+
+    if (supportsStream) {
+      setActiveTab('stream');
+      setInfo(null);
+      return;
+    }
+    if (supportsSync) {
+      setActiveTab('sync');
+      setInfo(
+          supportsStructured
+              ? 'Выбранная модель не поддерживает Streaming. Переключено в Sync режим.'
+              : 'Выбранная модель поддерживает только Sync режим.',
+      );
+      return;
+    }
+    if (supportsStructured) {
+      setActiveTab('structured');
+      setInfo('Выбранная модель поддерживает только Structured режим.');
+      return;
+    }
+
+    setInfo('Для выбранной модели не настроен поддерживаемый режим.');
+  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -649,6 +794,7 @@ const LLMChat = () => {
         setSamplingDefaults(providerDefaults);
         setSamplingDisplay(computeDisplayValues(providerDefaults));
         setSamplingOverrides({});
+        updateActiveTabForModel(nextModel);
       } catch (loadError) {
         if (isCancelled) {
           return;
@@ -762,6 +908,7 @@ const LLMChat = () => {
   );
 
   const streamingSupported = selectedModelConfig?.streamingEnabled !== false;
+  const syncSupported = selectedModelConfig?.syncEnabled !== false;
   const structuredSupported = selectedModelConfig?.structuredEnabled !== false;
   const canSendMessage =
     Boolean(
@@ -773,7 +920,7 @@ const LLMChat = () => {
     );
 
   const samplingControlsDisabled =
-    isCatalogLoading || isStreaming || isStructuredLoading;
+    isCatalogLoading || isStreaming || isSyncLoading || isStructuredLoading;
 
   const normalizedSamplingOverrides = useMemo(
     () => diffOverridesAgainstDefaults(samplingOverrides, samplingDefaults),
@@ -788,6 +935,14 @@ const LLMChat = () => {
   const structuredMessages = messages.filter(
     (message): message is ChatMessage & { structured: StructuredSyncResponse } =>
       message.role === 'assistant' && Boolean(message.structured),
+  );
+
+  const syncMessages = useMemo(
+    () =>
+      messages.filter(
+        (message) => message.role === 'assistant' && message.mode === 'sync',
+      ),
+    [messages],
   );
 
   const activeStructuredMessage =
@@ -832,14 +987,19 @@ const LLMChat = () => {
       : '—';
 
   const streamingLabel = 'Потоковый';
+  const syncLabel = 'Синхронный';
   const structuredLabel = 'Структурированный';
-  const modesSummary = streamingSupported
-    ? structuredSupported
-      ? `${streamingLabel} + ${structuredLabel}`
-      : streamingLabel
-    : structuredSupported
-    ? structuredLabel
-    : '—';
+  const supportedModes: string[] = [];
+  if (streamingSupported) {
+    supportedModes.push(streamingLabel);
+  }
+  if (syncSupported) {
+    supportedModes.push(syncLabel);
+  }
+  if (structuredSupported) {
+    supportedModes.push(structuredLabel);
+  }
+  const modesSummary = supportedModes.length > 0 ? supportedModes.join(' + ') : '—';
 
   const resolveProviderName = (providerId?: string | null) => {
     if (!providerId) {
@@ -947,6 +1107,10 @@ const LLMChat = () => {
     setStructuredNotice(null);
     setStructuredError(null);
     setActiveStructuredMessageId(null);
+    setSyncError(null);
+    setSyncNotice(null);
+    setSyncInput('');
+    setIsSyncLoading(false);
     if (!providerCatalog) {
       setSelectedModel('');
       return;
@@ -975,11 +1139,7 @@ const LLMChat = () => {
     setSamplingDefaults(providerDefaults);
     setSamplingDisplay(computeDisplayValues(providerDefaults));
     setSamplingOverrides({});
-
-    if (nextModel?.streamingEnabled === false) {
-      setActiveTab('structured');
-      setInfo('Выбранная модель поддерживает только Structured режим.');
-    }
+    updateActiveTabForModel(nextModel);
   };
 
   const handleModelChange = (modelId: string) => {
@@ -989,6 +1149,10 @@ const LLMChat = () => {
     setStructuredNotice(null);
     setStructuredError(null);
     setActiveStructuredMessageId(null);
+    setSyncError(null);
+    setSyncNotice(null);
+    setSyncInput('');
+    setIsSyncLoading(false);
 
     if (currentProvider) {
       const selectedEntry =
@@ -1001,11 +1165,7 @@ const LLMChat = () => {
       setSamplingDefaults(providerDefaults);
       setSamplingDisplay(computeDisplayValues(providerDefaults));
       setSamplingOverrides({});
-
-      if (selectedEntry?.streamingEnabled === false) {
-        setActiveTab('structured');
-        setInfo('Выбранная модель поддерживает только Structured режим.');
-      }
+      updateActiveTabForModel(selectedEntry);
     }
   };
 
@@ -1024,6 +1184,10 @@ const LLMChat = () => {
     setStructuredError(null);
     setStructuredNotice(null);
     setStructuredInput('');
+    setSyncInput('');
+    setSyncError(null);
+    setSyncNotice(null);
+    setIsSyncLoading(false);
     setSessionUsage(null);
     setSessionUsageError(null);
     setIsSessionUsageLoading(false);
@@ -1042,24 +1206,35 @@ const LLMChat = () => {
       return;
     }
     if (tab === 'stream' && !streamingSupported) {
-      setInfo('Выбранная модель поддерживает только Structured режим.');
-      setActiveTab('structured');
+      setInfo('Выбранная модель не поддерживает Streaming режим.');
+      return;
+    }
+    if (tab === 'sync' && !syncSupported) {
+      setSyncError('Выбранная модель не поддерживает Sync режим.');
       return;
     }
     if (tab === 'structured' && !structuredSupported) {
       setStructuredError('Выбранная модель не поддерживает Structured режим.');
       return;
     }
-    if (tab === 'structured' && isStreaming) {
+    if (tab !== 'stream' && isStreaming) {
       stopStreaming();
     }
     setActiveTab(tab);
+    if (tab !== 'stream') {
+      setError(null);
+    }
     if (tab === 'stream') {
       setStructuredError(null);
       setStructuredNotice(null);
+      setSyncError(null);
+      setSyncNotice(null);
+    } else if (tab === 'sync') {
+      setSyncError(null);
+      setSyncNotice(null);
     } else {
-      setError(null);
-      setInfo(null);
+      setStructuredError(null);
+      setStructuredNotice(null);
     }
   };
 
@@ -1113,6 +1288,7 @@ const LLMChat = () => {
       status: 'complete',
       provider: selectedProvider,
       model: selectedModel,
+      mode: 'structured',
     };
     setMessages((prev) => [...prev, structuredUserMessage]);
 
@@ -1146,6 +1322,9 @@ const LLMChat = () => {
         notice = details
           ? `Создан новый диалог (${details})`
           : 'Создан новый диалог';
+        setSessionUsage(null);
+        setSessionUsageError(null);
+        setIsSessionUsageLoading(false);
       }
 
       setStructuredNotice(
@@ -1159,6 +1338,7 @@ const LLMChat = () => {
         status: 'complete',
         provider: selectedProvider,
         model: messageModel,
+        mode: 'structured',
         structured: body,
         relatedMessageId: requestMessageId,
         options: optionsSnapshot,
@@ -1189,9 +1369,128 @@ const LLMChat = () => {
     }
   };
 
+  const handleSyncSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = syncInput.trim();
+    if (!trimmed || isSyncLoading) {
+      return;
+    }
+
+    if (!canSendMessage) {
+      setSyncNotice('Дождитесь готовности конфигурации перед отправкой запроса.');
+      return;
+    }
+
+    if (!syncSupported) {
+      setSyncError('Выбранная модель не поддерживает Sync режим.');
+      return;
+    }
+
+    setSyncError(null);
+    setSyncNotice(null);
+    setIsSyncLoading(true);
+
+    const requestMessageId = generateId();
+    const syncUserMessage: ChatMessage = {
+      id: requestMessageId,
+      role: 'user',
+      content: trimmed,
+      status: 'complete',
+      provider: selectedProvider,
+      model: selectedModel,
+      mode: 'sync',
+    };
+    setMessages((prev) => [...prev, syncUserMessage]);
+
+    const { payload, effectiveOptions } = buildChatPayload({
+      message: trimmed,
+      sessionId,
+      provider: selectedProvider,
+      model: selectedModel,
+      overrides: normalizedSamplingOverrides,
+      defaults: samplingDefaults,
+    });
+    const optionsSnapshot = effectiveOptions;
+
+    try {
+      const { body, sessionId: nextSessionId, newSession } = await requestSync(payload);
+
+      if (nextSessionId) {
+        setSessionId(nextSessionId);
+        sessionIdRef.current = nextSessionId;
+      }
+
+      if (selectedProvider) {
+        setLastProvider(selectedProvider);
+      }
+      const fallbackModel =
+        selectedModel && selectedModel.length > 0 ? selectedModel : undefined;
+      const messageModel =
+        body.provider?.model && body.provider.model.length > 0
+          ? body.provider.model
+          : fallbackModel;
+      if (messageModel) {
+        setLastModel(messageModel);
+      }
+
+      if (newSession) {
+        setSessionUsage(null);
+        setSessionUsageError(null);
+        setIsSessionUsageLoading(false);
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: body.content ?? 'Ответ пустой.',
+        status: 'complete',
+        provider: selectedProvider,
+        model: messageModel,
+        mode: 'sync',
+        sync: body,
+        relatedMessageId: requestMessageId,
+        options: optionsSnapshot,
+        usage: body.usage ?? null,
+        cost: body.cost ?? null,
+        latencyMs: body.latencyMs ?? null,
+        timestamp: body.timestamp ?? null,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      const providerLabel = resolveProviderName(selectedProvider);
+      const modelLabel = resolveModelName(selectedProvider, messageModel);
+      const details = [providerLabel, modelLabel].filter(Boolean).join(' · ');
+
+      let notice: string | null = null;
+      if (newSession) {
+        notice = details
+          ? `Создан новый диалог (${details})`
+          : 'Создан новый диалог';
+        setInfo(notice);
+      } else {
+        notice = details ? `Получен ответ (${details})` : 'Получен ответ.';
+      }
+      setSyncNotice(notice);
+      setSyncInput('');
+
+      const targetSessionId = nextSessionId ?? sessionId ?? null;
+      if (targetSessionId) {
+        refreshSessionUsage(targetSessionId);
+      }
+    } catch (syncFailure) {
+      const message =
+        syncFailure instanceof Error
+          ? syncFailure.message
+          : 'Не удалось получить ответ.';
+      setSyncError(message);
+    } finally {
+      setIsSyncLoading(false);
+    }
+  };
+
   const streamMessage = async (message: string) => {
     if (!streamingSupported) {
-      setInfo('Выбранная модель поддерживает только Structured режим.');
+      setInfo('Выбранная модель не поддерживает Streaming режим.');
       return;
     }
     setError(null);
@@ -1205,6 +1504,7 @@ const LLMChat = () => {
       status: 'complete',
       provider: selectedProvider,
       model: selectedModel,
+      mode: 'stream',
     };
     setMessages((prev) => [...prev, userMessage]);
 
@@ -1246,6 +1546,7 @@ const LLMChat = () => {
             provider: provider ?? undefined,
             model: model ?? undefined,
             options: optionsSnapshot,
+            mode: 'stream',
           },
         ]);
         return;
@@ -1263,6 +1564,7 @@ const LLMChat = () => {
             provider: provider ?? undefined,
             model: model ?? undefined,
             options: optionsSnapshot,
+            mode: 'stream',
           });
           return next;
         }
@@ -1299,6 +1601,7 @@ const LLMChat = () => {
             options: optionsSnapshot,
             usage: usage ?? null,
             cost: cost ?? null,
+            mode: 'stream',
           },
         ]);
         return;
@@ -1318,6 +1621,7 @@ const LLMChat = () => {
             options: optionsSnapshot,
             usage: usage ?? null,
             cost: cost ?? null,
+            mode: 'stream',
           });
           return next;
         }
@@ -1756,10 +2060,22 @@ const LLMChat = () => {
             title={
               streamingSupported
                 ? undefined
-                : 'Модель поддерживает только Structured режим.'
+                : 'Модель не поддерживает Streaming режим.'
             }
           >
             Streaming
+          </button>
+          <button
+            type="button"
+            className={`llm-chat-tab ${activeTab === 'sync' ? 'active' : ''}`}
+            onClick={() => handleTabChange('sync')}
+            data-testid="tab-sync"
+            disabled={!syncSupported}
+            title={
+              syncSupported ? undefined : 'Модель не поддерживает Sync режим.'
+            }
+          >
+            Sync
           </button>
           <button
             type="button"
@@ -1954,6 +2270,111 @@ const LLMChat = () => {
               </div>
             </form>
           </>
+        ) : activeTab === 'sync' ? (
+          <div className="llm-chat-sync">
+            <form className="llm-chat-form" onSubmit={handleSyncSubmit}>
+              <label className="llm-chat-label" htmlFor="llm-chat-sync-input">
+                Запрос
+              </label>
+              <textarea
+                id="llm-chat-sync-input"
+                className="llm-chat-textarea"
+                placeholder="Опишите задачу для синхронного ответа…"
+                value={syncInput}
+                onChange={(event) => setSyncInput(event.target.value)}
+                disabled={isSyncLoading}
+              />
+              <div className="llm-chat-actions">
+                <button
+                  type="submit"
+                  className="llm-chat-button primary"
+                  disabled={
+                    isSyncLoading ||
+                    !syncInput.trim() ||
+                    !canSendMessage
+                  }
+                >
+                  {isSyncLoading ? 'Отправляем…' : 'Отправить'}
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button ghost"
+                  onClick={() => setSyncInput('')}
+                  disabled={isSyncLoading || syncInput.length === 0}
+                >
+                  Очистить
+                </button>
+                <button
+                  type="button"
+                  className="llm-chat-button ghost"
+                  onClick={resetChat}
+                  disabled={
+                    isSyncLoading ||
+                    (messages.length === 0 && syncMessages.length === 0)
+                  }
+                >
+                  Новый диалог
+                </button>
+              </div>
+            </form>
+
+            {(syncError || syncNotice || isSyncLoading) && (
+              <div className="llm-chat-status">
+                {syncError && (
+                  <span className="llm-chat-error">{syncError}</span>
+                )}
+                {!syncError && syncNotice && (
+                  <span className="llm-chat-info">{syncNotice}</span>
+                )}
+                {!syncError &&
+                  !syncNotice &&
+                  isSyncLoading && (
+                    <span className="llm-chat-info">
+                      Получаем синхронный ответ…
+                    </span>
+                  )}
+              </div>
+            )}
+
+            {syncMessages.length > 0 ? (
+              <div className="structured-history">
+                {syncMessages.map((message) => {
+                  const related =
+                    message.relatedMessageId &&
+                    messages.find((item) => item.id === message.relatedMessageId);
+                  const providerLabel = resolveProviderName(message.provider);
+                  const modelLabel = resolveModelName(
+                    message.provider,
+                    message.model,
+                  );
+                  return (
+                    <div key={message.id} className="structured-history-entry">
+                      {related && (
+                        <div className="structured-request-preview">
+                          <span className="structured-label">Запрос</span>
+                          <p className="structured-value">{related.content}</p>
+                        </div>
+                      )}
+                      <SyncResponseCard
+                        message={message}
+                        providerLabel={providerLabel}
+                        modelLabel={modelLabel}
+                        optionsLabel={
+                          message.options
+                            ? formatSamplingSummary(message.options)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="structured-placeholder">
+                Синхронные ответы появятся здесь после отправки запроса.
+              </div>
+            )}
+          </div>
         ) : (
           <div className="llm-chat-structured">
             <form className="llm-chat-form" onSubmit={handleStructuredSubmit}>

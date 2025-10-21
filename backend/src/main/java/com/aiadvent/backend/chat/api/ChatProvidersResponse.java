@@ -27,6 +27,7 @@ public record ChatProvidersResponse(String defaultProvider, List<Provider> provi
       BigDecimal outputPer1KTokens,
       Integer contextWindow,
       Integer maxOutputTokens,
+      Boolean syncEnabled,
       Boolean streamingEnabled,
       Boolean structuredEnabled,
       String currency) {}

@@ -70,6 +70,7 @@ public class ChatProviderController {
         outputCost,
         contextWindow,
         maxOutputTokens,
+        model.isSyncEnabled(),
         model.isStreamingEnabled(),
         model.isStructuredEnabled(),
         currency);

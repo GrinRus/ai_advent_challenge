@@ -265,14 +265,14 @@
 - [x] Расширить тестовый стенд (`StubChatClientState`, `StubChatClientConfiguration`): научить отличать plain/structured ответы, задавать usage для sync-вызова, проверять корректный выбор модели и флагов `syncEnabled`/`structuredEnabled`.
 
 ### Frontend
-- [ ] Обновить `frontend/src/lib/apiClient.ts`: вынести `CHAT_STRUCTURED_SYNC_URL`, добавить `requestSync()` с типом `ChatSyncResponse`, переключить `requestStructuredSync()` на новый путь и скорректировать типы ответов.
-- [ ] Переработать страницу `LLMChat`: расширить табы до `'stream' | 'sync' | 'structured'`, реализовать UI для мгновенного текстового ответа (контент, latency, usage/cost, повторное использование `sessionId`), скрывать табы по флагам `syncEnabled`/`structuredEnabled`.
-- [ ] Обновить хранение и отображение сообщений: разделить plain/structured ответы, исключить попадание `structured` payload в обычные сообщения, добавить сообщения об ошибках для sync (429, 502, timeout) и синхронизировать e2e/визуальные тесты.
+- [x] Обновить `frontend/src/lib/apiClient.ts`: вынести `CHAT_STRUCTURED_SYNC_URL`, добавить `requestSync()` с типом `ChatSyncResponse`, переключить `requestStructuredSync()` на новый путь и скорректировать типы ответов.
+- [x] Переработать страницу `LLMChat`: расширить табы до `'stream' | 'sync' | 'structured'`, реализовать UI для мгновенного текстового ответа (контент, latency, usage/cost, повторное использование `sessionId`), скрывать табы по флагам `syncEnabled`/`structuredEnabled`.
+- [x] Обновить хранение и отображение сообщений: разделить plain/structured ответы, исключить попадание `structured` payload в обычные сообщения, добавить сообщения об ошибках для sync (429, 502, timeout) и синхронизировать e2e/визуальные тесты.
 
 ### Документация
-- [ ] Обновить `README.md` и `docs/infra.md`: описать различия стримингового, plain sync и structured режимов, новые маршруты API (`/sync` vs `/sync/structured`), примеры запросов/ответов и матрицу поддерживаемых режимов по моделям.
-- [ ] Актуализировать `docs/processes.md`: дополнить чек-листы тестирования (валидация JSON-схемы, деградация до plain sync), добавить инструкции по включению/отключению режимов через конфигурацию.
-- [ ] Обновить описание API в OpenAPI/Swagger (теги, `@Operation`), задокументировать устаревание старого пути и убедиться, что Swagger UI отображает оба эндпоинта отдельно.
+- [x] Обновить `README.md` и `docs/infra.md`: описать различия стримингового, plain sync и structured режимов, новые маршруты API (`/sync` vs `/sync/structured`), примеры запросов/ответов и матрицу поддерживаемых режимов по моделям.
+- [x] Актуализировать `docs/processes.md`: дополнить чек-листы тестирования (валидация JSON-схемы, деградация до plain sync), добавить инструкции по включению/отключению режимов через конфигурацию.
+- [x] Обновить описание API в OpenAPI/Swagger (теги, `@Operation`), задокументировать устаревание старого пути и убедиться, что Swagger UI отображает оба эндпоинта отдельно.
 
 ## Wave 8 — Usage в стриминге и fallback токенайзер
 ### Аналитика
