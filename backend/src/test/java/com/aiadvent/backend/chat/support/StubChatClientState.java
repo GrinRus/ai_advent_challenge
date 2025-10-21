@@ -29,6 +29,8 @@ public final class StubChatClientState {
 
   private static final AtomicReference<Usage> USAGE = new AtomicReference<>();
 
+  private static final AtomicReference<String> LAST_SYNC_MODE = new AtomicReference<>();
+
   private StubChatClientState() {}
 
   public static void setTokens(List<String> tokens) {
@@ -51,10 +53,18 @@ public final class StubChatClientState {
     SYNC_RESPONSES.set(new ConcurrentLinkedQueue<>());
     SYNC_CALLS.set(0);
     USAGE.set(null);
+    LAST_SYNC_MODE.set(null);
   }
 
   public static void capturePrompt(Prompt prompt) {
     LAST_PROMPT.set(prompt);
+    if (prompt != null) {
+      String probe = prompt.toString();
+      boolean structured = probe != null && probe.contains("строгим JSON");
+      LAST_SYNC_MODE.set(structured ? "structured" : "plain");
+    } else {
+      LAST_SYNC_MODE.set(null);
+    }
   }
 
   public static Prompt lastPrompt() {
@@ -105,5 +115,9 @@ public final class StubChatClientState {
 
   public static int syncCallCount() {
     return SYNC_CALLS.get();
+  }
+
+  public static String lastSyncMode() {
+    return LAST_SYNC_MODE.get();
   }
 }

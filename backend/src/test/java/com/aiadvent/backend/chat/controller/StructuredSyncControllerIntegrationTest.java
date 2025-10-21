@@ -136,6 +136,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     assertThat(response.answer().summary()).isEqualTo("Summarized response");
     assertThat(StubChatClientState.syncCallCount()).isEqualTo(1);
+    assertThat(StubChatClientState.lastSyncMode()).isEqualTo("structured");
   }
 
   @Test

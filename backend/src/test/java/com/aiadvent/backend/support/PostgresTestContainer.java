@@ -2,20 +2,11 @@ package com.aiadvent.backend.support;
 
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
 public abstract class PostgresTestContainer {
 
-  @Container
-  @SuppressWarnings("resource")
-  private static final PostgreSQLContainer<?> POSTGRES =
-      new PostgreSQLContainer<>("pgvector/pgvector:pg15")
-          .withDatabaseName("ai_advent_test")
-          .withUsername("ai_advent")
-          .withPassword("ai_advent");
+  private static final SingletonPostgresContainer POSTGRES =
+      SingletonPostgresContainer.getInstance();
 
   @DynamicPropertySource
   static void configure(DynamicPropertyRegistry registry) {

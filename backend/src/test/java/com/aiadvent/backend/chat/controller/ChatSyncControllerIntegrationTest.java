@@ -102,7 +102,9 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     assertThat(response.content()).isEqualTo("Plain assistant response.");
     assertThat(response.usage()).isNotNull();
     assertThat(response.usage().promptTokens()).isEqualTo(12);
-    assertThat(response.cost()).isNull();
+    assertThat(response.cost()).isNotNull();
+    assertThat(response.cost().total()).isZero();
+    assertThat(StubChatClientState.lastSyncMode()).isEqualTo("plain");
 
     UUID sessionId = UUID.fromString(result.getResponse().getHeader("X-Session-Id"));
     ChatSession session =

@@ -26,7 +26,8 @@ AI Advent Challenge — инициативный проект по развит�
 ## Режимы работы чата
 
 - **Streaming** — `POST /api/llm/chat/stream`, сервер отправляет SSE-события (`session`, `token`, `complete`, `error`). Подходит для повседневного диалога и быстрого обратного ответа.
-- **Structured Sync** — `POST /api/llm/chat/sync`, backend возвращает готовый JSON (`StructuredSyncResponse`) с заголовками `X-Session-Id` и `X-New-Session`. Ответ следует схеме Spring AI `BeanOutputConverter`, для OpenAI используется `responseFormat(JSON_SCHEMA)`/`strict=true`, для ZhiPu — формат подмешивается в промпт. Пример структуры и параметры ретраев описаны в `docs/infra.md`.
+- **Sync** — `POST /api/llm/chat/sync`, backend возвращает plain `ChatSyncResponse` (текст, provider/model, usage/cost, latency) с заголовками `X-Session-Id` и `X-New-Session`.
+- **Structured Sync** — `POST /api/llm/chat/sync/structured`, backend возвращает JSON (`StructuredSyncResponse`) по схеме Spring AI `BeanOutputConverter`. Для OpenAI подключается `responseFormat(JSON_SCHEMA)`/`strict=true`, для ZhiPu формат подмешивается в промпт. Подробности и примеры находятся в `docs/infra.md`.
 
 Обе формы принимают одинаковый payload (`sessionId`, `message`, `provider`, `model`, `options`). Если `sessionId` не передан, создаётся новый диалог.
 

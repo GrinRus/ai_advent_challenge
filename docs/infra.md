@@ -29,6 +29,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - OpenAI: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL`, `OPENAI_TEMPERATURE`, `OPENAI_TOP_P`, `OPENAI_MAX_TOKENS`, `OPENAI_TIMEOUT`.
   - Zhipu (z.ai): `ZHIPU_BASE_URL`, `ZHIPU_COMPLETIONS_PATH`, `ZHIPU_API_KEY`, `ZHIPU_DEFAULT_MODEL`, `ZHIPU_TEMPERATURE`, `ZHIPU_TOP_P`, `ZHIPU_MAX_TOKENS`, `ZHIPU_TIMEOUT`.
   Переменные заданы в `.env.example` и автоматически прокидываются в контейнер backend через `docker-compose.yml`.
+- Для каждой модели теперь задаются три флага режима: `streaming-enabled`, `sync-enabled`, `structured-enabled`. Plain sync контроллер использует `syncEnabled`, структурированный — `structuredEnabled`. Модели вроде `glm-4-32b-0414-128k` имеют `streamingEnabled=false`, `structuredEnabled=false`, но допускают plain sync (`syncEnabled=true`).
 - Каждому провайдеру можно задать стратегию ретраев через секцию `retry` в `application.yaml` (параметры также доступны как env-переменные `*_RETRY_*`). Структура:
 
   ```yaml
@@ -73,7 +74,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - Для аналитики и биллинга доступен REST-эндпоинт `GET /api/llm/sessions/{id}/usage`, который возвращает список сообщений и агрегаты по диалогу.
   - Расчёт стоимости выполняется на основе прайсинга, заданного в `app.chat.providers.*.models.[modelId].pricing`; единица измерения — USD за 1K токенов.
 
-Оба LLM-эндпоинта (`/stream`, `/sync`) принимают опциональный блок `options` с параметрами sampling. Если оставить его пустым или удалить ключи, сервис применит значения по умолчанию из `app.chat.providers.<provider>`. Диапазоны: `temperature` — `0..2`, `topP` — `0..1`, `maxTokens` ≥ `1`.
+Все LLM-эндпоинты (`/stream`, `/sync`, `/sync/structured`) принимают опциональный блок `options` с параметрами sampling. Если оставить его пустым или удалить ключи, сервис применит значения по умолчанию из `app.chat.providers.<provider>`. Диапазоны: `temperature` — `0..2`, `topP` — `0..1`, `maxTokens` ≥ `1`.
 
 ```json
 // Запрос без overrides (используются дефолты провайдера)
@@ -99,7 +100,8 @@ Frontend контейнер проксирует все запросы `/api/*` 
 Подробная схема доступна в OpenAPI (`/v3/api-docs`, swagger-ui настраивается через `backend/src/main/resources/application.yaml`).
 
 ### Синхронный структурированный ответ
-- Новый эндпоинт `POST /api/llm/chat/sync` принимает `ChatSyncRequest` (тот же формат, что и стриминг: `sessionId`, `message`, `provider`, `model`, `options`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
+- Новый plain sync эндпоинт `POST /api/llm/chat/sync` возвращает `ChatSyncResponse`: текстовую completion, метаданные провайдера/модели, задержку и usage/cost. Формат запроса повторяет стриминг (`ChatSyncRequest`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
+- Структурированный sync-эндпоинт перемещён на `POST /api/llm/chat/sync/structured`. Он по-прежнему принимает `ChatSyncRequest`, но отвечает `StructuredSyncResponse` и требует поддержки `structuredEnabled` у модели.
 - Backend использует `BeanOutputConverter<StructuredSyncResponse>` из Spring AI: для OpenAI схема пробрасывается через `responseFormat(JSON_SCHEMA)` и `strict=true`, для остальных провайдеров (например, ZhiPu) генерация схемы подмешивается в промпт.
 - Запрос проходит через `StructuredSyncService`, который собирает RetryTemplate на основе конфигурации провайдера, повторяет вызов на указанных статусах/ошибках схемы и логирует номер попытки/причину остановки. Финальный 422 отдается при окончательном несоответствии JSON.
 - Ответ имеет фиксированную структуру `StructuredSyncResponse` и включает технические поля (`provider.type`, `provider.model`, `usage`) и полезную нагрузку в `answer`. Пример:
@@ -131,6 +133,31 @@ Frontend контейнер проксирует все запросы `/api/*` 
   },
   "latencyMs": 1240,
   "timestamp": "2024-05-24T10:15:30Z"
+}
+```
+
+**Пример plain ChatSyncResponse**
+```json
+{
+  "requestId": "a8f902c2-8af1-4c96-bafd-2699d713ba42",
+  "content": "Здесь краткий ответ ассистента.",
+  "provider": {
+    "type": "OPENAI",
+    "model": "gpt-4o-mini"
+  },
+  "usage": {
+    "promptTokens": 128,
+    "completionTokens": 256,
+    "totalTokens": 384
+  },
+  "cost": {
+    "input": 0.00002,
+    "output": 0.00015,
+    "total": 0.00017,
+    "currency": "USD"
+  },
+  "latencyMs": 420,
+  "timestamp": "2025-10-21T09:30:12Z"
 }
 ```
 
