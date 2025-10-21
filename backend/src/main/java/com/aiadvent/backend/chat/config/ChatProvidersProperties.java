@@ -167,6 +167,7 @@ public class ChatProvidersProperties {
     private Integer maxOutputTokens;
     private boolean streamingEnabled = true;
     private boolean structuredEnabled = true;
+    private boolean useCompletionTokens = false;
 
     public String getDisplayName() {
       return displayName;
@@ -222,6 +223,14 @@ public class ChatProvidersProperties {
 
     public void setStructuredEnabled(boolean structuredEnabled) {
       this.structuredEnabled = structuredEnabled;
+    }
+
+    public boolean isUseCompletionTokens() {
+      return useCompletionTokens;
+    }
+
+    public void setUseCompletionTokens(boolean useCompletionTokens) {
+      this.useCompletionTokens = useCompletionTokens;
     }
   }
 
