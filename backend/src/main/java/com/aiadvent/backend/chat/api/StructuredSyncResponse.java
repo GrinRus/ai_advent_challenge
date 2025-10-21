@@ -19,6 +19,8 @@ public record StructuredSyncResponse(
     @Schema(description = "Domain-specific structured answer produced by the provider.")
         StructuredSyncAnswer answer,
     @Schema(description = "Token usage reported by the provider.") StructuredSyncUsageStats usage,
+    @Schema(description = "Cost breakdown calculated by the backend based on usage and pricing.")
+        UsageCostDetails cost,
     @Schema(description = "Total latency in milliseconds observed by the backend.", example = "1240")
         Long latencyMs,
     @Schema(description = "UTC timestamp when the response was generated.")

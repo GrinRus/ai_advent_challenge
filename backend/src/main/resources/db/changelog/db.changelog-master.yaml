@@ -242,3 +242,29 @@ databaseChangeLog:
                   name: session_id
               - column:
                   name: created_at
+  - changeSet:
+      id: 0008-add-usage-cost-to-chat-message
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: chat_message
+            columns:
+              - column:
+                  name: prompt_tokens
+                  type: BIGINT
+              - column:
+                  name: completion_tokens
+                  type: BIGINT
+              - column:
+                  name: total_tokens
+                  type: BIGINT
+              - column:
+                  name: input_cost
+                  type: NUMERIC(19, 8)
+              - column:
+                  name: output_cost
+                  type: NUMERIC(19, 8)
+              - column:
+                  name: currency
+                  type: VARCHAR(8)

@@ -53,6 +53,81 @@
   white-space: nowrap;
 }
 
+.llm-chat-model-info {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.llm-chat-model-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.85rem;
+  color: #334155;
+}
+
+.llm-chat-model-info-label {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.llm-chat-model-info-value {
+  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  color: #0f172a;
+  text-align: right;
+}
+
+.llm-chat-model-hint {
+  font-size: 0.75rem;
+  color: #475569;
+}
+
+.llm-chat-usage-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.llm-chat-usage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: #1e293b;
+}
+
+.llm-chat-usage-label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.llm-chat-usage-value {
+  font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  color: #0f172a;
+}
+
+.llm-chat-usage-hint {
+  font-size: 0.75rem;
+  color: #2563eb;
+}
+
+.llm-chat-usage-error {
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+
 .llm-chat-messages {
   display: flex;
   flex-direction: column;
@@ -194,6 +269,13 @@
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
 }
 
+.llm-chat-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .llm-chat-field {
   flex: 1 1 220px;
   display: flex;
@@ -246,6 +328,25 @@
   background-color: #f1f5f9;
   color: #0f172a;
   border-bottom-left-radius: 0.35rem;
+}
+
+.llm-chat-message-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.llm-chat-message-usage span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.llm-chat-message-usage strong {
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .llm-chat-message-meta {

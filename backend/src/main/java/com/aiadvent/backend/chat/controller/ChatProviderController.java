@@ -58,8 +58,20 @@ public class ChatProviderController {
     ChatProvidersProperties.Pricing pricing = model.getPricing();
     BigDecimal inputCost = pricing != null ? pricing.getInputPer1KTokens() : null;
     BigDecimal outputCost = pricing != null ? pricing.getOutputPer1KTokens() : null;
+    Integer contextWindow = model.getContextWindow();
+    Integer maxOutputTokens = model.getMaxOutputTokens();
+    String currency = pricing != null ? pricing.getCurrency() : null;
 
     return new ChatProvidersResponse.Model(
-        entry.getKey(), model.getDisplayName(), model.getTier(), inputCost, outputCost);
+        entry.getKey(),
+        model.getDisplayName(),
+        model.getTier(),
+        inputCost,
+        outputCost,
+        contextWindow,
+        maxOutputTokens,
+        model.isStreamingEnabled(),
+        model.isStructuredEnabled(),
+        currency);
   }
 }

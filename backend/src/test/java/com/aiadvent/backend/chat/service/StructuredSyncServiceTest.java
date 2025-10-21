@@ -125,6 +125,7 @@ class StructuredSyncServiceTest {
             provider,
             answer,
             null,
+            null,
             150L,
             null);
 

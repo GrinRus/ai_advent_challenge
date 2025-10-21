@@ -5,6 +5,7 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
+import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -58,7 +59,7 @@ public class ChatService {
 
   @Transactional
   public void registerAssistantMessage(UUID sessionId, String content, String provider, String model) {
-    registerAssistantMessage(sessionId, content, provider, model, null);
+    registerAssistantMessage(sessionId, content, provider, model, null, UsageCostEstimate.empty());
   }
 
   @Transactional
@@ -68,6 +69,17 @@ public class ChatService {
       String provider,
       String model,
       JsonNode structuredPayload) {
+    registerAssistantMessage(sessionId, content, provider, model, structuredPayload, UsageCostEstimate.empty());
+  }
+
+  @Transactional
+  public void registerAssistantMessage(
+      UUID sessionId,
+      String content,
+      String provider,
+      String model,
+      JsonNode structuredPayload,
+      UsageCostEstimate usageCost) {
     if (!StringUtils.hasText(content) && structuredPayload == null) {
       return;
     }
@@ -81,9 +93,19 @@ public class ChatService {
                         HttpStatus.NOT_FOUND, "Chat session not found: " + sessionId));
 
     int nextSequence = nextSequenceNumber(session);
-    chatMessageRepository.save(
+    ChatMessage message =
         new ChatMessage(
-            session, ChatRole.ASSISTANT, content, nextSequence, provider, model, structuredPayload));
+            session, ChatRole.ASSISTANT, content, nextSequence, provider, model, structuredPayload);
+    if (usageCost != null && (usageCost.hasUsage() || usageCost.hasCost())) {
+      message.applyUsage(
+          usageCost.promptTokens(),
+          usageCost.completionTokens(),
+          usageCost.totalTokens(),
+          usageCost.inputCost(),
+          usageCost.outputCost(),
+          usageCost.currency());
+    }
+    chatMessageRepository.save(message);
   }
 
   private int nextSequenceNumber(ChatSession session) {

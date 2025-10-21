@@ -37,6 +37,8 @@ class ChatProviderControllerTest {
     ChatProvidersProperties.Model gpt4oMini = new ChatProvidersProperties.Model();
     gpt4oMini.setDisplayName("GPT-4o Mini");
     gpt4oMini.setTier("budget");
+    gpt4oMini.setContextWindow(128000);
+    gpt4oMini.setMaxOutputTokens(16384);
     gpt4oMini.getPricing().setInputPer1KTokens(new BigDecimal("0.00015"));
     gpt4oMini.getPricing().setOutputPer1KTokens(new BigDecimal("0.0006"));
     openai.getModels().put("gpt-4o-mini", gpt4oMini);
@@ -59,6 +61,7 @@ class ChatProviderControllerTest {
     ChatProvidersProperties.Model glm46 = new ChatProvidersProperties.Model();
     glm46.setDisplayName("GLM-4.6");
     glm46.setTier("pro");
+    glm46.setContextWindow(81920);
     glm46.getPricing().setInputPer1KTokens(new BigDecimal("0.0006"));
     glm46.getPricing().setOutputPer1KTokens(new BigDecimal("0.0022"));
     zhipu.getModels().put("glm-4.6", glm46);
@@ -73,6 +76,7 @@ class ChatProviderControllerTest {
     ChatProvidersProperties.Model glm45Air = new ChatProvidersProperties.Model();
     glm45Air.setDisplayName("GLM-4.5 Air");
     glm45Air.setTier("budget");
+    glm45Air.setStreamingEnabled(false);
     glm45Air.getPricing().setInputPer1KTokens(new BigDecimal("0.0002"));
     glm45Air.getPricing().setOutputPer1KTokens(new BigDecimal("0.0011"));
     zhipu.getModels().put("glm-4.5-air", glm45Air);
@@ -98,10 +102,16 @@ class ChatProviderControllerTest {
         .andExpect(jsonPath("$.providers[0].models[0].id").value("gpt-4o-mini"))
         .andExpect(jsonPath("$.providers[0].models[0].displayName").value("GPT-4o Mini"))
         .andExpect(jsonPath("$.providers[0].models[0].tier").value("budget"))
+        .andExpect(jsonPath("$.providers[0].models[0].contextWindow").value(128000))
+        .andExpect(jsonPath("$.providers[0].models[0].maxOutputTokens").value(16384))
+        .andExpect(jsonPath("$.providers[0].models[0].streamingEnabled").value(true))
+        .andExpect(jsonPath("$.providers[0].models[0].structuredEnabled").value(true))
+        .andExpect(jsonPath("$.providers[0].models[0].currency").value("USD"))
         .andExpect(jsonPath("$.providers[1].id").value("zhipu"))
         .andExpect(jsonPath("$.providers[1].defaultModel").value("glm-4.6"))
         .andExpect(jsonPath("$.providers[1].models[0].id").value("glm-4.6"))
         .andExpect(jsonPath("$.providers[1].models[1].id").value("glm-4.5"))
-        .andExpect(jsonPath("$.providers[1].models[2].id").value("glm-4.5-air"));
+        .andExpect(jsonPath("$.providers[1].models[2].id").value("glm-4.5-air"))
+        .andExpect(jsonPath("$.providers[1].models[2].streamingEnabled").value(false));
   }
 }

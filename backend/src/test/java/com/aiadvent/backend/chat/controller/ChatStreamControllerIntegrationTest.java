@@ -92,6 +92,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   @Test
   void streamCreatesSessionAndPersistsHistory() throws Exception {
     StubChatClientState.setTokens(List.of("partial ", "answer"));
+    StubChatClientState.setUsage(12, 18, 30);
 
     ChatStreamRequest request = new ChatStreamRequest(null, "Hello model", null, null, null);
 
@@ -120,6 +121,12 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     assertThat(events.get(1).content()).isEqualTo("partial ");
     assertThat(events.get(2).content()).isEqualTo("answer");
     assertThat(events.get(3).content()).isEqualTo("partial answer");
+    assertThat(events.get(3).usage()).isNotNull();
+    assertThat(events.get(3).usage().totalTokens()).isEqualTo(30);
+    assertThat(events.get(3).cost()).isNotNull();
+    assertThat(events.get(3).cost().total()).isNotNull();
+    assertThat(events.get(3).cost().total()).isEqualByComparingTo("0");
+    assertThat(events.get(3).cost().currency()).isEqualTo("USD");
 
     List<ChatSession> sessions = chatSessionRepository.findAll();
     assertThat(sessions).hasSize(1);
@@ -147,6 +154,19 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
             Integer.class,
             sessions.getFirst().getId());
     assertThat(memoryEntries).isEqualTo(2);
+  }
+
+  @Test
+  void streamRejectsModelsWithoutStreamingSupport() throws Exception {
+    ChatStreamRequest request =
+        new ChatStreamRequest(null, "No streaming", "alternate", "alt-model-sync-only", null);
+
+    mockMvc
+        .perform(
+            post("/api/llm/chat/stream")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsBytes(request)))
+        .andExpect(status().isBadRequest());
   }
 
   @Test

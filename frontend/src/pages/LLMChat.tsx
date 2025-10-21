@@ -3,9 +3,14 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import {
   CHAT_STREAM_URL,
   fetchChatProviders,
+  fetchSessionUsage,
   requestStructuredSync,
   type ChatProvidersResponse,
+  type SessionUsageResponse,
+  type SessionUsageTotals,
   type StructuredSyncResponse,
+  type StructuredSyncUsageStats,
+  type UsageCostDetails,
 } from '../lib/apiClient';
 import {
   SAMPLING_RANGE,
@@ -19,6 +24,89 @@ import {
 } from '../lib/chatPayload';
 import './LLMChat.css';
 
+const computeTotalsFromMessages = (
+  items: ChatMessage[],
+): SessionUsageTotals | undefined => {
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  let hasPrompt = false;
+  let hasCompletion = false;
+  let hasTotal = false;
+
+  let inputCost = 0;
+  let outputCost = 0;
+  let hasInputCost = false;
+  let hasOutputCost = false;
+  const currencies = new Set<string>();
+
+  items.forEach((message) => {
+    if (message.role !== 'assistant') {
+      return;
+    }
+    const usage = message.usage;
+    if (usage?.promptTokens != null) {
+      promptTokens += usage.promptTokens;
+      hasPrompt = true;
+    }
+    if (usage?.completionTokens != null) {
+      completionTokens += usage.completionTokens;
+      hasCompletion = true;
+    }
+    if (usage?.totalTokens != null) {
+      totalTokens += usage.totalTokens;
+      hasTotal = true;
+    }
+
+    const cost = message.cost;
+    if (cost?.input != null) {
+      inputCost += cost.input;
+      hasInputCost = true;
+    }
+    if (cost?.output != null) {
+      outputCost += cost.output;
+      hasOutputCost = true;
+    }
+    if (cost?.currency) {
+      currencies.add(cost.currency);
+    }
+  });
+
+  const resolvedTotalTokens = hasTotal
+    ? totalTokens
+    : hasPrompt || hasCompletion
+    ? promptTokens + completionTokens
+    : undefined;
+
+  const usageTotals: StructuredSyncUsageStats | undefined =
+    hasPrompt || hasCompletion || hasTotal
+      ? {
+          promptTokens: hasPrompt ? promptTokens : undefined,
+          completionTokens: hasCompletion ? completionTokens : undefined,
+          totalTokens: resolvedTotalTokens,
+        }
+      : undefined;
+
+  const hasAnyCost = hasInputCost || hasOutputCost;
+  const totalCostValue =
+    (hasInputCost ? inputCost : 0) + (hasOutputCost ? outputCost : 0);
+  const costTotals: UsageCostDetails | undefined = hasAnyCost
+    ? {
+        input: hasInputCost ? Number(inputCost.toFixed(8)) : undefined,
+        output: hasOutputCost ? Number(outputCost.toFixed(8)) : undefined,
+        total: Number(totalCostValue.toFixed(8)),
+        currency:
+          currencies.size === 1 ? Array.from(currencies)[0] : undefined,
+      }
+    : undefined;
+
+  if (!usageTotals && !costTotals) {
+    return undefined;
+  }
+
+  return { usage: usageTotals, cost: costTotals };
+};
+
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -29,6 +117,8 @@ type ChatMessage = {
   structured?: StructuredSyncResponse | null;
   relatedMessageId?: string;
   options?: SamplingSnapshot | null;
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
 };
 
 type StreamPayload = {
@@ -38,6 +128,8 @@ type StreamPayload = {
   newSession?: boolean;
   provider?: string | null;
   model?: string | null;
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
 };
 
 type DrainResult = {
@@ -124,6 +216,36 @@ const formatTokens = (value?: number | null) => {
   return value.toLocaleString();
 };
 
+const formatCost = (value?: number | null) => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  const absolute = Math.abs(value);
+  if (absolute >= 1) {
+    return value.toFixed(2);
+  }
+  if (absolute >= 0.01) {
+    return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  }
+  return value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+};
+
+const formatPricePer1K = (value?: number | null, currency = 'USD') => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '—';
+  }
+  const absolute = Math.abs(value);
+  let formatted: string;
+  if (absolute >= 1) {
+    formatted = value.toFixed(2);
+  } else if (absolute >= 0.01) {
+    formatted = value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  } else {
+    formatted = value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  }
+  return `$${formatted}${currency && currency !== 'USD' ? ` ${currency}` : ''}`;
+};
+
 const formatProviderType = (type?: string) => {
   if (!type) {
     return '—';
@@ -136,6 +258,111 @@ const generateId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const MODEL_SEGMENTS: Record<
+  string,
+  { segmentId: string; label: string; order: number; description?: string }
+> = {
+  'openai:gpt-5-nano': {
+    segmentId: 'economy',
+    label: 'Economy',
+    order: 1,
+    description: 'минимальная стоимость, ограниченный вывод',
+  },
+  'openai:gpt-4o-mini': {
+    segmentId: 'value',
+    label: 'Value',
+    order: 2,
+    description: 'баланс цена/качество для ежедневного чата',
+  },
+  'openai:gpt-5': {
+    segmentId: 'flagship',
+    label: 'Flagship',
+    order: 3,
+    description: 'флагманское качество, повышенная цена',
+  },
+  'zhipu:[glm-4-32b-0414-128k]': {
+    segmentId: 'alt',
+    label: 'Alt · Sync only',
+    order: 4,
+    description: 'ZhiPu flat pricing, только sync, 128K контекст',
+  },
+};
+
+const SEGMENT_PRIORITY: Record<string, number> = {
+  economy: 10,
+  budget: 20,
+  value: 30,
+  standard: 40,
+  pro: 50,
+  flagship: 60,
+  alt: 70,
+  other: 80,
+};
+
+type ProviderModel = ChatProvidersResponse['providers'][number]['models'][number];
+
+const capitalize = (value?: string | null) => {
+  if (!value) {
+    return '';
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const formatContextWindow = (value?: number | null) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (value >= 1000 && value % 1000 === 0) {
+    return `${value / 1000}K ctx`;
+  }
+  return `${value.toLocaleString()} ctx`;
+};
+
+const formatMaxOutputTokens = (value?: number | null) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (value >= 1000 && value % 1000 === 0) {
+    return `max ${value / 1000}K out`;
+  }
+  return `max ${value.toLocaleString()} out`;
+};
+
+const getSegmentMeta = (
+  providerId: string | undefined,
+  model: ProviderModel | null | undefined,
+) => {
+  if (!providerId || !model) {
+    return undefined;
+  }
+  return MODEL_SEGMENTS[`${providerId}:${model.id}`];
+};
+
+const buildModelOptionLabel = (
+  providerId: string,
+  model: ProviderModel,
+) => {
+  const segmentMeta = getSegmentMeta(providerId, model);
+  const baseName = model.displayName ?? model.id;
+  const currency = model.currency ?? 'USD';
+  const pricePart =
+    model.inputPer1KTokens != null || model.outputPer1KTokens != null
+      ? `${formatPricePer1K(model.inputPer1KTokens, currency)}/${formatPricePer1K(model.outputPer1KTokens, currency)}`
+      : undefined;
+  const contextPart = formatContextWindow(model.contextWindow);
+  const maxOutputPart = formatMaxOutputTokens(model.maxOutputTokens);
+  const streamingPart = model.streamingEnabled === false ? 'sync only' : undefined;
+
+  const descriptor =
+    segmentMeta?.label ?? (model.tier ? capitalize(model.tier) : undefined);
+
+  const details = [descriptor, pricePart, contextPart, maxOutputPart, streamingPart]
+    .filter(Boolean)
+    .join(' · ');
+
+  return details ? `${baseName} · ${details}` : baseName;
+};
 
 const parseStreamPayload = (rawEvent: string): StreamPayload | null => {
   const lines = rawEvent.split('\n');
@@ -377,8 +604,12 @@ const LLMChat = () => {
     DEFAULT_SAMPLING_DISPLAY,
   );
   const [samplingOverrides, setSamplingOverrides] = useState<SamplingOverrides>({});
+  const [sessionUsage, setSessionUsage] = useState<SessionUsageResponse | null>(null);
+  const [isSessionUsageLoading, setIsSessionUsageLoading] = useState<boolean>(false);
+  const [sessionUsageError, setSessionUsageError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -451,16 +682,92 @@ const LLMChat = () => {
     }
   }, [messages, activeTab]);
 
+  useEffect(() => {
+    sessionIdRef.current = sessionId ?? null;
+  }, [sessionId]);
+
   const providerOptions = providerCatalog?.providers ?? [];
   const currentProvider =
     providerOptions.find((provider) => provider.id === selectedProvider) ??
     providerOptions[0] ??
     null;
   const modelOptions = currentProvider?.models ?? [];
+  const hasModelOptions = modelOptions.length > 0;
+  const groupedModelOptions = useMemo(() => {
+    if (!currentProvider) {
+      return [] as Array<{
+        key: string;
+        label: string;
+        order: number;
+        description?: string;
+        models: ProviderModel[];
+      }>;
+    }
+    const groups = new Map<
+      string,
+      { key: string; label: string; order: number; description?: string; models: ProviderModel[] }
+    >();
+    currentProvider.models.forEach((model) => {
+      const segmentMeta = getSegmentMeta(currentProvider.id, model);
+      const rawSegment =
+        segmentMeta?.segmentId ??
+        model.tier ??
+        'other';
+      const label =
+        segmentMeta?.label ??
+        (model.tier ? capitalize(model.tier) : 'Other');
+      const order =
+        segmentMeta?.order ??
+        SEGMENT_PRIORITY[rawSegment] ??
+        SEGMENT_PRIORITY.other;
+      const key = `${rawSegment}:${label}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label,
+          order,
+          description: segmentMeta?.description,
+          models: [],
+        });
+      }
+      groups.get(key)!.models.push(model);
+    });
+
+    const sorted = Array.from(groups.values()).sort(
+      (a, b) => a.order - b.order || a.label.localeCompare(b.label, 'ru'),
+    );
+    sorted.forEach((group) =>
+      group.models.sort((a, b) =>
+        (a.displayName ?? a.id).localeCompare(b.displayName ?? b.id, 'ru'),
+      ),
+    );
+    return sorted;
+  }, [currentProvider]);
+
+  const selectedModelConfig = useMemo<ProviderModel | null>(() => {
+    if (!currentProvider) {
+      return null;
+    }
+    const explicit =
+      currentProvider.models.find((model) => model.id === selectedModel) ?? null;
+    if (explicit) {
+      return explicit;
+    }
+    return currentProvider.models[0] ?? null;
+  }, [currentProvider, selectedModel]);
+
+  const selectedSegmentMeta = useMemo(
+    () => getSegmentMeta(currentProvider?.id, selectedModelConfig ?? undefined),
+    [currentProvider?.id, selectedModelConfig],
+  );
+
+  const streamingSupported = selectedModelConfig?.streamingEnabled !== false;
+  const structuredSupported = selectedModelConfig?.structuredEnabled !== false;
   const canSendMessage =
     Boolean(
       selectedProvider &&
         selectedModel &&
+        selectedModelConfig &&
         !catalogError &&
         !isCatalogLoading,
     );
@@ -491,6 +798,49 @@ const LLMChat = () => {
       ? structuredMessages[structuredMessages.length - 1]
       : null);
 
+  const usageTotals = useMemo<SessionUsageTotals | undefined>(() => {
+    if (sessionUsage?.totals) {
+      return sessionUsage.totals;
+    }
+    return computeTotalsFromMessages(messages);
+  }, [sessionUsage, messages]);
+
+  const segmentSummaryRaw =
+    selectedSegmentMeta?.label ??
+    (selectedModelConfig?.tier ? capitalize(selectedModelConfig.tier) : undefined);
+  const segmentSummary = segmentSummaryRaw ?? '—';
+
+  const selectedCurrency = selectedModelConfig?.currency ?? 'USD';
+  const priceInValue = selectedModelConfig
+    ? formatPricePer1K(selectedModelConfig.inputPer1KTokens, selectedCurrency)
+    : '—';
+  const priceOutValue = selectedModelConfig
+    ? formatPricePer1K(selectedModelConfig.outputPer1KTokens, selectedCurrency)
+    : '—';
+  const priceSummary =
+    priceInValue === '—' && priceOutValue === '—'
+      ? '—'
+      : `${priceInValue} / ${priceOutValue} за 1K токенов`;
+
+  const contextSummaryParts = [
+    formatContextWindow(selectedModelConfig?.contextWindow),
+    formatMaxOutputTokens(selectedModelConfig?.maxOutputTokens),
+  ].filter(Boolean);
+  const contextSummary =
+    contextSummaryParts.length > 0
+      ? contextSummaryParts.join(', ')
+      : '—';
+
+  const streamingLabel = 'Потоковый';
+  const structuredLabel = 'Структурированный';
+  const modesSummary = streamingSupported
+    ? structuredSupported
+      ? `${streamingLabel} + ${structuredLabel}`
+      : streamingLabel
+    : structuredSupported
+    ? structuredLabel
+    : '—';
+
   const resolveProviderName = (providerId?: string | null) => {
     if (!providerId) {
       return '';
@@ -517,10 +867,39 @@ const LLMChat = () => {
     setSamplingOverrides({});
   }, [samplingDefaults]);
 
+  const refreshSessionUsage = useCallback(async (targetSessionId: string) => {
+    try {
+      setSessionUsageError(null);
+      setIsSessionUsageLoading(true);
+      const usage = await fetchSessionUsage(targetSessionId);
+      if (sessionIdRef.current !== targetSessionId) {
+        return;
+      }
+      setSessionUsage(usage);
+    } catch (usageError) {
+      if (sessionIdRef.current !== targetSessionId) {
+        return;
+      }
+      const message =
+        usageError instanceof Error
+          ? usageError.message
+          : 'Не удалось получить статистику использования.';
+      setSessionUsageError(message);
+    } finally {
+      if (sessionIdRef.current === targetSessionId) {
+        setIsSessionUsageLoading(false);
+      }
+    }
+  }, []);
+
   const updateSamplingValue = useCallback(
     (key: SamplingKey, value: number) => {
-      const range = SAMPLING_RANGE[key];
-      const clamped = clamp(value, range.min, range.max);
+      const baseRange = SAMPLING_RANGE[key];
+      const dynamicMax =
+        key === 'maxTokens' && selectedModelConfig?.maxOutputTokens
+          ? Math.max(baseRange.max, selectedModelConfig.maxOutputTokens)
+          : baseRange.max;
+      const clamped = clamp(value, baseRange.min, dynamicMax);
       setSamplingDisplay((prev) => ({ ...prev, [key]: clamped }));
       setSamplingOverrides((prev) => {
         const next = { ...prev };
@@ -533,7 +912,7 @@ const LLMChat = () => {
         return next;
       });
     },
-    [samplingDefaults],
+    [samplingDefaults, selectedModelConfig],
   );
 
   const handleSamplingSliderChange = (key: SamplingKey) =>
@@ -596,6 +975,11 @@ const LLMChat = () => {
     setSamplingDefaults(providerDefaults);
     setSamplingDisplay(computeDisplayValues(providerDefaults));
     setSamplingOverrides({});
+
+    if (nextModel?.streamingEnabled === false) {
+      setActiveTab('structured');
+      setInfo('Выбранная модель поддерживает только Structured режим.');
+    }
   };
 
   const handleModelChange = (modelId: string) => {
@@ -607,6 +991,8 @@ const LLMChat = () => {
     setActiveStructuredMessageId(null);
 
     if (currentProvider) {
+      const selectedEntry =
+        currentProvider.models.find((model) => model.id === modelId) ?? null;
       const providerDefaults: SamplingDefaults = {
         temperature: currentProvider.temperature ?? null,
         topP: currentProvider.topP ?? null,
@@ -615,6 +1001,11 @@ const LLMChat = () => {
       setSamplingDefaults(providerDefaults);
       setSamplingDisplay(computeDisplayValues(providerDefaults));
       setSamplingOverrides({});
+
+      if (selectedEntry?.streamingEnabled === false) {
+        setActiveTab('structured');
+        setInfo('Выбранная модель поддерживает только Structured режим.');
+      }
     }
   };
 
@@ -633,6 +1024,10 @@ const LLMChat = () => {
     setStructuredError(null);
     setStructuredNotice(null);
     setStructuredInput('');
+    setSessionUsage(null);
+    setSessionUsageError(null);
+    setIsSessionUsageLoading(false);
+    sessionIdRef.current = null;
   };
 
   const stopStreaming = () => {
@@ -644,6 +1039,15 @@ const LLMChat = () => {
 
   const handleTabChange = (tab: ActiveTab) => {
     if (tab === activeTab) {
+      return;
+    }
+    if (tab === 'stream' && !streamingSupported) {
+      setInfo('Выбранная модель поддерживает только Structured режим.');
+      setActiveTab('structured');
+      return;
+    }
+    if (tab === 'structured' && !structuredSupported) {
+      setStructuredError('Выбранная модель не поддерживает Structured режим.');
       return;
     }
     if (tab === 'structured' && isStreaming) {
@@ -671,6 +1075,11 @@ const LLMChat = () => {
       return;
     }
 
+    if (!streamingSupported) {
+      setInfo('Выбранная модель поддерживает только Structured режим.');
+      return;
+    }
+
     setInput('');
     await streamMessage(trimmed);
   };
@@ -684,6 +1093,11 @@ const LLMChat = () => {
 
     if (!canSendMessage) {
       setStructuredNotice('Дождитесь готовности конфигурации перед отправкой запроса.');
+      return;
+    }
+
+    if (!structuredSupported) {
+      setStructuredError('Выбранная модель не поддерживает Structured режим.');
       return;
     }
 
@@ -718,6 +1132,7 @@ const LLMChat = () => {
 
       if (nextSessionId) {
         setSessionId(nextSessionId);
+        sessionIdRef.current = nextSessionId;
       }
 
       const providerLabel = resolveProviderName(selectedProvider);
@@ -747,6 +1162,8 @@ const LLMChat = () => {
         structured: body,
         relatedMessageId: requestMessageId,
         options: optionsSnapshot,
+        usage: body.usage ?? null,
+        cost: body.cost ?? null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setActiveStructuredMessageId(assistantMessage.id);
@@ -757,6 +1174,10 @@ const LLMChat = () => {
         setLastModel(messageModel);
       }
       setStructuredInput('');
+      const targetSessionId = nextSessionId ?? sessionId ?? null;
+      if (targetSessionId) {
+        refreshSessionUsage(targetSessionId);
+      }
     } catch (syncError) {
       const message =
         syncError instanceof Error
@@ -769,6 +1190,10 @@ const LLMChat = () => {
   };
 
   const streamMessage = async (message: string) => {
+    if (!streamingSupported) {
+      setInfo('Выбранная модель поддерживает только Structured режим.');
+      return;
+    }
     setError(null);
     setInfo(null);
     setIsStreaming(true);
@@ -797,6 +1222,7 @@ const LLMChat = () => {
     const optionsSnapshot = effectiveOptions;
 
     let assistantMessageId: string | null = null;
+    let streamSessionId = sessionId ?? null;
     let aborted = false;
 
     const appendAssistantChunk = (
@@ -856,6 +1282,8 @@ const LLMChat = () => {
       fullContent?: string | null,
       provider?: string | null,
       model?: string | null,
+      usage?: StructuredSyncUsageStats | null,
+      cost?: UsageCostDetails | null,
     ) => {
       if (!assistantMessageId) {
         assistantMessageId = generateId();
@@ -869,6 +1297,8 @@ const LLMChat = () => {
             provider: provider ?? undefined,
             model: model ?? undefined,
             options: optionsSnapshot,
+            usage: usage ?? null,
+            cost: cost ?? null,
           },
         ]);
         return;
@@ -886,6 +1316,8 @@ const LLMChat = () => {
             provider: provider ?? undefined,
             model: model ?? undefined,
             options: optionsSnapshot,
+            usage: usage ?? null,
+            cost: cost ?? null,
           });
           return next;
         }
@@ -898,6 +1330,8 @@ const LLMChat = () => {
           provider: provider ?? current.provider,
           model: model ?? current.model,
           options: current.options ?? optionsSnapshot,
+          usage: usage ?? current.usage ?? null,
+          cost: cost ?? current.cost ?? null,
         };
         return next;
       });
@@ -908,6 +1342,8 @@ const LLMChat = () => {
         case 'session': {
           if (event.sessionId) {
             setSessionId(event.sessionId);
+            sessionIdRef.current = event.sessionId ?? null;
+            streamSessionId = event.sessionId ?? null;
             if (event.newSession) {
               const providerLabel = resolveProviderName(event.provider ?? undefined);
               const modelLabel = resolveModelName(
@@ -921,6 +1357,9 @@ const LLMChat = () => {
                   ? `Создан новый диалог (${details})`
                   : 'Создан новый диалог',
               );
+              setSessionUsage(null);
+              setSessionUsageError(null);
+              setIsSessionUsageLoading(false);
             }
           }
           if (event.provider) {
@@ -950,11 +1389,27 @@ const LLMChat = () => {
           if (event.model) {
             setLastModel(event.model);
           }
-          finalizeAssistantMessage(event.content, event.provider, event.model);
+          finalizeAssistantMessage(
+            event.content,
+            event.provider,
+            event.model,
+            event.usage ?? null,
+            event.cost ?? null,
+          );
+          const targetSessionId = streamSessionId ?? sessionId ?? null;
+          if (targetSessionId) {
+            refreshSessionUsage(targetSessionId);
+          }
           return false;
         }
         case 'error': {
-          finalizeAssistantMessage(undefined, event.provider, event.model);
+          finalizeAssistantMessage(
+            undefined,
+            event.provider,
+            event.model,
+            event.usage ?? null,
+            event.cost ?? null,
+          );
           if (event.provider) {
             setLastProvider(event.provider);
           }
@@ -1056,6 +1511,40 @@ const LLMChat = () => {
           )}
         </div>
 
+        {(sessionId || isSessionUsageLoading || usageTotals) && (
+          <div className="llm-chat-usage-panel">
+            <div className="llm-chat-usage-row">
+              <span className="llm-chat-usage-label">Токены (prompt / completion / total)</span>
+              <span className="llm-chat-usage-value">
+                {formatTokens(usageTotals?.usage?.promptTokens)} /{' '}
+                {formatTokens(usageTotals?.usage?.completionTokens)} /{' '}
+                {formatTokens(usageTotals?.usage?.totalTokens)}
+              </span>
+            </div>
+            <div className="llm-chat-usage-row">
+              <span className="llm-chat-usage-label">Стоимость (input / output / total)</span>
+              <span className="llm-chat-usage-value">
+                {(() => {
+                  const cost = usageTotals?.cost;
+                  if (!cost) {
+                    return '—';
+                  }
+                  const derivedTotal =
+                    cost.total ?? (cost.input ?? 0) + (cost.output ?? 0);
+                  const suffix = cost.currency ? ` ${cost.currency}` : '';
+                  return `${formatCost(cost.input)} / ${formatCost(cost.output)} / ${formatCost(derivedTotal)}${suffix}`;
+                })()}
+              </span>
+            </div>
+            {isSessionUsageLoading && (
+              <div className="llm-chat-usage-hint">Обновляем статистику…</div>
+            )}
+            {sessionUsageError && (
+              <div className="llm-chat-usage-error">{sessionUsageError}</div>
+            )}
+          </div>
+        )}
+
         <div className="llm-chat-settings">
           <div className="llm-chat-field">
             <label className="llm-chat-label" htmlFor="llm-chat-provider">
@@ -1094,10 +1583,10 @@ const LLMChat = () => {
               value={selectedModel}
               onChange={(event) => handleModelChange(event.target.value)}
               disabled={
-                isCatalogLoading || isStreaming || modelOptions.length === 0
+                isCatalogLoading || isStreaming || !hasModelOptions
               }
             >
-              {modelOptions.length === 0 ? (
+              {!hasModelOptions ? (
                 <option value="">
                   {isCatalogLoading
                     ? 'Загрузка…'
@@ -1105,16 +1594,62 @@ const LLMChat = () => {
                     ? 'Модели недоступны'
                     : 'Выберите провайдера'}
                 </option>
-              ) : null}
-              {modelOptions.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.displayName ?? model.id}
-                  {model.tier ? ` · ${model.tier}` : ''}
-                </option>
-              ))}
+              ) : groupedModelOptions.length <= 1 ? (
+                groupedModelOptions.flatMap((group) =>
+                  group.models.map((model) => (
+                    <option
+                      key={model.id}
+                      value={model.id}
+                      title={group.description ?? undefined}
+                    >
+                      {buildModelOptionLabel(currentProvider!.id, model)}
+                    </option>
+                  )),
+                )
+              ) : (
+                groupedModelOptions.map((group) => (
+                  <optgroup key={group.key} label={group.label}>
+                    {group.models.map((model) => (
+                      <option
+                        key={model.id}
+                        value={model.id}
+                        title={group.description ?? undefined}
+                      >
+                        {buildModelOptionLabel(currentProvider!.id, model)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              )}
             </select>
           </div>
         </div>
+
+        {selectedModelConfig && (
+          <div className="llm-chat-model-info">
+            <div className="llm-chat-model-info-row">
+              <span className="llm-chat-model-info-label">Сегмент</span>
+              <span className="llm-chat-model-info-value">{segmentSummary}</span>
+            </div>
+            <div className="llm-chat-model-info-row">
+              <span className="llm-chat-model-info-label">Стоимость</span>
+              <span className="llm-chat-model-info-value">{priceSummary}</span>
+            </div>
+            <div className="llm-chat-model-info-row">
+              <span className="llm-chat-model-info-label">Контекст</span>
+              <span className="llm-chat-model-info-value">{contextSummary}</span>
+            </div>
+            <div className="llm-chat-model-info-row">
+              <span className="llm-chat-model-info-label">Режимы</span>
+              <span className="llm-chat-model-info-value">{modesSummary}</span>
+            </div>
+            {selectedSegmentMeta?.description && (
+              <div className="llm-chat-model-hint">
+                {selectedSegmentMeta.description}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="llm-chat-sampling">
           <div className="llm-chat-sampling-header">
@@ -1130,8 +1665,17 @@ const LLMChat = () => {
           </div>
           <div className="llm-chat-sampling-grid">
             {SAMPLING_KEYS.map((key) => {
-              const range = SAMPLING_RANGE[key];
-              const sliderValue = samplingDisplay[key];
+              const baseRange = SAMPLING_RANGE[key];
+              const dynamicMax =
+                key === 'maxTokens' && selectedModelConfig?.maxOutputTokens
+                  ? Math.max(baseRange.max, selectedModelConfig.maxOutputTokens)
+                  : baseRange.max;
+              const range = { ...baseRange, max: dynamicMax } as typeof baseRange;
+              const sliderValue = clamp(
+                samplingDisplay[key] ?? range.min,
+                range.min,
+                range.max,
+              );
               const defaultValue = samplingDefaults?.[key] ?? null;
               const overrideIsActive = Object.prototype.hasOwnProperty.call(
                 normalizedSamplingOverrides,
@@ -1208,6 +1752,12 @@ const LLMChat = () => {
             className={`llm-chat-tab ${activeTab === 'stream' ? 'active' : ''}`}
             onClick={() => handleTabChange('stream')}
             data-testid="tab-stream"
+            disabled={!streamingSupported}
+            title={
+              streamingSupported
+                ? undefined
+                : 'Модель поддерживает только Structured режим.'
+            }
           >
             Streaming
           </button>
@@ -1216,6 +1766,12 @@ const LLMChat = () => {
             className={`llm-chat-tab ${activeTab === 'structured' ? 'active' : ''}`}
             onClick={() => handleTabChange('structured')}
             data-testid="tab-structured"
+            disabled={!structuredSupported}
+            title={
+              structuredSupported
+                ? undefined
+                : 'Модель не поддерживает Structured режим.'
+            }
           >
             Structured
           </button>
@@ -1268,6 +1824,40 @@ const LLMChat = () => {
                         </div>
                       )}
                       <div className="llm-chat-bubble">{message.content}</div>
+                      {message.role === 'assistant' &&
+                        (message.usage || message.cost) && (
+                          <div className="llm-chat-message-usage">
+                            {message.usage && (
+                              <span>
+                                Токены:
+                                <strong>{formatTokens(message.usage.promptTokens)}</strong>
+                                {' / '}
+                                <strong>{formatTokens(message.usage.completionTokens)}</strong>
+                                {' / '}
+                                <strong>{formatTokens(message.usage.totalTokens)}</strong>
+                              </span>
+                            )}
+                            {message.cost && (
+                              <span>
+                                Стоимость:
+                                <strong>{formatCost(message.cost.input)}</strong>
+                                {' / '}
+                                <strong>{formatCost(message.cost.output)}</strong>
+                                {' / '}
+                                <strong>
+                                  {formatCost(
+                                    message.cost.total ??
+                                      (message.cost.input ?? 0) +
+                                        (message.cost.output ?? 0),
+                                  )}
+                                </strong>
+                                {message.cost.currency
+                                  ? ` ${message.cost.currency}`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       {message.structured ? (
                         <StructuredResponseCard
                           response={message.structured}

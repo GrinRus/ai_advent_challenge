@@ -23,6 +23,11 @@ export type ChatProvidersResponse = {
       tier?: string;
       inputPer1KTokens?: number;
       outputPer1KTokens?: number;
+      contextWindow?: number;
+      maxOutputTokens?: number;
+      streamingEnabled?: boolean;
+      structuredEnabled?: boolean;
+      currency?: string;
     }>;
   }>;
 };
@@ -62,14 +67,44 @@ export type StructuredSyncUsageStats = {
   totalTokens?: number;
 };
 
+export type UsageCostDetails = {
+  input?: number;
+  output?: number;
+  total?: number;
+  currency?: string;
+};
+
 export type StructuredSyncResponse = {
   requestId?: string;
   status?: string;
   provider?: StructuredSyncProvider;
   answer?: StructuredSyncAnswer;
   usage?: StructuredSyncUsageStats;
+  cost?: UsageCostDetails;
   latencyMs?: number;
   timestamp?: string;
+};
+
+export type SessionUsageMessage = {
+  messageId?: string;
+  sequenceNumber?: number;
+  role?: string;
+  provider?: string;
+  model?: string;
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
+  createdAt?: string;
+};
+
+export type SessionUsageTotals = {
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
+};
+
+export type SessionUsageResponse = {
+  sessionId: string;
+  messages: SessionUsageMessage[];
+  totals?: SessionUsageTotals | null;
 };
 
 export type StructuredSyncCallResult = {
@@ -153,4 +188,23 @@ export async function requestStructuredSync(
     : undefined;
 
   return { body, sessionId, newSession };
+}
+
+export async function fetchSessionUsage(
+  sessionId: string,
+): Promise<SessionUsageResponse> {
+  const response = await fetch(`${API_BASE_URL}/llm/sessions/${sessionId}/usage`, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(
+      message || `Не удалось загрузить статистику использования (статус ${response.status}).`,
+    );
+  }
+
+  return response.json() as Promise<SessionUsageResponse>;
 }

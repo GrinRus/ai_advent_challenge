@@ -72,21 +72,32 @@ app:
           "[glm-4.6]":
             display-name: "GLM-4.6"
             tier: pro
+            context-window: 81920
             pricing:
               input-per-1k-tokens: 0.0006
               output-per-1k-tokens: 0.0022
           "[glm-4.5]":
             display-name: "GLM-4.5"
             tier: standard
+            context-window: 65536
             pricing:
               input-per-1k-tokens: 0.00035
               output-per-1k-tokens: 0.00155
           "[glm-4.5-air]":
             display-name: "GLM-4.5 Air"
             tier: budget
+            context-window: 32768
             pricing:
               input-per-1k-tokens: 0.0002
               output-per-1k-tokens: 0.0011
+          "[glm-4-32b-0414-128k]":
+            display-name: "GLM-4 32B 0414 (128K)"
+            tier: flagship
+            context-window: 128000
+            streaming-enabled: false
+            pricing:
+              input-per-1k-tokens: 0.0001
+              output-per-1k-tokens: 0.0001
       openai:
         type: OPENAI
         display-name: "OpenAI"
@@ -103,18 +114,38 @@ app:
           multiplier: ${OPENAI_RETRY_MULTIPLIER:2.0}
           retryable-statuses: ${OPENAI_RETRY_STATUS_CODES:429,500,502,503,504}
         models:
+          gpt-5-nano:
+            display-name: "GPT-5 Nano"
+            tier: economy
+            context-window: 128000
+            max-output-tokens: 8192
+            pricing:
+              input-per-1k-tokens: 0.00005
+              output-per-1k-tokens: 0.0004
           gpt-4o-mini:
             display-name: "GPT-4o Mini"
             tier: budget
+            context-window: 128000
+            max-output-tokens: 16384
             pricing:
               input-per-1k-tokens: 0.00015
               output-per-1k-tokens: 0.0006
           gpt-4o:
             display-name: "GPT-4o"
             tier: pro
+            context-window: 128000
+            max-output-tokens: 16384
             pricing:
-              input-per-1k-tokens: 0.0012
-              output-per-1k-tokens: 0.0032
+              input-per-1k-tokens: 0.0025
+              output-per-1k-tokens: 0.01
+          gpt-5:
+            display-name: "GPT-5"
+            tier: flagship
+            context-window: 200000
+            max-output-tokens: 32768
+            pricing:
+              input-per-1k-tokens: 0.00125
+              output-per-1k-tokens: 0.01
     memory:
       window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
       retention: ${CHAT_MEMORY_RETENTION:PT6H}

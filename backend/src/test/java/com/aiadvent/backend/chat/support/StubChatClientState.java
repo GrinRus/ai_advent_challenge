@@ -1,5 +1,6 @@
 package com.aiadvent.backend.chat.support;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -9,6 +10,9 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.metadata.Usage;
 import reactor.core.publisher.Flux;
 
 public final class StubChatClientState {
@@ -22,6 +26,8 @@ public final class StubChatClientState {
       new AtomicReference<>(new ConcurrentLinkedQueue<>());
 
   private static final AtomicInteger SYNC_CALLS = new AtomicInteger();
+
+  private static final AtomicReference<Usage> USAGE = new AtomicReference<>();
 
   private StubChatClientState() {}
 
@@ -44,6 +50,7 @@ public final class StubChatClientState {
     LAST_PROMPT.set(null);
     SYNC_RESPONSES.set(new ConcurrentLinkedQueue<>());
     SYNC_CALLS.set(0);
+    USAGE.set(null);
   }
 
   public static void capturePrompt(Prompt prompt) {
@@ -58,14 +65,38 @@ public final class StubChatClientState {
     return TOKENS.get();
   }
 
+  public static void setUsage(Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    if (promptTokens == null && completionTokens == null && totalTokens == null) {
+      USAGE.set(null);
+      return;
+    }
+    Integer resolvedTotal =
+        totalTokens != null
+            ? totalTokens
+            : (promptTokens != null && completionTokens != null)
+                ? promptTokens + completionTokens
+                : null;
+    USAGE.set(new DefaultUsage(promptTokens, completionTokens, resolvedTotal));
+  }
+
+  static Usage usage() {
+    return USAGE.get();
+  }
+
   static Flux<ChatResponse> responseFlux() {
-    return Flux.fromIterable(
-        TOKENS.get().stream()
-            .map(
-                token ->
-                    new ChatResponse(
-                        List.of(new Generation(AssistantMessage.builder().content(token).build()))))
-            .toList());
+    List<String> tokens = TOKENS.get();
+    Usage usage = USAGE.get();
+    List<ChatResponse> responses = new ArrayList<>(tokens.size());
+    for (int index = 0; index < tokens.size(); index++) {
+      Generation generation =
+          new Generation(AssistantMessage.builder().content(tokens.get(index)).build());
+      boolean last = index == tokens.size() - 1;
+      ChatResponseMetadata metadata =
+          last && usage != null ? ChatResponseMetadata.builder().usage(usage).build() : null;
+      responses.add(
+          metadata != null ? new ChatResponse(List.of(generation), metadata) : new ChatResponse(List.of(generation)));
+    }
+    return Flux.fromIterable(responses);
   }
 
   public static void incrementSyncCall() {

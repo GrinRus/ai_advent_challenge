@@ -6,8 +6,11 @@ import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
+import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
+import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
+import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.UUID;
@@ -16,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
@@ -24,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -50,11 +57,18 @@ public class ChatStreamController {
     ChatProviderSelection selection =
         chatProviderService.resolveSelection(request.provider(), request.model());
 
+    if (!chatProviderService.supportsStreaming(selection)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "Model '" + selection.modelId() + "' does not support streaming responses.");
+    }
+
     ConversationContext context =
         chatService.registerUserMessage(
             request.sessionId(), request.message(), selection.providerId(), selection.modelId());
 
     SseEmitter emitter = new SseEmitter(0L);
+    AtomicReference<Usage> usageRef = new AtomicReference<>();
 
     emit(
         emitter,
@@ -86,17 +100,17 @@ public class ChatStreamController {
                 handleChunk(
                     response,
                     context.sessionId(),
-                    selection.providerId(),
-                    selection.modelId(),
+                    selection,
                     assistantResponse,
+                    usageRef,
                     emitter),
             error -> handleError(error, context.sessionId(), selection, emitter),
             () ->
                 handleCompletion(
                     context.sessionId(),
-                    selection.providerId(),
-                    selection.modelId(),
+                    selection,
                     assistantResponse,
+                    usageRef,
                     emitter));
 
     subscriptionRef.set(subscription);
@@ -122,9 +136,9 @@ public class ChatStreamController {
   private void handleChunk(
       ChatResponse response,
       UUID sessionId,
-      String providerId,
-      String modelId,
+      ChatProviderSelection selection,
       StringBuilder assistantResponse,
+      AtomicReference<Usage> usageRef,
       SseEmitter emitter) {
     response
         .getResults()
@@ -142,22 +156,36 @@ public class ChatStreamController {
               emit(
                   emitter,
                   "token",
-                  ChatStreamEvent.token(sessionId, content, providerId, modelId));
+                  ChatStreamEvent.token(sessionId, content, selection.providerId(), selection.modelId()));
             });
+
+    ChatResponseMetadata metadata = response.getMetadata();
+    if (metadata != null && metadata.getUsage() != null) {
+      usageRef.set(metadata.getUsage());
+    }
   }
 
   private void handleCompletion(
       UUID sessionId,
-      String providerId,
-      String modelId,
+      ChatProviderSelection selection,
       StringBuilder assistantResponse,
+      AtomicReference<Usage> usageRef,
       SseEmitter emitter) {
     String content = assistantResponse.toString();
-    chatService.registerAssistantMessage(sessionId, content, providerId, modelId);
+    Usage usage = usageRef.get();
+    UsageCostEstimate usageCost = chatProviderService.estimateUsageCost(selection, usage);
+    chatService.registerAssistantMessage(
+        sessionId, content, selection.providerId(), selection.modelId(), null, usageCost);
     emit(
         emitter,
         "complete",
-        ChatStreamEvent.complete(sessionId, content, providerId, modelId));
+        ChatStreamEvent.complete(
+            sessionId,
+            content,
+            selection.providerId(),
+            selection.modelId(),
+            toUsageStats(usageCost),
+            toCostDetails(usageCost)));
     emitter.complete();
   }
 
@@ -183,6 +211,22 @@ public class ChatStreamController {
           ioException);
       emitter.completeWithError(ioException);
     }
+  }
+
+  private StructuredSyncUsageStats toUsageStats(UsageCostEstimate usageCost) {
+    if (usageCost == null || !usageCost.hasUsage()) {
+      return null;
+    }
+    return new StructuredSyncUsageStats(
+        usageCost.promptTokens(), usageCost.completionTokens(), usageCost.totalTokens());
+  }
+
+  private UsageCostDetails toCostDetails(UsageCostEstimate usageCost) {
+    if (usageCost == null || !usageCost.hasCost()) {
+      return null;
+    }
+    return new UsageCostDetails(
+        usageCost.inputCost(), usageCost.outputCost(), usageCost.totalCost(), usageCost.currency());
   }
 
   private void disposeSubscription(AtomicReference<Disposable> subscriptionRef) {

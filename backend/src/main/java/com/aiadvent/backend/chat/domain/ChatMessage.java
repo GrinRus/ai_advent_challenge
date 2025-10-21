@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -47,6 +48,24 @@ public class ChatMessage {
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "structured_payload")
   private JsonNode structuredPayload;
+
+  @Column(name = "prompt_tokens")
+  private Integer promptTokens;
+
+  @Column(name = "completion_tokens")
+  private Integer completionTokens;
+
+  @Column(name = "total_tokens")
+  private Integer totalTokens;
+
+  @Column(name = "input_cost", precision = 19, scale = 8)
+  private BigDecimal inputCost;
+
+  @Column(name = "output_cost", precision = 19, scale = 8)
+  private BigDecimal outputCost;
+
+  @Column(name = "currency", length = 8)
+  private String currency;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -115,6 +134,45 @@ public class ChatMessage {
 
   public JsonNode getStructuredPayload() {
     return structuredPayload;
+  }
+
+  public Integer getPromptTokens() {
+    return promptTokens;
+  }
+
+  public Integer getCompletionTokens() {
+    return completionTokens;
+  }
+
+  public Integer getTotalTokens() {
+    return totalTokens;
+  }
+
+  public BigDecimal getInputCost() {
+    return inputCost;
+  }
+
+  public BigDecimal getOutputCost() {
+    return outputCost;
+  }
+
+  public String getCurrency() {
+    return currency;
+  }
+
+  public void applyUsage(
+      Integer promptTokens,
+      Integer completionTokens,
+      Integer totalTokens,
+      BigDecimal inputCost,
+      BigDecimal outputCost,
+      String currency) {
+    this.promptTokens = promptTokens;
+    this.completionTokens = completionTokens;
+    this.totalTokens = totalTokens;
+    this.inputCost = inputCost;
+    this.outputCost = outputCost;
+    this.currency = currency;
   }
 
   public Instant getCreatedAt() {

@@ -12,8 +12,10 @@ import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
+import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -108,6 +110,8 @@ class ChatServiceTest {
     assertThat(saved.getContent()).isEqualTo("Ответ бота");
     assertThat(saved.getProvider()).isEqualTo("z.ai");
     assertThat(saved.getModel()).isEqualTo("glm");
+    assertThat(saved.getPromptTokens()).isNull();
+    assertThat(saved.getInputCost()).isNull();
   }
 
   @Test
@@ -133,5 +137,42 @@ class ChatServiceTest {
     verify(chatMessageRepository).save(messageCaptor.capture());
     ChatMessage saved = messageCaptor.getValue();
     assertThat(saved.getStructuredPayload()).isEqualTo(payload);
+    assertThat(saved.getPromptTokens()).isNull();
+  }
+
+  @Test
+  void registerAssistantMessageStoresUsageAndCost() {
+    ChatSession session = new ChatSession();
+    UUID sessionId = UUID.randomUUID();
+    ReflectionTestUtils.setField(session, "id", sessionId);
+
+    when(chatSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+    when(chatMessageRepository.findTopBySessionOrderBySequenceNumberDesc(session))
+        .thenReturn(Optional.of(new ChatMessage(session, ChatRole.USER, "msg", 1, "openai", "gpt")));
+    when(chatMessageRepository.save(any(ChatMessage.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    UsageCostEstimate usageCost =
+        new UsageCostEstimate(
+            120,
+            240,
+            360,
+            new BigDecimal("0.01234567"),
+            new BigDecimal("0.02469135"),
+            new BigDecimal("0.03703702"),
+            "USD");
+
+    chatService.registerAssistantMessage(
+        sessionId, "cost aware", "openai", "gpt", null, usageCost);
+
+    ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
+    verify(chatMessageRepository).save(messageCaptor.capture());
+    ChatMessage saved = messageCaptor.getValue();
+    assertThat(saved.getPromptTokens()).isEqualTo(120);
+    assertThat(saved.getCompletionTokens()).isEqualTo(240);
+    assertThat(saved.getTotalTokens()).isEqualTo(360);
+    assertThat(saved.getInputCost()).isEqualByComparingTo("0.01234567");
+    assertThat(saved.getOutputCost()).isEqualByComparingTo("0.02469135");
+    assertThat(saved.getCurrency()).isEqualTo("USD");
   }
 }

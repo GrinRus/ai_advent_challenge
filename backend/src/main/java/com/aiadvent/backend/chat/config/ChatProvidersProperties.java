@@ -163,6 +163,10 @@ public class ChatProvidersProperties {
     private String displayName;
     private String tier;
     private Pricing pricing = new Pricing();
+    private Integer contextWindow;
+    private Integer maxOutputTokens;
+    private boolean streamingEnabled = true;
+    private boolean structuredEnabled = true;
 
     public String getDisplayName() {
       return displayName;
@@ -187,11 +191,44 @@ public class ChatProvidersProperties {
     public void setPricing(Pricing pricing) {
       this.pricing = pricing;
     }
+
+    public Integer getContextWindow() {
+      return contextWindow;
+    }
+
+    public void setContextWindow(Integer contextWindow) {
+      this.contextWindow = contextWindow;
+    }
+
+    public Integer getMaxOutputTokens() {
+      return maxOutputTokens;
+    }
+
+    public void setMaxOutputTokens(Integer maxOutputTokens) {
+      this.maxOutputTokens = maxOutputTokens;
+    }
+
+    public boolean isStreamingEnabled() {
+      return streamingEnabled;
+    }
+
+    public void setStreamingEnabled(boolean streamingEnabled) {
+      this.streamingEnabled = streamingEnabled;
+    }
+
+    public boolean isStructuredEnabled() {
+      return structuredEnabled;
+    }
+
+    public void setStructuredEnabled(boolean structuredEnabled) {
+      this.structuredEnabled = structuredEnabled;
+    }
   }
 
   public static class Pricing {
     private BigDecimal inputPer1KTokens = BigDecimal.ZERO;
     private BigDecimal outputPer1KTokens = BigDecimal.ZERO;
+    private String currency = "USD";
 
     public Pricing() {}
 
@@ -216,6 +253,14 @@ public class ChatProvidersProperties {
 
     public void setOutputPer1KTokens(BigDecimal outputPer1KTokens) {
       this.outputPer1KTokens = outputPer1KTokens;
+    }
+
+    public String getCurrency() {
+      return currency;
+    }
+
+    public void setCurrency(String currency) {
+      this.currency = currency;
     }
   }
 

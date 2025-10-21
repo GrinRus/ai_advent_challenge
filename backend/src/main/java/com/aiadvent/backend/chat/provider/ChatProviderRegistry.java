@@ -77,4 +77,12 @@ public class ChatProviderRegistry {
   public String defaultProvider() {
     return properties.getDefaultProvider();
   }
+
+  public boolean supportsStreaming(String providerId, String modelId) {
+    return requireModel(providerId, modelId).isStreamingEnabled();
+  }
+
+  public boolean supportsStructured(String providerId, String modelId) {
+    return requireModel(providerId, modelId).isStructuredEnabled();
+  }
 }

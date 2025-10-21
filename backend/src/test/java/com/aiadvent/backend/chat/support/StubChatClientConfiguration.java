@@ -12,6 +12,8 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -84,6 +86,9 @@ public class StubChatClientConfiguration {
     alternateProvider
         .getModels()
         .put("alt-model-pro", model("Alt Model Pro", "pro"));
+    ChatProvidersProperties.Model syncOnlyModel = model("Alt Model Sync Only", "enterprise");
+    syncOnlyModel.setStreamingEnabled(false);
+    alternateProvider.getModels().put("alt-model-sync-only", syncOnlyModel);
 
     properties.getProviders().put("stub", primaryProvider);
     properties.getProviders().put("alternate", alternateProvider);
@@ -180,7 +185,12 @@ public class StubChatClientConfiguration {
         aggregated = String.join("", StubChatClientState.currentTokens());
       }
       Generation generation = new Generation(AssistantMessage.builder().content(aggregated).build());
-      return new ChatResponse(java.util.List.of(generation));
+      Usage usage = StubChatClientState.usage();
+      ChatResponseMetadata metadata =
+          usage != null ? ChatResponseMetadata.builder().usage(usage).build() : null;
+      return metadata != null
+          ? new ChatResponse(java.util.List.of(generation), metadata)
+          : new ChatResponse(java.util.List.of(generation));
     }
 
     @Override

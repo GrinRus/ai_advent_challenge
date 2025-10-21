@@ -7,11 +7,13 @@ import com.aiadvent.backend.chat.api.StructuredSyncProvider;
 import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncStatus;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
+import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -73,6 +75,11 @@ public class StructuredSyncService {
   public StructuredSyncResult sync(ChatSyncRequest request) {
     ChatProviderSelection selection =
         chatProviderService.resolveSelection(request.provider(), request.model());
+    if (!chatProviderService.supportsStructured(selection)) {
+      throw new ResponseStatusException(
+          HttpStatus.BAD_REQUEST,
+          "Model '" + selection.modelId() + "' does not support structured responses.");
+    }
     ChatProvidersProperties.Provider provider = chatProviderService.provider(selection.providerId());
     ChatRequestOverrides overrides = resolveOverrides(request.options());
     ConversationContext context =
@@ -149,7 +156,10 @@ public class StructuredSyncService {
       }
 
       StructuredSyncResponse payload = convert(content);
-      StructuredSyncUsageStats usage = resolveUsage(response.getMetadata());
+      Usage usageMetadata = extractUsage(response.getMetadata());
+      UsageCostEstimate usageCost = chatProviderService.estimateUsageCost(selection, usageMetadata);
+      StructuredSyncUsageStats usageStats = toUsageStats(usageCost);
+      UsageCostDetails costDetails = toCostDetails(usageCost);
       long latencyMs = Duration.between(attemptStart, Instant.now()).toMillis();
 
       StructuredSyncStatus status =
@@ -166,7 +176,8 @@ public class StructuredSyncService {
               status,
               new StructuredSyncProvider(provider.getType().name(), selection.modelId()),
               answer,
-              usage,
+              usageStats,
+              costDetails,
               latencyMs,
               Instant.now());
 
@@ -176,7 +187,8 @@ public class StructuredSyncService {
           content,
           selection.providerId(),
           selection.modelId(),
-          structuredPayload);
+          structuredPayload,
+          usageCost);
 
       logAttemptSuccess(retryContext, conversation.sessionId(), selection.providerId());
       return finalResponse;
@@ -252,13 +264,27 @@ public class StructuredSyncService {
     }
   }
 
-  private StructuredSyncUsageStats resolveUsage(ChatResponseMetadata metadata) {
-    if (metadata == null || metadata.getUsage() == null) {
+  private Usage extractUsage(ChatResponseMetadata metadata) {
+    if (metadata == null) {
       return null;
     }
-    Usage usage = metadata.getUsage();
+    return metadata.getUsage();
+  }
+
+  private StructuredSyncUsageStats toUsageStats(UsageCostEstimate usageCost) {
+    if (usageCost == null || !usageCost.hasUsage()) {
+      return null;
+    }
     return new StructuredSyncUsageStats(
-        usage.getPromptTokens(), usage.getCompletionTokens(), usage.getTotalTokens());
+        usageCost.promptTokens(), usageCost.completionTokens(), usageCost.totalTokens());
+  }
+
+  private UsageCostDetails toCostDetails(UsageCostEstimate usageCost) {
+    if (usageCost == null || !usageCost.hasCost()) {
+      return null;
+    }
+    return new UsageCostDetails(
+        usageCost.inputCost(), usageCost.outputCost(), usageCost.totalCost(), usageCost.currency());
   }
 
   private String extractContent(ChatResponse response) {
