@@ -24,7 +24,6 @@ import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
-import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
@@ -48,7 +47,7 @@ public class AgentOrchestratorService {
 
   private static final Logger log = LoggerFactory.getLogger(AgentOrchestratorService.class);
 
-  private final FlowDefinitionRepository flowDefinitionRepository;
+  private final FlowDefinitionService flowDefinitionService;
   private final FlowDefinitionParser flowDefinitionParser;
   private final FlowSessionRepository flowSessionRepository;
   private final FlowStepExecutionRepository flowStepExecutionRepository;
@@ -61,7 +60,7 @@ public class AgentOrchestratorService {
   private final FlowTelemetryService telemetry;
 
   public AgentOrchestratorService(
-      FlowDefinitionRepository flowDefinitionRepository,
+      FlowDefinitionService flowDefinitionService,
       FlowDefinitionParser flowDefinitionParser,
       FlowSessionRepository flowSessionRepository,
       FlowStepExecutionRepository flowStepExecutionRepository,
@@ -72,7 +71,7 @@ public class AgentOrchestratorService {
       JobQueuePort jobQueuePort,
       ObjectMapper objectMapper,
       FlowTelemetryService telemetry) {
-    this.flowDefinitionRepository = flowDefinitionRepository;
+    this.flowDefinitionService = flowDefinitionService;
     this.flowDefinitionParser = flowDefinitionParser;
     this.flowSessionRepository = flowSessionRepository;
     this.flowStepExecutionRepository = flowStepExecutionRepository;
@@ -88,9 +87,7 @@ public class AgentOrchestratorService {
   @Transactional
   public FlowSession start(UUID flowDefinitionId, JsonNode launchParameters, JsonNode sharedContext) {
     FlowDefinition flowDefinition =
-        flowDefinitionRepository
-            .findById(flowDefinitionId)
-            .orElseThrow(() -> new IllegalArgumentException("Flow definition not found: " + flowDefinitionId));
+        flowDefinitionService.getActivePublishedDefinition(flowDefinitionId);
 
     FlowDefinitionDocument document = flowDefinitionParser.parse(flowDefinition);
     FlowStepConfig startStep = document.step(document.startStepId());

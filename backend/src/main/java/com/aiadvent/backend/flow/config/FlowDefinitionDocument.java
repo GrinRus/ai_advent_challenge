@@ -8,12 +8,14 @@ public class FlowDefinitionDocument {
 
   private final String startStepId;
   private final Map<String, FlowStepConfig> stepsById;
+  private final List<FlowStepConfig> stepsInOrder;
 
   public FlowDefinitionDocument(String startStepId, Map<String, FlowStepConfig> stepsById) {
     if (stepsById == null || stepsById.isEmpty()) {
       throw new IllegalArgumentException("Flow definition must contain at least one step");
     }
-    this.stepsById = Map.copyOf(stepsById);
+    this.stepsById = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(stepsById));
+    this.stepsInOrder = List.copyOf(this.stepsById.values());
     if (startStepId == null || startStepId.isBlank()) {
       this.startStepId = this.stepsById.keySet().iterator().next();
     } else if (!this.stepsById.containsKey(startStepId)) {
@@ -36,6 +38,6 @@ public class FlowDefinitionDocument {
   }
 
   public List<FlowStepConfig> steps() {
-    return Collections.unmodifiableList(stepsById.values().stream().toList());
+    return stepsInOrder;
   }
 }

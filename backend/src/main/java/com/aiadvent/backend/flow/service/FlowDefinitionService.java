@@ -14,9 +14,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class FlowDefinitionService {
@@ -43,7 +45,20 @@ public class FlowDefinitionService {
   public FlowDefinition getDefinition(UUID id) {
     return flowDefinitionRepository
         .findById(id)
-        .orElseThrow(() -> new IllegalArgumentException("Flow definition not found: " + id));
+        .orElseThrow(
+            () ->
+                new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Flow definition not found: " + id));
+  }
+
+  @Transactional(readOnly = true)
+  public FlowDefinition getActivePublishedDefinition(UUID id) {
+    FlowDefinition definition = getDefinition(id);
+    if (definition.getStatus() != FlowDefinitionStatus.PUBLISHED || !definition.isActive()) {
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Flow definition is not active and published: " + id);
+    }
+    return definition;
   }
 
   @Transactional(readOnly = true)

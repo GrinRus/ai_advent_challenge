@@ -42,7 +42,7 @@ public class FlowLaunchPreviewService {
 
   @Transactional(readOnly = true)
   public FlowLaunchPreviewResponse preview(UUID definitionId) {
-    FlowDefinition definition = flowDefinitionService.getDefinition(definitionId);
+    FlowDefinition definition = flowDefinitionService.getActivePublishedDefinition(definitionId);
     FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
 
     List<FlowLaunchPreviewResponse.Step> steps = new ArrayList<>();

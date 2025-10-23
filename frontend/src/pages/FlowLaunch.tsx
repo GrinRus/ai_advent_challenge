@@ -64,7 +64,15 @@ const FlowLaunchPage = () => {
         if (cancelled) {
           return;
         }
-        setDefinitions(data);
+        const published = data.filter(
+          (definition) => definition.active && definition.status === 'PUBLISHED',
+        );
+        if (published.length === 0) {
+          setDefinitions([]);
+          setDefinitionsError('Нет опубликованных активных определений для запуска.');
+        } else {
+          setDefinitions(published);
+        }
       } catch (error) {
         if (cancelled) {
           return;
