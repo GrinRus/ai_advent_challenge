@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import FlowLaunch from './FlowLaunch';
 
 const definitions = [
@@ -163,8 +164,8 @@ const previewMap = {
   },
 };
 
-vi.mock('../lib/apiClient', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/apiClient')>();
+vi.mock('../lib/apiClient', async () => {
+  const actual = await vi.importActual<typeof import('../lib/apiClient')>('../lib/apiClient');
 
   return {
     ...actual,
