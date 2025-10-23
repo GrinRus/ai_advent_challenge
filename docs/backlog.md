@@ -328,23 +328,24 @@
 - [ ] Реализовать `AgentOrchestratorService`, принимающий `FlowDefinition` и стартовый `OrchestrationRequest`, управляющий выполнением шагов и маршрутизацией ответов.
   - Интерфейс `AgentOrchestratorService.start(flowId, launchContext)` возвращает `FlowSession`.
   - Использует `JobQueuePort` для постановки step-джобов, обрабатывает `flow_event` и обновляет `flow_memory_version`.
+  - Переиспользует `AbstractSyncService`/`ChatProviderService` для retry, подсчёта токенов, регистрации сообщений; orchestration слой управляет только последовательностью шагов.
   - Включает state machine: `PENDING → RUNNING → PAUSED/FAILED/COMPLETED/ABORTED`.
   - Поддерживает ручные команды (`pause`, `resume`, `cancel`, `retryStep`) через `FlowControlService`.
 - [ ] Создать модель `AgentDefinition` с параметрами провайдера (модель, базовые опции, системные промпты, ограничения), поддержкой overrides и версионированием.
   - Таблицы `agent_definition` (метаданные), `agent_version` (версионированные настройки), `agent_capability`.
   - Поля: `providerType`, `model`, `systemPrompt`, `defaultOptions`, `syncOnly`, `maxTokens`, `costProfile`.
   - CRUD API для управления агентами + публикация версии, интеграция с кэшом Redis.
-- [ ] Добавить абстракцию `MemoryChannel` с режимами shared (общая память флоу) и isolated (локальный state агента), интегрировать её с существующим стором сообщений.
-  - Интерфейсы `MemoryChannelReader`, `MemoryChannelWriter`, поддержка операций `append`, `replace`, `snapshot`.
-  - Реализация опирается на таблицы `flow_memory_version` и shared storage, предоставляет optimistic locking.
+- [ ] Реализовать Postgres-бэкенд для `ChatMemory` Spring AI (shared/isolated каналы) и адаптировать текущие сервисы сообщений.
+  - Интерфейсы `MemoryChannelReader`, `MemoryChannelWriter` → thin wrapper над `ChatMemory`/`ChatMemoryRepository`.
+  - Хранение опирается на `flow_memory_version`, поддерживает optimistic locking и чтение предыдущих версий.
 - [ ] Спроектировать и реализовать persistence для шаблонов флоу и runtime-сессий: таблицы, Liquibase-миграции, репозитории, аудит статусов шагов.
   - Таблицы: `flow_session`, `flow_step_execution`, `flow_event`, `flow_job`, `flow_definition_history`.
   - Репозитории Spring Data + custom queries (SKIP LOCKED) для очереди.
   - Liquibase changelog с индексами и ограничениями.
-- [ ] Подготовить расширение `ChatProviderService` для мультиагентных вызовов: учёт индивидуальных системных промптов, модели и runtime-override параметров, жесткая фиксация синхронных вызовов.
-  - Новый метод `chatSyncWithOverrides(agentDefinition, inputContext, overrides)`.
-  - Поддержка передачи `memoryRead`/`memoryWrite` в providers, настройка `RetryTemplate` per agent.
-  - Метрики usage/cost (native или fallback) возвращаются вместе с ответом.
+- [ ] Подготовить расширение `ChatProviderService` для мультиагентных вызовов с переиспользованием Spring AI `ChatClient`.
+  - Новый метод `chatSyncWithOverrides(agentDefinition, inputContext, overrides)` поверх `chatClient().prompt()`.
+  - Поддержка передачи `memoryRead`/`memoryWrite` через `ChatMemory` advisors, настройка `RetryTemplate` per agent.
+  - Метрики usage/cost (native или fallback) возвращаются вместе с ответом и транслируются в существующие Micrometer метрики.
 - [ ] Сохранять и отдавать через API полный контекст запроса/ответа каждого шага (prompt, параметры, финальный output, метаданные с usage/токенами и стоимостью) с контролем доступа и ретеншена.
   - REST `GET /api/flows/{sessionId}/steps/{stepId}` → DTO с prompt/output/options/usage/cost/traceId.
   - Политики ретеншена: хранить 30 дней, очистка batch-job’ом.
