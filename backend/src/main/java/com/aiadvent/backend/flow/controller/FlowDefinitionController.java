@@ -5,9 +5,11 @@ import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionResponse;
 import com.aiadvent.backend.flow.api.FlowDefinitionSummaryResponse;
+import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponse;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.service.FlowDefinitionService;
+import com.aiadvent.backend.flow.service.FlowLaunchPreviewService;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.UUID;
@@ -28,9 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class FlowDefinitionController {
 
   private final FlowDefinitionService flowDefinitionService;
+  private final FlowLaunchPreviewService flowLaunchPreviewService;
 
-  public FlowDefinitionController(FlowDefinitionService flowDefinitionService) {
+  public FlowDefinitionController(
+      FlowDefinitionService flowDefinitionService, FlowLaunchPreviewService flowLaunchPreviewService) {
     this.flowDefinitionService = flowDefinitionService;
+    this.flowLaunchPreviewService = flowLaunchPreviewService;
   }
 
   @GetMapping
@@ -43,6 +48,11 @@ public class FlowDefinitionController {
   @GetMapping("/{id}")
   public FlowDefinitionResponse getDefinition(@PathVariable UUID id) {
     return toResponse(flowDefinitionService.getDefinition(id));
+  }
+
+  @GetMapping("/{id}/launch-preview")
+  public FlowLaunchPreviewResponse launchPreview(@PathVariable UUID id) {
+    return flowLaunchPreviewService.preview(id);
   }
 
   @GetMapping("/{id}/history")

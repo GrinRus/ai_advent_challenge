@@ -153,6 +153,89 @@ export type FlowDefinitionDetails = FlowDefinitionSummary & {
   createdAt?: string;
 };
 
+export type ChatRequestOverridesDto = {
+  temperature?: number | null;
+  topP?: number | null;
+  maxTokens?: number | null;
+};
+
+export type FlowLaunchPricing = {
+  inputPer1KTokens?: number | null;
+  outputPer1KTokens?: number | null;
+  currency?: string | null;
+};
+
+export type FlowLaunchCostEstimate = {
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  inputCost?: number | null;
+  outputCost?: number | null;
+  totalCost?: number | null;
+  currency?: string | null;
+};
+
+export type FlowLaunchAgent = {
+  agentVersionId: string;
+  agentVersionNumber: number;
+  agentDefinitionId?: string | null;
+  agentIdentifier?: string | null;
+  agentDisplayName?: string | null;
+  providerType: string;
+  providerId: string;
+  providerDisplayName?: string | null;
+  modelId: string;
+  modelDisplayName?: string | null;
+  modelContextWindow?: number | null;
+  modelMaxOutputTokens?: number | null;
+  syncOnly: boolean;
+  maxTokens?: number | null;
+  defaultOptions?: unknown | null;
+  costProfile?: unknown | null;
+  pricing: FlowLaunchPricing;
+};
+
+export type FlowLaunchMemoryRead = {
+  channel: string;
+  limit: number;
+};
+
+export type FlowLaunchMemoryWrite = {
+  channel: string;
+  mode: string;
+  payload?: unknown | null;
+};
+
+export type FlowLaunchTransitions = {
+  onSuccess?: string | null;
+  completeOnSuccess: boolean;
+  onFailure?: string | null;
+  failFlowOnFailure: boolean;
+};
+
+export type FlowLaunchStep = {
+  id: string;
+  name?: string | null;
+  prompt?: string | null;
+  agent: FlowLaunchAgent;
+  overrides?: ChatRequestOverridesDto | null;
+  memoryReads: FlowLaunchMemoryRead[];
+  memoryWrites: FlowLaunchMemoryWrite[];
+  transitions: FlowLaunchTransitions;
+  maxAttempts: number;
+  estimate: FlowLaunchCostEstimate;
+};
+
+export type FlowLaunchPreview = {
+  definitionId: string;
+  definitionName: string;
+  definitionVersion: number;
+  description?: string | null;
+  startStepId?: string | null;
+  steps: FlowLaunchStep[];
+  totalEstimate: FlowLaunchCostEstimate;
+};
+
 export type FlowDefinitionHistoryEntry = {
   id: number;
   version: number;
@@ -569,6 +652,28 @@ export async function publishFlowDefinition(
     );
   }
   return (await response.json()) as FlowDefinitionDetails;
+}
+
+export async function fetchFlowLaunchPreview(
+  definitionId: string,
+): Promise<FlowLaunchPreview> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/definitions/${definitionId}/launch-preview`,
+    {
+      headers: { Accept: 'application/json' },
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось загрузить информацию о запуске (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+
+  return (await response.json()) as FlowLaunchPreview;
 }
 
 export async function fetchSessionUsage(

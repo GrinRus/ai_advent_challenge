@@ -1,0 +1,265 @@
+.flow-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.flow-launch__header p {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+}
+
+.flow-launch__panel {
+  background: #fff;
+  border: 1px solid #dde2ef;
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.flow-launch__panel h3 {
+  margin: 0;
+}
+
+.flow-launch__field-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.flow-launch__field-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.flow-launch__field-grid select,
+.flow-launch__field-grid textarea {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #cbd5f5;
+  border-radius: 8px;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.flow-launch__description {
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #f5f7ff;
+  color: #374151;
+}
+
+.flow-launch__estimate-summary {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.flow-launch__estimate-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid #e2e6f5;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f8f9ff 0%, #ffffff 100%);
+}
+
+.flow-launch__metric-label {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.flow-launch__metric-value {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #222;
+}
+
+.flow-launch__steps {
+  display: grid;
+  gap: 1rem;
+}
+
+.flow-launch__steps--loading {
+  opacity: 0.8;
+}
+
+.flow-launch__empty {
+  margin: 0;
+  color: #6b7280;
+}
+
+.flow-launch-step {
+  border: 1px solid #e2e6f5;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fdfdff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.flow-launch-step--start {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.2);
+}
+
+.flow-launch-step--skeleton {
+  position: relative;
+  overflow: hidden;
+  background: #f7f7ff;
+}
+
+.flow-launch-step__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.flow-launch-step__name {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.flow-launch-step__badge {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.flow-launch-step__metrics {
+  display: flex;
+  gap: 1rem;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.flow-launch-step__agent {
+  display: grid;
+  gap: 0.35rem;
+  color: #374151;
+}
+
+.flow-launch-step__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #374151;
+}
+
+.flow-launch-step__list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+}
+
+.flow-launch-step__payload {
+  margin: 0.35rem 0 0;
+  padding: 0.5rem;
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+
+.flow-launch-step__prompt summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.flow-launch-step__prompt pre {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.flow-launch__error {
+  border-radius: 8px;
+  border: 1px solid #fca5a5;
+  background: #fee2e2;
+  padding: 0.75rem;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+.flow-launch__error--inline {
+  margin-bottom: 0.5rem;
+}
+
+.flow-launch__field-error {
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.flow-launch__actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  background: #e5e9f6;
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: flow-launch-skeleton 1.2s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  margin: 0.25rem 0;
+}
+
+.skeleton-line--wide {
+  width: 80%;
+}
+
+.skeleton-block {
+  height: 48px;
+  margin-top: 0.75rem;
+}
+
+@keyframes flow-launch-skeleton {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (min-width: 720px) {
+  .flow-launch__field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

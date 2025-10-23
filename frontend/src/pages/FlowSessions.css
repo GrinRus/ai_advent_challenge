@@ -122,6 +122,10 @@
   color: #777;
 }
 
+.flow-empty--inline {
+  margin-top: 0.75rem;
+}
+
 .flow-error {
   border-radius: 6px;
   padding: 0.75rem;
@@ -131,7 +135,6 @@
   font-weight: 500;
 }
 
-.primary-btn,
 .flow-section button {
   cursor: pointer;
   padding: 0.5rem 0.9rem;
@@ -151,10 +154,77 @@
   background: #303f9f;
 }
 
-.danger-btn {
+.flow-section button.danger-btn {
   background: #c62828;
 }
 
-.danger-btn:not(:disabled):hover {
+.flow-section button.danger-btn:not(:disabled):hover {
   background: #b71c1c;
+}
+
+.flow-section button.secondary-btn {
+  background: #f5f6fb;
+  color: #3949ab;
+  border-color: #c5cbe8;
+}
+
+.flow-section button.secondary-btn:not(:disabled):hover {
+  background: #e8ebfb;
+  border-color: #9aa5d9;
+}
+
+.flow-status-card--skeleton {
+  position: relative;
+  overflow: hidden;
+}
+
+.flow-events--skeleton .flow-event-item--skeleton {
+  background: #f8f9ff;
+  border-color: #e0e4f4;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  background: #e5e9f6;
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: skeleton-loading 1.2s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 14px;
+  margin: 0.25rem 0;
+}
+
+.skeleton-line--short {
+  width: 40%;
+}
+
+.skeleton-line--wide {
+  width: 85%;
+}
+
+.skeleton-block {
+  height: 48px;
+  margin-top: 0.75rem;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }

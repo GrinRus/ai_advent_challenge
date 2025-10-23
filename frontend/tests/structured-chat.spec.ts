@@ -63,7 +63,7 @@ test('structured chat request renders structured response', async ({ page }) => 
     });
   });
 
-  await page.route('**/api/llm/chat/sync', async (route) => {
+  await page.route('**/api/llm/chat/sync**', async (route) => {
     const body = route.request().postDataJSON() as Record<string, unknown>;
     expect(body).toMatchObject({
       message: 'Сформируй план запуска',
@@ -79,6 +79,14 @@ test('structured chat request renders structured response', async ({ page }) => 
         'x-new-session': 'true',
       },
       body: JSON.stringify(structuredResponseFixture),
+    });
+  });
+
+  await page.route('**/api/llm/sessions/**/usage', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'test-session-id', messages: [], totals: null }),
     });
   });
 
@@ -106,8 +114,8 @@ test('structured chat request renders structured response', async ({ page }) => 
   await expect(
     page.getByText('Создан новый диалог (OpenAI · GPT-4o Mini)'),
   ).toBeVisible();
-  await expect(page.getByText('Prompt')).toBeVisible();
-  await expect(page.getByText('Total')).toBeVisible();
+  await expect(page.getByTestId('structured-response-card').first()).toContainText('Prompt');
+  await expect(page.getByTestId('structured-response-card').first()).toContainText('Total');
 
   await expect(
     page.locator('.structured-request-preview').first(),

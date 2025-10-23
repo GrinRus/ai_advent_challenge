@@ -22,6 +22,12 @@
   - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
   - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).
   - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`.
+  - Scheduler: для `FlowJobWorker` пишем unit-тесты (Mock `AgentOrchestratorService`, проверяем `processed|empty|error`) и smoke-интеграцию с включённым `@Scheduled` bean. Логи на INFO содержат `workerId`, результат и длительность; ошибки фиксируем на ERROR и проверяем Micrometer (`flow.job.poll.count/duration`).
+
+## Документация оркестратора
+- При изменении схемы `flow_definition`/`flow_job`/`flow_memory_version` обновляйте раздел «Оркестрация» в `docs/infra.md` (архитектура, форматы JSON, политика памяти, worker-параметры).
+- Политики памяти, TTL и очистки фиксируем в `docs/infra.md` + `.env.example`. При изменениях обязательно добавляйте ссылку на миграции и cron/batch.
+- В `docs/processes.md` поддерживаем чек-лист: что нужно обновить при добавлении нового шага/транзишена/агента (def JSON, миграции, UI, телеметрия, тесты). Каждое изменение должно проходить ревизию архитектурой и обновлять ADR при необходимости.
 
 ## CI/CD
 - Workflow `.github/workflows/ci.yml` обязан проходить без модификации.

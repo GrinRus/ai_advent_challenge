@@ -2,8 +2,11 @@ import { NavLink, Route, Routes } from 'react-router-dom';
 import Help from './pages/Help';
 import Home from './pages/Home';
 import LLMChat from './pages/LLMChat';
-import Flows from './pages/Flows';
 import FlowDefinitions from './pages/FlowDefinitions';
+import FlowLaunch from './pages/FlowLaunch';
+import FlowSessions from './pages/FlowSessions';
+import FlowsLayout from './pages/FlowsLayout';
+import FlowsOverview from './pages/FlowsOverview';
 import './App.css';
 
 const App = () => (
@@ -23,9 +26,6 @@ const App = () => (
         <NavLink to="/flows" className="nav-link">
           Flows
         </NavLink>
-        <NavLink to="/flow-definitions" className="nav-link">
-          Flow Definitions
-        </NavLink>
       </nav>
     </header>
     <main className="app-content">
@@ -33,8 +33,14 @@ const App = () => (
         <Route path="/" element={<Home />} />
         <Route path="/help" element={<Help />} />
         <Route path="/llm-chat" element={<LLMChat />} />
-        <Route path="/flows" element={<Flows />} />
-        <Route path="/flow-definitions" element={<FlowDefinitions />} />
+        <Route path="/flows" element={<FlowsLayout />}>
+          <Route index element={<FlowsOverview />} />
+          <Route path="launch" element={<FlowLaunch />} />
+          <Route path="sessions" element={<FlowSessions />} />
+          <Route path="sessions/:sessionId" element={<FlowSessions />} />
+          <Route path="definitions" element={<FlowDefinitions />} />
+          <Route path="definitions/:definitionId" element={<FlowDefinitions />} />
+        </Route>
       </Routes>
     </main>
   </div>

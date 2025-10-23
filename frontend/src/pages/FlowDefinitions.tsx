@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   createFlowDefinition,
   fetchFlowDefinition,
@@ -50,19 +51,21 @@ const FlowDefinitions = () => {
   ]
 }`,
   );
+  const navigate = useNavigate();
+  const { definitionId } = useParams<{ definitionId?: string }>();
 
   const loadDefinitions = useCallback(async () => {
     try {
       setError(null);
       const data = await fetchFlowDefinitions();
       setDefinitions(data);
-      if (data.length && !selectedId) {
+      if (data.length && !definitionId && !selectedId) {
         setSelectedId(data[0].id);
       }
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [selectedId]);
+  }, [definitionId, selectedId]);
 
   const loadDetails = useCallback(async (definitionId: string) => {
     try {
@@ -83,6 +86,21 @@ const FlowDefinitions = () => {
   useEffect(() => {
     loadDefinitions();
   }, [loadDefinitions]);
+
+  useEffect(() => {
+    if (definitionId && definitions.length && !definitions.some((def) => def.id === definitionId)) {
+      navigate('/flows/definitions', { replace: true });
+      setSelectedId(null);
+      return;
+    }
+    if (definitionId && definitionId !== selectedId) {
+      setSelectedId(definitionId);
+      return;
+    }
+    if (!definitionId && selectedId && !definitions.some((def) => def.id === selectedId)) {
+      setSelectedId(definitions.length ? definitions[0].id : null);
+    }
+  }, [definitionId, definitions, navigate, selectedId]);
 
   useEffect(() => {
     if (selectedId) {
@@ -166,12 +184,13 @@ const FlowDefinitions = () => {
       setNewDefinitionUpdatedBy('');
       await loadDefinitions();
       setSelectedId(created.id);
+      navigate(`/flows/definitions/${created.id}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setIsSaving(false);
     }
-  }, [loadDefinitions, newDefinitionDescription, newDefinitionJson, newDefinitionName, newDefinitionUpdatedBy, parseJson]);
+  }, [loadDefinitions, navigate, newDefinitionDescription, newDefinitionJson, newDefinitionName, newDefinitionUpdatedBy, parseJson]);
 
   const isDraft = details?.status === 'DRAFT';
 
@@ -190,7 +209,12 @@ const FlowDefinitions = () => {
               <li
                 key={definition.id}
                 className={definition.id === selectedId ? 'active' : ''}
-                onClick={() => setSelectedId(definition.id)}
+                onClick={() => {
+                  setSelectedId(definition.id);
+                  if (definitionId !== definition.id) {
+                    navigate(`/flows/definitions/${definition.id}`);
+                  }
+                }}
               >
                 <div className="definition-name">{definition.name}</div>
                 <div className="definition-meta">
@@ -251,8 +275,17 @@ const FlowDefinitions = () => {
                 <h3>
                   {details.name} · версия {details.version}
                 </h3>
-                <div className={`status-badge status-${details.status.toLowerCase()}`}>
-                  {details.status}
+                <div className="editor-header__actions">
+                  <div className={`status-badge status-${details.status.toLowerCase()}`}>
+                    {details.status}
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => navigate(`/flows/launch?definitionId=${details.id}`)}
+                  >
+                    Настроить запуск
+                  </button>
                 </div>
               </div>
               <div className="field-grid">

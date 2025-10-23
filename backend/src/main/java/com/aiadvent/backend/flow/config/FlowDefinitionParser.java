@@ -4,7 +4,7 @@ import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,7 +27,7 @@ public class FlowDefinitionParser {
       throw new IllegalArgumentException("Flow definition must contain array 'steps'");
     }
 
-    Map<String, FlowStepConfig> steps = new HashMap<>();
+    Map<String, FlowStepConfig> steps = new LinkedHashMap<>();
     for (JsonNode stepNode : (ArrayNode) stepsNode) {
       FlowStepConfig config = parseStep(stepNode);
       if (steps.put(config.id(), config) != null) {

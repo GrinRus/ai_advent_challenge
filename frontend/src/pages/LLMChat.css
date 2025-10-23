@@ -27,6 +27,14 @@
   gap: 0.35rem;
 }
 
+.llm-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .llm-chat-selection {
   font-size: 0.85rem;
   color: #3730a3;
@@ -51,6 +59,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.llm-chat-launch {
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid #c5cbe8;
+  background: #f5f6fb;
+  color: #3949ab;
+  font-weight: 600;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.llm-chat-launch:hover {
+  background: #e8ebfb;
+  border-color: #9aa5d9;
+  transform: translateY(-1px);
+}
+
+.llm-chat-launch:focus-visible {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 3px;
 }
 
 .llm-chat-model-info {

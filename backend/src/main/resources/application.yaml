@@ -177,6 +177,12 @@ app:
               output-per-1k-tokens: 0.01
             usage:
               mode: native
+  flow:
+    worker:
+      enabled: ${FLOW_WORKER_ENABLED:true}
+      poll-delay: ${FLOW_WORKER_POLL_DELAY:PT0.5S}
+      max-concurrency: ${FLOW_WORKER_MAX_CONCURRENCY:1}
+      worker-id-prefix: ${FLOW_WORKER_ID_PREFIX:}
     memory:
       window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
       retention: ${CHAT_MEMORY_RETENTION:PT6H}

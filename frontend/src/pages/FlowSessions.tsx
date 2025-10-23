@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   fetchFlowSnapshot,
   pollFlowStatus,
@@ -11,7 +12,7 @@ import type {
   FlowStatusResponse,
   FlowState,
 } from '../lib/apiClient';
-import './Flows.css';
+import './FlowSessions.css';
 
 type PollState = {
   nextSince?: number;
@@ -37,7 +38,7 @@ const humanReadableStatus = (status?: string) => {
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString() : '—';
 
-const FlowPage = () => {
+const FlowSessionsPage = () => {
   const [flowId, setFlowId] = useState('');
   const [parameters, setParameters] = useState('');
   const [sharedContext, setSharedContext] = useState('');
@@ -47,8 +48,12 @@ const FlowPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isSnapshotLoading, setIsSnapshotLoading] = useState(false);
   const pollRef = useRef<PollState>({});
   const abortRef = useRef(false);
+  const routeSyncGuardRef = useRef(false);
+  const navigate = useNavigate();
+  const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const [retryStepId, setRetryStepId] = useState('');
 
   const resetSessionData = useCallback((initial?: FlowStatusResponse) => {
@@ -78,6 +83,21 @@ const FlowPage = () => {
     });
   }, []);
 
+  useEffect(() => {
+    if (routeSyncGuardRef.current) {
+      routeSyncGuardRef.current = false;
+      return;
+    }
+
+    if (routeSessionId && routeSessionId !== sessionId) {
+      setSessionId(routeSessionId);
+      resetSessionData();
+    } else if (!routeSessionId && sessionId) {
+      setSessionId(undefined);
+      resetSessionData();
+    }
+  }, [resetSessionData, routeSessionId, sessionId]);
+
   const parseJson = useCallback((value: string): unknown | undefined => {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -104,6 +124,8 @@ const FlowPage = () => {
         sharedContext: parseJson(sharedContext),
       };
       const response = await startFlow(flowId.trim(), payload);
+      routeSyncGuardRef.current = true;
+      navigate(`/flows/sessions/${response.sessionId}`);
       setSessionId(response.sessionId);
       setStatus({
         sessionId: response.sessionId,
@@ -124,7 +146,7 @@ const FlowPage = () => {
     } finally {
       setIsStarting(false);
     }
-  }, [flowId, parameters, parseJson, sharedContext]);
+  }, [flowId, navigate, parameters, parseJson, sharedContext]);
 
   const loadSnapshot = useCallback(async () => {
     if (!sessionId) {
@@ -133,10 +155,13 @@ const FlowPage = () => {
     }
     try {
       setError(null);
+      setIsSnapshotLoading(true);
       const snapshot = await fetchFlowSnapshot(sessionId);
       resetSessionData(snapshot);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setIsSnapshotLoading(false);
     }
   }, [resetSessionData, sessionId]);
 
@@ -223,6 +248,11 @@ const FlowPage = () => {
     }
   }, [latestStepId, retryStepId]);
 
+  const hasSession = Boolean(sessionId);
+  const showStatusSkeleton =
+    hasSession && (isStarting || isSnapshotLoading || (isPolling && !status));
+  const showEventSkeleton = hasSession && isPolling && events.length === 0;
+
   return (
     <div className="flows-page">
       <h2>Оркестрация флоу</h2>
@@ -272,8 +302,15 @@ const FlowPage = () => {
             type="text"
             value={sessionId ?? ''}
             onChange={(e) => {
-              setSessionId(e.target.value || undefined);
+              const value = e.target.value.trim();
+              setSessionId(value || undefined);
               resetSessionData();
+              routeSyncGuardRef.current = true;
+              if (value) {
+                navigate(`/flows/sessions/${value}`);
+              } else {
+                navigate('/flows/sessions');
+              }
             }}
             placeholder="UUID запущенной сессии"
           />
@@ -301,7 +338,19 @@ const FlowPage = () => {
           </button>
         </div>
 
-        {status && (
+        {!hasSession ? (
+          <p className="flow-empty flow-empty--inline">
+            Укажите Session ID или запустите новый флоу, чтобы увидеть статус выполнения.
+          </p>
+        ) : showStatusSkeleton ? (
+          <div className="flow-status-card flow-status-card--skeleton" aria-busy="true">
+            <div className="skeleton skeleton-line skeleton-line--wide" />
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line skeleton-line--short" />
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line skeleton-line--short" />
+          </div>
+        ) : status ? (
           <div className="flow-status-card">
             <div>
               <strong>Статус:</strong> {humanReadableStatus(status.status)}
@@ -319,6 +368,10 @@ const FlowPage = () => {
               <strong>Завершение:</strong> {formatDateTime(status.completedAt)}
             </div>
           </div>
+        ) : (
+          <p className="flow-empty flow-empty--inline">
+            Статус появится после первого обновления. Используйте snapshot или long-poll, чтобы получить свежие данные.
+          </p>
         )}
 
         <div className="flow-control">
@@ -370,8 +423,20 @@ const FlowPage = () => {
 
       <section className="flow-section">
         <h3>События</h3>
-        {events.length === 0 ? (
-          <p className="flow-empty">Нет событий для отображения</p>
+        {!hasSession ? (
+          <p className="flow-empty">Чтобы просматривать события, выберите активную сессию</p>
+        ) : showEventSkeleton ? (
+          <ul className="flow-events flow-events--skeleton" aria-busy="true">
+            {[0, 1, 2].map((idx) => (
+              <li key={idx} className="flow-event-item flow-event-item--skeleton">
+                <div className="skeleton skeleton-line skeleton-line--wide" />
+                <div className="skeleton skeleton-line skeleton-line--short" />
+                <div className="skeleton skeleton-block" />
+              </li>
+            ))}
+          </ul>
+        ) : events.length === 0 ? (
+          <p className="flow-empty">Событий пока нет — дождитесь результатов long-poll или выполните snapshot.</p>
         ) : (
           <ul className="flow-events">
             {events.map((event) => (
@@ -413,4 +478,4 @@ const FlowPage = () => {
   );
 };
 
-export default FlowPage;
+export default FlowSessionsPage;

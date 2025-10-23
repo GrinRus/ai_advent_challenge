@@ -49,7 +49,7 @@ test('sampling overrides are sent and can be reset to defaults', async ({ page }
 
   let syncCallCount = 0;
 
-  await page.route('**/api/llm/chat/sync', async (route) => {
+  await page.route('**/api/llm/chat/sync**', async (route) => {
     syncCallCount += 1;
     const body = route.request().postDataJSON() as Record<string, unknown>;
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   CHAT_STREAM_URL,
   fetchChatProviders,
@@ -1835,11 +1836,16 @@ const LLMChat = () => {
               </span>
             )}
           </div>
-          {sessionId && (
-            <span className="llm-chat-session">
-              Сессия: <code>{sessionId}</code>
-            </span>
-          )}
+          <div className="llm-chat-header-actions">
+            {sessionId && (
+              <span className="llm-chat-session">
+                Сессия: <code>{sessionId}</code>
+              </span>
+            )}
+            <NavLink to="/flows/launch" className="llm-chat-launch" aria-label="Launch Flow UI">
+              Launch Flow
+            </NavLink>
+          </div>
         </div>
 
         {(sessionId || isSessionUsageLoading || usageTotals) && (

@@ -14,6 +14,7 @@ import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.flow.persistence.FlowJobRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.support.PostgresTestContainer;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -44,9 +45,11 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowEventRepository flowEventRepository;
   @Autowired private FlowStepExecutionRepository flowStepExecutionRepository;
   @Autowired private FlowSessionRepository flowSessionRepository;
+  @Autowired private FlowJobRepository flowJobRepository;
 
   @BeforeEach
   void clean() {
+    flowJobRepository.deleteAll();
     flowEventRepository.deleteAll();
     flowStepExecutionRepository.deleteAll();
     flowSessionRepository.deleteAll();
