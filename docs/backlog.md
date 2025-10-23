@@ -348,7 +348,7 @@
 - [ ] Сохранять и отдавать через API полный контекст запроса/ответа каждого шага (prompt, параметры, финальный output, метаданные с usage/токенами и стоимостью) с контролем доступа и ретеншена.
   - REST `GET /api/flows/{sessionId}/steps/{stepId}` → DTO с prompt/output/options/usage/cost/traceId.
   - Политики ретеншена: хранить 30 дней, очистка batch-job’ом.
-  - Доступ ограничен ролями (`FLOW_VIEWER`, `FLOW_ADMIN`), audit trail.
+  - Обеспечить audit trail и логи доступа.
 - [ ] Реализовать детальный лог и телеметрию оркестрации (начало/конец шага, вход/выход агента, ошибки, fallback) с трассировкой запросов.
   - Структурированные логи (JSON) с корреляцией, интеграция с Micrometer/OTel.
   - Метрики: `flow_sessions_active`, `flow_step_duration`, `flow_retry_count`, `flow_cost_usd`.
