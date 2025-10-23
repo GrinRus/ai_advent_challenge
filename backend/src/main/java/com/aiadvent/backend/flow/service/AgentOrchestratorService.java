@@ -207,7 +207,7 @@ public class AgentOrchestratorService {
       if (transitions.completeOnSuccess()) {
         session.setStatus(FlowSessionStatus.COMPLETED);
         session.setCompletedAt(Instant.now());
-        recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
+        recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", cloneNode(stepOutput), result.usageCost());
         recordEvent(session, stepExecution, FlowEventType.FLOW_COMPLETED, "completed", null, result.usageCost());
         flowSessionRepository.save(session);
         telemetry.sessionCompleted(
