@@ -566,6 +566,12 @@ public class AgentOrchestratorService {
     if (stepExecution != null) {
       event.setFlowStepExecution(stepExecution);
     }
+    event.setTraceId(session.getId().toString());
+    if (stepExecution != null && stepExecution.getId() != null) {
+      event.setSpanId(stepExecution.getId().toString());
+    } else {
+      event.setSpanId(session.getId().toString());
+    }
     if (usageCost != null) {
       event.setCost(usageCost.totalCost());
       event.setTokensPrompt(usageCost.promptTokens());

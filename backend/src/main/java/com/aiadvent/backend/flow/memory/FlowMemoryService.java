@@ -6,6 +6,8 @@ import com.aiadvent.backend.flow.persistence.FlowMemoryVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +21,8 @@ public class FlowMemoryService implements MemoryChannelReader, MemoryChannelWrit
   private final FlowSessionRepository flowSessionRepository;
   private final FlowMemoryVersionRepository flowMemoryVersionRepository;
   private final ObjectMapper objectMapper;
+  private static final int MAX_VERSIONS_PER_CHANNEL = 10;
+  private static final Duration RETENTION_TTL = Duration.ofDays(30);
 
   public FlowMemoryService(
       FlowSessionRepository flowSessionRepository,
@@ -104,10 +108,20 @@ public class FlowMemoryService implements MemoryChannelReader, MemoryChannelWrit
 
     FlowMemoryVersion entity =
         new FlowMemoryVersion(session, channel, nextVersion, payload, parentRecordId);
-    entity.setCreatedByStepId(createdByStepId);
+   entity.setCreatedByStepId(createdByStepId);
 
     FlowMemoryVersion saved = flowMemoryVersionRepository.save(entity);
     session.setCurrentMemoryVersion(nextVersion);
+    enforceRetention(session, channel, nextVersion);
     return saved;
+  }
+
+  private void enforceRetention(FlowSession session, String channel, long latestVersion) {
+    long minVersionToKeep = Math.max(1, latestVersion - MAX_VERSIONS_PER_CHANNEL + 1);
+    flowMemoryVersionRepository.deleteByFlowSessionAndChannelAndVersionLessThan(
+        session, channel, minVersionToKeep);
+    Instant cutoff = Instant.now().minus(RETENTION_TTL);
+    flowMemoryVersionRepository.deleteByFlowSessionAndChannelAndCreatedAtBefore(
+        session, channel, cutoff);
   }
 }

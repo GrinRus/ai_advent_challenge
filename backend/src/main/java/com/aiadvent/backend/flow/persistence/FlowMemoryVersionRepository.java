@@ -2,9 +2,13 @@ package com.aiadvent.backend.flow.persistence;
 
 import com.aiadvent.backend.flow.domain.FlowMemoryVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface FlowMemoryVersionRepository extends JpaRepository<FlowMemoryVersion, Long> {
   Optional<FlowMemoryVersion> findFirstByFlowSessionAndChannelOrderByVersionDesc(
@@ -15,4 +19,20 @@ public interface FlowMemoryVersionRepository extends JpaRepository<FlowMemoryVer
 
   List<FlowMemoryVersion> findByFlowSessionAndChannelOrderByVersionDesc(
       FlowSession flowSession, String channel);
+
+  @Modifying
+  @Query(
+      "delete from FlowMemoryVersion v where v.flowSession = :session and v.channel = :channel and v.version < :minVersion")
+  int deleteByFlowSessionAndChannelAndVersionLessThan(
+      @Param("session") FlowSession session,
+      @Param("channel") String channel,
+      @Param("minVersion") long minVersion);
+
+  @Modifying
+  @Query(
+      "delete from FlowMemoryVersion v where v.flowSession = :session and v.channel = :channel and v.createdAt < :cutoff")
+  int deleteByFlowSessionAndChannelAndCreatedAtBefore(
+      @Param("session") FlowSession session,
+      @Param("channel") String channel,
+      @Param("cutoff") Instant cutoff);
 }

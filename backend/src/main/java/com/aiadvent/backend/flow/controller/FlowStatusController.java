@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.controller;
 
 import com.aiadvent.backend.flow.service.FlowStatusService;
 import com.aiadvent.backend.flow.service.FlowStatusService.FlowStatusResponse;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class FlowStatusController {
 
   private final FlowStatusService flowStatusService;
+  private final MeterRegistry meterRegistry;
 
-  public FlowStatusController(FlowStatusService flowStatusService) {
+  public FlowStatusController(FlowStatusService flowStatusService, MeterRegistry meterRegistry) {
     this.flowStatusService = flowStatusService;
+    this.meterRegistry = meterRegistry;
   }
 
   @GetMapping("/api/flows/{sessionId}")
@@ -34,7 +37,16 @@ public class FlowStatusController {
     Optional<FlowStatusResponse> response =
         flowStatusService.pollSession(sessionId, sinceEventId, stateVersion, timeout);
 
-    return response.map(ResponseEntity::ok).orElse(ResponseEntity.noContent().build());
+    if (response.isPresent()) {
+      FlowStatusResponse payload = response.get();
+      meterRegistry
+          .counter("flow.events.delivered", "channel", "longpoll")
+          .increment(payload.events().size());
+      return ResponseEntity.ok(payload);
+    }
+
+    meterRegistry.counter("flow.longpoll.timeouts").increment();
+    return ResponseEntity.noContent().build();
   }
 
   @GetMapping("/api/flows/{sessionId}/snapshot")

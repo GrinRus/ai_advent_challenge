@@ -7,6 +7,7 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -23,14 +24,17 @@ public class FlowStatusService {
   private final FlowSessionRepository flowSessionRepository;
   private final FlowEventRepository flowEventRepository;
   private final FlowQueryService flowQueryService;
+  private final FlowTelemetryService telemetryService;
 
   public FlowStatusService(
       FlowSessionRepository flowSessionRepository,
       FlowEventRepository flowEventRepository,
-      FlowQueryService flowQueryService) {
+      FlowQueryService flowQueryService,
+      FlowTelemetryService telemetryService) {
     this.flowSessionRepository = flowSessionRepository;
     this.flowEventRepository = flowEventRepository;
     this.flowQueryService = flowQueryService;
+    this.telemetryService = telemetryService;
   }
 
   @Transactional(readOnly = true)
@@ -100,6 +104,7 @@ public class FlowStatusService {
 
   private FlowStatusResponse buildResponse(
       FlowSession session, List<FlowEventDto> events, long nextSinceEventId) {
+    var telemetrySnapshot = telemetryService.snapshot(session.getId()).orElse(null);
     FlowStateDto state =
         new FlowStateDto(
             session.getId(),
@@ -110,9 +115,10 @@ public class FlowStatusService {
             session.getStartedAt(),
             session.getCompletedAt(),
             session.getFlowDefinition().getId(),
-            session.getFlowDefinitionVersion());
+            session.getFlowDefinitionVersion(),
+            session.getSharedContext() != null ? session.getSharedContext().deepCopy() : null);
 
-    return new FlowStatusResponse(state, events, nextSinceEventId);
+    return new FlowStatusResponse(state, events, nextSinceEventId, telemetrySnapshot);
   }
 
   private static FlowEventDto toDto(FlowEvent event) {
@@ -146,8 +152,12 @@ public class FlowStatusService {
       java.time.Instant startedAt,
       java.time.Instant completedAt,
       UUID flowDefinitionId,
-      int flowDefinitionVersion) {}
+      int flowDefinitionVersion,
+      com.fasterxml.jackson.databind.JsonNode sharedContext) {}
 
   public record FlowStatusResponse(
-      FlowStateDto state, List<FlowEventDto> events, long nextSinceEventId) {}
+      FlowStateDto state,
+      List<FlowEventDto> events,
+      long nextSinceEventId,
+      FlowTelemetryService.FlowTelemetrySnapshot telemetry) {}
 }

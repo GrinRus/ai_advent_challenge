@@ -12,6 +12,7 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class FlowStatusServiceTest {
 
@@ -32,12 +34,15 @@ class FlowStatusServiceTest {
   private FlowStatusService flowStatusService;
   private FlowSession session;
   private UUID sessionId;
+  private FlowTelemetryService telemetryService;
 
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
+    telemetryService = new FlowTelemetryService(new SimpleMeterRegistry());
     flowStatusService =
-        new FlowStatusService(flowSessionRepository, flowEventRepository, flowQueryService);
+        new FlowStatusService(
+            flowSessionRepository, flowEventRepository, flowQueryService, telemetryService);
 
     FlowDefinition definition =
         new FlowDefinition(
@@ -76,6 +81,7 @@ class FlowStatusServiceTest {
     FlowEventDto dto = payload.events().get(0);
     assertThat(dto.type()).isEqualTo(FlowEventType.STEP_STARTED);
     assertThat(payload.state().sessionId()).isEqualTo(sessionId);
+    assertThat(payload.telemetry()).isNull();
   }
 
   @Test
@@ -107,6 +113,7 @@ class FlowStatusServiceTest {
 
     assertThat(snapshot.events()).hasSize(2);
     assertThat(snapshot.state().sessionId()).isEqualTo(sessionId);
+    assertThat(snapshot.telemetry()).isNull();
   }
 
   private static void setField(Object target, String fieldName, Object value) {

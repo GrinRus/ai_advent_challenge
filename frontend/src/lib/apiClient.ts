@@ -207,6 +207,7 @@ export type FlowState = {
   completedAt?: string | null;
   flowDefinitionId: string;
   flowDefinitionVersion: number;
+  sharedContext?: unknown;
 };
 
 export type FlowEvent = {
@@ -222,10 +223,24 @@ export type FlowEvent = {
   payload?: unknown;
 };
 
+export type FlowTelemetrySnapshot = {
+  stepsCompleted: number;
+  stepsFailed: number;
+  retriesScheduled: number;
+  totalCostUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  startedAt?: string | null;
+  lastUpdated?: string | null;
+  completedAt?: string | null;
+  status?: string;
+};
+
 export type FlowStatusResponse = {
   state: FlowState;
   events: FlowEvent[];
   nextSinceEventId: number;
+  telemetry?: FlowTelemetrySnapshot | null;
 };
 
 export type FlowControlCommand = 'pause' | 'resume' | 'cancel' | 'retryStep';

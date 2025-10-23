@@ -124,7 +124,9 @@ public class FlowControlService {
 
     FlowEvent retryEvent =
         new FlowEvent(session, FlowEventType.STEP_RETRY_SCHEDULED, "scheduled", null);
-    retryEvent.setFlowStepExecution(retryExecution);
+   retryEvent.setFlowStepExecution(retryExecution);
+    retryEvent.setTraceId(session.getId().toString());
+    retryEvent.setSpanId(retryExecution.getId().toString());
     flowEventRepository.save(retryEvent);
     session.setStatus(FlowSessionStatus.RUNNING);
     telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
@@ -170,6 +172,8 @@ public class FlowControlService {
     FlowEvent retryEvent =
         new FlowEvent(session, FlowEventType.STEP_RETRY_SCHEDULED, "approved", null);
     retryEvent.setFlowStepExecution(retryExecution);
+    retryEvent.setTraceId(session.getId().toString());
+    retryEvent.setSpanId(retryExecution.getId().toString());
     flowEventRepository.save(retryEvent);
 
     telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
@@ -199,6 +203,8 @@ public class FlowControlService {
     FlowEvent skippedEvent =
         new FlowEvent(session, FlowEventType.STEP_SKIPPED, "skipped", null);
     skippedEvent.setFlowStepExecution(execution);
+    skippedEvent.setTraceId(session.getId().toString());
+    skippedEvent.setSpanId(execution.getId().toString());
     flowEventRepository.save(skippedEvent);
 
     String nextStepId = config.transitions().onFailure();
@@ -259,6 +265,8 @@ public class FlowControlService {
       payload = objectMapper.createObjectNode().put("message", message);
     }
     FlowEvent event = new FlowEvent(session, eventType, status, payload);
+    event.setTraceId(session.getId().toString());
+    event.setSpanId(session.getId().toString());
     flowEventRepository.save(event);
     telemetry.sessionEvent(session.getId(), eventType.name().toLowerCase(), message);
   }

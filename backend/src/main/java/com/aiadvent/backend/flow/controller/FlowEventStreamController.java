@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.controller;
 
 import com.aiadvent.backend.flow.service.FlowStatusService;
 import com.aiadvent.backend.flow.service.FlowStatusService.FlowStatusResponse;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
@@ -26,15 +27,18 @@ public class FlowEventStreamController {
   private static final Duration STREAM_POLL_TIMEOUT = Duration.ofSeconds(5);
 
   private final FlowStatusService flowStatusService;
+  private final MeterRegistry meterRegistry;
   private final ExecutorService executor = Executors.newCachedThreadPool();
 
-  public FlowEventStreamController(FlowStatusService flowStatusService) {
+  public FlowEventStreamController(FlowStatusService flowStatusService, MeterRegistry meterRegistry) {
     this.flowStatusService = flowStatusService;
+    this.meterRegistry = meterRegistry;
   }
 
   @GetMapping(value = "/{sessionId}/events/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   public SseEmitter stream(@PathVariable UUID sessionId) {
     SseEmitter emitter = new SseEmitter(0L);
+    meterRegistry.counter("flow.stream.connections").increment();
     CompletableFuture.runAsync(() -> streamLoop(sessionId, emitter), executor)
         .exceptionally(
             throwable -> {
@@ -57,6 +61,11 @@ public class FlowEventStreamController {
         if (response.isPresent()) {
           FlowStatusResponse payload = response.get();
           emitter.send(SseEmitter.event().name("flow").data(payload));
+          if (meterRegistry != null) {
+            meterRegistry
+                .counter("flow.events.delivered", "channel", "sse")
+                .increment(payload.events().size());
+          }
           sinceEventId = payload.nextSinceEventId();
           stateVersion = payload.state().stateVersion();
 
@@ -70,6 +79,7 @@ public class FlowEventStreamController {
       emitter.complete();
     } catch (IOException exception) {
       log.debug("SSE stream closed for session {}", sessionId, exception);
+      meterRegistry.counter("flow.stream.reconnects").increment();
       emitter.completeWithError(exception);
     }
   }
