@@ -97,6 +97,45 @@ export type StructuredSyncResponse = {
   timestamp?: string;
 };
 
+export type FlowStartResponse = {
+  sessionId: string;
+  status: string;
+  startedAt?: string;
+};
+
+export type FlowState = {
+  sessionId: string;
+  status: string;
+  currentStepId?: string | null;
+  stateVersion: number;
+  currentMemoryVersion: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  flowDefinitionId: string;
+  flowDefinitionVersion: number;
+};
+
+export type FlowEvent = {
+  eventId: number;
+  type: string;
+  status?: string | null;
+  traceId?: string | null;
+  spanId?: string | null;
+  cost?: number | null;
+  tokensPrompt?: number | null;
+  tokensCompletion?: number | null;
+  createdAt?: string | null;
+  payload?: unknown;
+};
+
+export type FlowStatusResponse = {
+  state: FlowState;
+  events: FlowEvent[];
+  nextSinceEventId: number;
+};
+
+export type FlowControlCommand = 'pause' | 'resume' | 'cancel' | 'retryStep';
+
 export type SessionUsageMessage = {
   messageId?: string;
   sequenceNumber?: number;
@@ -249,6 +288,124 @@ export async function requestStructuredSync(
     : undefined;
 
   return { body, sessionId, newSession };
+}
+
+export async function startFlow(
+  flowDefinitionId: string,
+  payload?: {
+    parameters?: unknown;
+    sharedContext?: unknown;
+  },
+): Promise<FlowStartResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/${flowDefinitionId}/start`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload ?? {}),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось запустить флоу (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+
+  return (await response.json()) as FlowStartResponse;
+}
+
+export async function fetchFlowSnapshot(
+  sessionId: string,
+): Promise<FlowStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/snapshot`, {
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось загрузить статус флоу (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+
+  return (await response.json()) as FlowStatusResponse;
+}
+
+export async function pollFlowStatus(
+  sessionId: string,
+  params: {
+    sinceEventId?: number;
+    stateVersion?: number;
+    timeoutMs?: number;
+  } = {},
+): Promise<FlowStatusResponse | null> {
+  const query = new URLSearchParams();
+  if (params.sinceEventId != null) {
+    query.set('sinceEventId', String(params.sinceEventId));
+  }
+  if (params.stateVersion != null) {
+    query.set('stateVersion', String(params.stateVersion));
+  }
+  if (params.timeoutMs != null) {
+    query.set('timeout', String(params.timeoutMs));
+  }
+
+  const url = `${API_BASE_URL}/flows/${sessionId}${
+    query.toString() ? `?${query.toString()}` : ''
+  }`;
+
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Ошибка при опросе статуса (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+
+  return (await response.json()) as FlowStatusResponse;
+}
+
+export async function sendFlowControlCommand(
+  sessionId: string,
+  command: FlowControlCommand,
+  payload?: { stepExecutionId?: string },
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/control`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      command,
+      stepExecutionId: payload?.stepExecutionId,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Команда "${command}" завершилась ошибкой (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
 }
 
 export async function fetchSessionUsage(

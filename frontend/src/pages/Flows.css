@@ -1,0 +1,160 @@
+.flows-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.flow-section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.flow-section h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.flow-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.flow-label input,
+.flow-label textarea {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.flow-label textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.flow-actions,
+.flow-control-buttons,
+.retry-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.flow-status-card {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: #f5f7fb;
+  border: 1px solid #d7def6;
+}
+
+.flow-control {
+  margin-top: 1.25rem;
+}
+
+.flow-control h4 {
+  margin: 0 0 0.75rem;
+}
+
+.retry-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.flow-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.flow-event-item {
+  border: 1px solid #e1e4ed;
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: #fafbff;
+}
+
+.event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.event-type {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #3949ab;
+}
+
+.event-timestamp {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.event-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.flow-empty {
+  margin: 0;
+  color: #777;
+}
+
+.flow-error {
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: #ffe7e7;
+  border: 1px solid #ff8a80;
+  color: #c62828;
+  font-weight: 500;
+}
+
+.primary-btn,
+.flow-section button {
+  cursor: pointer;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: #3949ab;
+  color: #fff;
+  transition: background 0.2s ease;
+}
+
+.flow-section button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.flow-section button:not(:disabled):hover {
+  background: #303f9f;
+}
+
+.danger-btn {
+  background: #c62828;
+}
+
+.danger-btn:not(:disabled):hover {
+  background: #b71c1c;
+}

@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from 'react-router-dom';
 import Help from './pages/Help';
 import Home from './pages/Home';
 import LLMChat from './pages/LLMChat';
+import Flows from './pages/Flows';
 import './App.css';
 
 const App = () => (
@@ -18,6 +19,9 @@ const App = () => (
         <NavLink to="/llm-chat" className="nav-link">
           LLM Chat
         </NavLink>
+        <NavLink to="/flows" className="nav-link">
+          Flows
+        </NavLink>
       </nav>
     </header>
     <main className="app-content">
@@ -25,6 +29,7 @@ const App = () => (
         <Route path="/" element={<Home />} />
         <Route path="/help" element={<Help />} />
         <Route path="/llm-chat" element={<LLMChat />} />
+        <Route path="/flows" element={<Flows />} />
       </Routes>
     </main>
   </div>
