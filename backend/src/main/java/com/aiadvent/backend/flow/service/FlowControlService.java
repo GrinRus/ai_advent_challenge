@@ -16,8 +16,10 @@ import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
+import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ public class FlowControlService {
   private final AgentVersionRepository agentVersionRepository;
   private final JobQueuePort jobQueuePort;
   private final ObjectMapper objectMapper;
+  private final FlowTelemetryService telemetry;
 
   public FlowControlService(
       FlowSessionRepository flowSessionRepository,
@@ -41,7 +44,8 @@ public class FlowControlService {
       FlowDefinitionParser flowDefinitionParser,
       AgentVersionRepository agentVersionRepository,
       JobQueuePort jobQueuePort,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      FlowTelemetryService telemetry) {
     this.flowSessionRepository = flowSessionRepository;
     this.flowStepExecutionRepository = flowStepExecutionRepository;
     this.flowEventRepository = flowEventRepository;
@@ -49,6 +53,7 @@ public class FlowControlService {
     this.agentVersionRepository = agentVersionRepository;
     this.jobQueuePort = jobQueuePort;
     this.objectMapper = objectMapper;
+    this.telemetry = telemetry;
   }
 
   @Transactional
@@ -76,6 +81,10 @@ public class FlowControlService {
     session.setStatus(FlowSessionStatus.CANCELLED);
     session.setCompletedAt(Instant.now());
     recordEvent(session, FlowEventType.FLOW_CANCELLED, "cancelled", reason);
+    telemetry.sessionCompleted(
+        sessionId,
+        session.getStatus(),
+        calculateDuration(session.getStartedAt(), session.getCompletedAt()));
     return session;
   }
 
@@ -115,6 +124,7 @@ public class FlowControlService {
     retryEvent.setFlowStepExecution(retryExecution);
     flowEventRepository.save(retryEvent);
     session.setStatus(FlowSessionStatus.RUNNING);
+    telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
   }
 
   private FlowSession getSession(UUID sessionId) {
@@ -130,5 +140,13 @@ public class FlowControlService {
     }
     FlowEvent event = new FlowEvent(session, eventType, status, payload);
     flowEventRepository.save(event);
+    telemetry.sessionEvent(session.getId(), eventType.name().toLowerCase(), message);
+  }
+
+  private Duration calculateDuration(Instant start, Instant end) {
+    if (start == null || end == null) {
+      return null;
+    }
+    return Duration.between(start, end);
   }
 }

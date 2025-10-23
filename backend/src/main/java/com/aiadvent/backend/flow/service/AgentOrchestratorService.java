@@ -22,6 +22,7 @@ import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
@@ -31,6 +32,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -56,6 +58,7 @@ public class AgentOrchestratorService {
   private final FlowMemoryService flowMemoryService;
   private final JobQueuePort jobQueuePort;
   private final ObjectMapper objectMapper;
+  private final FlowTelemetryService telemetry;
 
   public AgentOrchestratorService(
       FlowDefinitionRepository flowDefinitionRepository,
@@ -67,7 +70,8 @@ public class AgentOrchestratorService {
       AgentInvocationService agentInvocationService,
       FlowMemoryService flowMemoryService,
       JobQueuePort jobQueuePort,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      FlowTelemetryService telemetry) {
     this.flowDefinitionRepository = flowDefinitionRepository;
     this.flowDefinitionParser = flowDefinitionParser;
     this.flowSessionRepository = flowSessionRepository;
@@ -78,6 +82,7 @@ public class AgentOrchestratorService {
     this.flowMemoryService = flowMemoryService;
     this.jobQueuePort = jobQueuePort;
     this.objectMapper = objectMapper;
+    this.telemetry = telemetry;
   }
 
   @Transactional
@@ -109,6 +114,8 @@ public class AgentOrchestratorService {
     session.setStartedAt(Instant.now());
     session.setCurrentStepId(startStep.id());
     flowSessionRepository.save(session);
+
+    telemetry.sessionStarted(session.getId(), flowDefinition.getId(), flowDefinition.getVersion());
 
     recordEvent(session, null, FlowEventType.FLOW_STARTED, "running", null, null);
 
@@ -163,6 +170,7 @@ public class AgentOrchestratorService {
     stepExecution.setInputPayload(session.getSharedContext());
     flowStepExecutionRepository.save(stepExecution);
 
+    telemetry.stepStarted(session.getId(), stepExecution.getId(), stepExecution.getStepId(), stepExecution.getAttempt());
     recordEvent(session, stepExecution, FlowEventType.STEP_STARTED, "running", null, null);
 
     try {
@@ -250,6 +258,15 @@ public class AgentOrchestratorService {
 
     session.setStateVersion(session.getStateVersion() + 1);
     flowSessionRepository.save(session);
+
+    Duration duration = calculateDuration(stepExecution.getStartedAt(), stepExecution.getCompletedAt());
+    telemetry.stepCompleted(
+        session.getId(),
+        stepExecution.getId(),
+        stepExecution.getStepId(),
+        stepExecution.getAttempt(),
+        duration,
+        result.usageCost());
   }
 
   private void handleStepFailure(
@@ -279,6 +296,15 @@ public class AgentOrchestratorService {
         errorPayload(exception),
         null);
 
+    Duration failureDuration = calculateDuration(stepExecution.getStartedAt(), stepExecution.getCompletedAt());
+    telemetry.stepFailed(
+        session.getId(),
+        stepExecution.getId(),
+        stepExecution.getStepId(),
+        stepExecution.getAttempt(),
+        failureDuration,
+        exception);
+
     boolean retryScheduled = false;
     if (stepExecution.getAttempt() < config.maxAttempts()) {
       retryScheduled = scheduleRetry(session, config, stepExecution, document);
@@ -289,6 +315,10 @@ public class AgentOrchestratorService {
       session.setCompletedAt(Instant.now());
       recordEvent(session, stepExecution, FlowEventType.FLOW_FAILED, "failed", errorPayload(exception), null);
       flowSessionRepository.save(session);
+      telemetry.sessionCompleted(
+          session.getId(),
+          session.getStatus(),
+          calculateDuration(session.getStartedAt(), session.getCompletedAt()));
     }
 
     job.setStatus(retryScheduled ? FlowJobStatus.COMPLETED : FlowJobStatus.FAILED);
@@ -310,7 +340,8 @@ public class AgentOrchestratorService {
             failedExecution.getInputPayload());
     flowStepExecutionRepository.save(retryExecution);
     enqueueStepJob(session, retryExecution, nextAttempt, Instant.now().plusSeconds(1));
-    recordEvent(session, retryExecution, FlowEventType.STEP_STARTED, "scheduled", null, null);
+    recordEvent(session, retryExecution, FlowEventType.STEP_RETRY_SCHEDULED, "scheduled", null, null);
+    telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
     return true;
   }
 
@@ -473,5 +504,12 @@ public class AgentOrchestratorService {
     ObjectNode node = objectMapper.createObjectNode();
     node.put("message", throwable != null ? throwable.getMessage() : "Unknown error");
     return node;
+  }
+
+  private Duration calculateDuration(Instant start, Instant end) {
+    if (start == null || end == null) {
+      return null;
+    }
+    return Duration.between(start, end);
   }
 }
