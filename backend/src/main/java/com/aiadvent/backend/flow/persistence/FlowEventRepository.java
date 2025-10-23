@@ -13,4 +13,6 @@ public interface FlowEventRepository extends JpaRepository<FlowEvent, Long> {
       FlowSession flowSession, long eventId);
 
   List<FlowEvent> findByFlowStepExecutionOrderByIdAsc(FlowStepExecution stepExecution);
+
+  FlowEvent findTopByFlowSessionOrderByIdDesc(FlowSession flowSession);
 }

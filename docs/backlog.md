@@ -362,7 +362,7 @@
   - Контрактные тесты API (`/start`, `/control`, `/status`) + snapshot тесты JSON.
 
 ### Frontend и API
-- [ ] Расширить REST API: `POST /api/flows/{flowId}/start` и `GET /api/flows/{sessionId}` для получения статуса шагов, контекста и результатов агентов.
+- [x] Расширить REST API: `POST /api/flows/{flowId}/start` и `GET /api/flows/{sessionId}` для получения статуса шагов, контекста и результатов агентов.
   - `POST /api/flows/{flowId}/start`: тело `{ "parameters": {...}, "overrides": {...} }`, ответ `FlowSessionDto` с `sessionId`, `status`, `startedAt`.
   - `GET /api/flows/{sessionId}`: long-poll с параметрами `sinceEventId`, `stateVersion`; возвращает `flowState`, `events`, `telemetry`.
   - `POST /api/flows/{sessionId}/control`: команды `pause`, `resume`, `cancel`, `retryStep`.

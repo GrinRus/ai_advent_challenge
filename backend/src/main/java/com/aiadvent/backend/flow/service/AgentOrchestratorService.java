@@ -197,6 +197,10 @@ public class AgentOrchestratorService {
         recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
         recordEvent(session, stepExecution, FlowEventType.FLOW_COMPLETED, "completed", null, result.usageCost());
         flowSessionRepository.save(session);
+        telemetry.sessionCompleted(
+            session.getId(),
+            session.getStatus(),
+            calculateDuration(session.getStartedAt(), session.getCompletedAt()));
       } else {
         String nextStepId = transitions.onSuccess();
         if (!StringUtils.hasText(nextStepId)) {
@@ -205,6 +209,10 @@ public class AgentOrchestratorService {
           recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
           recordEvent(session, stepExecution, FlowEventType.FLOW_COMPLETED, "completed", null, result.usageCost());
           flowSessionRepository.save(session);
+          telemetry.sessionCompleted(
+              session.getId(),
+              session.getStatus(),
+              calculateDuration(session.getStartedAt(), session.getCompletedAt()));
         } else {
           scheduleNextStep(session, nextStepId, definitionDocument, launchContextForNext(session));
           recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
