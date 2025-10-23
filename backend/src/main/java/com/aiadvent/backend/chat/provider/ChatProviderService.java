@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.converter.BeanOutputConverter;
@@ -84,6 +85,30 @@ public class ChatProviderService {
           "No chat client adapter registered for provider '" + selection.providerId() + "'");
     }
     return adapter.buildStructuredOptions(selection, overrides, outputConverter);
+  }
+
+  public ChatResponse chatSyncWithOverrides(
+      ChatProviderSelection selection,
+      String systemPrompt,
+      List<String> additionalSystemMessages,
+      Map<String, Object> advisorParams,
+      String userMessage,
+      ChatRequestOverrides overrides) {
+    ChatOptions options = buildOptions(selection, overrides != null ? overrides : ChatRequestOverrides.empty());
+    var promptSpec = chatClient(selection.providerId()).prompt();
+    if (StringUtils.hasText(systemPrompt)) {
+      promptSpec.system(systemPrompt);
+    }
+    if (additionalSystemMessages != null) {
+      additionalSystemMessages.stream().filter(StringUtils::hasText).forEach(promptSpec::system);
+    }
+    if (advisorParams != null && !advisorParams.isEmpty()) {
+      promptSpec.advisors(advisors -> advisorParams.forEach(advisors::param));
+    }
+    if (!StringUtils.hasText(userMessage)) {
+      throw new IllegalArgumentException("userMessage must not be blank");
+    }
+    return promptSpec.user(userMessage).options(options).call().chatResponse();
   }
 
   public ChatProvidersProperties.Provider provider(String providerId) {

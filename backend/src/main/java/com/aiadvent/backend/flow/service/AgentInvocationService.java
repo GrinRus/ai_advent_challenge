@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -28,7 +29,6 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.retry.support.RetryTemplateBuilder;
@@ -98,38 +98,25 @@ public class AgentInvocationService {
     }
 
     Instant started = Instant.now();
-    ChatOptions options =
-        chatProviderService.buildOptions(selection, mergeOverrides(agentVersion, request.overrides()));
-
-    var promptSpec = chatProviderService.chatClient(selection.providerId()).prompt();
-
-    if (StringUtils.hasText(agentVersion.getSystemPrompt())) {
-      promptSpec.system(agentVersion.getSystemPrompt());
+    ChatRequestOverrides effectiveOverrides = computeOverrides(agentVersion, request.overrides());
+    String userMessage = buildUserMessage(request.userPrompt(), request.inputContext());
+    List<String> memoryMessages = buildMemorySnapshots(flowSession, request.memoryReads());
+    Map<String, Object> advisorParams = new java.util.HashMap<>();
+    advisorParams.put(ChatMemory.CONVERSATION_ID, flowSession.getId().toString());
+    if (request.stepId() != null) {
+      advisorParams.put("flowStepId", request.stepId().toString());
     }
-
-    if (request.memoryReads() != null && !request.memoryReads().isEmpty()) {
-      for (MemoryReadInstruction instruction : request.memoryReads()) {
-        List<JsonNode> entries =
-            flowMemoryService.history(flowSession.getId(), instruction.channel(), instruction.limit());
-        if (entries.isEmpty()) {
-          continue;
-        }
-        promptSpec.system(renderMemory(instruction.channel(), entries));
-      }
-    }
-
-    promptSpec.advisors(
-        advisors -> {
-          advisors.param(ChatMemory.CONVERSATION_ID, flowSession.getId().toString());
-          if (request.stepId() != null) {
-            advisors.param("flowStepId", request.stepId().toString());
-          }
-        });
-
-    promptSpec.user(buildUserMessage(request.userPrompt(), request.inputContext()));
 
     try {
-      ChatResponse chatResponse = promptSpec.options(options).call().chatResponse();
+      ChatResponse chatResponse =
+          chatProviderService.chatSyncWithOverrides(
+              selection,
+              agentVersion.getSystemPrompt(),
+              memoryMessages,
+              advisorParams,
+              userMessage,
+              effectiveOverrides);
+
       String content = extractContent(chatResponse);
       if (!StringUtils.hasText(content)) {
         throw new IllegalStateException("Agent returned empty response");
@@ -162,7 +149,7 @@ public class AgentInvocationService {
     }
   }
 
-  private ChatRequestOverrides mergeOverrides(
+  private ChatRequestOverrides computeOverrides(
       AgentVersion agentVersion, ChatRequestOverrides overrides) {
     Double temperature = null;
     Double topP = null;
@@ -193,6 +180,9 @@ public class AgentInvocationService {
       }
     }
 
+    if (temperature == null && topP == null && maxTokens == null) {
+      return ChatRequestOverrides.empty();
+    }
     return new ChatRequestOverrides(temperature, topP, maxTokens);
   }
 
@@ -211,6 +201,22 @@ public class AgentInvocationService {
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Failed to serialize input context", exception);
     }
+  }
+
+  private List<String> buildMemorySnapshots(
+      FlowSession flowSession, List<MemoryReadInstruction> memoryReads) {
+    if (memoryReads == null || memoryReads.isEmpty()) {
+      return List.of();
+    }
+    List<String> messages = new ArrayList<>(memoryReads.size());
+    for (MemoryReadInstruction instruction : memoryReads) {
+      List<JsonNode> entries =
+          flowMemoryService.history(flowSession.getId(), instruction.channel(), instruction.limit());
+      if (!entries.isEmpty()) {
+        messages.add(renderMemory(instruction.channel(), entries));
+      }
+    }
+    return List.copyOf(messages);
   }
 
   private String renderMemory(String channel, List<JsonNode> entries) {
