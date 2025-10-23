@@ -51,6 +51,43 @@ const formatCost = (value?: number | null, currency?: string) => {
   return `${formatted} ${currency ?? 'USD'}`;
 };
 
+const eventLabels: Record<string, string> = {
+  FLOW_STARTED: 'Флоу запущен',
+  FLOW_COMPLETED: 'Флоу завершён',
+  FLOW_FAILED: 'Флоу завершился с ошибкой',
+  FLOW_PAUSED: 'Флоу на паузе',
+  FLOW_RESUMED: 'Флоу возобновлён',
+  FLOW_CANCELLED: 'Флоу отменён',
+  STEP_STARTED: 'Шаг запущен',
+  STEP_COMPLETED: 'Шаг выполнен',
+  STEP_FAILED: 'Шаг завершился ошибкой',
+  STEP_SKIPPED: 'Шаг пропущен',
+  STEP_WAITING_APPROVAL: 'Ожидание подтверждения шага',
+  STEP_RETRY_SCHEDULED: 'Назначен повтор шага',
+};
+
+const eventAccent = (type?: string) => {
+  if (!type) {
+    return 'neutral';
+  }
+  if (type.includes('FAILED')) {
+    return 'danger';
+  }
+  if (type.includes('COMPLETED')) {
+    return 'success';
+  }
+  if (type.includes('WAITING')) {
+    return 'warning';
+  }
+  if (type.includes('PAUSED')) {
+    return 'warning';
+  }
+  if (type.includes('RETRY')) {
+    return 'info';
+  }
+  return 'neutral';
+};
+
 const FlowSessionsPage = () => {
   const [flowId, setFlowId] = useState('');
   const [parameters, setParameters] = useState('');
@@ -570,40 +607,84 @@ const FlowSessionsPage = () => {
         ) : events.length === 0 ? (
           <p className="flow-empty">Событий пока нет — дождитесь результатов long-poll или выполните snapshot.</p>
         ) : (
-          <ul className="flow-events">
-            {events.map((event) => (
-              <li key={event.eventId} className="flow-event-item">
-                <div className="event-header">
-                  <span className="event-type">{event.type}</span>
-                  <span className="event-timestamp">
-                    {formatDateTime(event.createdAt)}
-                  </span>
-                </div>
-                <div className="event-meta">
-                  <span>
-                    Статус: {event.status ?? '—'}
-                  </span>
-                  {event.traceId && <span>traceId: {event.traceId}</span>}
-                  {event.spanId && <span>spanId: {event.spanId}</span>}
-                  {event.cost != null && (
-                    <span>Стоимость: {formatCost(event.cost, 'USD')}</span>
-                  )}
-                  {event.tokensPrompt != null && (
-                    <span>Токены prompt: {event.tokensPrompt}</span>
-                  )}
-                  {event.tokensCompletion != null && (
-                    <span>Токены completion: {event.tokensCompletion}</span>
-                  )}
-                </div>
-                {event.payload != null && (
-                  <details>
-                    <summary>Payload</summary>
-                    <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-                  </details>
-                )}
-              </li>
-            ))}
-          </ul>
+          <div className="flow-timeline" role="list">
+            {events.map((event, index) => {
+              const accent = eventAccent(event.type);
+              const label = event.type ? eventLabels[event.type] ?? event.type : 'Событие';
+              const stepFromPayload =
+                event.payload && typeof event.payload === 'object'
+                  ? (event.payload as { stepId?: string; stepName?: string }).stepId ?? undefined
+                  : undefined;
+              const showConnector = index !== events.length - 1;
+
+              return (
+                <article
+                  key={event.eventId}
+                  className={`timeline-item timeline-item--${accent}`}
+                  role="listitem"
+                >
+                  <div className="timeline-item__marker" aria-hidden="true">
+                    <span />
+                  </div>
+                  <div className="timeline-item__content">
+                    <header>
+                      <span className="timeline-item__title">{label}</span>
+                      <time className="timeline-item__time">{formatDateTime(event.createdAt)}</time>
+                    </header>
+                    <dl className="timeline-item__meta">
+                      <div>
+                        <dt>Статус</dt>
+                        <dd>{event.status ?? '—'}</dd>
+                      </div>
+                      {stepFromPayload && (
+                        <div>
+                          <dt>Шаг</dt>
+                          <dd>{stepFromPayload}</dd>
+                        </div>
+                      )}
+                      {event.traceId && (
+                        <div>
+                          <dt>traceId</dt>
+                          <dd>{event.traceId}</dd>
+                        </div>
+                      )}
+                      {event.spanId && (
+                        <div>
+                          <dt>spanId</dt>
+                          <dd>{event.spanId}</dd>
+                        </div>
+                      )}
+                      {event.cost != null && (
+                        <div>
+                          <dt>Стоимость</dt>
+                          <dd>{formatCost(event.cost, 'USD')}</dd>
+                        </div>
+                      )}
+                      {event.tokensPrompt != null && (
+                        <div>
+                          <dt>Токены prompt</dt>
+                          <dd>{event.tokensPrompt}</dd>
+                        </div>
+                      )}
+                      {event.tokensCompletion != null && (
+                        <div>
+                          <dt>Токены completion</dt>
+                          <dd>{event.tokensCompletion}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {event.payload != null && (
+                      <details>
+                        <summary>Payload</summary>
+                        <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+                      </details>
+                    )}
+                  </div>
+                  {showConnector && <div className="timeline-item__connector" aria-hidden="true" />}
+                </article>
+              );
+            })}
+          </div>
         )}
       </section>
 
