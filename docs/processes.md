@@ -18,6 +18,10 @@
   - интеграционные проверки сохранения `chat_message.structured_payload`, поведения при 422/429/5xx и лимита попыток.
 - В e2e сценариях (Playwright/Cypress) проверяйте переключение вкладок чата, отображение структурированного ответа (summary/items/usage) и корректную обработку ошибок сервера.
 - При работе с fallback-токенизацией добавляйте модульные тесты на `TokenUsageEstimator` и проверяйте кэш Redis (TTL, graceful degradation). В потоковых тестах фиксируйте значение `usageSource` (`native|fallback`), чтобы исключить регрессии в UI.
+- Для оркестратора флоу:
+  - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
+  - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).
+  - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`.
 
 ## CI/CD
 - Workflow `.github/workflows/ci.yml` обязан проходить без модификации.
@@ -29,6 +33,7 @@
 - Если появился новый раздел, добавьте ссылку в `docs/overview.md`.
 - В `docs/CONTRIBUTING.md` содержится чек-лист по проверке документации.
 - При добавлении LLM-провайдеров или моделей обязательно синхронизируйте `application.yaml`, `.env.example`, `docker-compose.yml` и описание в `docs/infra.md` (таблица моделей, переменные окружения).
+- При обновлении конфигураций флоу убедитесь, что `docs/infra.md` и `docs/backlog.md` отражают структуру `flow_definition`, `flow_event`, TTL памяти и API /flows. Новые схемы включайте в ADR.
 
 ## Наблюдаемость
 - При включении structured sync (`/sync/structured`) логируйте latency и значения `promptTokens/completionTokens/totalTokens`, чтобы быть готовыми к интеграции метрик в последующих волнах.
@@ -42,6 +47,7 @@
   - В фронтенде не доверяйте кешу: при смене сессии запрашивайте usage повторно (см. `fetchSessionUsage`).
   - Если провайдер не возвращает usage, контролируйте fallback: в логах и API должно отображаться `usageSource=fallback`, а Redis-хит/мисс собирается метриками (см. Wave 8).
   - Метрики Micrometer: `chat.usage.native.count`/`chat.usage.fallback.count` (теги `provider`, `model`), `chat.usage.fallback.delta.tokens` (тег `segment = total|prompt|completion`) и `chat.token.cache.requests`/`chat.token.cache.latency` (тег `result = hit|miss|error|write|write_error`). Настройте алерты на рост доли `result=error` и абсолютное значение `fallback.delta`.
+- Для флоу используйте структурированные JSON-логи и OTel спаны на события `flow.started`, `step.started`, `step.completed`, `flow.paused/resumed/stopped`. Отслеживайте дашборды по метрикам `flow_sessions_active`, `flow_step_duration`, `flow_retry_count`, `flow_cost_usd` и по доле `usageSource=fallback`. При сбоях фиксируйте `flow_session_id`, `step_id` и `job_uid` для восстановления.
 
 ## Управление задачами
 - Волны (Wave) фиксируются в `docs/backlog.md`.

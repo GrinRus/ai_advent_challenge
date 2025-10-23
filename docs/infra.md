@@ -180,6 +180,24 @@ Frontend контейнер проксирует все запросы `/api/*` 
 }
 ```
 
+## Оркестрация мультиагентных флоу
+- Оркестратор реализован в виде сервиса `AgentOrchestratorService`, который читает опубликованные `flow_definition` и управляет шагами через `JobQueuePort`. Бэкенд по умолчанию использует таблицу `flow_job` (`payload_jsonb`, `status`, `retry_count`, `scheduled_at`, `locked_at`, `locked_by`) и блокировку `FOR UPDATE SKIP LOCKED`, что позволяет горизонтально масштабировать обработчики.
+- Каталог агентов хранится в PostgreSQL (`agent_definition`, `agent_version`, `agent_capability`). Версия включает системный промпт, дефолтные опции Spring AI, ограничения (`syncOnly`, `maxTokens`) и `toolBindings` — описание методов, опубликованных через Spring AI `@Tool`.
+- Конфигурации флоу: основная таблица `flow_definition` (черновики/публикации, JSONB с шагами и связями) и `flow_definition_history` для аудита. Def UI берёт актуальную версию через API `GET /api/flows/definitions`.
+- Запуски флоу (`flow_session`) содержат связь с определением, статус (`PENDING`, `RUNNING`, `PAUSED`, `FAILED`, `COMPLETED`, `ABORTED`) и идентификаторы корреляции. Для каждого шага пишется запись `flow_step_execution`, а события фиксируются в `flow_event` (тип, статус, payload, usage/cost, traceId/spanId).
+- Состояния shared/isolated памяти сериализуются в `flow_memory_version`. Чтение/запись выполняется через адаптер `ChatMemory` Spring AI; поддерживается хранение до 10 последних версий и очистка записей старше 30 дней.
+- API управления флоу:
+  - `POST /api/flows/{flowId}/start` — запускает сессию, возвращает `FlowSessionDto`.
+  - `POST /api/flows/{sessionId}/control` — команды `pause`, `resume`, `cancel`, `retryStep`.
+  - `GET /api/flows/{sessionId}` — long-poll с параметрами `sinceEventId`, `stateVersion`, возвращает snapshot состояния и новые `flow_event`.
+  - `GET /api/flows/{sessionId}/events/stream` — SSE-стрим поверх `SseEmitter`; обязан поддерживать timeouts, heartbeats и graceful close. Long-poll выступает fallback.
+  - `GET /api/flows/{sessionId}/steps/{stepId}` — детальный просмотр шага (prompt, overrides, output, usage/cost, traceId).
+- Advisors Spring AI (`CallAdvisorChain`, `StreamAdvisorChain`) инжектируют во все вызовы `requestId`, `flowId`, `sessionId`, `stepId`, `memoryVersion` и регистрируют Micrometer/OTel метрики (`flow_step_duration`, `flow_retry_count`, `flow_cost_usd`). Отдельный advisor отвечает за прокидывание `ChatMemory.CONVERSATION_ID` в агенты.
+- Frontend содержит раздел `Flows`:
+  - `Flows / Definitions` — CRUD по шаблонам (таблица, фильтры, JSON Schema форма с drag&drop, предпросмотр YAML, diff версий).
+  - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), expandable карточки шагов, отображение shared памяти и параметров запуска.
+  - Компонент `FlowTimeline` подписывается на long-poll/SSE, делает incremental рендер событий, позволяет экспортировать логи шага в JSON/Markdown.
+
 ## Тестирование
 - `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.
 - Для локального запуска используйте JDK 21 (на macOS: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew test`), тесты работают на H2 и заглушенном Spring AI клиенте, поэтому не требуют реального LLM.
