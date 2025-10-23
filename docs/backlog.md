@@ -420,9 +420,9 @@
 ## Wave 9.2 — Стабилизация запуска и рабочего места операторов
 ### Backend
 - [x] Расширить `FlowStartRequest`/`FlowStartResponse`: добавить per-run overrides, сохранять launch-параметры в `FlowSession`, прокидывать launch/overrides в `AgentInvocationRequest` и payload `flow_event`.
-- [ ] Уточнить перенос контекста между шагами:
-  - зафиксировать канонический способ передачи launch-параметров: хранить их в `FlowSession.launchParameters` и прокидывать в `AgentInvocationRequest` отдельным блоком (например, `launchContext`), не смешивая с `sharedContext`;
-  - адаптировать flow-definition (настройка `memoryWrites`/`memoryReads`), чтобы выводы агентов автоматически попадали во вход следующей задачи.
+- [x] Уточнить перенос контекста между шагами:
+  - [x] зафиксировать канонический способ передачи launch-параметров: хранить их в `FlowSession.launchParameters` и прокидывать в `AgentInvocationRequest` отдельным блоком (например, `launchContext`), не смешивая с `sharedContext`;
+  - [x] адаптировать flow-definition (настройка `memoryWrites`/`memoryReads`), чтобы выводы агентов автоматически попадали во вход следующей задачи.
 - [x] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
 - [ ] Учесть `FlowStepTransitions.onFailure`/`failFlowOnFailure`, ввести состояние ожидания (`WAITING_STEP_APPROVAL`), добавить команды `approveStep`/`skipStep`, поддержать частичные ретраи без автоматического `FAILED`.
 - [ ] Реализовать фактическую обработку `onFailure`: при ошибке шага переходить на объявленный `next`, если он задан, вместо безусловного завершения сессии.
