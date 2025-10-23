@@ -282,6 +282,61 @@ class AgentOrchestratorServiceTest {
     verify(telemetry, never()).sessionCompleted(eq(session.getId()), eq(FlowSessionStatus.FAILED), any());
   }
 
+  @Test
+  void processNextJobReturnsJobToQueueWhenSessionPaused() {
+    FlowSession session =
+        new FlowSession(definition, definition.getVersion(), FlowSessionStatus.PAUSED, 1L, 0L);
+    setField(session, "id", UUID.randomUUID());
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, STEP_ID, FlowStepStatus.PENDING, 1);
+    setField(stepExecution, "id", UUID.randomUUID());
+    FlowJob job = buildJob(session, stepExecution, FlowJobStatus.RUNNING);
+    job.setLockedBy("worker");
+    job.setLockedAt(Instant.now());
+
+    when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
+    when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
+
+    orchestratorService.processNextJob("worker");
+
+    verify(agentInvocationService, never()).invoke(any());
+    verify(jobQueuePort).save(job);
+    assertThat(job.getStatus()).isEqualTo(FlowJobStatus.PENDING);
+    assertThat(job.getLockedBy()).isNull();
+    verify(flowEventRepository, never()).save(any(FlowEvent.class));
+  }
+
+  @Test
+  void processNextJobCancelsJobWhenSessionCompleted() {
+    FlowSession session =
+        new FlowSession(definition, definition.getVersion(), FlowSessionStatus.CANCELLED, 1L, 0L);
+    setField(session, "id", UUID.randomUUID());
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, STEP_ID, FlowStepStatus.PENDING, 1);
+    setField(stepExecution, "id", UUID.randomUUID());
+    FlowJob job = buildJob(session, stepExecution, FlowJobStatus.RUNNING);
+    job.setLockedBy("worker");
+    job.setLockedAt(Instant.now());
+
+    when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
+    when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
+
+    orchestratorService.processNextJob("worker");
+
+    verify(agentInvocationService, never()).invoke(any());
+    verify(jobQueuePort).save(job);
+    verify(flowStepExecutionRepository).save(stepExecution);
+    assertThat(job.getStatus()).isEqualTo(FlowJobStatus.CANCELLED);
+    assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.CANCELLED);
+    assertThat(stepExecution.getCompletedAt()).isNotNull();
+
+    ArgumentCaptor<FlowEvent> eventCaptor = ArgumentCaptor.forClass(FlowEvent.class);
+    verify(flowEventRepository).save(eventCaptor.capture());
+    FlowEvent event = eventCaptor.getValue();
+    assertThat(event.getEventType()).isEqualTo(FlowEventType.STEP_SKIPPED);
+    assertThat(event.getStatus()).isEqualTo("cancelled");
+  }
+
   private FlowJob buildJob(
       FlowSession session, FlowStepExecution stepExecution, FlowJobStatus status) {
     FlowJobPayload payload =

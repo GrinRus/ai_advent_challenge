@@ -18,11 +18,13 @@ public interface FlowJobRepository extends JpaRepository<FlowJob, Long> {
   @Query(
       value =
           """
-          SELECT *
-          FROM flow_job
-          WHERE status = :status
-            AND (scheduled_at IS NULL OR scheduled_at <= :now)
-          ORDER BY scheduled_at NULLS FIRST, id
+          SELECT fj.*
+          FROM flow_job fj
+          JOIN flow_session fs ON fs.id = fj.flow_session_id
+          WHERE fj.status = :status
+            AND fs.status = 'RUNNING'
+            AND (fj.scheduled_at IS NULL OR fj.scheduled_at <= :now)
+          ORDER BY fj.scheduled_at NULLS FIRST, fj.id
           FOR UPDATE SKIP LOCKED
           LIMIT 1
           """,

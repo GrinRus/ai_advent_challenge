@@ -155,6 +155,12 @@ public class AgentOrchestratorService {
             .orElseThrow(() -> new IllegalStateException("Step execution not found: " + payload.stepExecutionId()));
 
     FlowSession session = stepExecution.getFlowSession();
+    FlowSessionStatus sessionStatus = session.getStatus();
+    if (sessionStatus != FlowSessionStatus.RUNNING) {
+      handleSessionNotRunning(job, session, stepExecution, sessionStatus);
+      return;
+    }
+
     FlowDefinitionDocument definitionDocument = flowDefinitionParser.parse(session.getFlowDefinition());
     FlowStepConfig stepConfig = definitionDocument.step(payload.stepId());
 
@@ -400,6 +406,40 @@ public class AgentOrchestratorService {
     FlowJobPayload payload =
         new FlowJobPayload(session.getId(), execution.getId(), execution.getStepId(), attempt);
     jobQueuePort.enqueueStepJob(session, execution, payload, scheduledAt);
+  }
+
+  private void handleSessionNotRunning(
+      FlowJob job,
+      FlowSession session,
+      FlowStepExecution stepExecution,
+      FlowSessionStatus status) {
+    if (status == FlowSessionStatus.PAUSED || status == FlowSessionStatus.PENDING) {
+      log.debug(
+          "Flow session {} is {} — returning job {} to the pending queue",
+          session.getId(),
+          status,
+          job.getId());
+      resetJobLock(job, FlowJobStatus.PENDING);
+      return;
+    }
+
+    log.debug(
+        "Flow session {} is {} — cancelling job {}",
+        session.getId(),
+        status,
+        job.getId());
+    resetJobLock(job, FlowJobStatus.CANCELLED);
+    stepExecution.setStatus(FlowStepStatus.CANCELLED);
+    stepExecution.setCompletedAt(Instant.now());
+    flowStepExecutionRepository.save(stepExecution);
+    recordEvent(session, stepExecution, FlowEventType.STEP_SKIPPED, status.name().toLowerCase(), null, null);
+  }
+
+  private void resetJobLock(FlowJob job, FlowJobStatus status) {
+    job.setStatus(status);
+    job.setLockedAt(null);
+    job.setLockedBy(null);
+    jobQueuePort.save(job);
   }
 
   private List<MemoryReadInstruction> toReadInstructions(List<MemoryReadConfig> configs) {

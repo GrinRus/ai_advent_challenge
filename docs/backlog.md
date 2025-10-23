@@ -423,7 +423,7 @@
 - [ ] Уточнить перенос контекста между шагами:
   - зафиксировать канонический способ передачи launch-параметров: хранить их в `FlowSession.launchParameters` и прокидывать в `AgentInvocationRequest` отдельным блоком (например, `launchContext`), не смешивая с `sharedContext`;
   - адаптировать flow-definition (настройка `memoryWrites`/`memoryReads`), чтобы выводы агентов автоматически попадали во вход следующей задачи.
-- [ ] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
+- [x] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
 - [ ] Учесть `FlowStepTransitions.onFailure`/`failFlowOnFailure`, ввести состояние ожидания (`WAITING_STEP_APPROVAL`), добавить команды `approveStep`/`skipStep`, поддержать частичные ретраи без автоматического `FAILED`.
 - [ ] Реализовать фактическую обработку `onFailure`: при ошибке шага переходить на объявленный `next`, если он задан, вместо безусловного завершения сессии.
 - [ ] Обновить `GET /api/flows/{sessionId}`/SSE: включить telemetry snapshot, traceId/spanId, сведения о shared memory, привести фактический JSON к документации.

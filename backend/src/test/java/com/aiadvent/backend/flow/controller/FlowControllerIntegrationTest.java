@@ -12,6 +12,7 @@ import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.domain.FlowJob;
 import com.aiadvent.backend.flow.domain.FlowEvent;
 import com.aiadvent.backend.flow.domain.FlowEventType;
 import com.aiadvent.backend.flow.domain.FlowSession;
@@ -27,6 +28,7 @@ import com.aiadvent.backend.flow.service.AgentInvocationRequest;
 import com.aiadvent.backend.flow.service.AgentInvocationResult;
 import com.aiadvent.backend.flow.service.AgentInvocationService;
 import com.aiadvent.backend.flow.service.AgentOrchestratorService;
+import com.aiadvent.backend.flow.service.FlowControlService;
 import com.aiadvent.backend.flow.service.FlowStatusService.FlowStatusResponse;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.support.PostgresTestContainer;
@@ -38,6 +40,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,6 +76,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowEventRepository flowEventRepository;
   @Autowired private FlowStepExecutionRepository flowStepExecutionRepository;
   @Autowired private AgentOrchestratorService orchestratorService;
+  @Autowired private FlowControlService flowControlService;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @MockBean private AgentInvocationService agentInvocationService;
@@ -218,6 +222,40 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
         (Map<String, Object>) context.get("launchOverrides");
     assertThat(launchOverridesContext).containsEntry("temperature", 0.2);
     assertThat(launchOverridesContext).containsEntry("maxTokens", 256);
+  }
+
+  @Test
+  void pausePreventsJobExecutionUntilResume() throws Exception {
+    AgentVersion agentVersion = persistAgent();
+    FlowDefinition definition = persistFlowDefinition(agentVersion.getId());
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenReturn(
+            new AgentInvocationResult(
+                "Completed result",
+                new UsageCostEstimate(
+                    5,
+                    3,
+                    8,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "USD",
+                    com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
+                List.of()));
+
+    FlowStartResponse startResponse = startFlow(definition.getId(), null);
+
+    flowControlService.pause(startResponse.sessionId(), "operator");
+
+    Optional<FlowJob> jobOptional = orchestratorService.processNextJob("worker-1");
+    assertThat(jobOptional).isEmpty();
+    Mockito.verify(agentInvocationService, Mockito.never()).invoke(Mockito.any());
+
+    flowControlService.resume(startResponse.sessionId());
+
+    orchestratorService.processNextJob("worker-1");
+    Mockito.verify(agentInvocationService, Mockito.times(1)).invoke(Mockito.any());
   }
 
   private FlowStartResponse startFlow(UUID flowId, String body) throws Exception {
