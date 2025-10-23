@@ -398,11 +398,12 @@
 
 ## Wave 9.1 — Каталог агентов и редактор флоу
 ### Backend
-- [ ] Добавить REST API каталога агентов: `GET /api/agents/definitions`, `GET /api/agents/definitions/{id}`, `POST /api/agents/definitions` (identifier, displayName, description, active), `PUT /api/agents/definitions/{id}` и `PATCH` для переключения статуса.
-- [ ] Реализовать эндпоинты версий: `GET /api/agents/definitions/{id}/versions`, `POST /api/agents/definitions/{id}/versions` (providerType, providerId, modelId, systemPrompt, defaultOptions, toolBindings, syncOnly, maxTokens) и `POST /api/agents/versions/{versionId}/publish`/`deprecate`.
-- [ ] Провести валидацию входных данных (поддерживаемые `ChatProviderType`, существование модели, maxTokens, формат JSON-полей), протоколировать `createdBy`/`updatedBy`, сохранять связанный список `agent_capability`.
-- [ ] Обновить `FlowDefinitionService` и `FlowLaunchPreviewService`: кешировать опубликованные активные версии, отдавать 422 при использовании неактивной или черновой версии, возвращать в DTO имя агента, модель и системный промпт.
-- [ ] Покрыть новые сервисы и контроллеры unit-тестами, добавить интеграционные сценарии: создание определения → версия → публикация → использование во флоу.
+- [x] Добавить REST API каталога агентов: `GET /api/agents/definitions`, `GET /api/agents/definitions/{id}`, `POST /api/agents/definitions` (identifier, displayName, description, active), `PUT /api/agents/definitions/{id}` и `PATCH` для переключения статуса.
+- [x] Реализовать эндпоинты версий: `GET /api/agents/definitions/{id}/versions`, `POST /api/agents/definitions/{id}/versions` (providerType, providerId, modelId, systemPrompt, defaultOptions, toolBindings, syncOnly, maxTokens) и `POST /api/agents/versions/{versionId}/publish`/`deprecate`.
+- [x] Провести валидацию входных данных (поддерживаемые `ChatProviderType`, существование модели, maxTokens, формат JSON-полей).
+- [x] Протоколировать `createdBy`/`updatedBy` и сохранять связанный список `agent_capability` при выпуске версий.
+- [x] Обновить `FlowDefinitionService` и `FlowLaunchPreviewService`: отдавать 422 при использовании неактивной или черновой версии, возвращать в DTO имя агента, модель и системный промпт.
+- [x] Покрыть новые сервисы и контроллеры unit-/интеграционными тестами: создание определения → версия → публикация → использование во флоу.
 
 ### Frontend
 - [ ] Создать раздел `Flows / Agents`: список определений с фильтрами, форма создания/редактирования (identifier, displayName, description, active).
@@ -419,6 +420,9 @@
 ## Wave 9.2 — Стабилизация запуска и рабочего места операторов
 ### Backend
 - [ ] Расширить `FlowStartRequest`/`FlowStartResponse`: добавить per-run overrides, сохранять launch-параметры в `FlowSession`, прокидывать launch/overrides в `AgentInvocationRequest` и payload `flow_event`.
+- [ ] Уточнить перенос контекста между шагами:
+  - зафиксировать канонический способ передачи launch-параметров: хранить их в `FlowSession.launchParameters` и прокидывать в `AgentInvocationRequest` отдельным блоком (например, `launchContext`), не смешивая с `sharedContext`;
+  - адаптировать flow-definition (настройка `memoryWrites`/`memoryReads`), чтобы выводы агентов автоматически попадали во вход следующей задачи.
 - [ ] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
 - [ ] Учесть `FlowStepTransitions.onFailure`/`failFlowOnFailure`, ввести состояние ожидания (`WAITING_STEP_APPROVAL`), добавить команды `approveStep`/`skipStep`, поддержать частичные ретраи без автоматического `FAILED`.
 - [ ] Реализовать фактическую обработку `onFailure`: при ошибке шага переходить на объявленный `next`, если он задан, вместо безусловного завершения сессии.
