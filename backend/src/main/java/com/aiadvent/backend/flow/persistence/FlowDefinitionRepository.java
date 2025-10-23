@@ -13,4 +13,6 @@ public interface FlowDefinitionRepository extends JpaRepository<FlowDefinition, 
   List<FlowDefinition> findByNameOrderByVersionDesc(String name);
 
   List<FlowDefinition> findByStatus(FlowDefinitionStatus status);
+
+  List<FlowDefinition> findAllByOrderByUpdatedAtDesc();
 }

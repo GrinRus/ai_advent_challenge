@@ -136,6 +136,33 @@ export type FlowStatusResponse = {
 
 export type FlowControlCommand = 'pause' | 'resume' | 'cancel' | 'retryStep';
 
+export type FlowDefinitionSummary = {
+  id: string;
+  name: string;
+  version: number;
+  status: string;
+  active: boolean;
+  description?: string | null;
+  updatedBy?: string | null;
+  updatedAt?: string;
+  publishedAt?: string | null;
+};
+
+export type FlowDefinitionDetails = FlowDefinitionSummary & {
+  definition: unknown;
+  createdAt?: string;
+};
+
+export type FlowDefinitionHistoryEntry = {
+  id: number;
+  version: number;
+  status: string;
+  definition: unknown;
+  changeNotes?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+};
+
 export type SessionUsageMessage = {
   messageId?: string;
   sequenceNumber?: number;
@@ -406,6 +433,142 @@ export async function sendFlowControlCommand(
       }`,
     );
   }
+}
+
+export async function fetchFlowDefinitions(): Promise<FlowDefinitionSummary[]> {
+  const response = await fetch(`${API_BASE_URL}/flows/definitions`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось загрузить определения флоу (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionSummary[];
+}
+
+export async function fetchFlowDefinition(
+  definitionId: string,
+): Promise<FlowDefinitionDetails> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/definitions/${definitionId}`,
+    {
+      headers: { Accept: 'application/json' },
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось загрузить определение (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionDetails;
+}
+
+export async function fetchFlowDefinitionHistory(
+  definitionId: string,
+): Promise<FlowDefinitionHistoryEntry[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/definitions/${definitionId}/history`,
+    {
+      headers: { Accept: 'application/json' },
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось загрузить историю (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionHistoryEntry[];
+}
+
+export async function createFlowDefinition(payload: {
+  name: string;
+  description?: string;
+  updatedBy?: string;
+  definition: unknown;
+  changeNotes?: string;
+  sourceDefinitionId?: string;
+}): Promise<FlowDefinitionDetails> {
+  const response = await fetch(`${API_BASE_URL}/flows/definitions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось создать определение (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionDetails;
+}
+
+export async function updateFlowDefinition(
+  definitionId: string,
+  payload: {
+    description?: string;
+    updatedBy?: string;
+    changeNotes?: string;
+    definition: unknown;
+  },
+): Promise<FlowDefinitionDetails> {
+  const response = await fetch(`${API_BASE_URL}/flows/definitions/${definitionId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось обновить определение (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionDetails;
+}
+
+export async function publishFlowDefinition(
+  definitionId: string,
+  payload: { updatedBy?: string; changeNotes?: string },
+): Promise<FlowDefinitionDetails> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/definitions/${definitionId}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `Не удалось опубликовать определение (status ${response.status}): ${
+        text || response.statusText
+      }`,
+    );
+  }
+  return (await response.json()) as FlowDefinitionDetails;
 }
 
 export async function fetchSessionUsage(

@@ -367,7 +367,7 @@
   - `GET /api/flows/{sessionId}`: long-poll с параметрами `sinceEventId`, `stateVersion`; возвращает `flowState`, `events`, `telemetry`.
   - `POST /api/flows/{sessionId}/control`: команды `pause`, `resume`, `cancel`, `retryStep`.
   - SSE `/api/flows/{sessionId}/events/stream`: переиспользовать инфраструктуру `SseEmitter`, отдавать incremental события; long-poll — обязательный fallback.
-- [ ] Добавить UI-конфигуратор флоу (визуальный порядок агентов, выбор моделей, промптов, настроек памяти) и просмотр активных/исторических запусков.
+- [x] Добавить UI-конфигуратор флоу (визуальный порядок агентов, выбор моделей, промптов, настроек памяти) и просмотр активных/исторических запусков.
   - Раздел `Flows / Definitions`: таблица с фильтрами, кнопки `Create`, `Edit`, `Publish`.
   - Редактор: форма на основе JSON Schema (React JSON Schema Form), drag&drop упорядочивание шагов, предпросмотр YAML.
   - История версий + diff, кнопка дубликата (`Duplicate flow`).
