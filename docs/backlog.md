@@ -426,7 +426,7 @@
 - [x] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
 - [x] Учесть `FlowStepTransitions.onFailure`/`failFlowOnFailure`, ввести состояние ожидания (`WAITING_STEP_APPROVAL`), добавить команды `approveStep`/`skipStep`, поддержать частичные ретраи без автоматического `FAILED`.
 - [x] Реализовать фактическую обработку `onFailure`: при ошибке шага переходить на объявленный `next`, если он задан, вместо безусловного завершения сессии.
-- [ ] Обновить `GET /api/flows/{sessionId}`/SSE: включить telemetry snapshot, traceId/spanId, сведения о shared memory, привести фактический JSON к документации.
+- [x] Обновить `GET /api/flows/{sessionId}`/SSE: включить telemetry snapshot, traceId/spanId, сведения о shared memory, привести фактический JSON к документации.
 - [ ] Заполнять trace/span в `FlowEvent`, внедрить retention-политику памяти (последние 10 версий + TTL 30 дней), зарегистрировать Micrometer метрики, заявленные для Wave 9.
 ### Frontend
 - [ ] Обновить экран запуска: позволить задавать launch overrides (temperature/topP/maxTokens), показывать итоговый payload и предупреждения перед стартом.
