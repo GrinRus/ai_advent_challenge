@@ -18,7 +18,7 @@ Backlog требует long-poll контроллер с таймаутом 25 
 1. **Основной канал — SSE**  
    - Эндпоинт `GET /api/flows/{sessionId}/events/stream` возвращает `text/event-stream`.  
    - По умолчанию таймаут отсутствует; сервер отправляет heartbeats каждые 15 с.  
-   - Типы событий: `flow.started`, `step.started`, `step.completed`, `step.failed`, `flow.paused`, `flow.resumed`, `flow.cancelled`, `flow.completed`, `flow.failed`. Payload сериализуется в JSON и включает `eventId`, `flowSessionId`, `stepId`, `stateVersion`, `status`, `usage`, `cost`, `telemetry` (trace/span, jobUid), а также `issuedAt`.  
+   - Типы событий: `flow.started`, `step.started`, `step.completed`, `step.failed`, `flow.paused`, `flow.resumed`, `flow.cancelled`, `flow.completed`, `flow.failed`. Payload сериализуется в JSON и включает `eventId`, `flowSessionId`, `stepId`, `stateVersion`, `status`, `usage`, `cost`, `traceId`, `spanId`, `issuedAt`.  
    - При потере соединения клиент повторно подключается с заголовком `Last-Event-ID` → сервер возвращает события после указанного `eventId`.
 
 2. **Обязательный fallback — long-poll**  
@@ -26,7 +26,21 @@ Backlog требует long-poll контроллер с таймаутом 25 
      ```json
      {
        "nextSinceEventId": "...",
-       "state": { "version": 42, "status": "RUNNING", ... },
+       "state": {
+         "version": 42,
+         "status": "RUNNING",
+         "currentStepId": "...",
+         "sharedContext": { ... },
+         "telemetry": {
+           "stepsCompleted": 3,
+           "stepsFailed": 1,
+           "retriesScheduled": 2,
+           "totalCostUsd": 0.23,
+           "promptTokens": 540,
+           "completionTokens": 240,
+           "lastUpdated": "2025-10-23T18:27:25Z"
+         }
+       },
        "events": [ ... ]
      }
      ```  
