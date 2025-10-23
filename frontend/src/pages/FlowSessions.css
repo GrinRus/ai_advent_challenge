@@ -18,6 +18,13 @@
   margin-bottom: 0.75rem;
 }
 
+.flow-events-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .flow-label {
   display: flex;
   flex-direction: column;
@@ -56,6 +63,96 @@
   border-radius: 6px;
   background: #f5f7fb;
   border: 1px solid #d7def6;
+}
+
+.flow-progress {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.flow-progress-label {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.flow-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e8ebfb;
+  overflow: hidden;
+}
+
+.flow-progress-bar__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%);
+  transition: width 0.3s ease;
+}
+
+.flow-progress-percent {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.flow-telemetry {
+  margin-top: 0.75rem;
+  border: 1px solid #d6dcfa;
+  border-radius: 6px;
+  background: #eef2ff;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.flow-telemetry header {
+  font-weight: 600;
+  color: #312e81;
+}
+
+.flow-telemetry dl {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.flow-telemetry dt {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4c1d95;
+}
+
+.flow-telemetry dd {
+  margin: 0;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.flow-shared-context {
+  margin-top: 0.75rem;
+}
+
+.flow-shared-context summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.flow-shared-context pre {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  max-height: 300px;
+  overflow: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.85rem;
 }
 
 .flow-control {

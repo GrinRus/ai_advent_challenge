@@ -240,7 +240,7 @@ app:
 - Frontend содержит раздел `Flows`:
   - `Flows / Agents` — каталог определений: создание/редактирование метаданных, управление версиями (создание, публикация, депрекация, capabilities), просмотр связанных моделей и истории авторов.
   - `Flows / Definitions` — визуальный редактор флоу: конструктор шагов с выбором опубликованных `agentVersionId`, настройкой промптов/памяти/переходов и автоматической валидацией JSON; история версий отображает diff и change notes.
-  - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), expandable карточки шагов, отображение shared памяти и параметров запуска. Компонент `FlowTimeline` подписывается на long-poll/SSE и позволяет экспортировать логи шага в JSON/Markdown.
+  - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), агрегированная телеметрия (`stepsCompleted`, `stepsFailed`, `retriesScheduled`, `totalCostUsd`, `promptTokens`, `completionTokens`, `lastUpdated`), collapsible shared context. Компонент `FlowTimeline` подписывается на long-poll/SSE, отображает `traceId`/`spanId`, usage/cost и позволяет экспортировать логи шага в JSON.
 
 ## Тестирование
 - `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.

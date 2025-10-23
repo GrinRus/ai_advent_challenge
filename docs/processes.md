@@ -21,7 +21,7 @@
 - Для оркестратора флоу:
   - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
   - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).
-  - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`.
+  - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`, проверка telemetry snapshot (aggregate counters, shared context, progress bar) и экспорт событий.
   - Scheduler: для `FlowJobWorker` пишем unit-тесты (Mock `AgentOrchestratorService`, проверяем `processed|empty|error`) и smoke-интеграцию с включённым `@Scheduled` bean. Логи на INFO содержат `workerId`, результат и длительность; ошибки фиксируем на ERROR и проверяем Micrometer (`flow.job.poll.count/duration`).
 
 ## Документация оркестратора

@@ -11,6 +11,7 @@ import type {
   FlowEvent,
   FlowStatusResponse,
   FlowState,
+  FlowTelemetrySnapshot,
 } from '../lib/apiClient';
 import './FlowSessions.css';
 
@@ -31,12 +32,24 @@ const humanReadableStatus = (status?: string) => {
     FAILED: 'ошибка',
     CANCELLED: 'отменён',
     ABORTED: 'прерван',
+    WAITING_STEP_APPROVAL: 'ожидает подтверждения шага',
   };
   return localized[status] ?? status.toLowerCase();
 };
 
 const formatDateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString() : '—';
+
+const formatTokens = (value?: number | null) =>
+  value != null ? value.toLocaleString('ru-RU') : '—';
+
+const formatCost = (value?: number | null, currency?: string) => {
+  if (value == null) {
+    return '—';
+  }
+  const formatted = value >= 0.01 ? value.toFixed(2) : value.toFixed(4);
+  return `${formatted} ${currency ?? 'USD'}`;
+};
 
 const FlowSessionsPage = () => {
   const [flowId, setFlowId] = useState('');
@@ -45,6 +58,7 @@ const FlowSessionsPage = () => {
   const [sessionId, setSessionId] = useState<string | undefined>();
   const [status, setStatus] = useState<FlowState | null>(null);
   const [events, setEvents] = useState<FlowEvent[]>([]);
+  const [telemetry, setTelemetry] = useState<FlowTelemetrySnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -55,11 +69,33 @@ const FlowSessionsPage = () => {
   const navigate = useNavigate();
   const { sessionId: routeSessionId } = useParams<{ sessionId?: string }>();
   const [retryStepId, setRetryStepId] = useState('');
+  const handleExportEvents = useCallback(() => {
+    if (events.length === 0) {
+      return;
+    }
+    const payload = {
+      sessionId,
+      generatedAt: new Date().toISOString(),
+      events,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `flow-events-${sessionId ?? 'unknown'}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, [events, sessionId]);
 
   const resetSessionData = useCallback((initial?: FlowStatusResponse) => {
     if (initial) {
       setStatus(initial.state);
       setEvents(initial.events ?? []);
+      setTelemetry(initial.telemetry ?? null);
       pollRef.current = {
         nextSince: initial.nextSinceEventId,
         stateVersion: initial.state.stateVersion,
@@ -67,6 +103,7 @@ const FlowSessionsPage = () => {
     } else {
       setStatus(null);
       setEvents([]);
+      setTelemetry(null);
       pollRef.current = {};
     }
   }, []);
@@ -119,6 +156,7 @@ const FlowSessionsPage = () => {
     try {
       setIsStarting(true);
       setError(null);
+      setTelemetry(null);
       const payload = {
         parameters: parseJson(parameters),
         sharedContext: parseJson(sharedContext),
@@ -188,6 +226,9 @@ const FlowSessionsPage = () => {
           if (response) {
             setStatus(response.state);
             appendEvents(response.events);
+            if (response.telemetry) {
+              setTelemetry(response.telemetry);
+            }
             pollRef.current = {
               nextSince: response.nextSinceEventId,
               stateVersion: response.state.stateVersion,
@@ -241,6 +282,33 @@ const FlowSessionsPage = () => {
       ? (executionEvent.payload as { stepId?: string }).stepId ?? undefined
       : undefined;
   }, [events]);
+
+  const sharedContextText = useMemo(() => {
+    if (!status?.sharedContext) {
+      return '—';
+    }
+    try {
+      return JSON.stringify(status.sharedContext, null, 2);
+    } catch (error) {
+      return 'Не удалось сериализовать shared context';
+    }
+  }, [status?.sharedContext]);
+
+  const telemetryStats = useMemo(() => {
+    if (!telemetry) {
+      return null;
+    }
+    const totalAttempts = telemetry.stepsCompleted + telemetry.stepsFailed;
+    const progressPercent = totalAttempts
+      ? Math.min(100, Math.round((telemetry.stepsCompleted / totalAttempts) * 100))
+      : status?.status?.startsWith('COMPLETED')
+      ? 100
+      : 0;
+    return {
+      progressPercent,
+      totalAttempts,
+    };
+  }, [status?.status, telemetry]);
 
   useEffect(() => {
     if (!retryStepId && latestStepId) {
@@ -367,6 +435,65 @@ const FlowSessionsPage = () => {
             <div>
               <strong>Завершение:</strong> {formatDateTime(status.completedAt)}
             </div>
+            {telemetryStats && (
+              <div className="flow-progress">
+                <div className="flow-progress-label">
+                  Выполнено шагов: {telemetry?.stepsCompleted ?? 0}
+                  {telemetryStats.totalAttempts > 0 ? ` из ${telemetryStats.totalAttempts}` : ''}
+                </div>
+                <div className="flow-progress-bar">
+                  <div
+                    className="flow-progress-bar__fill"
+                    style={{ width: `${telemetryStats.progressPercent}%` }}
+                    aria-valuenow={telemetryStats.progressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  />
+                </div>
+                <span className="flow-progress-percent">{telemetryStats.progressPercent}%</span>
+              </div>
+            )}
+            {telemetry && (
+              <div className="flow-telemetry">
+                <header>Телеметрия</header>
+                <dl>
+                  <div>
+                    <dt>Успешных шагов</dt>
+                    <dd>{telemetry.stepsCompleted}</dd>
+                  </div>
+                  <div>
+                    <dt>Ошибок</dt>
+                    <dd>{telemetry.stepsFailed}</dd>
+                  </div>
+                  <div>
+                    <dt>Запланированных ретраев</dt>
+                    <dd>{telemetry.retriesScheduled}</dd>
+                  </div>
+                  <div>
+                    <dt>Стоимость</dt>
+                    <dd>{formatCost(telemetry.totalCostUsd, 'USD')}</dd>
+                  </div>
+                  <div>
+                    <dt>Токены (prompt)</dt>
+                    <dd>{formatTokens(telemetry.promptTokens)}</dd>
+                  </div>
+                  <div>
+                    <dt>Токены (completion)</dt>
+                    <dd>{formatTokens(telemetry.completionTokens)}</dd>
+                  </div>
+                  <div>
+                    <dt>Обновлено</dt>
+                    <dd>{formatDateTime(telemetry.lastUpdated)}</dd>
+                  </div>
+                </dl>
+              </div>
+            )}
+            {status.sharedContext && (
+              <details className="flow-shared-context">
+                <summary>Shared context</summary>
+                <pre>{sharedContextText}</pre>
+              </details>
+            )}
           </div>
         ) : (
           <p className="flow-empty flow-empty--inline">
@@ -423,6 +550,11 @@ const FlowSessionsPage = () => {
 
       <section className="flow-section">
         <h3>События</h3>
+        <div className="flow-events-toolbar">
+          <button type="button" onClick={handleExportEvents} disabled={events.length === 0}>
+            Экспортировать события
+          </button>
+        </div>
         {!hasSession ? (
           <p className="flow-empty">Чтобы просматривать события, выберите активную сессию</p>
         ) : showEventSkeleton ? (
@@ -451,8 +583,10 @@ const FlowSessionsPage = () => {
                   <span>
                     Статус: {event.status ?? '—'}
                   </span>
+                  {event.traceId && <span>traceId: {event.traceId}</span>}
+                  {event.spanId && <span>spanId: {event.spanId}</span>}
                   {event.cost != null && (
-                    <span>Стоимость: {event.cost.toFixed(6)}</span>
+                    <span>Стоимость: {formatCost(event.cost, 'USD')}</span>
                   )}
                   {event.tokensPrompt != null && (
                     <span>Токены prompt: {event.tokensPrompt}</span>
