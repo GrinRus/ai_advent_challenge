@@ -79,13 +79,13 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
   @BeforeEach
   void cleanDatabase() {
+    jdbcTemplate.execute("TRUNCATE TABLE flow_job RESTART IDENTITY CASCADE");
     flowEventRepository.deleteAll();
     flowStepExecutionRepository.deleteAll();
     flowSessionRepository.deleteAll();
     flowDefinitionRepository.deleteAll();
     agentVersionRepository.deleteAll();
     agentDefinitionRepository.deleteAll();
-    jdbcTemplate.execute("TRUNCATE TABLE flow_job RESTART IDENTITY CASCADE");
     Mockito.reset(agentInvocationService);
   }
 

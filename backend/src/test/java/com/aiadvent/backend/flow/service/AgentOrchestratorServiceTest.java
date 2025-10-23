@@ -150,7 +150,8 @@ class AgentOrchestratorServiceTest {
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
 
     FlowSession session =
-        orchestratorService.start(definition.getId(), objectMapper.nullNode(), objectMapper.nullNode());
+        orchestratorService.start(
+            definition.getId(), objectMapper.nullNode(), objectMapper.nullNode(), null);
 
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
     verify(flowEventRepository).save(org.mockito.ArgumentMatchers.any(FlowEvent.class));
