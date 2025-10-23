@@ -356,7 +356,7 @@
 - [x] Реализовать детальный лог и телеметрию оркестрации (начало/конец шага, вход/выход агента, ошибки, fallback) с трассировкой запросов.
   - Структурированные логи (JSON) с корреляцией, интеграция с Micrometer/OTel.
   - Метрики: `flow_sessions_active`, `flow_step_duration`, `flow_retry_count`, `flow_cost_usd`.
-- [ ] Покрыть оркестратор юнит- и интеграционными тестами (ветвления, разные типы памяти, провайдеры, ошибки).
+- [x] Покрыть оркестратор юнит- и интеграционными тестами (ветвления, разные типы памяти, провайдеры, ошибки).
   - Unit: state machine, transitions, memory access, overrides.
   - Integration: Testcontainers (Postgres, Redis), сценарии success/failure/pause/resume.
   - Контрактные тесты API (`/start`, `/control`, `/status`) + snapshot тесты JSON.
