@@ -1,0 +1,16 @@
+package com.aiadvent.backend.flow.domain;
+
+public enum FlowEventType {
+  FLOW_STARTED,
+  FLOW_PAUSED,
+  FLOW_RESUMED,
+  FLOW_COMPLETED,
+  FLOW_FAILED,
+  FLOW_CANCELLED,
+  STEP_STARTED,
+  STEP_COMPLETED,
+  STEP_FAILED,
+  STEP_SKIPPED,
+  STEP_RETRY_SCHEDULED,
+  TELEMETRY
+}

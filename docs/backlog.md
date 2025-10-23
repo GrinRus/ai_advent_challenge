@@ -332,15 +332,15 @@
   - Интегрирует Spring AI advisors (`CallAdvisorChain`/`StreamAdvisor`) для телеметрии, memory hints и маршрутизации tool-вызовов.
   - Включает state machine: `PENDING → RUNNING → PAUSED/FAILED/COMPLETED/ABORTED`.
   - Поддерживает ручные команды (`pause`, `resume`, `cancel`, `retryStep`) через `FlowControlService`.
-- [ ] Создать модель `AgentDefinition` с параметрами провайдера (модель, базовые опции, системные промпты, ограничения), поддержкой overrides и версионированием.
+- [x] Создать модель `AgentDefinition` с параметрами провайдера (модель, базовые опции, системные промпты, ограничения), поддержкой overrides и версионированием.
   - Таблицы `agent_definition` (метаданные), `agent_version` (версионированные настройки), `agent_capability`.
   - Поля: `providerType`, `model`, `systemPrompt`, `defaultOptions`, `syncOnly`, `maxTokens`, `costProfile`.
   - ToolBinding: перечень Spring AI `@Tool` методов/endpoint’ов и правил вызова, хранится вместе с версией агента.
   - CRUD API для управления агентами + публикация версии, интеграция с кэшом Redis.
-- [ ] Реализовать Postgres-бэкенд для `ChatMemory` Spring AI (shared/isolated каналы) и адаптировать текущие сервисы сообщений.
+- [x] Реализовать Postgres-бэкенд для `ChatMemory` Spring AI (shared/isolated каналы) и адаптировать текущие сервисы сообщений.
   - Интерфейсы `MemoryChannelReader`, `MemoryChannelWriter` → thin wrapper над `ChatMemory`/`ChatMemoryRepository`.
   - Хранение опирается на `flow_memory_version`, поддерживает optimistic locking и чтение предыдущих версий.
-- [ ] Спроектировать и реализовать persistence для шаблонов флоу и runtime-сессий: таблицы, Liquibase-миграции, репозитории, аудит статусов шагов.
+- [x] Спроектировать и реализовать persistence для шаблонов флоу и runtime-сессий: таблицы, Liquibase-миграции, репозитории, аудит статусов шагов.
   - Таблицы: `flow_session`, `flow_step_execution`, `flow_memory_version`, `flow_event`, `flow_job`, `flow_definition_history`.
   - Репозитории Spring Data + custom queries (SKIP LOCKED) для очереди.
   - Liquibase changelog с индексами и ограничениями.

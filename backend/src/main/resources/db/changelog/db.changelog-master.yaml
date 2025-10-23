@@ -268,3 +268,680 @@ databaseChangeLog:
               - column:
                   name: currency
                   type: VARCHAR(8)
+
+  - changeSet:
+      id: 0009-create-flow-orchestration-tables
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+        - createTable:
+            tableName: agent_definition
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: identifier
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: display_name
+                  type: VARCHAR(256)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: agent_version
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: agent_definition_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_id
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: model_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: system_prompt
+                  type: TEXT
+              - column:
+                  name: default_options
+                  type: JSONB
+              - column:
+                  name: tool_bindings
+                  type: JSONB
+              - column:
+                  name: cost_profile
+                  type: JSONB
+              - column:
+                  name: sync_only
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: max_tokens
+                  type: INT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: published_at
+                  type: TIMESTAMP WITH TIME ZONE
+        - addForeignKeyConstraint:
+            baseTableName: agent_version
+            baseColumnNames: agent_definition_id
+            referencedTableName: agent_definition
+            referencedColumnNames: id
+            constraintName: fk_agent_version_definition
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: agent_version
+            columnNames: agent_definition_id, version
+            constraintName: uq_agent_version_definition_version
+        - createTable:
+            tableName: agent_capability
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: agent_version_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: capability
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payload
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: agent_capability
+            baseColumnNames: agent_version_id
+            referencedTableName: agent_version
+            referencedColumnNames: id
+            constraintName: fk_agent_capability_version
+            onDelete: CASCADE
+        - createTable:
+            tableName: flow_definition
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: definition
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: updated_by
+                  type: VARCHAR(128)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: published_at
+                  type: TIMESTAMP WITH TIME ZONE
+        - addUniqueConstraint:
+            tableName: flow_definition
+            columnNames: name, version
+            constraintName: uq_flow_definition_name_version
+        - createIndex:
+            tableName: flow_definition
+            indexName: idx_flow_definition_active
+            columns:
+              - column:
+                  name: is_active
+        - createTable:
+            tableName: flow_definition_history
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_definition_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: definition
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: change_notes
+                  type: TEXT
+              - column:
+                  name: created_by
+                  type: VARCHAR(128)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_definition_history
+            baseColumnNames: flow_definition_id
+            referencedTableName: flow_definition
+            referencedColumnNames: id
+            constraintName: fk_flow_definition_history_definition
+            onDelete: CASCADE
+        - createTable:
+            tableName: flow_session
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_definition_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: flow_definition_version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: current_step_id
+                  type: VARCHAR(128)
+              - column:
+                  name: state_version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: current_memory_version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: launch_parameters
+                  type: JSONB
+              - column:
+                  name: shared_context
+                  type: JSONB
+              - column:
+                  name: telemetry
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: started_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: completed_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_session
+            baseColumnNames: flow_definition_id
+            referencedTableName: flow_definition
+            referencedColumnNames: id
+            constraintName: fk_flow_session_definition
+        - createIndex:
+            tableName: flow_session
+            indexName: idx_flow_session_status
+            columns:
+              - column:
+                  name: status
+        - createTable:
+            tableName: flow_step_execution
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: step_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: step_name
+                  type: VARCHAR(256)
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempt
+                  type: INT
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+              - column:
+                  name: agent_version_id
+                  type: UUID
+              - column:
+                  name: prompt
+                  type: TEXT
+              - column:
+                  name: input_payload
+                  type: JSONB
+              - column:
+                  name: output_payload
+                  type: JSONB
+              - column:
+                  name: usage
+                  type: JSONB
+              - column:
+                  name: cost
+                  type: JSONB
+              - column:
+                  name: error_code
+                  type: VARCHAR(64)
+              - column:
+                  name: error_message
+                  type: TEXT
+              - column:
+                  name: started_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: completed_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_step_execution
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_step_execution_session
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: flow_step_execution
+            baseColumnNames: agent_version_id
+            referencedTableName: agent_version
+            referencedColumnNames: id
+            constraintName: fk_flow_step_execution_agent_version
+        - createIndex:
+            tableName: flow_step_execution
+            indexName: idx_flow_step_execution_session_step
+            columns:
+              - column:
+                  name: flow_session_id
+              - column:
+                  name: step_id
+        - createTable:
+            tableName: flow_memory_version
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: channel
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: parent_version_id
+                  type: BIGINT
+              - column:
+                  name: created_by_step_id
+                  type: UUID
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_memory_version
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_memory_session
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: flow_memory_version
+            columnNames: flow_session_id, channel, version
+            constraintName: uq_flow_memory_session_channel_version
+        - createIndex:
+            tableName: flow_memory_version
+            indexName: idx_flow_memory_session_channel_version
+            columns:
+              - column:
+                  name: flow_session_id
+              - column:
+                  name: channel
+              - column:
+                  name: version
+                  descending: true
+        - createTable:
+            tableName: flow_event
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: flow_step_execution_id
+                  type: UUID
+              - column:
+                  name: event_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+              - column:
+                  name: payload
+                  type: JSONB
+              - column:
+                  name: cost
+                  type: NUMERIC(19, 8)
+              - column:
+                  name: tokens_prompt
+                  type: INT
+              - column:
+                  name: tokens_completion
+                  type: INT
+              - column:
+                  name: trace_id
+                  type: VARCHAR(128)
+              - column:
+                  name: span_id
+                  type: VARCHAR(128)
+              - column:
+                  name: usage_source
+                  type: VARCHAR(32)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_event
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_event_session
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: flow_event
+            baseColumnNames: flow_step_execution_id
+            referencedTableName: flow_step_execution
+            referencedColumnNames: id
+            constraintName: fk_flow_event_step_execution
+        - createIndex:
+            tableName: flow_event
+            indexName: idx_flow_event_session_created_at
+            columns:
+              - column:
+                  name: flow_session_id
+              - column:
+                  name: created_at
+        - createIndex:
+            tableName: flow_event
+            indexName: idx_flow_event_step_created_at
+            columns:
+              - column:
+                  name: flow_step_execution_id
+              - column:
+                  name: created_at
+        - createTable:
+            tableName: flow_job
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+              - column:
+                  name: flow_step_execution_id
+                  type: UUID
+              - column:
+                  name: payload
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: retry_count
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scheduled_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: locked_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: locked_by
+                  type: VARCHAR(128)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_job
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_job_session
+        - addForeignKeyConstraint:
+            baseTableName: flow_job
+            baseColumnNames: flow_step_execution_id
+            referencedTableName: flow_step_execution
+            referencedColumnNames: id
+            constraintName: fk_flow_job_step_execution
+        - createIndex:
+            tableName: flow_job
+            indexName: idx_flow_job_status_scheduled
+            columns:
+              - column:
+                  name: status
+              - column:
+                  name: scheduled_at
