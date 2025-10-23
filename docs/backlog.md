@@ -325,7 +325,7 @@
   - Валидация синхронности: обязательное `syncOnly: true` на уровне агента/шага, запрещаем стриминговые режимы в схеме.
 
 ### Backend
-- [ ] Реализовать `AgentOrchestratorService`, принимающий `FlowDefinition` и стартовый `OrchestrationRequest`, управляющий выполнением шагов и маршрутизацией ответов.
+- [x] Реализовать `AgentOrchestratorService`, принимающий `FlowDefinition` и стартовый `OrchestrationRequest`, управляющий выполнением шагов и маршрутизацией ответов.
   - Интерфейс `AgentOrchestratorService.start(flowId, launchContext)` возвращает `FlowSession`.
   - Использует `JobQueuePort` для постановки step-джобов, обрабатывает `flow_event` и обновляет `flow_memory_version`.
   - Переиспользует `AbstractSyncService`/`ChatProviderService` для retry, подсчёта токенов, регистрации сообщений; orchestration слой управляет только последовательностью шагов.

@@ -1,0 +1,41 @@
+package com.aiadvent.backend.flow.config;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+public class FlowDefinitionDocument {
+
+  private final String startStepId;
+  private final Map<String, FlowStepConfig> stepsById;
+
+  public FlowDefinitionDocument(String startStepId, Map<String, FlowStepConfig> stepsById) {
+    if (stepsById == null || stepsById.isEmpty()) {
+      throw new IllegalArgumentException("Flow definition must contain at least one step");
+    }
+    this.stepsById = Map.copyOf(stepsById);
+    if (startStepId == null || startStepId.isBlank()) {
+      this.startStepId = this.stepsById.keySet().iterator().next();
+    } else if (!this.stepsById.containsKey(startStepId)) {
+      throw new IllegalArgumentException("Start step '" + startStepId + "' is not defined");
+    } else {
+      this.startStepId = startStepId;
+    }
+  }
+
+  public String startStepId() {
+    return startStepId;
+  }
+
+  public FlowStepConfig step(String stepId) {
+    FlowStepConfig config = stepsById.get(stepId);
+    if (config == null) {
+      throw new IllegalArgumentException("Step not found: " + stepId);
+    }
+    return config;
+  }
+
+  public List<FlowStepConfig> steps() {
+    return Collections.unmodifiableList(stepsById.values().stream().toList());
+  }
+}
