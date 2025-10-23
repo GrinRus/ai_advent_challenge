@@ -6,10 +6,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.flow.api.FlowDefinitionHistoryResponse;
 import com.aiadvent.backend.flow.api.FlowDefinitionResponse;
 import com.aiadvent.backend.flow.api.FlowDefinitionSummaryResponse;
+import com.aiadvent.backend.flow.domain.AgentDefinition;
+import com.aiadvent.backend.flow.domain.AgentVersion;
+import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
+import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
@@ -46,6 +52,8 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowStepExecutionRepository flowStepExecutionRepository;
   @Autowired private FlowSessionRepository flowSessionRepository;
   @Autowired private FlowJobRepository flowJobRepository;
+  @Autowired private AgentDefinitionRepository agentDefinitionRepository;
+  @Autowired private AgentVersionRepository agentVersionRepository;
 
   @BeforeEach
   void clean() {
@@ -53,13 +61,16 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
     flowEventRepository.deleteAll();
     flowStepExecutionRepository.deleteAll();
     flowSessionRepository.deleteAll();
+    agentVersionRepository.deleteAll();
+    agentDefinitionRepository.deleteAll();
     flowDefinitionHistoryRepository.deleteAll();
     flowDefinitionRepository.deleteAll();
   }
 
   @Test
   void createUpdatePublishAndFetchDefinitions() throws Exception {
-    ObjectNode definitionBody = buildDefinitionBody();
+    UUID agentVersionId = createAgentVersion();
+    ObjectNode definitionBody = buildDefinitionBody(agentVersionId);
 
     // Create draft definition
     MvcResult createResult =
@@ -147,7 +158,23 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
         .contains("Tweaked title", "Ready for production");
   }
 
-  private ObjectNode buildDefinitionBody() {
+  private UUID createAgentVersion() {
+    AgentDefinition agentDefinition =
+        agentDefinitionRepository.save(
+            new AgentDefinition("customer-support", "Customer Support", "Handles onboarding", true));
+    AgentVersion agentVersion =
+        agentVersionRepository.save(
+            new AgentVersion(
+                agentDefinition,
+                1,
+                AgentVersionStatus.PUBLISHED,
+                ChatProviderType.OPENAI,
+                "openai",
+                "gpt-4o-mini"));
+    return agentVersion.getId();
+  }
+
+  private ObjectNode buildDefinitionBody(UUID agentVersionId) {
     ObjectNode root = objectMapper.createObjectNode();
     root.put("title", "Onboarding flow");
     root.put("startStepId", "step-1");
@@ -155,7 +182,7 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
     ObjectNode step = steps.addObject();
     step.put("id", "step-1");
     step.put("name", "Gather requirements");
-    step.put("agentVersionId", UUID.randomUUID().toString());
+    step.put("agentVersionId", agentVersionId.toString());
     step.put("prompt", "Do something");
     step.putArray("memoryReads");
     step.putArray("memoryWrites");

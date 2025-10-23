@@ -2,10 +2,13 @@ package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
+import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
+import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,14 +29,17 @@ public class FlowDefinitionService {
   private final FlowDefinitionRepository flowDefinitionRepository;
   private final FlowDefinitionHistoryRepository flowDefinitionHistoryRepository;
   private final FlowDefinitionParser flowDefinitionParser;
+  private final AgentVersionRepository agentVersionRepository;
 
   public FlowDefinitionService(
       FlowDefinitionRepository flowDefinitionRepository,
       FlowDefinitionHistoryRepository flowDefinitionHistoryRepository,
-      FlowDefinitionParser flowDefinitionParser) {
+      FlowDefinitionParser flowDefinitionParser,
+      AgentVersionRepository agentVersionRepository) {
     this.flowDefinitionRepository = flowDefinitionRepository;
     this.flowDefinitionHistoryRepository = flowDefinitionHistoryRepository;
     this.flowDefinitionParser = flowDefinitionParser;
+    this.agentVersionRepository = agentVersionRepository;
   }
 
   @Transactional(readOnly = true)
@@ -88,7 +94,8 @@ public class FlowDefinitionService {
     definition.setDescription(request.description());
     definition.setUpdatedBy(request.updatedBy());
 
-    flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    validateAgentVersions(document);
 
     FlowDefinition saved = flowDefinitionRepository.save(definition);
 
@@ -120,7 +127,8 @@ public class FlowDefinitionService {
       definition.setUpdatedBy(request.updatedBy());
     }
 
-    flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    validateAgentVersions(document);
 
     FlowDefinition saved = flowDefinitionRepository.save(definition);
 
@@ -144,6 +152,9 @@ public class FlowDefinitionService {
     if (definition.getStatus() == FlowDefinitionStatus.PUBLISHED && definition.isActive()) {
       return definition;
     }
+
+    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    validateAgentVersions(document);
 
     if (StringUtils.hasText(request.updatedBy())) {
       definition.setUpdatedBy(request.updatedBy());
@@ -190,5 +201,17 @@ public class FlowDefinitionService {
       throw new IllegalArgumentException("Flow definition body must not be null");
     }
     return definitionNode;
+  }
+
+  private void validateAgentVersions(FlowDefinitionDocument document) {
+    for (FlowStepConfig step : document.steps()) {
+      UUID agentVersionId = step.agentVersionId();
+      if (!agentVersionRepository.existsById(agentVersionId)) {
+        throw new ResponseStatusException(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            String.format(
+                "Agent version not found for step '%s': %s", step.id(), agentVersionId));
+      }
+    }
   }
 }
