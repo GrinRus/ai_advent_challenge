@@ -14,6 +14,9 @@ type FormErrors = {
   parameters?: string;
   sharedContext?: string;
   start?: string;
+  temperature?: string;
+  topP?: string;
+  maxTokens?: string;
 };
 
 const formatTokens = (value?: number | null) =>
@@ -47,6 +50,9 @@ const FlowLaunchPage = () => {
 
   const [parameters, setParameters] = useState('{\n  \n}');
   const [sharedContext, setSharedContext] = useState('');
+  const [temperature, setTemperature] = useState('');
+  const [topP, setTopP] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [startError, setStartError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -184,6 +190,11 @@ const FlowLaunchPage = () => {
     const nextErrors: FormErrors = {};
     let parsedParameters: unknown | undefined;
     let parsedSharedContext: unknown | undefined;
+    const overrides: {
+      temperature?: number;
+      topP?: number;
+      maxTokens?: number;
+    } = {};
 
     try {
       parsedParameters = parseJsonInput(parameters);
@@ -199,6 +210,36 @@ const FlowLaunchPage = () => {
         error instanceof Error ? error.message : 'Некорректный JSON.';
     }
 
+    const temperatureTrimmed = temperature.trim();
+    if (temperatureTrimmed) {
+      const numeric = Number(temperatureTrimmed);
+      if (Number.isNaN(numeric) || numeric < 0 || numeric > 2) {
+        nextErrors.temperature = 'Температура должна быть в диапазоне 0…2';
+      } else {
+        overrides.temperature = Number.parseFloat(numeric.toFixed(4));
+      }
+    }
+
+    const topPTrimmed = topP.trim();
+    if (topPTrimmed) {
+      const numeric = Number(topPTrimmed);
+      if (Number.isNaN(numeric) || numeric <= 0 || numeric > 1) {
+        nextErrors.topP = 'topP должно быть в диапазоне (0;1]';
+      } else {
+        overrides.topP = Number.parseFloat(numeric.toFixed(4));
+      }
+    }
+
+    const maxTokensTrimmed = maxTokens.trim();
+    if (maxTokensTrimmed) {
+      const numeric = Number(maxTokensTrimmed);
+      if (!Number.isInteger(numeric) || numeric <= 0) {
+        nextErrors.maxTokens = 'maxTokens должно быть положительным целым числом';
+      } else {
+        overrides.maxTokens = numeric;
+      }
+    }
+
     if (Object.keys(nextErrors).length > 0) {
       setFormErrors(nextErrors);
       return;
@@ -209,11 +250,15 @@ const FlowLaunchPage = () => {
 
     try {
       setIsStarting(true);
+      const overridesPayload = Object.keys(overrides).length > 0 ? overrides : undefined;
       const payload =
-        parsedParameters !== undefined || parsedSharedContext !== undefined
+        parsedParameters !== undefined ||
+        parsedSharedContext !== undefined ||
+        overridesPayload !== undefined
           ? {
               parameters: parsedParameters,
               sharedContext: parsedSharedContext,
+              overrides: overridesPayload,
             }
           : undefined;
 
@@ -226,9 +271,112 @@ const FlowLaunchPage = () => {
     } finally {
       setIsStarting(false);
     }
-  }, [navigate, parameters, parseJsonInput, selectedDefinitionId, sharedContext]);
+  }, [navigate, parameters, parseJsonInput, selectedDefinitionId, sharedContext, temperature, topP, maxTokens]);
 
   const totalEstimate = preview?.totalEstimate;
+
+  const parametersPreview = useMemo(() => {
+    const trimmed = parameters.trim();
+    if (!trimmed) {
+      return { value: undefined, error: null as string | null };
+    }
+    try {
+      return { value: JSON.parse(trimmed), error: null as string | null };
+    } catch (error) {
+      return {
+        value: undefined,
+        error: error instanceof Error ? error.message : 'Некорректный JSON.',
+      };
+    }
+  }, [parameters]);
+
+  const sharedContextPreview = useMemo(() => {
+    const trimmed = sharedContext.trim();
+    if (!trimmed) {
+      return { value: undefined, error: null as string | null };
+    }
+    try {
+      return { value: JSON.parse(trimmed), error: null as string | null };
+    } catch (error) {
+      return {
+        value: undefined,
+        error: error instanceof Error ? error.message : 'Некорректный JSON.',
+      };
+    }
+  }, [sharedContext]);
+
+  const overridesPreview = useMemo(() => {
+    const warnings: string[] = [];
+    const result: {
+      temperature?: number;
+      topP?: number;
+      maxTokens?: number;
+    } = {};
+
+    if (temperature.trim()) {
+      const numeric = Number(temperature.trim());
+      if (Number.isNaN(numeric) || numeric < 0 || numeric > 2) {
+        warnings.push('Температура должна быть от 0 до 2. Значение не будет отправлено.');
+      } else {
+        result.temperature = Number.parseFloat(numeric.toFixed(4));
+      }
+    }
+
+    if (topP.trim()) {
+      const numeric = Number(topP.trim());
+      if (Number.isNaN(numeric) || numeric <= 0 || numeric > 1) {
+        warnings.push('topP должно быть в диапазоне (0;1]. Значение не будет отправлено.');
+      } else {
+        result.topP = Number.parseFloat(numeric.toFixed(4));
+      }
+    }
+
+    if (maxTokens.trim()) {
+      const numeric = Number(maxTokens.trim());
+      if (!Number.isInteger(numeric) || numeric <= 0) {
+        warnings.push('maxTokens должно быть положительным целым числом. Значение не будет отправлено.');
+      } else {
+        result.maxTokens = numeric;
+      }
+    }
+
+    return {
+      value: Object.keys(result).length > 0 ? result : undefined,
+      warnings,
+    };
+  }, [maxTokens, temperature, topP]);
+
+  const launchPayloadPreview = useMemo(() => {
+    if (parametersPreview.error || sharedContextPreview.error) {
+      return null;
+    }
+    const payload: Record<string, unknown> = {};
+    if (parametersPreview.value !== undefined) {
+      payload.parameters = parametersPreview.value;
+    }
+    if (sharedContextPreview.value !== undefined) {
+      payload.sharedContext = sharedContextPreview.value;
+    }
+    if (overridesPreview.value) {
+      payload.overrides = overridesPreview.value;
+    }
+    if (Object.keys(payload).length === 0) {
+      return '{}';
+    }
+    return JSON.stringify(payload, null, 2);
+  }, [overridesPreview, parametersPreview, sharedContextPreview]);
+
+  const previewWarnings = useMemo(() => {
+    const warnings: string[] = [];
+    if (parametersPreview.error) {
+      warnings.push(`Parameters: ${parametersPreview.error}`);
+    }
+    if (sharedContextPreview.error) {
+      warnings.push(`Shared context: ${sharedContextPreview.error}`);
+    }
+    warnings.push(...overridesPreview.warnings);
+    return warnings;
+  }, [overridesPreview, parametersPreview, sharedContextPreview]);
 
   const steps: FlowLaunchStep[] = useMemo(
     () => preview?.steps ?? [],
@@ -458,7 +606,69 @@ const FlowLaunchPage = () => {
               <span className="flow-launch__field-error">{formErrors.sharedContext}</span>
             )}
           </label>
+          <div className="flow-launch__overrides">
+            <label>
+              Temperature (0…2)
+              <input
+                type="number"
+                min={0}
+                max={2}
+                step={0.01}
+                value={temperature}
+                onChange={(event) => setTemperature(event.target.value)}
+                placeholder="0.2"
+              />
+              {formErrors.temperature && (
+                <span className="flow-launch__field-error">{formErrors.temperature}</span>
+              )}
+            </label>
+            <label>
+              topP (0…1]
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={topP}
+                onChange={(event) => setTopP(event.target.value)}
+                placeholder="0.9"
+              />
+              {formErrors.topP && (
+                <span className="flow-launch__field-error">{formErrors.topP}</span>
+              )}
+            </label>
+            <label>
+              maxTokens
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={maxTokens}
+                onChange={(event) => setMaxTokens(event.target.value)}
+                placeholder="512"
+              />
+              {formErrors.maxTokens && (
+                <span className="flow-launch__field-error">{formErrors.maxTokens}</span>
+              )}
+            </label>
+          </div>
         </div>
+        {previewWarnings.length > 0 && (
+          <div className="flow-launch__warning" role="alert">
+            <strong>Проверьте данные перед запуском:</strong>
+            <ul>
+              {previewWarnings.map((warning, index) => (
+                <li key={`warning-${index}`}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {launchPayloadPreview && (
+          <div className="flow-launch__payload-preview">
+            <header>Итоговый payload</header>
+            <pre>{launchPayloadPreview}</pre>
+          </div>
+        )}
         {formErrors.start && <div className="flow-launch__error">{formErrors.start}</div>}
         {startError && <div className="flow-launch__error">{startError}</div>}
         <div className="flow-launch__actions">
