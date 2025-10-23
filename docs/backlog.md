@@ -396,7 +396,27 @@
 - [ ] Задокументировать чек-лист тестирования флоу (позитивные/негативные ветки, сбои провайдеров, повторные запуски, деградация к single-agent, проверка synchrony/usage/токенов и стоимости).
 - [ ] Описать гайд по эксплуатации для поддержки: мониторинг, алерты, обновление шаблонов флоу, инструкция по добавлению нового агента/модели.
 
-## Wave 9.1 — Стабилизация запуска и рабочего места операторов
+## Wave 9.1 — Каталог агентов и редактор флоу
+### Backend
+- [ ] Добавить REST API каталога агентов: `GET /api/agents/definitions`, `GET /api/agents/definitions/{id}`, `POST /api/agents/definitions` (identifier, displayName, description, active), `PUT /api/agents/definitions/{id}` и `PATCH` для переключения статуса.
+- [ ] Реализовать эндпоинты версий: `GET /api/agents/definitions/{id}/versions`, `POST /api/agents/definitions/{id}/versions` (providerType, providerId, modelId, systemPrompt, defaultOptions, toolBindings, syncOnly, maxTokens) и `POST /api/agents/versions/{versionId}/publish`/`deprecate`.
+- [ ] Провести валидацию входных данных (поддерживаемые `ChatProviderType`, существование модели, maxTokens, формат JSON-полей), протоколировать `createdBy`/`updatedBy`, сохранять связанный список `agent_capability`.
+- [ ] Обновить `FlowDefinitionService` и `FlowLaunchPreviewService`: кешировать опубликованные активные версии, отдавать 422 при использовании неактивной или черновой версии, возвращать в DTO имя агента, модель и системный промпт.
+- [ ] Покрыть новые сервисы и контроллеры unit-тестами, добавить интеграционные сценарии: создание определения → версия → публикация → использование во флоу.
+
+### Frontend
+- [ ] Создать раздел `Flows / Agents`: список определений с фильтрами, форма создания/редактирования (identifier, displayName, description, active).
+- [ ] Реализовать UI управления версиями: таблица с состояниями, кнопки `Create version`/`Publish`, форма выбора провайдера и модели, редактор systemPrompt и JSON блоков (`defaultOptions`, `toolBindings`) с валидацией.
+- [ ] Расширить редактор флоу: вместо raw JSON добавить конструктор шагов с обязательным выбором `agentVersionId` из списка опубликованных версий, подсвечивать ошибки для отсутствующих агентов при импорте JSON.
+- [ ] При создании/редактировании флоу отображать имя агента и модель в превью шага, блокировать сохранение, пока каждый шаг не содержит выбранную версию; обновить `apiClient.ts` новым набором методов каталога.
+- [ ] Добавить кеширование и debounce запросов списка агентов, unit/e2e тесты на выбор версии и создание агента из UI.
+
+### Документация и процессы
+- [ ] Обновить `docs/infra.md` и `docs/architecture/flow-definition.md`: описать каталог агентов, формат API, статусную модель версий и требования при создании флоу.
+- [ ] Дополнить `docs/processes.md` чек-листом онбординга агента (создание definition, выпуск версии, smoke-тест, публикация).
+- [ ] Подготовить релизную заметку Wave 9.1 (CHANGELOG) с пользовательскими сценариями: создание агента, назначение его во флоу, ограничения и roadmap на Wave 9.2.
+
+## Wave 9.2 — Стабилизация запуска и рабочего места операторов
 ### Backend
 - [ ] Расширить `FlowStartRequest`/`FlowStartResponse`: добавить per-run overrides, сохранять launch-параметры в `FlowSession`, прокидывать launch/overrides в `AgentInvocationRequest` и payload `flow_event`.
 - [ ] Исправить паузу: `FlowControlService.pause` должен блокировать обработку jobs, пока сессия в `PAUSED`, а `FlowJobWorker`/`AgentOrchestratorService` обязаны проверять статус перед запуском шага.
