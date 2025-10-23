@@ -396,6 +396,20 @@
 - [ ] Задокументировать чек-лист тестирования флоу (позитивные/негативные ветки, сбои провайдеров, повторные запуски, деградация к single-agent, проверка synchrony/usage/токенов и стоимости).
 - [ ] Описать гайд по эксплуатации для поддержки: мониторинг, алерты, обновление шаблонов флоу, инструкция по добавлению нового агента/модели.
 
+## Wave 9.1 — Стабилизация запуска и рабочего места операторов
+### Backend
+- [ ] Расширить `FlowStartRequest`/`FlowStartResponse`: добавить per-run overrides, сохранять launch-параметры в `FlowSession`, прокидывать launch/overrides в `AgentInvocationRequest` и payload `flow_event`.
+- [ ] Учесть `FlowStepTransitions.onFailure`/`failFlowOnFailure`, ввести состояние ожидания (`WAITING_STEP_APPROVAL`), добавить команды `approveStep`/`skipStep`, поддержать частичные ретраи без автоматического `FAILED`.
+- [ ] Обновить `GET /api/flows/{sessionId}`/SSE: включить telemetry snapshot, traceId/spanId, сведения о shared memory, привести фактический JSON к документации.
+- [ ] Заполнять trace/span в `FlowEvent`, внедрить retention-политику памяти (последние 10 версий + TTL 30 дней), зарегистрировать Micrometer метрики, заявленные для Wave 9.
+### Frontend
+- [ ] Обновить экран запуска: позволить задавать launch overrides (temperature/topP/maxTokens), показывать итоговый payload и предупреждения перед стартом.
+- [ ] Переработать редактор определений: заменить raw textarea на форму по JSON Schema с предпросмотром YAML и diff, поддержать сравнение версий.
+- [ ] Реализовать полноценный `Flow Workspace`: progress bar и этапы, expandable карточки с usage/cost, sidebar для shared memory/telemetry, таймлайн событий с SSE, экспорт логов шага.
+### Документация и тестирование
+- [ ] Обновить `docs/infra.md`/`docs/processes.md`/ADR в соответствии с новым API и рабочими сценариями операторов.
+- [ ] Добавить интеграционные тесты очереди/воркера и SSE, e2e-сценарии запуска → паузы → ручного утверждения/скипа шага, smoke-проверку retention памяти.
+
 ## Wave 10 — Human-in-the-loop запросы агентов в UI
 ### Продукт и UX
 - [x] Сформировать сценарии human-in-the-loop для агентов: запрос уточнений, подтверждение действий, ввод параметров; описать user journey во Flow workspace, из чатового UI и для фоново запущенных флоу.
