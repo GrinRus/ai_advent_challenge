@@ -12,6 +12,7 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
@@ -274,8 +275,41 @@ public class AgentInvocationService {
   }
 
   private String renderMemory(String channel, List<JsonNode> entries) {
-    JsonNode array = objectMapper.valueToTree(entries);
+    JsonNode array = sanitizeMemoryEntries(entries);
     return "Shared memory channel '" + channel + "':\n" + array.toPrettyString();
+  }
+
+  private JsonNode sanitizeMemoryEntries(List<JsonNode> entries) {
+    ArrayNode sanitized = objectMapper.createArrayNode();
+    for (JsonNode entry : entries) {
+      sanitized.add(sanitizeMemoryEntry(entry));
+    }
+    return sanitized;
+  }
+
+  private JsonNode sanitizeMemoryEntry(JsonNode entry) {
+    if (entry == null) {
+      return objectMapper.getNodeFactory().nullNode();
+    }
+    if (entry.isObject()) {
+      ObjectNode copy = ((ObjectNode) entry).deepCopy();
+      copy.remove(List.of("usage", "cost"));
+      List<String> fieldNames = new ArrayList<>();
+      copy.fieldNames().forEachRemaining(fieldNames::add);
+      for (String field : fieldNames) {
+        copy.set(field, sanitizeMemoryEntry(copy.get(field)));
+      }
+      if (copy.size() == 1 && copy.has("content")) {
+        return copy.get("content");
+      }
+      return copy;
+    }
+    if (entry.isArray()) {
+      ArrayNode copy = objectMapper.createArrayNode();
+      entry.forEach(element -> copy.add(sanitizeMemoryEntry(element)));
+      return copy;
+    }
+    return entry;
   }
 
   private List<com.aiadvent.backend.flow.domain.FlowMemoryVersion> applyMemoryWrites(
