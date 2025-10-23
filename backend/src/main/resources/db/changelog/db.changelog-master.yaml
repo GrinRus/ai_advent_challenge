@@ -927,3 +927,27 @@ databaseChangeLog:
                   name: status
               - column:
                   name: scheduled_at
+
+  - changeSet:
+      id: 0010-add-agent-audit-fields
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: agent_definition
+            columns:
+              - column:
+                  name: created_by
+                  type: VARCHAR(128)
+              - column:
+                  name: updated_by
+                  type: VARCHAR(128)
+        - addColumn:
+            tableName: agent_version
+            columns:
+              - column:
+                  name: created_by
+                  type: VARCHAR(128)
+              - column:
+                  name: updated_by
+                  type: VARCHAR(128)

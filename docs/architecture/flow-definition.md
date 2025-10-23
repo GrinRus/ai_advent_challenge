@@ -1,329 +1,122 @@
-# Flow Definition Schema
+# Flow Definition Schema (Wave 9.1)
 
-Документ описывает формат конфигурации мультиагентных флоу, используемый оркестратором (Wave 9). Схема предназначена для хранения в PostgreSQL (`flow_definition.definition_jsonb`) с возможностью редактирования из UI.
+Этот документ фиксирует актуальную структуру определения мультиагентного флоу, которую использует оркестратор (Wave 9.1). Конфигурации хранятся в PostgreSQL (`flow_definition.definition_jsonb`), редактируются через UI и валидируются на backend’е (`FlowDefinitionParser` + JSON-проверки).
 
-## Общие требования
-- Формат хранения — JSON, допускается импорт/экспорт в YAML с эквивалентной структурой.
-- Все флоу работают исключительно в синхронном режиме (`syncOnly: true`), стриминговые вызовы запрещены.
-- Конфигурация версионируется: рабочая версия `published`, черновики — `draft`.
-- Все идентификаторы (`flowId`, `step.id`, `agentRef`, `transition.target`) — строковые UUID или slug, уникальные внутри флоу.
+## Общие правила
 
-## JSON Schema (draft 2020-12)
-```json
+- Схема хранится в JSON (опционально импорт/экспорт YAML с эквивалентной структурой).
+- Флоу исполняются только в синхронном режиме (`syncOnly=true`) — стриминговых шагов нет.
+- Версионирование управляется полями `status` (`DRAFT|PUBLISHED`), `is_active` и историей (`flow_definition_history`).
+- Идентификаторы `flowId`, `steps[].id`, `steps[].agentVersionId`, `transitions.*.next` — slug или UUID, уникальные внутри флоу.
+- Каждый шаг обязан ссылаться на опубликованную активную версию агента (`agent_version`) через `agentVersionId`.
+
+## Верхний уровень
+
+| Поле             | Тип / описание                                                                                   |
+|------------------|---------------------------------------------------------------------------------------------------|
+| `flowId`         | `string` (slug/UUID) — логический идентификатор шаблона.                                          |
+| `version`        | `integer` ≥ 1 — ручное или автоматическое инкрементирование.                                      |
+| `metadata`       | `title`, `description`, `tags[]` — служебные поля для UI/поиска.                                   |
+| `syncOnly`       | `boolean`, всегда `true`.                                                                           |
+| `memory.sharedChannels[]` | Настройки долговременных каналов (`id`, `retentionVersions`, `retentionDays`).            |
+| `triggers`       | Флаги включения запуска из UI/API.                                                                 |
+| `defaults`       | Общий контекст (`context`) и дефолтные оверрайды (`overrides.options`).                            |
+| `launchParameters[]` | Описание входных параметров при запуске (`name`, `type`, `required`, `description`).           |
+| `steps[]`        | Упорядоченный список шагов (см. ниже).                                                             |
+| `outputs`        | Настройки итогового payload’а (опционально).                                                       |
+
+## Структура шага
+
+```jsonc
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aiadvent.dev/schema/flow-definition.json",
-  "title": "FlowDefinition",
-  "type": "object",
-  "required": ["flowId", "version", "metadata", "syncOnly", "steps"],
-  "properties": {
-    "flowId": {
-      "type": "string",
-      "pattern": "^[a-z0-9-]{3,64}$",
-      "description": "Уникальный идентификатор флоу."
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "metadata": {
-      "type": "object",
-      "required": ["title", "description"],
-      "properties": {
-        "title": { "type": "string", "maxLength": 120 },
-        "description": { "type": "string", "maxLength": 2000 },
-        "tags": {
-          "type": "array",
-          "items": { "type": "string" },
-          "uniqueItems": true
-        }
-      },
-      "additionalProperties": false
-    },
-    "syncOnly": {
-      "type": "boolean",
-      "const": true
-    },
-    "memory": {
-      "type": "object",
-      "properties": {
-        "sharedChannels": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["id"],
-            "properties": {
-              "id": { "type": "string" },
-              "retentionVersions": { "type": "integer", "minimum": 1, "default": 10 },
-              "retentionDays": { "type": "integer", "minimum": 1, "default": 30 }
-            },
-            "additionalProperties": false
-          },
-          "default": []
-        }
-      },
-      "additionalProperties": false
-    },
-    "triggers": {
-      "type": "object",
-      "properties": {
-        "ui": { "type": "boolean", "default": true },
-        "api": { "type": "boolean", "default": true }
-      },
-      "additionalProperties": false
-    },
-    "defaults": {
-      "type": "object",
-      "properties": {
-        "context": { "type": "object" },
-        "overrides": {
-          "type": "object",
-          "properties": {
-            "model": { "type": "string" },
-            "options": {
-              "type": "object",
-              "properties": {
-                "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
-                "topP": { "type": "number", "minimum": 0, "maximum": 1 },
-                "maxTokens": { "type": "integer", "minimum": 1 }
-              },
-              "additionalProperties": true
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    "launchParameters": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["name", "type"],
-        "properties": {
-          "name": { "type": "string" },
-          "type": { "type": "string", "enum": ["string", "number", "boolean", "object", "array"] },
-          "required": { "type": "boolean", "default": true },
-          "description": { "type": "string" },
-          "validation": { "type": "object" }
-        },
-        "additionalProperties": false
-      },
-      "default": []
-    },
-    "steps": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["id", "name", "agentRef", "inputBindings", "transitions"],
-        "properties": {
-          "id": { "type": "string", "pattern": "^[a-z0-9-]{3,64}$" },
-          "name": { "type": "string" },
-          "agentRef": { "type": "string" },
-          "systemPrompt": { "type": "string" },
-          "inputBindings": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "description": "JSONPath/SpEL выражение относительно контекста или вывода предыдущих шагов."
-            }
-          },
-          "memory": {
-            "type": "object",
-            "properties": {
-              "read": {
-                "type": "array",
-                "items": { "type": "string" },
-                "default": []
-              },
-              "write": {
-                "type": "array",
-                "items": { "type": "string" },
-                "default": []
-              }
-            },
-            "additionalProperties": false
-          },
-          "overrides": {
-            "type": "object",
-            "properties": {
-              "model": { "type": "string" },
-              "options": { "$ref": "#/$defs/chatOptions" }
-            },
-            "additionalProperties": false
-          },
-          "retryPolicy": {
-            "type": "object",
-            "properties": {
-              "maxAttempts": { "type": "integer", "minimum": 1, "default": 3 },
-              "backoffMs": { "type": "integer", "minimum": 0, "default": 250 },
-              "multiplier": { "type": "number", "minimum": 1, "default": 2 }
-            },
-            "additionalProperties": false
-          },
-          "timeoutSec": { "type": "integer", "minimum": 1, "default": 60 },
-          "transitions": {
-            "type": "object",
-            "required": ["onSuccess", "onFailure"],
-            "properties": {
-              "onSuccess": { "$ref": "#/$defs/transitionList" },
-              "onFailure": { "$ref": "#/$defs/transitionList" }
-            },
-            "additionalProperties": false
-          },
-          "annotations": { "type": "object" }
-        },
-        "additionalProperties": false
-      }
-    },
-    "outputs": {
-      "type": "object",
-      "properties": {
-        "summaryFields": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "resultPayload": {
-          "type": "object",
-          "additionalProperties": { "type": "string" }
-        }
-      },
-      "additionalProperties": false
-    }
+  "id": "gather_requirements",            // slug/UUID
+  "name": "Сбор требований",
+  "agentVersionId": "0f9d...-uuid",       // ссылка на agent_version.id
+  "prompt": "Ты бизнес-аналитик...",
+  "overrides": {
+    "temperature": 0.2,                   // опциональные числовые параметры
+    "topP": 0.9,
+    "maxTokens": 1024
   },
-  "$defs": {
-    "transitionList": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["target"],
-        "properties": {
-          "target": { "type": "string" },
-          "condition": { "type": "string", "description": "SpEL/JSONata условие." }
-        },
-        "additionalProperties": false
-      },
-      "default": []
-    },
-    "chatOptions": {
-      "type": "object",
-      "properties": {
-        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
-        "topP": { "type": "number", "minimum": 0, "maximum": 1 },
-        "maxTokens": { "type": "integer", "minimum": 1 },
-        "presencePenalty": { "type": "number", "minimum": -2, "maximum": 2 },
-        "frequencyPenalty": { "type": "number", "minimum": -2, "maximum": 2 }
-      },
-      "additionalProperties": true
-    }
+  "memoryReads": [
+    { "channel": "context", "limit": 5 }
+  ],
+  "memoryWrites": [
+    { "channel": "context", "mode": "AGENT_OUTPUT" },
+    { "channel": "decision-log", "mode": "STATIC", "payload": { "event": "bootstrap" } }
+  ],
+  "transitions": {
+    "onSuccess": { "next": "generate_solution", "complete": false },
+    "onFailure": { "next": "abort_flow", "fail": true }
   },
-  "additionalProperties": false
+  "maxAttempts": 1
 }
 ```
 
-## Пример JSON-конфигурации
+Поля:
+
+- `agentVersionId` — обязательная строка UUID. Backend проверяет, что версия существует, опубликована и принадлежит активному агенту (`FlowDefinitionService.validateAgentVersions`).
+- `prompt` — системный промпт шага; при отсутствии используется `systemPrompt` из версии агента.
+- `overrides.temperature/topP/maxTokens` — переопределения опций вызова для конкретного шага.
+- `memoryReads[]` — список каналов памяти с лимитом сообщений (по умолчанию 10).
+- `memoryWrites[]` — запись в память. `mode`: `AGENT_OUTPUT` (сохраняется ответ агента) или `STATIC` (фиксированный payload).
+- `transitions.onSuccess` / `transitions.onFailure` — определяют следующее состояние. Если `next` пустой и `complete`/`fail` не переопределены, применяются дефолты (`completeOnSuccess=true`, `failFlowOnFailure=true`).
+- `maxAttempts` — количество автоматических повторов шага (≥1).
+
+## Минимальный пример
+
 ```json
 {
   "flowId": "solution-workshop",
-  "version": 3,
+  "version": 4,
   "metadata": {
     "title": "Solution Design Workshop",
-    "description": "Флоу согласования требований и генерации решения",
-    "tags": ["workshop", "design"]
+    "description": "Флоу согласования требований и генерации решения"
   },
   "syncOnly": true,
-  "memory": {
-    "sharedChannels": [
-      { "id": "context" },
-      { "id": "decision-log", "retentionVersions": 20 }
-    ]
-  },
-  "triggers": { "ui": true, "api": true },
-  "defaults": {
-    "context": { "locale": "ru-RU" },
-    "overrides": {
-      "model": "glm-4-32b-0414-128k",
-      "options": { "temperature": 0.2 }
-    }
-  },
   "launchParameters": [
-    { "name": "problemStatement", "type": "string", "required": true },
+    { "name": "problemStatement", "type": "string" },
     { "name": "constraints", "type": "array", "required": false }
   ],
   "steps": [
     {
       "id": "gather_requirements",
       "name": "Сбор требований",
-      "agentRef": "research-analyst",
-      "systemPrompt": "Ты бизнес-аналитик. Собери контекст и требования.",
-      "inputBindings": {
-        "problem": "$launch.problemStatement",
-        "constraints": "$launch.constraints"
-      },
-      "memory": { "read": ["context"], "write": ["context", "decision-log"] },
-      "overrides": { "options": { "temperature": 0.1 } },
-      "retryPolicy": { "maxAttempts": 2, "backoffMs": 500 },
-      "timeoutSec": 90,
+      "agentVersionId": "aaaaaaaa-1111-2222-3333-444444444444",
+      "prompt": "Ты бизнес-аналитик. Собери контекст и требования.",
+      "memoryReads": [{ "channel": "context", "limit": 5 }],
+      "memoryWrites": [{ "channel": "context", "mode": "AGENT_OUTPUT" }],
       "transitions": {
-        "onSuccess": [{ "target": "generate_solution" }],
-        "onFailure": [{ "target": "abort_flow" }]
+        "onSuccess": { "next": "generate_solution" },
+        "onFailure": { "next": "abort_flow", "fail": true }
       }
     },
     {
       "id": "generate_solution",
       "name": "Проектирование решения",
-      "agentRef": "solution-architect",
-      "inputBindings": {
-        "requirements": "$steps.gather_requirements.output.summary",
-        "context": "$memory.context"
-      },
-      "memory": { "read": ["context"], "write": ["decision-log"] },
+      "agentVersionId": "bbbbbbbb-1111-2222-3333-444444444444",
+      "memoryReads": [
+        { "channel": "context", "limit": 5 },
+        { "channel": "decision-log", "limit": 20 }
+      ],
+      "memoryWrites": [{ "channel": "decision-log", "mode": "AGENT_OUTPUT" }],
+      "overrides": { "temperature": 0.2, "maxTokens": 1500 },
       "transitions": {
-        "onSuccess": [
-          {
-            "target": "review_solution",
-            "condition": "$output.confidence >= 0.75"
-          },
-          { "target": "refine_solution" }
-        ],
-        "onFailure": [{ "target": "refine_solution" }]
-      }
-    },
-    {
-      "id": "refine_solution",
-      "name": "Уточнение решения",
-      "agentRef": "solution-architect",
-      "inputBindings": {
-        "draft": "$steps.generate_solution.output.draft",
-        "feedback": "$steps.review_solution.output.feedback"
-      },
-      "memory": { "read": ["context", "decision-log"], "write": ["decision-log"] },
-      "overrides": { "options": { "temperature": 0.3 } },
-      "transitions": {
-        "onSuccess": [{ "target": "review_solution" }],
-        "onFailure": [{ "target": "abort_flow" }]
+        "onSuccess": { "next": "review_solution" },
+        "onFailure": { "next": "refine_solution", "fail": false }
       }
     },
     {
       "id": "review_solution",
       "name": "Ревью решения",
-      "agentRef": "human-review",
-      "inputBindings": {
-        "solution": "$steps.generate_solution.output.draft"
-      },
-      "memory": { "write": ["decision-log"] },
-      "transitions": {
-        "onSuccess": [{ "target": "complete" }],
-        "onFailure": [{ "target": "refine_solution" }]
-      }
+      "agentVersionId": "cccccccc-1111-2222-3333-444444444444",
+      "transitions": { "onSuccess": { "complete": true }, "onFailure": { "next": "abort_flow" } }
     },
     {
       "id": "abort_flow",
       "name": "Прерывание",
-      "agentRef": "system",
-      "inputBindings": {},
-      "transitions": { "onSuccess": [], "onFailure": [] }
+      "agentVersionId": "dddddddd-1111-2222-3333-444444444444",
+      "transitions": { "onSuccess": { "complete": true } }
     }
   ],
   "outputs": {
@@ -336,62 +129,20 @@
 }
 ```
 
-### YAML-представление (фрагмент)
-```yaml
-flowId: solution-workshop
-version: 3
-metadata:
-  title: Solution Design Workshop
-  description: Флоу согласования требований и генерации решения
-syncOnly: true
-steps:
-  - id: gather_requirements
-    name: "Сбор требований"
-    agentRef: research-analyst
-    systemPrompt: "Ты бизнес-аналитик. Собери контекст и требования."
-    inputBindings:
-      problem: $launch.problemStatement
-      constraints: $launch.constraints
-    transitions:
-      onSuccess:
-        - target: generate_solution
-      onFailure:
-        - target: abort_flow
-```
+## Требования к валидации
 
-## CRUD API для UI-редактора
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `GET` | `/api/flows/definitions` | Список флоу (фильтры `status`, `tag`, поиск). |
-| `POST` | `/api/flows/definitions` | Создание черновика; тело соответствует JSON Schema. |
-| `GET` | `/api/flows/definitions/{flowId}` | Получение последней версии (draft/published). |
-| `PUT` | `/api/flows/definitions/{flowId}` | Полное обновление черновика. |
-| `PATCH` | `/api/flows/definitions/{flowId}` | Частичное обновление (JSON Patch). |
-| `POST` | `/api/flows/definitions/{flowId}/publish` | Публикация версии (инкремент `version`, установка `status=published`). |
-| `GET` | `/api/flows/definitions/{flowId}/history` | История версий. |
+1. **Агенты** — все `agentVersionId` должны ссылаться на существующие версии со статусом `PUBLISHED`, а их `agent_definition` обязан быть активным. Backend возвращает `422 Unprocessable Entity` при нарушении.
+2. **Последовательность шагов** — массив `steps` должен содержать минимум один элемент. `startStepId` должен ссылаться на существующий шаг (если не указан, UI/парсер используют первый шаг).
+3. **JSON-поля** — редактор UI предоставляет текстовые поля для JSON (memory/transition overrides) с предварительной валидацией; backend дополнительно проверяет типы.
+4. **Retry/maxAttempts** — в Wave 9.1 поддерживается только простая форма `maxAttempts`. Расширенные `retryPolicy`/`timeoutSec` из ранних ADR исключены.
 
-### Ответ (пример `GET /api/flows/definitions/{flowId}`)
-```json
-{
-  "flowId": "solution-workshop",
-  "status": "draft",
-  "version": 3,
-  "updatedAt": "2024-07-30T12:05:41Z",
-  "updatedBy": "user:grigory",
-  "definition": { "...": "см. конфигурацию выше" }
-}
-```
+## Интеграция с UI
 
-## Валидация и миграции
-- JSON Schema валидируется на backend (например, `everit` или `networknt` validator) и в UI.
-- Для миграций версий предусматривается скрипт трансформации (н-р, `FlowDefinitionMigrator`), обновляющий структуру при изменениях схемы.
-- Liquibase: создаётся таблица `flow_definition` и вспомогательные индексы (`status`, `updated_at`, `tags` через GIN).
+- Страница `Flows / Definitions` строит форму на основе этих правил: шаги редактируются через выпадающий список опубликованных агентов, промпт и память редактируются inline.
+- При сохранении UI собирает JSON через helper `buildFlowDefinition`, повторно валидирующий числовые и JSON-поля.
+- Публикация флоу (`POST /api/flows/definitions/{id}/publish`) доступна только после успешного прохождения серверной проверки (активные агенты, валидные переходы).
 
-## Связанные таблицы
-- `flow_definition_tag(flow_id UUID, tag TEXT)` — для фильтрации.
-- `flow_definition_history(flow_definition_id UUID, version INT, definition_jsonb JSONB, created_at TIMESTAMP, created_by TEXT)` — хранение прошлых версий.
+## Связанные материалы
 
-## Следующие шаги
-1. Реализовать JSON Schema валидатор в backend слой (Spring Boot).
-2. Создать форму редактирования на новом UI-разделе `Flows`.
-3. Подготовить миграции Liquibase и репозитории для хранения определений.
+- [docs/infra.md](../infra.md) — архитектурный обзор оркестрации, API каталога агентов и UI разделов.  
+- [docs/processes.md](../processes.md) — рабочие процедуры по онбордингу новых агентов/флоу.

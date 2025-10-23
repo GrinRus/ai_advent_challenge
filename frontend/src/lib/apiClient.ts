@@ -34,6 +34,97 @@ export type ChatProvidersResponse = {
   }>;
 };
 
+export type AgentCapabilityResponse = {
+  capability: string;
+  payload?: unknown;
+};
+
+export type AgentVersionResponse = {
+  id: string;
+  version: number;
+  status: 'DRAFT' | 'PUBLISHED' | 'DEPRECATED';
+  providerType?: string;
+  providerId: string;
+  modelId: string;
+  systemPrompt?: string;
+  defaultOptions?: unknown;
+  toolBindings?: unknown;
+  costProfile?: unknown;
+  syncOnly: boolean;
+  maxTokens?: number;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  publishedAt?: string;
+  capabilities: AgentCapabilityResponse[];
+};
+
+export type AgentDefinitionSummary = {
+  id: string;
+  identifier: string;
+  displayName: string;
+  description?: string;
+  active: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  latestVersion?: number | null;
+  latestPublishedVersion?: number | null;
+  latestPublishedAt?: string | null;
+};
+
+export type AgentDefinitionDetails = {
+  id: string;
+  identifier: string;
+  displayName: string;
+  description?: string;
+  active: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  versions: AgentVersionResponse[];
+};
+
+export type AgentDefinitionPayload = {
+  identifier: string;
+  displayName: string;
+  description?: string;
+  active?: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type AgentDefinitionStatusPayload = {
+  active: boolean;
+  updatedBy: string;
+};
+
+export type AgentCapabilityPayload = {
+  capability: string;
+  payload?: unknown;
+};
+
+export type AgentVersionPayload = {
+  providerType?: string;
+  providerId: string;
+  modelId: string;
+  systemPrompt: string;
+  defaultOptions?: unknown;
+  toolBindings?: unknown;
+  costProfile?: unknown;
+  syncOnly?: boolean;
+  maxTokens?: number;
+  createdBy: string;
+  capabilities?: AgentCapabilityPayload[];
+};
+
+export type AgentVersionPublishPayload = {
+  updatedBy: string;
+  capabilities?: AgentCapabilityPayload[];
+};
+
 export type ChatSyncResponse = {
   requestId?: string;
   content?: string;
@@ -312,6 +403,235 @@ export async function fetchChatProviders(): Promise<ChatProvidersResponse> {
   }
 
   return response.json() as Promise<ChatProvidersResponse>;
+}
+
+type CacheRecord<T> = {
+  data: T;
+  fetchedAt: number;
+};
+
+const AGENT_CACHE_TTL_MS = 30_000;
+
+let agentDefinitionsCache: CacheRecord<AgentDefinitionSummary[]> | null = null;
+let agentDefinitionsPromise: Promise<AgentDefinitionSummary[]> | null = null;
+const agentDefinitionDetailsCache = new Map<string, CacheRecord<AgentDefinitionDetails>>();
+const agentDefinitionDetailsPromises = new Map<string, Promise<AgentDefinitionDetails>>();
+
+const isCacheFresh = (cachedAt: number) => Date.now() - cachedAt < AGENT_CACHE_TTL_MS;
+
+export function invalidateAgentCatalogCache() {
+  agentDefinitionsCache = null;
+  agentDefinitionsPromise = null;
+  agentDefinitionDetailsCache.clear();
+  agentDefinitionDetailsPromises.clear();
+}
+
+async function handleJsonResponse<T>(response: Response, errorPrefix: string): Promise<T> {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${errorPrefix} (status ${response.status}): ${text || response.statusText}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function fetchAgentDefinitions(
+  forceRefresh = false,
+): Promise<AgentDefinitionSummary[]> {
+  if (!forceRefresh && agentDefinitionsCache && isCacheFresh(agentDefinitionsCache.fetchedAt)) {
+    return agentDefinitionsCache.data;
+  }
+  if (!forceRefresh && agentDefinitionsPromise) {
+    return agentDefinitionsPromise;
+  }
+
+  const request = fetch(`${API_BASE_URL}/agents/definitions`, {
+    headers: { Accept: 'application/json' },
+  })
+    .then((response) =>
+      handleJsonResponse<AgentDefinitionSummary[]>(
+        response,
+        'Не удалось получить список агентов',
+      ),
+    )
+    .then((data) => {
+      agentDefinitionsCache = { data, fetchedAt: Date.now() };
+      agentDefinitionsPromise = null;
+      return data;
+    })
+    .catch((error) => {
+      agentDefinitionsPromise = null;
+      throw error;
+    });
+
+  if (!forceRefresh) {
+    agentDefinitionsPromise = request;
+  }
+
+  return request;
+}
+
+export async function fetchAgentDefinition(
+  id: string,
+  options: { forceRefresh?: boolean } = {},
+): Promise<AgentDefinitionDetails> {
+  const { forceRefresh = false } = options;
+
+  const cached = agentDefinitionDetailsCache.get(id);
+  if (!forceRefresh && cached && isCacheFresh(cached.fetchedAt)) {
+    return cached.data;
+  }
+
+  if (!forceRefresh && agentDefinitionDetailsPromises.has(id)) {
+    return agentDefinitionDetailsPromises.get(id)!;
+  }
+
+  const request = fetch(`${API_BASE_URL}/agents/definitions/${id}`, {
+    headers: { Accept: 'application/json' },
+  })
+    .then((response) =>
+      handleJsonResponse<AgentDefinitionDetails>(
+        response,
+        'Не удалось получить информацию об агенте',
+      ),
+    )
+    .then((data) => {
+      agentDefinitionDetailsCache.set(id, { data, fetchedAt: Date.now() });
+      agentDefinitionDetailsPromises.delete(id);
+      return data;
+    })
+    .catch((error) => {
+      agentDefinitionDetailsPromises.delete(id);
+      throw error;
+    });
+
+  if (!forceRefresh) {
+    agentDefinitionDetailsPromises.set(id, request);
+  }
+
+  return request;
+}
+
+export async function fetchAgentCatalog(forceRefresh = false): Promise<AgentDefinitionDetails[]> {
+  const summaries = await fetchAgentDefinitions(forceRefresh);
+  return Promise.all(
+    summaries.map((summary) => fetchAgentDefinition(summary.id, { forceRefresh })),
+  );
+}
+
+export async function createAgentDefinition(
+  payload: AgentDefinitionPayload,
+): Promise<AgentDefinitionDetails> {
+  const response = await fetch(`${API_BASE_URL}/agents/definitions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await handleJsonResponse<AgentDefinitionDetails>(
+    response,
+    'Не удалось создать определение агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function updateAgentDefinition(
+  id: string,
+  payload: AgentDefinitionPayload,
+): Promise<AgentDefinitionDetails> {
+  const response = await fetch(`${API_BASE_URL}/agents/definitions/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await handleJsonResponse<AgentDefinitionDetails>(
+    response,
+    'Не удалось обновить определение агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function updateAgentDefinitionStatus(
+  id: string,
+  payload: AgentDefinitionStatusPayload,
+): Promise<AgentDefinitionDetails> {
+  const response = await fetch(`${API_BASE_URL}/agents/definitions/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await handleJsonResponse<AgentDefinitionDetails>(
+    response,
+    'Не удалось изменить статус агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function createAgentVersion(
+  definitionId: string,
+  payload: AgentVersionPayload,
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${API_BASE_URL}/agents/definitions/${definitionId}/versions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await handleJsonResponse<AgentVersionResponse>(
+    response,
+    'Не удалось создать версию агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function publishAgentVersion(
+  versionId: string,
+  payload: AgentVersionPublishPayload,
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${API_BASE_URL}/agents/versions/${versionId}/publish`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await handleJsonResponse<AgentVersionResponse>(
+    response,
+    'Не удалось опубликовать версию агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function deprecateAgentVersion(
+  versionId: string,
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${API_BASE_URL}/agents/versions/${versionId}/deprecate`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+  const data = await handleJsonResponse<AgentVersionResponse>(
+    response,
+    'Не удалось депрецировать версию агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
 }
 
 export async function requestSync(

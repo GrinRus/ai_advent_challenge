@@ -8,6 +8,7 @@ import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
+import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import java.math.BigDecimal;
@@ -83,13 +84,30 @@ public class FlowLaunchPreviewService {
   }
 
   private AgentVersion resolveAgentVersion(UUID agentVersionId) {
-    return agentVersionRepository
-        .findById(agentVersionId)
-        .orElseThrow(
-            () ->
-                new ResponseStatusException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Agent version not found: " + agentVersionId));
+    AgentVersion agentVersion =
+        agentVersionRepository
+            .findById(agentVersionId)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Agent version not found: " + agentVersionId));
+
+    if (agentVersion.getStatus() != AgentVersionStatus.PUBLISHED) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "Agent version is not published: " + agentVersionId);
+    }
+    AgentDefinition agentDefinition = agentVersion.getAgentDefinition();
+    if (agentDefinition == null || !agentDefinition.isActive()) {
+      throw new ResponseStatusException(
+          HttpStatus.UNPROCESSABLE_ENTITY,
+          "Agent definition for version "
+              + agentVersionId
+              + " is not active");
+    }
+
+    return agentVersion;
   }
 
   private FlowLaunchPreviewResponse.Agent buildAgent(AgentVersion agentVersion) {
@@ -115,6 +133,7 @@ public class FlowLaunchPreviewService {
         agentDefinition != null ? agentDefinition.getId() : null,
         agentDefinition != null ? agentDefinition.getIdentifier() : null,
         agentDefinition != null ? agentDefinition.getDisplayName() : null,
+        agentVersion.getSystemPrompt(),
         agentVersion.getProviderType(),
         agentVersion.getProviderId(),
         providerConfig != null ? providerConfig.getDisplayName() : null,

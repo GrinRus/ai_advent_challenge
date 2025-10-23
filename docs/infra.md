@@ -193,7 +193,15 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - Для каждой итерации логируем `workerId`, результат (`processed|empty|error`) и длительность; в Micrometer попадают `flow.job.poll.count` и `flow.job.poll.duration` с тегом `result`. Эти метрики используются для алертов на рост ошибок или пустых выборок.
 
 ### Модель данных
-- Каталог агентов (таблицы `agent_definition`, `agent_version`, `agent_capability`) хранит системные промпты, дефолтные опции Spring AI (`ChatProviderType`, `modelId`, `defaultOptions`), ограничения (`syncOnly`, `maxTokens`) и описания `toolBindings` (список методов `@Tool`).
+- Каталог агентов (таблицы `agent_definition`, `agent_version`, `agent_capability`) хранит системные промпты, дефолтные опции Spring AI (`ChatProviderType`, `modelId`, `defaultOptions`), ограничения (`syncOnly`, `maxTokens`) и описания `toolBindings` (список методов `@Tool`). Начиная с Wave 9.1 фиксируем аудитные поля `created_by`/`updated_by` и список возможностей (`capability`, произвольный JSON payload). Флаг `is_active` на уровне `agent_definition` автоматически включается при публикации новой версии.
+  - REST API каталога:  
+    - `GET /api/agents/definitions` — список определений с последними версиями.  
+    - `GET /api/agents/definitions/{id}` — детали + список версий.  
+    - `POST /api/agents/definitions` — создание определения (требует `createdBy`).  
+    - `PUT /api/agents/definitions/{id}` / `PATCH /api/agents/definitions/{id}` — обновление параметров и статуса (`updatedBy`).  
+    - `POST /api/agents/definitions/{id}/versions` — новый черновик версии (обязателен `createdBy`, `providerId`, `modelId`, `systemPrompt`).  
+    - `POST /api/agents/versions/{versionId}/publish` — публикация с возможностью обновить capabilities; `POST /api/agents/versions/{versionId}/deprecate` — вывод из эксплуатации.  
+  - UI (`Flows / Agents`) использует кэшированный запрос каталога, чтобы не перегружать API при навигации; кэш сбрасывается после любой мутации (`invalidateAgentCatalogCache()` в `apiClient.ts`).
 - Флоу:
   - `flow_definition` — черновики и опубликованные версии. Поля: `id`, `name`, `version`, `status`, `definition_jsonb`, `is_active`, `updated_by`, `published_at`.
   - `flow_definition_history` — снимки версий с `change_notes` и автором.
@@ -230,9 +238,9 @@ app:
 
 - Advisors Spring AI (`CallAdvisorChain`, `StreamAdvisorChain`) инжектируют во все вызовы `requestId`, `flowId`, `sessionId`, `stepId`, `memoryVersion` и регистрируют Micrometer/OTel метрики (`flow_step_duration`, `flow_retry_count`, `flow_cost_usd`). Отдельный advisor отвечает за прокидывание `ChatMemory.CONVERSATION_ID` в агенты.
 - Frontend содержит раздел `Flows`:
-  - `Flows / Definitions` — CRUD по шаблонам (таблица, фильтры, JSON Schema форма с drag&drop, предпросмотр YAML, diff версий).
-  - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), expandable карточки шагов, отображение shared памяти и параметров запуска.
-  - Компонент `FlowTimeline` подписывается на long-poll/SSE, делает incremental рендер событий, позволяет экспортировать логи шага в JSON/Markdown.
+  - `Flows / Agents` — каталог определений: создание/редактирование метаданных, управление версиями (создание, публикация, депрекация, capabilities), просмотр связанных моделей и истории авторов.
+  - `Flows / Definitions` — визуальный редактор флоу: конструктор шагов с выбором опубликованных `agentVersionId`, настройкой промптов/памяти/переходов и автоматической валидацией JSON; история версий отображает diff и change notes.
+  - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), expandable карточки шагов, отображение shared памяти и параметров запуска. Компонент `FlowTimeline` подписывается на long-poll/SSE и позволяет экспортировать логи шага в JSON/Markdown.
 
 ## Тестирование
 - `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.

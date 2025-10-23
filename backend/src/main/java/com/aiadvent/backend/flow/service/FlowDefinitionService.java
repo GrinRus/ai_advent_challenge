@@ -5,6 +5,9 @@ import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
+import com.aiadvent.backend.flow.domain.AgentDefinition;
+import com.aiadvent.backend.flow.domain.AgentVersion;
+import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
@@ -206,11 +209,30 @@ public class FlowDefinitionService {
   private void validateAgentVersions(FlowDefinitionDocument document) {
     for (FlowStepConfig step : document.steps()) {
       UUID agentVersionId = step.agentVersionId();
-      if (!agentVersionRepository.existsById(agentVersionId)) {
+      AgentVersion agentVersion =
+          agentVersionRepository
+              .findById(agentVersionId)
+              .orElseThrow(
+                  () ->
+                      new ResponseStatusException(
+                          HttpStatus.UNPROCESSABLE_ENTITY,
+                          String.format(
+                              "Agent version not found for step '%s': %s",
+                              step.id(), agentVersionId)));
+
+      if (agentVersion.getStatus() != AgentVersionStatus.PUBLISHED) {
         throw new ResponseStatusException(
             HttpStatus.UNPROCESSABLE_ENTITY,
             String.format(
-                "Agent version not found for step '%s': %s", step.id(), agentVersionId));
+                "Agent version for step '%s' must be published", step.id()));
+      }
+
+      AgentDefinition agentDefinition = agentVersion.getAgentDefinition();
+      if (agentDefinition == null || !agentDefinition.isActive()) {
+        throw new ResponseStatusException(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            String.format(
+                "Agent definition used in step '%s' is not active", step.id()));
       }
     }
   }

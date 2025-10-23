@@ -29,6 +29,12 @@ public class AgentDefinition {
   @Column(name = "description")
   private String description;
 
+  @Column(name = "created_by", length = 128)
+  private String createdBy;
+
+  @Column(name = "updated_by", length = 128)
+  private String updatedBy;
+
   @Column(name = "is_active", nullable = false)
   private boolean active;
 
@@ -85,6 +91,22 @@ public class AgentDefinition {
 
   public void setDescription(String description) {
     this.description = description;
+  }
+
+  public String getCreatedBy() {
+    return createdBy;
+  }
+
+  public void setCreatedBy(String createdBy) {
+    this.createdBy = createdBy;
+  }
+
+  public String getUpdatedBy() {
+    return updatedBy;
+  }
+
+  public void setUpdatedBy(String updatedBy) {
+    this.updatedBy = updatedBy;
   }
 
   public boolean isActive() {

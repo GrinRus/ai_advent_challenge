@@ -5,27 +5,64 @@
   padding: 1rem 0;
 }
 
-.flow-definitions__error {
-  background: #ffe7e7;
-  border: 1px solid #ff8a80;
+.flow-definitions__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.flow-definitions__subtitle {
+  margin: 0.25rem 0 0;
+  color: #5b6680;
+}
+
+.flow-definitions__header-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.flow-definitions__header-actions button,
+.flow-definitions__create button,
+.editor-header__actions button,
+.flow-definitions__steps-header button,
+.flow-definitions__row-actions button,
+.history-panel summary {
+  padding: 0.5rem 0.9rem;
   border-radius: 6px;
-  padding: 0.75rem;
+  border: none;
+  background: #3f51b5;
+  color: #fff;
+  cursor: pointer;
+}
+
+.flow-definitions__header-actions .ghost,
+.editor-header__actions .ghost,
+.flow-definitions__steps-header .ghost,
+.flow-definitions__row-actions .ghost {
+  background: #fff;
+  border: 1px solid #c8cde0;
+  color: #3f51b5;
+}
+
+.flow-definitions__error {
+  background: #ffeaea;
+  border: 1px solid #ff8a80;
   color: #c62828;
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
 }
 
 .flow-definitions__layout {
   display: grid;
   grid-template-columns: 260px 1fr;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
 .flow-definitions__sidebar {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #fff;
-  padding: 1rem;
-  max-height: calc(100vh - 200px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .flow-definitions__sidebar ul {
@@ -35,19 +72,31 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  max-height: calc(100vh - 240px);
+  overflow: auto;
 }
 
-.flow-definitions__sidebar li {
-  padding: 0.6rem;
-  border-radius: 6px;
+.flow-definitions__item {
   border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.flow-definitions__item button {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0.7rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   cursor: pointer;
 }
 
-.flow-definitions__sidebar li.active,
-.flow-definitions__sidebar li:hover {
+.flow-definitions__item.active,
+.flow-definitions__item:hover {
   border-color: #3f51b5;
-  background: #f1f3ff;
+  background: #f0f3ff;
 }
 
 .definition-name {
@@ -55,7 +104,7 @@
 }
 
 .definition-meta {
-  color: #555;
+  color: #6b768f;
   font-size: 0.85rem;
 }
 
@@ -66,12 +115,16 @@
 }
 
 .flow-definitions__create,
-.flow-definitions__editor {
-  border: 1px solid #ddd;
+.flow-definitions__editor,
+.history-panel {
+  border: 1px solid #d5d9ec;
+  border-radius: 10px;
   background: #fff;
-  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(19, 33, 68, 0.08);
   padding: 1rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .field-grid {
@@ -89,72 +142,57 @@
 }
 
 .field-grid input,
+.field-grid select,
+.field-grid textarea,
 .full-width textarea,
-.field-grid textarea {
+.full-width input {
   font: inherit;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
+  padding: 0.5rem 0.6rem;
   border-radius: 6px;
+  border: 1px solid #c8cde0;
+  background: #fafbff;
 }
 
 .full-width textarea,
 .field-grid textarea {
-  min-height: 120px;
+  min-height: 110px;
   resize: vertical;
-}
-
-.flow-definitions__create button,
-.editor-actions button {
-  padding: 0.55rem 1rem;
-  border-radius: 6px;
-  border: none;
-  background: #3949ab;
-  color: #fff;
-  cursor: pointer;
-}
-
-.flow-definitions__create button:disabled,
-.editor-actions button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.editor-actions {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.editor-actions .primary {
-  background: #2e7d32;
 }
 
 .editor-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  align-items: flex-start;
 }
 
 .editor-header__actions {
   display: flex;
   gap: 0.75rem;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.editor-header__actions button.primary {
+  background: #2e7d32;
 }
 
 .status-badge {
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  background: #eef1ff;
+  color: #2c3c8d;
 }
 
 .status-draft {
   background: #fff8e1;
-  color: #f9a825;
+  color: #ba7400;
 }
 
 .status-published {
@@ -162,32 +200,82 @@
   color: #2e7d32;
 }
 
-.definition-timestamps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  color: #666;
-  font-size: 0.9rem;
-  margin-top: 1rem;
+.flow-definitions__placeholder {
+  color: #7a879d;
+  font-style: italic;
 }
 
-.history-panel {
-  margin-top: 1.5rem;
+.flow-definitions__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.flow-definitions__steps-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flow-definitions__steps-table {
+  overflow: auto;
+}
+
+.flow-definitions__steps-table table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+}
+
+.flow-definitions__steps-table th,
+.flow-definitions__steps-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #e1e5f4;
+  text-align: left;
+}
+
+.flow-definitions__steps-table tr.active {
+  background: #f0f3ff;
+}
+
+.flow-definitions__steps-table tr.warning,
+.flow-definitions__steps-table td.warning {
+  color: #c62828;
+}
+
+.flow-definitions__row-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.flow-definitions__row-actions button {
+  padding: 0.35rem 0.6rem;
+}
+
+.flow-definitions__step-editor {
+  border: 1px solid #d5d9ec;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #f9faff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
 }
 
 .history-panel ul {
   list-style: none;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.75rem;
 }
 
 .history-panel li {
-  border: 1px solid #d0d7ff;
-  border-radius: 6px;
-  padding: 0.6rem;
-  background: #f3f5ff;
+  border: 1px solid #d7dbef;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #f5f6ff;
 }
 
 .history-header {
@@ -198,23 +286,20 @@
 
 .history-meta {
   display: flex;
-  gap: 0.75rem;
+  gap: 1rem;
   font-size: 0.85rem;
-  color: #444;
-  margin: 0.4rem 0;
+  color: #5b6680;
+  margin: 0.5rem 0;
 }
 
 .history-panel details {
   background: #fff;
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
 }
 
 .history-panel pre {
   margin: 0.6rem 0 0;
+  max-height: 240px;
   overflow: auto;
-}
-
-.history-empty {
-  color: #777;
 }

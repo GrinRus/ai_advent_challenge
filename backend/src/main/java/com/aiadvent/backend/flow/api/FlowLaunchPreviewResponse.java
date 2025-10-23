@@ -37,6 +37,7 @@ public record FlowLaunchPreviewResponse(
       UUID agentDefinitionId,
       String agentIdentifier,
       String agentDisplayName,
+      String systemPrompt,
       ChatProviderType providerType,
       String providerId,
       String providerDisplayName,

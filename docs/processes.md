@@ -41,6 +41,13 @@
 - При добавлении LLM-провайдеров или моделей обязательно синхронизируйте `application.yaml`, `.env.example`, `docker-compose.yml` и описание в `docs/infra.md` (таблица моделей, переменные окружения).
 - При обновлении конфигураций флоу убедитесь, что `docs/infra.md` и `docs/backlog.md` отражают структуру `flow_definition`, `flow_event`, TTL памяти и API /flows. Новые схемы включайте в ADR.
 
+### Чек-лист онбординга агента (Wave 9.1)
+1. **Создание определения** — `POST /api/agents/definitions` (identifier, displayName, описание, `createdBy`). Согласовать slug и назначение в backlog.
+2. **Добавление версии** — `POST /api/agents/definitions/{id}/versions` с `providerId`, `modelId`, `systemPrompt`, при необходимости `defaultOptions`/`toolBindings`/`costProfile`, `capabilities[]`, `createdBy`.
+3. **Публикация** — `POST /api/agents/versions/{versionId}/publish` (`updatedBy`, актуализированные `capabilities`). Проверить, что определение стало активным и видно в UI `Flows / Agents`.
+4. **Интеграция в флоу** — обновить шаблон через `Flows / Definitions`, выбрать новую версию в конструкторе шагов, прогнать smoke (`FlowLaunchPreviewService.preview`, `POST /api/flows/{flowId}/start`).
+5. **Документация и тесты** — синхронизировать `docs/infra.md`, `docs/architecture/flow-definition.md`, добавить юнит/интеграционные и UI-тесты (`npm run test`, e2e при необходимости).
+
 ## Наблюдаемость
 - При включении structured sync (`/sync/structured`) логируйте latency и значения `promptTokens/completionTokens/totalTokens`, чтобы быть готовыми к интеграции метрик в последующих волнах.
 - Ошибки схемы фиксируйте на уровне WARN/ERROR с указанием провайдера, модели и `requestId`; при повторных провалах добавляйте fallback-инструкцию или эскалацию.

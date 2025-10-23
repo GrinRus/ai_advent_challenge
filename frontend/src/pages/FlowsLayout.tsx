@@ -11,6 +11,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   flows: 'Flows',
   launch: 'Launch',
   definitions: 'Definitions',
+  agents: 'Agents',
   sessions: 'Sessions',
 };
 
@@ -83,6 +84,14 @@ const FlowsLayout = () => {
             }
           >
             Определения
+          </NavLink>
+          <NavLink
+            to="/flows/agents"
+            className={({ isActive }) =>
+              `flows-layout__tab ${isActive ? 'flows-layout__tab--active' : ''}`
+            }
+          >
+            Агенты
           </NavLink>
         </div>
       </div>

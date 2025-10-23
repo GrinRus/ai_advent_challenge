@@ -7,6 +7,7 @@ import FlowLaunch from './pages/FlowLaunch';
 import FlowSessions from './pages/FlowSessions';
 import FlowsLayout from './pages/FlowsLayout';
 import FlowsOverview from './pages/FlowsOverview';
+import FlowAgents from './pages/FlowAgents';
 import './App.css';
 
 const App = () => (
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="launch" element={<FlowLaunch />} />
           <Route path="sessions" element={<FlowSessions />} />
           <Route path="sessions/:sessionId" element={<FlowSessions />} />
+          <Route path="agents" element={<FlowAgents />} />
           <Route path="definitions" element={<FlowDefinitions />} />
           <Route path="definitions/:definitionId" element={<FlowDefinitions />} />
         </Route>
