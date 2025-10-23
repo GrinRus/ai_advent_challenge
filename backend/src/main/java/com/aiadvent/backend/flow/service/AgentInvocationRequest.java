@@ -12,7 +12,9 @@ public record AgentInvocationRequest(
     AgentVersion agentVersion,
     String userPrompt,
     JsonNode inputContext,
-    ChatRequestOverrides overrides,
+    JsonNode launchParameters,
+    ChatRequestOverrides stepOverrides,
+    ChatRequestOverrides sessionOverrides,
     List<MemoryReadInstruction> memoryReads,
     List<MemoryWriteInstruction> memoryWrites) {
 
@@ -28,5 +30,8 @@ public record AgentInvocationRequest(
     }
     memoryReads = memoryReads == null ? List.of() : List.copyOf(memoryReads);
     memoryWrites = memoryWrites == null ? List.of() : List.copyOf(memoryWrites);
+    if (stepOverrides == null) {
+      stepOverrides = ChatRequestOverrides.empty();
+    }
   }
 }

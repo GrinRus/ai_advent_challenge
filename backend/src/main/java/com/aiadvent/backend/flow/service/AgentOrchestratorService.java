@@ -1,5 +1,6 @@
 package com.aiadvent.backend.flow.service;
 
+import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
@@ -85,7 +86,11 @@ public class AgentOrchestratorService {
   }
 
   @Transactional
-  public FlowSession start(UUID flowDefinitionId, JsonNode launchParameters, JsonNode sharedContext) {
+  public FlowSession start(
+      UUID flowDefinitionId,
+      JsonNode launchParameters,
+      JsonNode sharedContext,
+      ChatRequestOverrides launchOverrides) {
     FlowDefinition flowDefinition =
         flowDefinitionService.getActivePublishedDefinition(flowDefinitionId);
 
@@ -108,6 +113,7 @@ public class AgentOrchestratorService {
             0L);
     session.setLaunchParameters(launchParameters);
     session.setSharedContext(sharedContext);
+    session.setLaunchOverrides(toLaunchOverridesNode(launchOverrides));
     session.setStartedAt(Instant.now());
     session.setCurrentStepId(startStep.id());
     flowSessionRepository.save(session);
@@ -171,6 +177,7 @@ public class AgentOrchestratorService {
     recordEvent(session, stepExecution, FlowEventType.STEP_STARTED, "running", null, null);
 
     try {
+      ChatRequestOverrides sessionOverrides = toLaunchOverrides(session.getLaunchOverrides());
       AgentInvocationRequest request =
           new AgentInvocationRequest(
               session.getId(),
@@ -178,7 +185,9 @@ public class AgentOrchestratorService {
               agentVersion,
               resolvePrompt(stepConfig, session),
               session.getSharedContext(),
+              session.getLaunchParameters(),
               stepConfig.overrides(),
+              sessionOverrides,
               toReadInstructions(stepConfig.memoryReads()),
               List.of());
 
@@ -422,7 +431,8 @@ public class AgentOrchestratorService {
       String status,
       JsonNode payload,
       UsageCostEstimate usageCost) {
-    FlowEvent event = new FlowEvent(session, eventType, status, payload);
+    JsonNode payloadWithContext = enrichPayloadWithContext(session, payload);
+    FlowEvent event = new FlowEvent(session, eventType, status, payloadWithContext);
     if (stepExecution != null) {
       event.setFlowStepExecution(stepExecution);
     }
@@ -509,6 +519,71 @@ public class AgentOrchestratorService {
     ObjectNode node = objectMapper.createObjectNode();
     node.put("message", throwable != null ? throwable.getMessage() : "Unknown error");
     return node;
+  }
+
+  private JsonNode enrichPayloadWithContext(FlowSession session, JsonNode payload) {
+    ObjectNode contextNode = buildContextNode(session);
+    boolean hasContext = contextNode != null && contextNode.size() > 0;
+
+    if (!hasContext) {
+      return payload;
+    }
+
+    if (payload instanceof ObjectNode objectNode) {
+      objectNode.set("context", contextNode);
+      return objectNode;
+    }
+
+    if (payload == null || payload.isNull()) {
+      return contextNode;
+    }
+
+    ObjectNode wrapper = objectMapper.createObjectNode();
+    wrapper.set("data", cloneNode(payload));
+    wrapper.set("context", contextNode);
+    return wrapper;
+  }
+
+  private ObjectNode buildContextNode(FlowSession session) {
+    ObjectNode node = objectMapper.createObjectNode();
+    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
+      node.set("launchParameters", cloneNode(session.getLaunchParameters()));
+    }
+    if (session.getLaunchOverrides() != null && !session.getLaunchOverrides().isNull()) {
+      node.set("launchOverrides", cloneNode(session.getLaunchOverrides()));
+    }
+    return node.size() > 0 ? node : null;
+  }
+
+  private JsonNode cloneNode(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return objectMapper.nullNode();
+    }
+    return node.deepCopy();
+  }
+
+  private JsonNode toLaunchOverridesNode(ChatRequestOverrides overrides) {
+    if (overrides == null) {
+      return null;
+    }
+    if (overrides.temperature() == null
+        && overrides.topP() == null
+        && overrides.maxTokens() == null) {
+      return null;
+    }
+    return objectMapper.valueToTree(overrides);
+  }
+
+  private ChatRequestOverrides toLaunchOverrides(JsonNode overridesNode) {
+    if (overridesNode == null || overridesNode.isNull()) {
+      return null;
+    }
+    try {
+      return objectMapper.treeToValue(overridesNode, ChatRequestOverrides.class);
+    } catch (Exception exception) {
+      log.warn("Failed to deserialize launch overrides for session {}", overridesNode, exception);
+      return null;
+    }
   }
 
   private Duration calculateDuration(Instant start, Instant end) {

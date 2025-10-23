@@ -23,6 +23,7 @@ import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
+import com.aiadvent.backend.flow.service.AgentInvocationRequest;
 import com.aiadvent.backend.flow.service.AgentInvocationResult;
 import com.aiadvent.backend.flow.service.AgentInvocationService;
 import com.aiadvent.backend.flow.service.AgentOrchestratorService;
@@ -36,9 +37,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -83,6 +86,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     agentVersionRepository.deleteAll();
     agentDefinitionRepository.deleteAll();
     jdbcTemplate.execute("TRUNCATE TABLE flow_job RESTART IDENTITY CASCADE");
+    Mockito.reset(agentInvocationService);
   }
 
   @Test
@@ -97,7 +101,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 new UsageCostEstimate(10, 5, 15, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "USD", com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
                 List.of()));
 
-    FlowStartResponse startResponse = startFlow(definition.getId());
+    FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
     orchestratorService.processNextJob("worker-1");
 
@@ -132,12 +136,98 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
         .andExpect(status().isOk());
   }
 
-  private FlowStartResponse startFlow(UUID flowId) throws Exception {
-    MvcResult result =
+  @Test
+  void startFlowPropagatesLaunchParametersAndOverrides() throws Exception {
+    AgentVersion agentVersion = persistAgent();
+    FlowDefinition definition = persistFlowDefinition(agentVersion.getId());
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenReturn(
+            new AgentInvocationResult(
+                "Agent output",
+                new UsageCostEstimate(
+                    20,
+                    10,
+                    30,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "USD",
+                    com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
+                List.of()));
+
+    ObjectNode body = objectMapper.createObjectNode();
+    ObjectNode parameters = body.putObject("parameters");
+    parameters.put("customerId", "12345");
+    ObjectNode sharedContext = body.putObject("sharedContext");
+    sharedContext.put("channel", "email");
+    ObjectNode overrides = body.putObject("overrides");
+    overrides.put("temperature", 0.2);
+    overrides.put("maxTokens", 256);
+
+    FlowStartResponse startResponse =
+        startFlow(definition.getId(), objectMapper.writeValueAsString(body));
+
+    assertThat(startResponse.launchParameters()).isNotNull();
+    assertThat(startResponse.overrides()).isNotNull();
+    assertThat(startResponse.overrides().temperature()).isEqualTo(0.2d);
+
+    orchestratorService.processNextJob("worker-1");
+
+    ArgumentCaptor<AgentInvocationRequest> captor =
+        ArgumentCaptor.forClass(AgentInvocationRequest.class);
+    Mockito.verify(agentInvocationService).invoke(captor.capture());
+    AgentInvocationRequest invocationRequest = captor.getValue();
+
+    assertThat(invocationRequest.launchParameters()).isNotNull();
+    assertThat(invocationRequest.launchParameters().get("customerId").asText()).isEqualTo("12345");
+    assertThat(invocationRequest.sessionOverrides()).isNotNull();
+    assertThat(invocationRequest.sessionOverrides().temperature()).isEqualTo(0.2d);
+    assertThat(invocationRequest.sessionOverrides().maxTokens()).isEqualTo(256);
+
+    MvcResult snapshotResult =
         mockMvc
-            .perform(post("/api/flows/" + flowId + "/start").contentType(MediaType.APPLICATION_JSON))
+            .perform(get("/api/flows/" + startResponse.sessionId() + "/snapshot"))
             .andExpect(status().isOk())
             .andReturn();
+
+    FlowStatusResponse statusResponse =
+        objectMapper.readValue(snapshotResult.getResponse().getContentAsString(), FlowStatusResponse.class);
+
+    FlowEventDto stepCompletedEvent =
+        statusResponse.events().stream()
+            .filter(event -> event.type() == FlowEventType.STEP_COMPLETED)
+            .findFirst()
+            .orElseThrow();
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> payload = (Map<String, Object>) stepCompletedEvent.payload();
+    assertThat(payload).containsKey("context");
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> context = (Map<String, Object>) payload.get("context");
+    assertThat(context).containsKeys("launchParameters", "launchOverrides");
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> launchParametersContext =
+        (Map<String, Object>) context.get("launchParameters");
+    assertThat(launchParametersContext).containsEntry("customerId", "12345");
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> launchOverridesContext =
+        (Map<String, Object>) context.get("launchOverrides");
+    assertThat(launchOverridesContext).containsEntry("temperature", 0.2);
+    assertThat(launchOverridesContext).containsEntry("maxTokens", 256);
+  }
+
+  private FlowStartResponse startFlow(UUID flowId, String body) throws Exception {
+    var requestBuilder =
+        post("/api/flows/" + flowId + "/start").contentType(MediaType.APPLICATION_JSON);
+    if (body != null) {
+      requestBuilder.content(body);
+    }
+
+    MvcResult result = mockMvc.perform(requestBuilder).andExpect(status().isOk()).andReturn();
     return objectMapper.readValue(result.getResponse().getContentAsString(), FlowStartResponse.class);
   }
 

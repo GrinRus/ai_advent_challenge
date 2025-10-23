@@ -3,8 +3,8 @@ import {
   buildFlowDefinition,
   createEmptyFlowDefinitionForm,
   parseFlowDefinition,
-  FlowDefinitionFormState,
 } from './flowDefinitionForm';
+import type { FlowDefinitionFormState } from './flowDefinitionForm';
 
 describe('flowDefinitionForm helpers', () => {
   it('creates an empty form by default', () => {

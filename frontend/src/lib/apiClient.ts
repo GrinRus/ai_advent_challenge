@@ -192,6 +192,9 @@ export type FlowStartResponse = {
   sessionId: string;
   status: string;
   startedAt?: string;
+  launchParameters?: unknown;
+  sharedContext?: unknown;
+  overrides?: ChatRequestOverridesDto | null;
 };
 
 export type FlowState = {
@@ -725,6 +728,7 @@ export async function startFlow(
   payload?: {
     parameters?: unknown;
     sharedContext?: unknown;
+    overrides?: ChatRequestOverridesDto | null;
   },
 ): Promise<FlowStartResponse> {
   const response = await fetch(

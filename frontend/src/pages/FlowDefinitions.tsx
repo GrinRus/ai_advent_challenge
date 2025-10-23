@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
+import type {
   FlowDefinitionSummary,
   FlowDefinitionDetails,
   FlowDefinitionHistoryEntry,
+} from '../lib/apiClient';
+import {
   fetchFlowDefinitions,
   fetchFlowDefinition,
   fetchFlowDefinitionHistory,
@@ -11,9 +13,8 @@ import {
   publishFlowDefinition,
   fetchAgentCatalog,
 } from '../lib/apiClient';
+import type { FlowDefinitionFormState, FlowStepForm } from '../lib/flowDefinitionForm';
 import {
-  FlowDefinitionFormState,
-  FlowStepForm,
   buildFlowDefinition,
   createEmptyFlowDefinitionForm,
   parseFlowDefinition,

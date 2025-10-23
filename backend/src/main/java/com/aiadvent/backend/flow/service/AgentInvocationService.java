@@ -98,8 +98,10 @@ public class AgentInvocationService {
     }
 
     Instant started = Instant.now();
-    ChatRequestOverrides effectiveOverrides = computeOverrides(agentVersion, request.overrides());
-    String userMessage = buildUserMessage(request.userPrompt(), request.inputContext());
+    ChatRequestOverrides effectiveOverrides =
+        computeOverrides(agentVersion, request.stepOverrides(), request.sessionOverrides());
+    String userMessage =
+        buildUserMessage(request.userPrompt(), request.launchParameters(), request.inputContext());
     List<String> memoryMessages = buildMemorySnapshots(flowSession, request.memoryReads());
     Map<String, Object> advisorParams = new java.util.HashMap<>();
     advisorParams.put(ChatMemory.CONVERSATION_ID, flowSession.getId().toString());
@@ -150,7 +152,9 @@ public class AgentInvocationService {
   }
 
   private ChatRequestOverrides computeOverrides(
-      AgentVersion agentVersion, ChatRequestOverrides overrides) {
+      AgentVersion agentVersion,
+      ChatRequestOverrides stepOverrides,
+      ChatRequestOverrides sessionOverrides) {
     Double temperature = null;
     Double topP = null;
     Integer maxTokens = agentVersion.getMaxTokens();
@@ -168,17 +172,13 @@ public class AgentInvocationService {
       }
     }
 
-    if (overrides != null) {
-      if (overrides.temperature() != null) {
-        temperature = overrides.temperature();
-      }
-      if (overrides.topP() != null) {
-        topP = overrides.topP();
-      }
-      if (overrides.maxTokens() != null) {
-        maxTokens = overrides.maxTokens();
-      }
-    }
+    temperature = applyOverride(temperature, stepOverrides != null ? stepOverrides.temperature() : null);
+    topP = applyOverride(topP, stepOverrides != null ? stepOverrides.topP() : null);
+    maxTokens = applyOverride(maxTokens, stepOverrides != null ? stepOverrides.maxTokens() : null);
+
+    temperature = applyOverride(temperature, sessionOverrides != null ? sessionOverrides.temperature() : null);
+    topP = applyOverride(topP, sessionOverrides != null ? sessionOverrides.topP() : null);
+    maxTokens = applyOverride(maxTokens, sessionOverrides != null ? sessionOverrides.maxTokens() : null);
 
     if (temperature == null && topP == null && maxTokens == null) {
       return ChatRequestOverrides.empty();
@@ -186,21 +186,46 @@ public class AgentInvocationService {
     return new ChatRequestOverrides(temperature, topP, maxTokens);
   }
 
-  private String buildUserMessage(String userPrompt, JsonNode inputContext) {
+  private Double applyOverride(Double current, Double overrideValue) {
+    return overrideValue != null ? overrideValue : current;
+  }
+
+  private Integer applyOverride(Integer current, Integer overrideValue) {
+    return overrideValue != null ? overrideValue : current;
+  }
+
+  private String buildUserMessage(
+      String userPrompt, JsonNode launchParameters, JsonNode inputContext) {
     String sanitizedPrompt = userPrompt != null ? userPrompt.trim() : "";
     if (!StringUtils.hasText(sanitizedPrompt)) {
       throw new IllegalArgumentException("userPrompt must not be blank");
     }
-    if (inputContext == null || inputContext.isNull()) {
-      return sanitizedPrompt;
-    }
     try {
-      return sanitizedPrompt
-          + "\n\nContext:\n"
-          + objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(inputContext);
+      StringBuilder builder = new StringBuilder(sanitizedPrompt);
+      if (hasContent(launchParameters)) {
+        builder
+            .append("\n\nLaunch Parameters:\n")
+            .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(launchParameters));
+      }
+      if (hasContent(inputContext)) {
+        builder
+            .append("\n\nContext:\n")
+            .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(inputContext));
+      }
+      return builder.toString();
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Failed to serialize input context", exception);
     }
+  }
+
+  private boolean hasContent(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return false;
+    }
+    if (node.isValueNode()) {
+      return !node.asText().isBlank();
+    }
+    return node.size() > 0;
   }
 
   private List<String> buildMemorySnapshots(

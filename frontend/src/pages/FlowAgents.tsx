@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
+import type {
   AgentCapabilityPayload,
   AgentDefinitionDetails,
   AgentDefinitionPayload,
@@ -8,6 +8,8 @@ import {
   AgentVersionResponse,
   AgentVersionPublishPayload,
   ChatProvidersResponse,
+} from '../lib/apiClient';
+import {
   createAgentDefinition,
   createAgentVersion,
   deprecateAgentVersion,
@@ -380,7 +382,7 @@ const FlowAgents = () => {
         <aside className="flow-agents__sidebar">
           <h3>Определения</h3>
           {loadingList ? (
-            <div className="flow-agents__placeholder">Загрузка…</div>
+            <div className="flow-agents__placeholder">Загрузка...</div>
           ) : (
             <ul>
               {definitions.map((definition) => (
@@ -448,14 +450,14 @@ const FlowAgents = () => {
               Активен после создания
             </label>
             <button type="submit" disabled={creatingDefinition}>
-              {creatingDefinition ? 'Создание…' : 'Создать'}
+              {creatingDefinition ? 'Создание...' : 'Создать'}
             </button>
           </form>
         </aside>
 
         <section className="flow-agents__content">
           {loadingDefinition && (
-            <div className="flow-agents__placeholder">Загрузка данных агента…</div>
+            <div className="flow-agents__placeholder">Загрузка данных агента...</div>
           )}
           {!loadingDefinition && !selectedDefinition && (
             <div className="flow-agents__placeholder">
@@ -519,7 +521,7 @@ const FlowAgents = () => {
                   Активен
                 </label>
                 <button type="submit" disabled={updatingDefinition}>
-                  {updatingDefinition ? 'Сохранение…' : 'Сохранить изменения'}
+                  {updatingDefinition ? 'Сохранение...' : 'Сохранить изменения'}
                 </button>
               </form>
 
@@ -565,7 +567,7 @@ const FlowAgents = () => {
                                 onClick={() => handlePublishVersion(version)}
                                 disabled={publishingVersionId === version.id}
                               >
-                                {publishingVersionId === version.id ? 'Публикация…' : 'Опубликовать'}
+                                {publishingVersionId === version.id ? 'Публикация...' : 'Опубликовать'}
                               </button>
                             )}
                             {version.status !== 'DEPRECATED' && (
@@ -576,7 +578,7 @@ const FlowAgents = () => {
                                 disabled={deprecatingVersionId === version.id}
                               >
                                 {deprecatingVersionId === version.id
-                                  ? 'Деактивация…'
+                                  ? 'Деактивация...'
                                   : 'Депрецировать'}
                               </button>
                             )}
@@ -711,7 +713,7 @@ const FlowAgents = () => {
                             defaultOptions: event.target.value,
                           }))
                         }
-                        placeholder="{\"temperature\":0.2}"
+                        placeholder={'{"temperature":0.2}'}
                       />
                     </label>
                     <label>
@@ -724,7 +726,7 @@ const FlowAgents = () => {
                             toolBindings: event.target.value,
                           }))
                         }
-                        placeholder="{\"tools\":[]}"
+                        placeholder={'{"tools":[]}'}
                       />
                     </label>
                     <label>
@@ -737,7 +739,7 @@ const FlowAgents = () => {
                             costProfile: event.target.value,
                           }))
                         }
-                        placeholder="{\"inputPer1K\":0.001}"
+                        placeholder={'{"inputPer1K":0.001}'}
                       />
                     </label>
                   </div>
@@ -805,7 +807,7 @@ const FlowAgents = () => {
                                 return { ...prev, capabilities };
                               });
                             }}
-                            placeholder="{\"foo\":\"bar\"}"
+                            placeholder={'{"foo":"bar"}'}
                           />
                         </label>
                         <button
@@ -825,7 +827,7 @@ const FlowAgents = () => {
                   </div>
 
                   <button type="submit" disabled={creatingVersion}>
-                    {creatingVersion ? 'Создание…' : 'Создать версию'}
+                    {creatingVersion ? 'Создание...' : 'Создать версию'}
                   </button>
                 </form>
               </section>

@@ -951,3 +951,14 @@ databaseChangeLog:
               - column:
                   name: updated_by
                   type: VARCHAR(128)
+  - changeSet:
+      id: 0011-add-flow-session-launch-overrides
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: flow_session
+            columns:
+              - column:
+                  name: launch_overrides
+                  type: JSONB

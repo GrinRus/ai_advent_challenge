@@ -57,6 +57,10 @@ public class FlowSession {
   private JsonNode sharedContext;
 
   @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "launch_overrides")
+  private JsonNode launchOverrides;
+
+  @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "telemetry")
   private JsonNode telemetry;
 
@@ -157,6 +161,14 @@ public class FlowSession {
 
   public void setSharedContext(JsonNode sharedContext) {
     this.sharedContext = sharedContext;
+  }
+
+  public JsonNode getLaunchOverrides() {
+    return launchOverrides;
+  }
+
+  public void setLaunchOverrides(JsonNode launchOverrides) {
+    this.launchOverrides = launchOverrides;
   }
 
   public JsonNode getTelemetry() {
