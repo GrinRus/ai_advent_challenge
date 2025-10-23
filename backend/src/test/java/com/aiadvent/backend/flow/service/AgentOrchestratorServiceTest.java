@@ -283,6 +283,61 @@ class AgentOrchestratorServiceTest {
   }
 
   @Test
+  void processNextJobWaitsForApprovalWhenFailFlowDisabled() {
+    FlowSession session =
+        new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);
+    setField(session, "id", UUID.randomUUID());
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, STEP_ID, FlowStepStatus.PENDING, 1);
+    setField(stepExecution, "id", UUID.randomUUID());
+    FlowJob job = buildJob(session, stepExecution, FlowJobStatus.RUNNING);
+
+    FlowStepConfig waitingConfig =
+        new FlowStepConfig(
+            STEP_ID,
+            "Needs approval",
+            agentVersion.getId(),
+            "prompt",
+            null,
+            List.of(),
+            List.of(),
+            new FlowStepTransitions(null, true, "fallback", false),
+            1);
+    FlowStepConfig fallbackConfig =
+        new FlowStepConfig(
+            "fallback",
+            "Fallback",
+            agentVersion.getId(),
+            "cleanup",
+            null,
+            List.of(),
+            List.of(),
+            FlowStepTransitions.defaults(),
+            1);
+    FlowDefinitionDocument waitingDocument =
+        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, waitingConfig, "fallback", fallbackConfig));
+
+    when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
+    when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
+    when(flowDefinitionParser.parse(definition)).thenReturn(waitingDocument);
+    when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
+    when(agentInvocationService.invoke(any())).thenThrow(new RuntimeException("boom"));
+
+    FlowSession persistedSession =
+        new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);
+    setField(persistedSession, "id", session.getId());
+    when(flowSessionRepository.findById(session.getId())).thenReturn(Optional.of(persistedSession));
+
+    orchestratorService.processNextJob("worker");
+
+    assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.WAITING_APPROVAL);
+    verify(flowSessionRepository).save(session);
+    assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.WAITING_STEP_APPROVAL);
+    verify(jobQueuePort).save(job);
+    assertThat(job.getStatus()).isEqualTo(FlowJobStatus.COMPLETED);
+  }
+
+  @Test
   void processNextJobReturnsJobToQueueWhenSessionPaused() {
     FlowSession session =
         new FlowSession(definition, definition.getVersion(), FlowSessionStatus.PAUSED, 1L, 0L);

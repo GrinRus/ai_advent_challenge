@@ -17,6 +17,8 @@ import com.aiadvent.backend.flow.domain.FlowEvent;
 import com.aiadvent.backend.flow.domain.FlowEventType;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
+import com.aiadvent.backend.flow.domain.FlowStepExecution;
+import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
@@ -260,6 +262,108 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     Mockito.verify(agentInvocationService, Mockito.times(1)).invoke(Mockito.any());
   }
 
+  @Test
+  void manualApprovalRetryResumesFlow() throws Exception {
+    AgentVersion agentVersion = persistAgent();
+    FlowDefinition definition = persistFlowDefinitionWithApproval(agentVersion.getId());
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenThrow(new RuntimeException("boom"))
+        .thenReturn(
+            new AgentInvocationResult(
+                "Recovered",
+                new UsageCostEstimate(
+                    5,
+                    2,
+                    7,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "USD",
+                    com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
+                List.of()));
+
+    FlowStartResponse startResponse = startFlow(definition.getId(), null);
+
+    orchestratorService.processNextJob("worker-1");
+
+    FlowSession waiting =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(waiting.getStatus()).isEqualTo(FlowSessionStatus.WAITING_STEP_APPROVAL);
+
+    FlowStepExecution failedExecution =
+        findLatestStepExecution(startResponse.sessionId(), FlowStepStatus.WAITING_APPROVAL);
+
+    ObjectNode approvePayload = objectMapper.createObjectNode();
+    approvePayload.put("command", "approveStep");
+    approvePayload.put("stepExecutionId", failedExecution.getId().toString());
+
+    mockMvc
+        .perform(
+            post("/api/flows/" + startResponse.sessionId() + "/control")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(approvePayload)))
+        .andExpect(status().isOk());
+
+    orchestratorService.processNextJob("worker-1");
+
+    FlowSession completed =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(completed.getStatus()).isEqualTo(FlowSessionStatus.COMPLETED);
+  }
+
+  @Test
+  void manualSkipSchedulesFallbackStep() throws Exception {
+    AgentVersion agentVersion = persistAgent();
+    FlowDefinition definition = persistFlowDefinitionWithFallback(agentVersion.getId());
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenThrow(new RuntimeException("boom"))
+        .thenReturn(
+            new AgentInvocationResult(
+                "Fallback",
+                new UsageCostEstimate(
+                    4,
+                    2,
+                    6,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "USD",
+                    com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
+                List.of()));
+
+    FlowStartResponse startResponse = startFlow(definition.getId(), null);
+
+    orchestratorService.processNextJob("worker-1");
+
+    FlowSession waiting =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(waiting.getStatus()).isEqualTo(FlowSessionStatus.WAITING_STEP_APPROVAL);
+
+    FlowStepExecution failedExecution =
+        findLatestStepExecution(startResponse.sessionId(), FlowStepStatus.WAITING_APPROVAL);
+
+    ObjectNode skipPayload = objectMapper.createObjectNode();
+    skipPayload.put("command", "skipStep");
+    skipPayload.put("stepExecutionId", failedExecution.getId().toString());
+
+    mockMvc
+        .perform(
+            post("/api/flows/" + startResponse.sessionId() + "/control")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(skipPayload)))
+        .andExpect(status().isOk());
+
+    orchestratorService.processNextJob("worker-1");
+    orchestratorService.processNextJob("worker-1");
+
+    FlowSession completed =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(completed.getStatus()).isEqualTo(FlowSessionStatus.COMPLETED);
+    assertThat(completed.getCurrentStepId()).isEqualTo("finish");
+  }
+
   private FlowStartResponse startFlow(UUID flowId, String body) throws Exception {
     var requestBuilder =
         post("/api/flows/" + flowId + "/start").contentType(MediaType.APPLICATION_JSON);
@@ -298,5 +402,68 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     FlowDefinition definition =
         new FlowDefinition("simple-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
     return flowDefinitionRepository.save(definition);
+  }
+
+  private FlowDefinition persistFlowDefinitionWithApproval(UUID agentVersionId) {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "step-1");
+    ArrayNode steps = root.putArray("steps");
+    ObjectNode step = steps.addObject();
+    step.put("id", "step-1");
+    step.put("name", "Initial step");
+    step.put("agentVersionId", agentVersionId.toString());
+    step.put("prompt", "Solve the task");
+    ObjectNode transitions = step.putObject("transitions");
+    transitions.putObject("onSuccess").put("complete", true);
+    transitions.putObject("onFailure").put("fail", false);
+
+    FlowDefinition definition =
+        new FlowDefinition("approval-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+    return flowDefinitionRepository.save(definition);
+  }
+
+  private FlowDefinition persistFlowDefinitionWithFallback(UUID agentVersionId) {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "primary");
+    ArrayNode steps = root.putArray("steps");
+
+    ObjectNode primary = steps.addObject();
+    primary.put("id", "primary");
+    primary.put("name", "Primary");
+    primary.put("agentVersionId", agentVersionId.toString());
+    primary.put("prompt", "Do primary work");
+    ObjectNode primaryTransitions = primary.putObject("transitions");
+    ObjectNode onSuccess = primaryTransitions.putObject("onSuccess");
+    onSuccess.put("next", "finish");
+    ObjectNode onFailure = primaryTransitions.putObject("onFailure");
+    onFailure.put("next", "fallback");
+    onFailure.put("fail", false);
+
+    ObjectNode fallback = steps.addObject();
+    fallback.put("id", "fallback");
+    fallback.put("name", "Fallback");
+    fallback.put("agentVersionId", agentVersionId.toString());
+    fallback.put("prompt", "Handle failure");
+    ObjectNode fallbackTransitions = fallback.putObject("transitions");
+    fallbackTransitions.putObject("onSuccess").put("next", "finish");
+
+    ObjectNode finish = steps.addObject();
+    finish.put("id", "finish");
+    finish.put("name", "Finish");
+    finish.put("agentVersionId", agentVersionId.toString());
+    finish.putObject("transitions").putObject("onSuccess").put("complete", true);
+
+    FlowDefinition definition =
+        new FlowDefinition("fallback-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+    return flowDefinitionRepository.save(definition);
+  }
+
+  private FlowStepExecution findLatestStepExecution(UUID sessionId, FlowStepStatus status) {
+    return flowStepExecutionRepository.findAll().stream()
+        .filter(execution ->
+            execution.getFlowSession().getId().equals(sessionId)
+                && execution.getStatus() == status)
+        .findFirst()
+        .orElseThrow();
   }
 }

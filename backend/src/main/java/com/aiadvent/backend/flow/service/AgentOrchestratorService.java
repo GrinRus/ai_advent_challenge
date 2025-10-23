@@ -333,18 +333,54 @@ public class AgentOrchestratorService {
       retryScheduled = scheduleRetry(session, config, stepExecution, document);
     }
 
-    if (!retryScheduled) {
-      session.setStatus(FlowSessionStatus.FAILED);
-      session.setCompletedAt(Instant.now());
-      recordEvent(session, stepExecution, FlowEventType.FLOW_FAILED, "failed", errorPayload(exception), null);
-      flowSessionRepository.save(session);
-      telemetry.sessionCompleted(
-          session.getId(),
-          session.getStatus(),
-          calculateDuration(session.getStartedAt(), session.getCompletedAt()));
+    if (retryScheduled) {
+      job.setStatus(FlowJobStatus.COMPLETED);
+      jobQueuePort.save(job);
+      return;
     }
 
-    job.setStatus(retryScheduled ? FlowJobStatus.COMPLETED : FlowJobStatus.FAILED);
+    String failureNext = config.transitions().onFailure();
+    boolean failFlowOnFailure = config.transitions().failFlowOnFailure();
+
+    if (!failFlowOnFailure) {
+      enterApprovalWait(job, session, stepExecution);
+      return;
+    }
+
+    if (failureNext != null && !failureNext.isBlank()) {
+      scheduleNextStep(session, failureNext, document, launchContextForNext(session));
+      job.setStatus(FlowJobStatus.COMPLETED);
+      jobQueuePort.save(job);
+      return;
+    }
+
+    session.setStatus(FlowSessionStatus.FAILED);
+    session.setCompletedAt(Instant.now());
+    recordEvent(session, stepExecution, FlowEventType.FLOW_FAILED, "failed", errorPayload(exception), null);
+    flowSessionRepository.save(session);
+    telemetry.sessionCompleted(
+        session.getId(),
+        session.getStatus(),
+        calculateDuration(session.getStartedAt(), session.getCompletedAt()));
+
+    job.setStatus(FlowJobStatus.FAILED);
+    jobQueuePort.save(job);
+  }
+
+  private void enterApprovalWait(
+      FlowJob job, FlowSession session, FlowStepExecution stepExecution) {
+    stepExecution.setStatus(FlowStepStatus.WAITING_APPROVAL);
+    flowStepExecutionRepository.save(stepExecution);
+
+    session.setStatus(FlowSessionStatus.WAITING_STEP_APPROVAL);
+    flowSessionRepository.save(session);
+
+    recordEvent(session, stepExecution, FlowEventType.STEP_WAITING_APPROVAL, "waiting", null, null);
+    telemetry.sessionEvent(session.getId(), "step_waiting_approval", stepExecution.getStepId());
+
+    job.setStatus(FlowJobStatus.COMPLETED);
+    job.setLockedAt(null);
+    job.setLockedBy(null);
     jobQueuePort.save(job);
   }
 

@@ -42,6 +42,18 @@ public class FlowControlController {
         flowControlService.retryStep(sessionId, request.stepExecutionId());
         session = flowControlService.resume(sessionId);
       }
+      case "approvestep" -> {
+        if (request.stepExecutionId() == null) {
+          return ResponseEntity.badRequest().body("stepExecutionId is required for approveStep");
+        }
+        session = flowControlService.approveStep(sessionId, request.stepExecutionId());
+      }
+      case "skipstep" -> {
+        if (request.stepExecutionId() == null) {
+          return ResponseEntity.badRequest().body("stepExecutionId is required for skipStep");
+        }
+        session = flowControlService.skipStep(sessionId, request.stepExecutionId());
+      }
       default -> {
         return ResponseEntity.badRequest().body("Unsupported command: " + request.command());
       }

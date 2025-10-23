@@ -63,6 +63,7 @@ public class FlowControlService {
       return session;
     }
     session.setStatus(FlowSessionStatus.PAUSED);
+    flowSessionRepository.save(session);
     recordEvent(session, FlowEventType.FLOW_PAUSED, "paused", reason);
     return session;
   }
@@ -71,6 +72,7 @@ public class FlowControlService {
   public FlowSession resume(UUID sessionId) {
     FlowSession session = getSession(sessionId);
     session.setStatus(FlowSessionStatus.RUNNING);
+     flowSessionRepository.save(session);
     recordEvent(session, FlowEventType.FLOW_RESUMED, "running", null);
     return session;
   }
@@ -80,6 +82,7 @@ public class FlowControlService {
     FlowSession session = getSession(sessionId);
     session.setStatus(FlowSessionStatus.CANCELLED);
     session.setCompletedAt(Instant.now());
+    flowSessionRepository.save(session);
     recordEvent(session, FlowEventType.FLOW_CANCELLED, "cancelled", reason);
     telemetry.sessionCompleted(
         sessionId,
@@ -127,6 +130,123 @@ public class FlowControlService {
     telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
   }
 
+  @Transactional
+  public FlowSession approveStep(UUID sessionId, UUID stepExecutionId) {
+    FlowSession session = getSession(sessionId);
+    FlowStepExecution execution =
+        flowStepExecutionRepository
+            .findById(stepExecutionId)
+            .orElseThrow(() -> new IllegalArgumentException("Step execution not found: " + stepExecutionId));
+
+    if (execution.getStatus() != FlowStepStatus.WAITING_APPROVAL) {
+      throw new IllegalStateException("Step execution " + stepExecutionId + " is not waiting for approval");
+    }
+
+    FlowDefinitionDocument document = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowStepConfig config = document.step(execution.getStepId());
+    AgentVersion agentVersion =
+        agentVersionRepository
+            .findById(config.agentVersionId())
+            .orElseThrow(() -> new IllegalStateException("Agent version not found: " + config.agentVersionId()));
+
+    int nextAttempt = execution.getAttempt() + 1;
+    FlowStepExecution retryExecution =
+        new FlowStepExecution(session, config.id(), FlowStepStatus.PENDING, nextAttempt);
+    retryExecution.setAgentVersion(agentVersion);
+    retryExecution.setStepName(config.name());
+    retryExecution.setInputPayload(execution.getInputPayload());
+    flowStepExecutionRepository.save(retryExecution);
+
+    execution.setStatus(FlowStepStatus.FAILED);
+    flowStepExecutionRepository.save(execution);
+
+    FlowJobPayload payload =
+        new FlowJobPayload(session.getId(), retryExecution.getId(), retryExecution.getStepId(), nextAttempt);
+    jobQueuePort.enqueueStepJob(session, retryExecution, payload, Instant.now());
+
+    session.setStatus(FlowSessionStatus.RUNNING);
+    flowSessionRepository.save(session);
+
+    FlowEvent retryEvent =
+        new FlowEvent(session, FlowEventType.STEP_RETRY_SCHEDULED, "approved", null);
+    retryEvent.setFlowStepExecution(retryExecution);
+    flowEventRepository.save(retryEvent);
+
+    telemetry.retryScheduled(session.getId(), retryExecution.getStepId(), nextAttempt);
+    telemetry.sessionEvent(session.getId(), "step_approved", execution.getStepId());
+    return session;
+  }
+
+  @Transactional
+  public FlowSession skipStep(UUID sessionId, UUID stepExecutionId) {
+    FlowSession session = getSession(sessionId);
+    FlowStepExecution execution =
+        flowStepExecutionRepository
+            .findById(stepExecutionId)
+            .orElseThrow(() -> new IllegalArgumentException("Step execution not found: " + stepExecutionId));
+
+    if (execution.getStatus() != FlowStepStatus.WAITING_APPROVAL) {
+      throw new IllegalStateException("Step execution " + stepExecutionId + " is not waiting for approval");
+    }
+
+    FlowDefinitionDocument document = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowStepConfig config = document.step(execution.getStepId());
+
+    execution.setStatus(FlowStepStatus.SKIPPED);
+    execution.setCompletedAt(Instant.now());
+    flowStepExecutionRepository.save(execution);
+
+    FlowEvent skippedEvent =
+        new FlowEvent(session, FlowEventType.STEP_SKIPPED, "skipped", null);
+    skippedEvent.setFlowStepExecution(execution);
+    flowEventRepository.save(skippedEvent);
+
+    String nextStepId = config.transitions().onFailure();
+    boolean failFlow = config.transitions().failFlowOnFailure();
+
+    if (nextStepId != null && !nextStepId.isBlank()) {
+      FlowStepConfig nextConfig = document.step(nextStepId);
+      AgentVersion nextAgent =
+          agentVersionRepository
+              .findById(nextConfig.agentVersionId())
+              .orElseThrow(() -> new IllegalStateException("Agent version not found: " + nextConfig.agentVersionId()));
+
+      FlowStepExecution nextExecution =
+          new FlowStepExecution(session, nextConfig.id(), FlowStepStatus.PENDING, 1);
+      nextExecution.setAgentVersion(nextAgent);
+      nextExecution.setStepName(nextConfig.name());
+      nextExecution.setInputPayload(buildStepInputContext(session));
+      flowStepExecutionRepository.save(nextExecution);
+
+      FlowJobPayload payload =
+          new FlowJobPayload(session.getId(), nextExecution.getId(), nextExecution.getStepId(), 1);
+      jobQueuePort.enqueueStepJob(session, nextExecution, payload, Instant.now());
+
+      session.setCurrentStepId(nextConfig.id());
+      session.setStatus(FlowSessionStatus.RUNNING);
+      flowSessionRepository.save(session);
+      telemetry.sessionEvent(session.getId(), "step_skipped", execution.getStepId());
+      return session;
+    }
+
+    if (failFlow) {
+      session.setStatus(FlowSessionStatus.FAILED);
+      session.setCompletedAt(Instant.now());
+      flowSessionRepository.save(session);
+      recordEvent(session, FlowEventType.FLOW_FAILED, "failed", "Step skipped without fallback");
+      telemetry.sessionCompleted(
+          session.getId(),
+          session.getStatus(),
+          calculateDuration(session.getStartedAt(), session.getCompletedAt()));
+    } else {
+      session.setStatus(FlowSessionStatus.RUNNING);
+      flowSessionRepository.save(session);
+    }
+
+    telemetry.sessionEvent(session.getId(), "step_skipped", execution.getStepId());
+    return session;
+  }
+
   private FlowSession getSession(UUID sessionId) {
     return flowSessionRepository
         .findById(sessionId)
@@ -148,5 +268,30 @@ public class FlowControlService {
       return null;
     }
     return Duration.between(start, end);
+  }
+
+  private com.fasterxml.jackson.databind.JsonNode buildStepInputContext(FlowSession session) {
+    ObjectNode input = objectMapper.createObjectNode();
+    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
+      input.set("launchParameters", session.getLaunchParameters().deepCopy());
+    }
+
+    com.fasterxml.jackson.databind.JsonNode shared = session.getSharedContext();
+    if (shared != null && !shared.isNull()) {
+      input.set("sharedContext", shared.deepCopy());
+      com.fasterxml.jackson.databind.JsonNode initial = shared.get("initial");
+      if (initial != null) {
+        input.set("initialContext", initial.deepCopy());
+      }
+      com.fasterxml.jackson.databind.JsonNode lastOutput = shared.get("lastOutput");
+      if (lastOutput != null && !lastOutput.isNull()) {
+        input.set("lastOutput", lastOutput.deepCopy());
+      }
+      com.fasterxml.jackson.databind.JsonNode current = shared.get("current");
+      if (current != null && !current.isNull()) {
+        input.set("currentContext", current.deepCopy());
+      }
+    }
+    return input;
   }
 }

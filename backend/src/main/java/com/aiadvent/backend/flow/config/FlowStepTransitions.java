@@ -5,7 +5,6 @@ public record FlowStepTransitions(
 
   public FlowStepTransitions {
     completeOnSuccess = completeOnSuccess || (onSuccess == null || onSuccess.isBlank());
-    failFlowOnFailure = failFlowOnFailure || (onFailure == null || onFailure.isBlank());
   }
 
   public static FlowStepTransitions defaults() {
