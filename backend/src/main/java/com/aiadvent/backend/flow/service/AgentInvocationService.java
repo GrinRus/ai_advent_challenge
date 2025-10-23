@@ -12,19 +12,18 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -104,7 +103,6 @@ public class AgentInvocationService {
         buildUserMessage(request.userPrompt(), request.launchParameters(), request.inputContext());
     List<String> memoryMessages = buildMemorySnapshots(flowSession, request.memoryReads());
     Map<String, Object> advisorParams = new java.util.HashMap<>();
-    advisorParams.put(ChatMemory.CONVERSATION_ID, flowSession.getId().toString());
     if (request.stepId() != null) {
       advisorParams.put("flowStepId", request.stepId().toString());
     }
@@ -207,15 +205,46 @@ public class AgentInvocationService {
             .append("\n\nLaunch Parameters:\n")
             .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(launchParameters));
       }
-      if (hasContent(inputContext)) {
+      JsonNode sanitizedContext = sanitizeInputContext(inputContext);
+      if (hasContent(sanitizedContext)) {
         builder
             .append("\n\nContext:\n")
-            .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(inputContext));
+            .append(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(sanitizedContext));
       }
       return builder.toString();
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Failed to serialize input context", exception);
     }
+  }
+
+  private JsonNode sanitizeInputContext(JsonNode inputContext) {
+    if (inputContext == null || inputContext.isNull()) {
+      return null;
+    }
+    if (!inputContext.isObject()) {
+      return inputContext;
+    }
+
+    ObjectNode copy = ((ObjectNode) inputContext).deepCopy();
+    copy.remove("launchParameters");
+    copy.remove("lastOutput");
+    copy.remove("currentContext");
+
+    JsonNode sharedContext = copy.get("sharedContext");
+    if (sharedContext != null && sharedContext.isObject()) {
+      ObjectNode shared = ((ObjectNode) sharedContext).deepCopy();
+      shared.remove(List.of("steps", "current", "lastOutput", "initial"));
+      if (shared.size() > 0) {
+        copy.set("sharedContext", shared);
+      } else {
+        copy.remove("sharedContext");
+      }
+    }
+
+    if (copy.size() == 0) {
+      return null;
+    }
+    return copy;
   }
 
   private boolean hasContent(JsonNode node) {
