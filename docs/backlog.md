@@ -295,3 +295,94 @@
 - [x] Обновить `docs/infra.md` и `docs/processes.md`: описать `jtokkit`, Redis-кеш, использование `stream-usage`, ограничения по провайдерам и отображение источника usage на фронтенде.
 - [x] Подготовить ADR/раздел в `docs/releases` с фиксацией выбора `jtokkit` + Redis и сценариями масштабирования.
 - [x] Добавить метрики и алерты для контроля расхождения между native usage и fallback, а также состояния Redis (hit/miss, латентность).
+
+## Wave 9 — Оркестрация мультиагентных флоу
+### Архитектура и продукт
+- [x] Сформировать детальные пользовательские сценарии для мультиагентных флоу (инициализация из UI и внешнего API, управляемые шаги, остановка/повтор).
+  - UI запуск: пользователь выбирает шаблон флоу, настраивает агентов/память, наблюдает прогресс по шагам, может поставить флоу на паузу, остановить или перезапустить с точки останова.
+  - API запуск: внешняя система вызывает `POST /api/flows/{flowId}/start` с payload контекста, получает `sessionId`, отслеживает статус через `GET /api/flows/{sessionId}` и может инициировать остановку/повтор через управляемые эндпоинты.
+  - Управление шагами: поддержка manual step approval, пропуска шагов, повторного выполнения отдельного агента при ошибках или модификации входного контекста.
+  - Остановка/повтор: сценарии graceful cancel, rollback контекста, перезапуск флоу с сохранением истории и возможности сравнения результатов.
+- [x] Подготовить high-level архитектуру оркестрации: компоненты Orchestrator Service, каталог агентов, слой памяти, события и API взаимодействия.
+  - Orchestrator Service: модуль запуска/координации шагов, очередь задач на основе PostgreSQL job-таблицы (JSONB payload), стратегия обработки ошибок (retry/fallback) и трассировка контекста.
+  - Agent Catalog: реестр агентов и моделей в PostgreSQL (идентификаторы, версии, системные промпты, поддерживаемые режимы, лимиты токенов/стоимости) с кэшированием через Redis при необходимости.
+  - Memory Layer: shared/isolated каналы поверх PostgreSQL JSONB (версионное хранение состояний, TTL/очистка через batch), адаптер сериализации/десериализации контекста.
+  - Event Bus: события `flow.started`, `step.started/completed/failed`, `flow.paused/resumed/stopped` фиксируются в PostgreSQL (`flow_event` JSONB), опциональная публикация в Redis Pub/Sub для расширений.
+  - API взаимодействия: REST маршруты для запуска/контроля, polling для статусов поверх агрегатов из PostgreSQL, базовый audit trail.
+  - Job Queue: выделенный `JobQueuePort` с дефолтной реализацией `PostgresJobQueueAdapter` (`flow_job`: `id`, `flow_session_id`, `payload_jsonb`, `status`, `retry_count`, `scheduled_at`, `locked_at`, `locked_by`, `created_at`, `updated_at`), использование `FOR UPDATE SKIP LOCKED`, подготовка альтернативного адаптера (например, Redis Streams) для мягкого перехода.
+  - Memory Versioning: таблица `flow_memory_version` (`id` BIGSERIAL, `flow_session_id` UUID, `channel` VARCHAR, `version` BIGINT, `data_jsonb` JSONB, `parent_version_id` BIGINT NULL, `created_at` TIMESTAMP, `created_by_step_id` UUID), индекс по (`flow_session_id`, `channel`, `version` DESC), колонка `current_version` в `flow_session`, фоновый batch для очистки старых версий (например, старше 30 дней, оставляя последние 10).
+  - Event Log: единая таблица `flow_event` (`id` BIGSERIAL, `flow_session_id` UUID, `step_id` UUID, `event_type` VARCHAR, `status` VARCHAR, `payload_jsonb` JSONB, `cost` NUMERIC, `tokens_prompt` INT, `tokens_completion` INT, `trace_id` VARCHAR, `span_id` VARCHAR, `created_at` TIMESTAMP), покрыта индексами по (`flow_session_id`, `created_at`) и (`step_id`, `created_at`).
+  - Polling API: long-poll контроллер с таймаутом 25 с; клиент передаёт `sinceEventId` и `lastKnownStateVersion`, сервер ждёт обновлений либо таймаута, возвращает `flowState` (версия+snapshot) и `events` (список новых `flow_event`), поддержка `nextSinceEventId`.
+  - Telemetry & Correlation: обязательно прокидывать `requestId`, `flowId`, `sessionId`, `stepId`, `jobUid`, `memoryVersion`, `trace_id`/`span_id` во все логи, метрики и записи БД; привязать Micrometer/OTel экспорт к тем же идентификаторам.
+- [x] Описать формат конфигурации флоу (YAML/JSON): порядок агентов, зависимости шагов, условия ветвления, передаваемый контекст и опции запуска, гарантия синхронного режима вызовов, хранение в БД с возможностью редактирования через UI.
+  - Базовая структура: `flowId`, `version`, `title`, `description`, `sync: true`, `memory` (shared/isolated настройки), `triggers` (`ui`, `api`), `defaults.context`.
+  - Шаги: массив `steps[]` с полями `id`, `name`, `agentRef`, `systemPrompt`, `inputBindings` (mapping из контекста/предыдущих шагов), `memoryRead`, `memoryWrite`, `overrides` (`model`, `options`), `retryPolicy`, `timeoutSec`.
+  - Ветвления: секция `transitions` внутри шага (`onSuccess`, `onFailure`, `conditions[]` с выражениями), поддержка финальных состояний `complete`, `abort`.
+  - Запускаемый контекст: `launchParameters` (перечень требуемых входов, типы, валидаторы), `contextTransforms` (правила обогащения shared памяти).
+  - Хранение: таблица `flow_definition` в PostgreSQL (`id` UUID, `name`, `version`, `status`, `definition_jsonb`, `is_active`, `created_at`, `updated_at`, `updated_by`, `published_at`), поддержка статусов `draft/published`.
+  - UI-редактор: CRUD API (`GET/POST/PUT/PATCH /api/flows/definitions`), сохранение черновиков, предпросмотр JSON, валидация через JSON Schema (draft 2020-12), история изменений.
+  - Пример JSON-конфигурации (с шагами `gather_requirements`, `generate_solution`, `review`) и соответствующая YAML-репрезентация для документации.
+  - Валидация синхронности: обязательное `syncOnly: true` на уровне агента/шага, запрещаем стриминговые режимы в схеме.
+
+### Backend
+- [ ] Реализовать `AgentOrchestratorService`, принимающий `FlowDefinition` и стартовый `OrchestrationRequest`, управляющий выполнением шагов и маршрутизацией ответов.
+  - Интерфейс `AgentOrchestratorService.start(flowId, launchContext)` возвращает `FlowSession`.
+  - Использует `JobQueuePort` для постановки step-джобов, обрабатывает `flow_event` и обновляет `flow_memory_version`.
+  - Включает state machine: `PENDING → RUNNING → PAUSED/FAILED/COMPLETED/ABORTED`.
+  - Поддерживает ручные команды (`pause`, `resume`, `cancel`, `retryStep`) через `FlowControlService`.
+- [ ] Создать модель `AgentDefinition` с параметрами провайдера (модель, базовые опции, системные промпты, ограничения), поддержкой overrides и версионированием.
+  - Таблицы `agent_definition` (метаданные), `agent_version` (версионированные настройки), `agent_capability`.
+  - Поля: `providerType`, `model`, `systemPrompt`, `defaultOptions`, `syncOnly`, `maxTokens`, `costProfile`.
+  - CRUD API для управления агентами + публикация версии, интеграция с кэшом Redis.
+- [ ] Добавить абстракцию `MemoryChannel` с режимами shared (общая память флоу) и isolated (локальный state агента), интегрировать её с существующим стором сообщений.
+  - Интерфейсы `MemoryChannelReader`, `MemoryChannelWriter`, поддержка операций `append`, `replace`, `snapshot`.
+  - Реализация опирается на таблицы `flow_memory_version` и shared storage, предоставляет optimistic locking.
+- [ ] Спроектировать и реализовать persistence для шаблонов флоу и runtime-сессий: таблицы, Liquibase-миграции, репозитории, аудит статусов шагов.
+  - Таблицы: `flow_session`, `flow_step_execution`, `flow_event`, `flow_job`, `flow_definition_history`.
+  - Репозитории Spring Data + custom queries (SKIP LOCKED) для очереди.
+  - Liquibase changelog с индексами и ограничениями.
+- [ ] Подготовить расширение `ChatProviderService` для мультиагентных вызовов: учёт индивидуальных системных промптов, модели и runtime-override параметров, жесткая фиксация синхронных вызовов.
+  - Новый метод `chatSyncWithOverrides(agentDefinition, inputContext, overrides)`.
+  - Поддержка передачи `memoryRead`/`memoryWrite` в providers, настройка `RetryTemplate` per agent.
+  - Метрики usage/cost (native или fallback) возвращаются вместе с ответом.
+- [ ] Сохранять и отдавать через API полный контекст запроса/ответа каждого шага (prompt, параметры, финальный output, метаданные с usage/токенами и стоимостью) с контролем доступа и ретеншена.
+  - REST `GET /api/flows/{sessionId}/steps/{stepId}` → DTO с prompt/output/options/usage/cost/traceId.
+  - Политики ретеншена: хранить 30 дней, очистка batch-job’ом.
+  - Доступ ограничен ролями (`FLOW_VIEWER`, `FLOW_ADMIN`), audit trail.
+- [ ] Реализовать детальный лог и телеметрию оркестрации (начало/конец шага, вход/выход агента, ошибки, fallback) с трассировкой запросов.
+  - Структурированные логи (JSON) с корреляцией, интеграция с Micrometer/OTel.
+  - Метрики: `flow_sessions_active`, `flow_step_duration`, `flow_retry_count`, `flow_cost_usd`.
+- [ ] Покрыть оркестратор юнит- и интеграционными тестами (ветвления, разные типы памяти, провайдеры, ошибки).
+  - Unit: state machine, transitions, memory access, overrides.
+  - Integration: Testcontainers (Postgres, Redis), сценарии success/failure/pause/resume.
+  - Контрактные тесты API (`/start`, `/control`, `/status`) + snapshot тесты JSON.
+
+### Frontend и API
+- [ ] Расширить REST API: `POST /api/flows/{flowId}/start` и `GET /api/flows/{sessionId}` для получения статуса шагов, контекста и результатов агентов.
+  - `POST /api/flows/{flowId}/start`: тело `{ "parameters": {...}, "overrides": {...} }`, ответ `FlowSessionDto` с `sessionId`, `status`, `startedAt`.
+  - `GET /api/flows/{sessionId}`: long-poll с параметрами `sinceEventId`, `stateVersion`; возвращает `flowState`, `events`, `telemetry`.
+  - `POST /api/flows/{sessionId}/control`: команды `pause`, `resume`, `cancel`, `retryStep`.
+- [ ] Добавить UI-конфигуратор флоу (визуальный порядок агентов, выбор моделей, промптов, настроек памяти) и просмотр активных/исторических запусков.
+  - Раздел `Flows / Definitions`: таблица с фильтрами, кнопки `Create`, `Edit`, `Publish`.
+  - Редактор: форма на основе JSON Schema (React JSON Schema Form), drag&drop упорядочивание шагов, предпросмотр YAML.
+  - История версий + diff, кнопка дубликата (`Duplicate flow`).
+- [ ] Поддержать отображение шага оркестрации в выделенном разделе (Flow workspace): статус, промежуточные результаты агента, общий контекст, быстрые ссылки на связанные чат-сессии.
+  - Экран `Flow Workspace`: панель статуса (progress bar, текущий step, latency, cost), список шагов с expandable карточками (`prompt`, `output`, usage, метрики).
+  - Контекстный sidebar: `Shared memory`, `Launch parameters`, `Telemetry`.
+  - Ссылки на чат-сессии (если шаг создаёт связь с `sessionId` чата).
+- [ ] Реализовать обязательный статус-фид флоу на UI (progress tracker, текущий шаг, финальный итог) и вывод сохранённых запросов/ответов агента с ключевыми метаданными, включая usage/токены и стоимость.
+  - Компонент `FlowTimeline`: incremental rendering событий из long-poll API.
+  - Метаданные: usage native/fallback, стоимость, модель, duration, retries, traceId.
+  - Экспорт логов шага (JSON/Markdown) для поддержки.
+- [ ] Добавить отдельный раздел `Flows` (отдельный маршрут/экран) для инициализации и мониторинга agentic flow; настроить навигацию из основного чата и обратно, исключив смешение с режимами `stream/sync/structured`.
+  - Маршруты: `/flows`, `/flows/definitions`, `/flows/definitions/:id`, `/flows/sessions`, `/flows/sessions/:sessionId`.
+  - Навигация: link из главного меню, breadcrumbs внутри раздела, кнопка «Launch Flow» из чатового UI.
+  - Состояния ошибок/empty states, skeleton loaders для long-poll.
+- [ ] Реализовать настройки запуска флоу на UI: форма выбора шаблона, ввод параметров, обзор шагов перед запуском, отображение ожидаемых затрат (estimated cost/tokens).
+- [ ] Покрыть фронтенд тестами: unit (React Testing Library) для ключевых компонентов, e2e (Playwright) для сценариев создания флоу, запуска, паузы/возобновления, просмотра истории.
+
+### Документация и процессы
+- [ ] Обновить `docs/infra.md` и `docs/processes.md`: описать архитектуру оркестратора, модель данных, форматы конфигураций и политики памяти.
+- [ ] Подготовить ADR о выборе подхода к мультиагентной оркестрации, включая анализ альтернатив и рисков.
+- [ ] Задокументировать чек-лист тестирования флоу (позитивные/негативные ветки, сбои провайдеров, повторные запуски, деградация к single-agent, проверка synchrony/usage/токенов и стоимости).
+- [ ] Описать гайд по эксплуатации для поддержки: мониторинг, алерты, обновление шаблонов флоу, инструкция по добавлению нового агента/модели.
