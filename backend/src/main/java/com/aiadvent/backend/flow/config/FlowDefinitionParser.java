@@ -58,8 +58,8 @@ public class FlowDefinitionParser {
     String prompt = textValue(stepNode, "prompt");
 
     ChatRequestOverrides overrides = parseOverrides(stepNode.path("overrides"));
-    List<MemoryReadConfig> reads = parseMemoryReads(stepNode.path("memoryReads"));
-    List<MemoryWriteConfig> writes = parseMemoryWrites(stepNode.path("memoryWrites"));
+    List<MemoryReadConfig> reads = applyDefaultMemoryReads(parseMemoryReads(stepNode.path("memoryReads")));
+    List<MemoryWriteConfig> writes = applyDefaultMemoryWrites(parseMemoryWrites(stepNode.path("memoryWrites")));
     FlowStepTransitions transitions = parseTransitions(stepNode.path("transitions"));
     int maxAttempts = intValue(stepNode, "maxAttempts", 1);
 
@@ -108,6 +108,28 @@ public class FlowDefinitionParser {
       writes.add(new MemoryWriteConfig(channel, mode, payload));
     }
     return List.copyOf(writes);
+  }
+
+  private List<MemoryReadConfig> applyDefaultMemoryReads(List<MemoryReadConfig> reads) {
+    boolean hasShared =
+        reads.stream().anyMatch(read -> "shared".equalsIgnoreCase(read.channel()));
+    if (hasShared) {
+      return reads;
+    }
+    List<MemoryReadConfig> augmented = new java.util.ArrayList<>(reads);
+    augmented.add(new MemoryReadConfig("shared", 5));
+    return List.copyOf(augmented);
+  }
+
+  private List<MemoryWriteConfig> applyDefaultMemoryWrites(List<MemoryWriteConfig> writes) {
+    boolean hasShared =
+        writes.stream().anyMatch(write -> "shared".equalsIgnoreCase(write.channel()));
+    if (hasShared) {
+      return writes;
+    }
+    List<MemoryWriteConfig> augmented = new java.util.ArrayList<>(writes);
+    augmented.add(new MemoryWriteConfig("shared", MemoryWriteMode.AGENT_OUTPUT, null));
+    return List.copyOf(augmented);
   }
 
   private FlowStepTransitions parseTransitions(JsonNode node) {

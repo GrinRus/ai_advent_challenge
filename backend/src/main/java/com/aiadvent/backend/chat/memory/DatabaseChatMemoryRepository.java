@@ -49,6 +49,9 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
         (:id, :sessionId, :messageOrder, :role, :content, :metadata, :createdAt)
       """;
 
+  private static final String UPSERT_SESSION_SQL =
+      "INSERT INTO chat_session (id) VALUES (:sessionId) ON CONFLICT (id) DO NOTHING";
+
   private static final String SELECT_IDS_SQL =
       "SELECT DISTINCT session_id FROM chat_memory_message";
 
@@ -100,6 +103,8 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
     if (CollectionUtils.isEmpty(messages)) {
       return;
     }
+
+    ensureSessionExists(sessionId);
 
     List<SqlParameterSource> batch = new ArrayList<>(messages.size());
     int order = 1;
@@ -174,6 +179,11 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
       log.warn("Failed to serialize chat memory metadata", exception);
       return "{}";
     }
+  }
+
+  private void ensureSessionExists(UUID sessionId) {
+    MapSqlParameterSource params = new MapSqlParameterSource("sessionId", sessionId);
+    jdbcTemplate.update(UPSERT_SESSION_SQL, params);
   }
 
   private UUID parseConversationId(String conversationId) {

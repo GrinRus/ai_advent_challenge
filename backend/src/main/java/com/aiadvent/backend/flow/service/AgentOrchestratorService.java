@@ -112,7 +112,7 @@ public class AgentOrchestratorService {
             0L,
             0L);
     session.setLaunchParameters(launchParameters);
-    session.setSharedContext(sharedContext);
+    session.setSharedContext(initializeSharedContext(sharedContext));
     session.setLaunchOverrides(toLaunchOverridesNode(launchOverrides));
     session.setStartedAt(Instant.now());
     session.setCurrentStepId(startStep.id());
@@ -123,7 +123,7 @@ public class AgentOrchestratorService {
     recordEvent(session, null, FlowEventType.FLOW_STARTED, "running", null, null);
 
     FlowStepExecution stepExecution =
-        createStepExecution(session, startStep, agentVersion, 1, launchParameters);
+        createStepExecution(session, startStep, agentVersion, 1, buildStepInputContext(session));
     flowStepExecutionRepository.save(stepExecution);
 
     enqueueStepJob(session, stepExecution, 1, Instant.now());
@@ -175,8 +175,9 @@ public class AgentOrchestratorService {
     stepExecution.setStatus(FlowStepStatus.RUNNING);
     stepExecution.setStartedAt(Instant.now());
     stepExecution.setAgentVersion(agentVersion);
+    JsonNode inputContext = buildStepInputContext(session);
     stepExecution.setPrompt(stepConfig.prompt());
-    stepExecution.setInputPayload(session.getSharedContext());
+    stepExecution.setInputPayload(inputContext);
     flowStepExecutionRepository.save(stepExecution);
 
     telemetry.stepStarted(session.getId(), stepExecution.getId(), stepExecution.getStepId(), stepExecution.getAttempt());
@@ -190,7 +191,7 @@ public class AgentOrchestratorService {
               stepExecution.getId(),
               agentVersion,
               resolvePrompt(stepConfig, session),
-              session.getSharedContext(),
+              inputContext,
               session.getLaunchParameters(),
               stepConfig.overrides(),
               sessionOverrides,
@@ -199,7 +200,7 @@ public class AgentOrchestratorService {
 
       AgentInvocationResult result = agentInvocationService.invoke(request);
 
-      applyAgentResult(stepExecution, result, session, stepConfig);
+      JsonNode stepOutput = applyAgentResult(stepExecution, result, session, stepConfig);
 
       FlowStepTransitions transitions = stepConfig.transitions();
 
@@ -218,7 +219,7 @@ public class AgentOrchestratorService {
         if (!StringUtils.hasText(nextStepId)) {
           session.setStatus(FlowSessionStatus.COMPLETED);
           session.setCompletedAt(Instant.now());
-          recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
+          recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", cloneNode(stepOutput), result.usageCost());
           recordEvent(session, stepExecution, FlowEventType.FLOW_COMPLETED, "completed", null, result.usageCost());
           flowSessionRepository.save(session);
           telemetry.sessionCompleted(
@@ -227,7 +228,7 @@ public class AgentOrchestratorService {
               calculateDuration(session.getStartedAt(), session.getCompletedAt()));
         } else {
           scheduleNextStep(session, nextStepId, definitionDocument, launchContextForNext(session));
-          recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", resultPayload(result), result.usageCost());
+          recordEvent(session, stepExecution, FlowEventType.STEP_COMPLETED, "completed", cloneNode(stepOutput), result.usageCost());
         }
       }
 
@@ -239,7 +240,7 @@ public class AgentOrchestratorService {
     }
   }
 
-  private void applyAgentResult(
+  private JsonNode applyAgentResult(
       FlowStepExecution stepExecution,
       AgentInvocationResult result,
       FlowSession session,
@@ -248,9 +249,8 @@ public class AgentOrchestratorService {
     stepExecution.setStatus(FlowStepStatus.COMPLETED);
     stepExecution.setCompletedAt(Instant.now());
 
-    ObjectNode output = objectMapper.createObjectNode();
-    output.put("content", result.content());
-    stepExecution.setOutputPayload(output);
+    JsonNode stepOutput = resultPayload(result);
+    stepExecution.setOutputPayload(cloneNode(stepOutput));
 
     stepExecution.setUsage(toUsageNode(result.usageCost()));
     stepExecution.setCost(toCostNode(result.usageCost()));
@@ -263,7 +263,7 @@ public class AgentOrchestratorService {
             flowMemoryService.append(
                 session.getId(),
                 write.channel(),
-                resultPayload(result),
+                cloneNode(stepOutput),
                 stepExecution.getId()));
       } else if (write.mode() == MemoryWriteMode.STATIC && write.payload() != null) {
         updates.add(
@@ -276,6 +276,7 @@ public class AgentOrchestratorService {
       session.setCurrentMemoryVersion(updates.get(0).getVersion());
     }
 
+    updateSharedContext(session, stepExecution, stepOutput);
     session.setStateVersion(session.getStateVersion() + 1);
     flowSessionRepository.save(session);
 
@@ -287,6 +288,8 @@ public class AgentOrchestratorService {
         stepExecution.getAttempt(),
         duration,
         result.usageCost());
+
+    return stepOutput;
   }
 
   private void handleStepFailure(
@@ -461,7 +464,58 @@ public class AgentOrchestratorService {
   }
 
   private JsonNode launchContextForNext(FlowSession session) {
-    return session.getSharedContext();
+    return buildStepInputContext(session);
+  }
+
+  private JsonNode initializeSharedContext(JsonNode sharedContext) {
+    ObjectNode context = objectMapper.createObjectNode();
+    context.set("initial", cloneNode(sharedContext));
+    context.set("current", cloneNode(sharedContext));
+    context.set("steps", objectMapper.createObjectNode());
+    context.set("lastOutput", objectMapper.nullNode());
+    context.putNull("lastStepId");
+    context.put("version", 0);
+    return context;
+  }
+
+  private JsonNode buildStepInputContext(FlowSession session) {
+    ObjectNode input = objectMapper.createObjectNode();
+    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
+      input.set("launchParameters", cloneNode(session.getLaunchParameters()));
+    }
+
+    JsonNode shared = session.getSharedContext();
+    if (shared != null && !shared.isNull()) {
+      input.set("sharedContext", cloneNode(shared));
+      JsonNode initial = shared.get("initial");
+      if (initial != null) {
+        input.set("initialContext", cloneNode(initial));
+      }
+      JsonNode lastOutput = shared.get("lastOutput");
+      if (lastOutput != null && !lastOutput.isNull()) {
+        input.set("lastOutput", cloneNode(lastOutput));
+      }
+      JsonNode current = shared.get("current");
+      if (current != null && !current.isNull()) {
+        input.set("currentContext", cloneNode(current));
+      }
+    }
+    return input;
+  }
+
+  private void updateSharedContext(
+      FlowSession session, FlowStepExecution stepExecution, JsonNode stepOutput) {
+    JsonNode shared = session.getSharedContext();
+    ObjectNode context =
+        shared != null && shared.isObject() ? (ObjectNode) shared : objectMapper.createObjectNode();
+
+    ObjectNode stepsNode = context.with("steps");
+    stepsNode.set(stepExecution.getStepId(), cloneNode(stepOutput));
+    context.put("lastStepId", stepExecution.getStepId());
+    context.set("lastOutput", cloneNode(stepOutput));
+    context.set("current", cloneNode(stepOutput));
+    context.put("version", context.path("version").asInt(0) + 1);
+    session.setSharedContext(context);
   }
 
   private void recordEvent(

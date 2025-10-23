@@ -175,6 +175,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(startResponse.launchParameters()).isNotNull();
     assertThat(startResponse.overrides()).isNotNull();
     assertThat(startResponse.overrides().temperature()).isEqualTo(0.2d);
+    assertThat(startResponse.sharedContext()).isNotNull();
+    assertThat(startResponse.sharedContext().get("initial")).isNotNull();
 
     orchestratorService.processNextJob("worker-1");
 
