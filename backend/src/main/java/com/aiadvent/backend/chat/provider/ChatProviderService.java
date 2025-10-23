@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -100,7 +101,10 @@ public class ChatProviderService {
       promptSpec.system(systemPrompt);
     }
     if (additionalSystemMessages != null) {
-      additionalSystemMessages.stream().filter(StringUtils::hasText).forEach(promptSpec::system);
+      additionalSystemMessages.stream()
+          .filter(StringUtils::hasText)
+          .map(message -> SystemMessage.builder().text(message).build())
+          .forEach(promptSpec::messages);
     }
     if (advisorParams != null && !advisorParams.isEmpty()) {
       promptSpec.advisors(advisors -> advisorParams.forEach(advisors::param));
