@@ -429,7 +429,7 @@
 - [x] Обновить `GET /api/flows/{sessionId}`/SSE: включить telemetry snapshot, traceId/spanId, сведения о shared memory, привести фактический JSON к документации.
 - [x] Заполнять trace/span в `FlowEvent`, внедрить retention-политику памяти (последние 10 версий + TTL 30 дней), зарегистрировать Micrometer метрики, заявленные для Wave 9.
 ### Frontend
-- [ ] Обновить экран запуска: позволить задавать launch overrides (temperature/topP/maxTokens), показывать итоговый payload и предупреждения перед стартом.
+- [x] Обновить экран запуска: позволить задавать launch overrides (temperature/topP/maxTokens), показывать итоговый payload и предупреждения перед стартом.
 - [ ] Переработать редактор определений: заменить raw textarea на форму по JSON Schema с предпросмотром YAML и diff, поддержать сравнение версий.
 - [ ] Реализовать полноценный `Flow Workspace`: progress bar и этапы, expandable карточки с usage/cost, sidebar для shared memory/telemetry, таймлайн событий с SSE, экспорт логов шага.
 - [ ] Доработать мониторинг сессии: заменить список событий на потоковый таймлайн с прогрессом шагов, текущей памятью и телеметрией, синхронизированный через long-poll/SSE.
