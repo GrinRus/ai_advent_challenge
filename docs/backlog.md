@@ -431,7 +431,7 @@
 ### Frontend
 - [x] Обновить экран запуска: позволить задавать launch overrides (temperature/topP/maxTokens), показывать итоговый payload и предупреждения перед стартом.
 - [ ] Переработать редактор определений: заменить raw textarea на форму по JSON Schema с предпросмотром YAML и diff, поддержать сравнение версий.
-- [ ] Реализовать полноценный `Flow Workspace`: progress bar и этапы, expandable карточки с usage/cost, sidebar для shared memory/telemetry, таймлайн событий с SSE, экспорт логов шага.
+- [x] Реализовать полноценный `Flow Workspace`: progress bar и этапы, expandable карточки с usage/cost, sidebar для shared memory/телеметрии, таймлайн событий с SSE, экспорт логов шага.
 - [ ] Доработать мониторинг сессии: заменить список событий на потоковый таймлайн с прогрессом шагов, текущей памятью и телеметрией, синхронизированный через long-poll/SSE.
 ### Документация и тестирование
 - [ ] Обновить `docs/infra.md`/`docs/processes.md`/ADR в соответствии с новым API и рабочими сценариями операторов.
@@ -470,3 +470,32 @@
 - [ ] Подготовить runbook для поддержки: просмотр и переадресация запросов, ручное автозавершение, реагирование на алерты, разбор инцидентов.
 - [ ] Описать примеры конфигурации: как агент объявляет необходимость `requiresUserInput`, схемы форм (JSON Schema), шаблоны промптов, рекомендации по хранению персональных данных.
 - [ ] Зафиксировать чек-лист тестирования human-in-the-loop: ответы с задержкой, повторные запросы, конкурирующие ответы, проверка RBAC и аудита.
+
+## Wave 11 — Расширенные event-логи оркестратора
+
+Выбран подход **расширения схемы БД** для `flow_event`: ключевые атрибуты шага и управляющих операций храним в отдельных колонках, а JSON оставляем для детализированного содержимого. Это упростит аналитические запросы, трассировку и построение отчетов без сложной версификации payload.
+
+### Data
+- [ ] Liquibase: добавить в `flow_event` колонки `step_id`, `step_attempt`, `agent_version_id`, `actor`, `reason_code`, `reason_details JSONB`, `payload_schema_version`, а также индексы по `flow_session_id, step_id, created_at`.
+- [ ] Бэкфилл: для существующих записей подтянуть `step_id`/`step_attempt`/`agent_version_id` из `flow_step_execution`, для управляющих событий зафиксировать `actor = system` и нормализовать причины.
+- [ ] Обновить `FlowEvent` маппинг и Liquibase checksums, зафиксировать nullable/length ограничения и default значения.
+
+### Backend
+- [ ] Вынести сервис `FlowEventFactory`, который принимает `FlowSession`, опциональный `FlowStepExecution`, тип события и собирает доменный объект (колонки + JSON payload) по новым правилам.
+- [ ] Дополнить `AgentOrchestratorService` и `FlowControlService`: передавать `stepId`, `attempt`, `agentVersionId`, `actor`, `reasonCode`, `reasonDetails` в фабрику; в payload оставлять только результат шага (`data`) и контекст (`context`).
+- [ ] Обновить DTO (`FlowEventDto`, `FlowStatusService`, `FlowQueryService`) и REST-ответы, чтобы отдавать новые поля и версию схемы наружу.
+- [ ] Добавить нормализованный словарь причин (`reasonCode`) для операционных событий (pause/resume/cancel/skip/approve) и логировать инициатора.
+
+### Frontend
+- [ ] Обновить Flow workspace/таймлайн: визуализировать `reasonCode`, `actor`, usage/cost и source, группировать события по `stepId` и `attempt`, подсвечивать статусы шага.
+- [ ] Добавить фильтрацию/поиск в UI логов: по `stepId`, типу события, инициатору, диапазону стоимости и range по времени.
+- [ ] Расширить карточку шага и деталку события: показывать полный JSON payload (context/data) с fallback на прежний формат и пометкой версии схемы.
+
+### Observability & Tests
+- [ ] Переписать интеграционные тесты оркестратора, проверяющие запись событий: убедиться, что новые колонки и payload соответствуют ожиданиям.
+- [ ] Добавить unit-тесты `FlowEventFactory` и регрессионные проверки миграции (Liquibase) на Testcontainers.
+- [ ] Обновить телеметрию: расширить метрики и логирование, опираясь на `reasonCode`, `actor` и новую структуру контекста.
+
+### Документация
+- [ ] Обновить `docs/infra.md`, `docs/architecture/flow-definition.md` и `docs/processes.md`: описать схему `flow_event`, словарь `reasonCode`, новый формат payload и рекомендации по аналитике.
+- [ ] Добавить раздел в ADR/CHANGELOG о выбранном подходе и стратегии миграции.
