@@ -31,7 +31,6 @@ import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
-import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
@@ -54,7 +53,7 @@ class AgentOrchestratorServiceTest {
 
   private static final String STEP_ID = "step-1";
 
-  @Mock private FlowDefinitionRepository flowDefinitionRepository;
+  @Mock private FlowDefinitionService flowDefinitionService;
   @Mock private FlowDefinitionParser flowDefinitionParser;
   @Mock private FlowSessionRepository flowSessionRepository;
   @Mock private FlowStepExecutionRepository flowStepExecutionRepository;
@@ -79,7 +78,7 @@ class AgentOrchestratorServiceTest {
 
     orchestratorService =
         new AgentOrchestratorService(
-            flowDefinitionRepository,
+            flowDefinitionService,
             flowDefinitionParser,
             flowSessionRepository,
             flowStepExecutionRepository,
@@ -146,7 +145,7 @@ class AgentOrchestratorServiceTest {
 
   @Test
   void startCreatesSessionAndEnqueuesJob() {
-    when(flowDefinitionRepository.findById(definition.getId())).thenReturn(Optional.of(definition));
+    when(flowDefinitionService.getActivePublishedDefinition(definition.getId())).thenReturn(definition);
     when(flowDefinitionParser.parse(definition)).thenReturn(document);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
 
