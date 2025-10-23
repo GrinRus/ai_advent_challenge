@@ -40,6 +40,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -228,7 +229,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(launchOverridesContext).containsEntry("maxTokens", 256);
   }
 
-  @Test
+@Test
   void pausePreventsJobExecutionUntilResume() throws Exception {
     AgentVersion agentVersion = persistAgent();
     FlowDefinition definition = persistFlowDefinition(agentVersion.getId());
@@ -260,6 +261,42 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     orchestratorService.processNextJob("worker-1");
     Mockito.verify(agentInvocationService, Mockito.times(1)).invoke(Mockito.any());
+  }
+
+  @Test
+  void sseStreamDeliversEventsAndTelemetry() throws Exception {
+    AgentVersion agentVersion = persistAgent();
+    FlowDefinition definition = persistFlowDefinition(agentVersion.getId());
+
+    FlowStartResponse startResponse = startFlow(definition.getId(), null);
+
+    MvcResult mvcResult =
+        mockMvc
+            .perform(
+                get("/api/flows/" + startResponse.sessionId() + "/events/stream")
+                    .accept(MediaType.TEXT_EVENT_STREAM_VALUE))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+
+    orchestratorService.processNextJob("worker-sse");
+
+    MvcResult completed = mockMvc.perform(asyncDispatch(mvcResult)).andExpect(status().isOk()).andReturn();
+
+    String body = completed.getResponse().getContentAsString();
+    assertThat(body).contains("event: flow");
+    String lastData =
+        Arrays.stream(body.split("\n\n"))
+            .filter(chunk -> chunk.startsWith("data:"))
+            .reduce((first, second) -> second)
+            .orElseThrow();
+    JsonNode payload = objectMapper.readTree(lastData.substring("data:".length()));
+
+    assertThat(payload.path("state").path("status").asText()).isEqualTo("COMPLETED");
+    assertThat(payload.path("state").path("sharedContext").isMissingNode()).isFalse();
+    JsonNode telemetryNode = payload.path("telemetry");
+    assertThat(telemetryNode).isNotNull();
+    assertThat(telemetryNode.path("stepsCompleted").asInt()).isGreaterThanOrEqualTo(1);
+    assertThat(telemetryNode.path("promptTokens").asInt()).isGreaterThanOrEqualTo(0);
   }
 
   @Test

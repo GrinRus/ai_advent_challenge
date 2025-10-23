@@ -405,3 +405,22 @@
     transform: translateX(100%);
   }
 }
+.flow-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.flow-event-item {
+  border: 1px solid #e1e4ed;
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: #fafbff;
+}
+
+.flow-events--skeleton .flow-event-item--skeleton {
+  background: #f8f9ff;
+  border-color: #e0e4f4;
+}
