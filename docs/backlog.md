@@ -480,10 +480,13 @@
 - [ ] Заменить `Map<String, Object>` в `ChatProviderService.chatSyncWithOverrides` и `AgentInvocationService` на явный DTO для advisor параметров, обеспечить валидацию содержимого.
 - [ ] В `DatabaseChatMemoryRepository` отказаться от десериализации в `Map.class`: определить типизированную модель metadata и централизованный маппер.
 - [ ] Для `FlowSession` и связанных сущностей заменить поля `JsonNode` (`launchParameters`, `sharedContext`, `launchOverrides`, `telemetry`) на value-объекты с описанной схемой и конверторами.
+- [ ] Типизировать JSON-поля домена (`AgentVersion.defaultOptions/toolBindings/costProfile`, `FlowDefinition.definition`, `FlowDefinitionHistory.definition`, `FlowStepExecution.*Payload/usage/cost`, `FlowEvent.payload`, `AgentCapability.payload`, `ChatMessage.structuredPayload`) через отдельные value-объекты и конвертеры, исключив «сырые» `JsonNode`.
 - [ ] Обновить трассировку/логирование после типизации, чтобы не полагаться на произвольные JSON-структуры.
 ### Frontend
 - [ ] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
 - [ ] Переписать `FlowAgents` и другие потребители API так, чтобы парсинг JSON (например, `parseOptionalJson`) возвращал строго типизированные объекты с проверкой схемы.
+- [ ] Перестроить `FlowDefinitionForm`/`FlowLaunch` стейт: вместо `Record<string, unknown>` и массовых `JSON.parse` использовать строгие интерфейсы (`FlowDefinitionDraft`, `FlowLaunchPayload`) + валидаторы.
+- [ ] Обновить обработку ответов `requestSync`/`requestStructuredSync`: валидировать JSON (type guards/zod) перед приведениями `as`, чтобы поймать несовместимые схемы.
 - [ ] Добавить unit-тесты/типовые проверки для новых типов, чтобы предотвратить регрессии строгой типизации.
 
 ## Wave 11 — Расширенные event-логи оркестратора
