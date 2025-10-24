@@ -14,11 +14,13 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
+@ConditionalOnProperty(prefix = "app.flow.worker", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class FlowJobWorker {
 
   private static final Logger log = LoggerFactory.getLogger(FlowJobWorker.class);
