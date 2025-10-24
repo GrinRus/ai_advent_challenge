@@ -243,6 +243,61 @@ export type FlowStatusResponse = {
   telemetry?: FlowTelemetrySnapshot | null;
 };
 
+export type FlowInteractionStatus =
+  | 'PENDING'
+  | 'ANSWERED'
+  | 'EXPIRED'
+  | 'AUTO_RESOLVED';
+
+export type FlowInteractionType =
+  | 'INPUT_FORM'
+  | 'APPROVAL'
+  | 'CONFIRMATION'
+  | 'REVIEW'
+  | 'INFORMATION';
+
+export type FlowInteractionResponseSummaryDto = {
+  responseId: string;
+  source: 'USER' | 'AUTO_POLICY' | 'SYSTEM';
+  respondedBy?: string;
+  respondedAt?: string;
+  status: FlowInteractionStatus;
+  payload?: unknown;
+};
+
+export type FlowInteractionItemDto = {
+  requestId: string;
+  stepId: string;
+  status: FlowInteractionStatus;
+  type: FlowInteractionType;
+  title?: string | null;
+  description?: string | null;
+  payloadSchema?: unknown;
+  suggestedActions?: unknown;
+  createdAt: string;
+  updatedAt: string;
+  dueAt?: string | null;
+  response?: FlowInteractionResponseSummaryDto | null;
+};
+
+export type FlowInteractionListResponse = {
+  active: FlowInteractionItemDto[];
+  history: FlowInteractionItemDto[];
+};
+
+export type FlowInteractionRespondPayload = {
+  chatSessionId: string;
+  respondedBy?: string;
+  source?: 'USER' | 'AUTO_POLICY' | 'SYSTEM';
+  payload?: unknown;
+};
+
+export type FlowInteractionAutoResolvePayload = {
+  payload?: unknown;
+  source?: 'AUTO_POLICY' | 'SYSTEM';
+  respondedBy?: string;
+};
+
 export type FlowControlCommand = 'pause' | 'resume' | 'cancel' | 'retryStep';
 
 export type FlowDefinitionSummary = {
@@ -828,6 +883,123 @@ export async function pollFlowStatus(
   }
 
   return (await response.json()) as FlowStatusResponse;
+}
+
+export async function fetchFlowInteractions(
+  sessionId: string,
+): Promise<FlowInteractionListResponse> {
+  const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/interactions`, {
+    headers: { Accept: 'application/json' },
+  });
+
+  return handleJsonResponse<FlowInteractionListResponse>(
+    response,
+    'Не удалось загрузить интерактивные запросы',
+  );
+}
+
+export async function respondToFlowInteraction(
+  sessionId: string,
+  requestId: string,
+  payload: FlowInteractionRespondPayload,
+): Promise<FlowInteractionItemDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/respond`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleJsonResponse<FlowInteractionItemDto>(
+    response,
+    'Не удалось отправить ответ пользователя',
+  );
+}
+
+export async function skipFlowInteraction(
+  sessionId: string,
+  requestId: string,
+  payload: FlowInteractionRespondPayload,
+): Promise<FlowInteractionItemDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/skip`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleJsonResponse<FlowInteractionItemDto>(
+    response,
+    'Не удалось пропустить запрос',
+  );
+}
+
+export async function autoResolveFlowInteraction(
+  sessionId: string,
+  requestId: string,
+  payload: FlowInteractionAutoResolvePayload = {},
+): Promise<FlowInteractionItemDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/auto`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleJsonResponse<FlowInteractionItemDto>(
+    response,
+    'Не удалось автозавершить запрос',
+  );
+}
+
+export type FlowEventsStreamHandlers = {
+  onFlow: (payload: FlowStatusResponse) => void;
+  onHeartbeat?: (payload: string) => void;
+  onError?: (event: Event) => void;
+};
+
+export function subscribeToFlowEvents(
+  sessionId: string,
+  handlers: FlowEventsStreamHandlers,
+): EventSource {
+  const source = new EventSource(
+    `${API_BASE_URL}/flows/${sessionId}/events/stream`,
+  );
+
+  source.addEventListener('flow', (event) => {
+    try {
+      const data = JSON.parse((event as MessageEvent).data) as FlowStatusResponse;
+      handlers.onFlow(data);
+    } catch (error) {
+      console.error('Не удалось разобрать событие flow', error);
+      handlers.onError?.(event);
+    }
+  });
+
+  source.addEventListener('heartbeat', (event) => {
+    handlers.onHeartbeat?.((event as MessageEvent).data);
+  });
+
+  source.addEventListener('error', (event) => {
+    handlers.onError?.(event);
+  });
+
+  return source;
 }
 
 export async function sendFlowControlCommand(
