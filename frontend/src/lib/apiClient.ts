@@ -267,6 +267,7 @@ export type FlowInteractionResponseSummaryDto = {
 
 export type FlowInteractionItemDto = {
   requestId: string;
+  chatSessionId: string;
   stepId: string;
   status: FlowInteractionStatus;
   type: FlowInteractionType;

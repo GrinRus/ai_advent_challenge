@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public record FlowInteractionItemResponse(
     UUID requestId,
+    UUID chatSessionId,
     String stepId,
     FlowInteractionStatus status,
     FlowInteractionType type,

@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   fetchFlowSnapshot,
   fetchFlowInteractions,
+  respondToFlowInteraction,
+  skipFlowInteraction,
+  autoResolveFlowInteraction,
   pollFlowStatus,
   sendFlowControlCommand,
   startFlow,
@@ -17,6 +20,254 @@ import type {
   FlowTelemetrySnapshot,
 } from '../lib/apiClient';
 import './FlowSessions.css';
+
+type FormControlType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'select'
+  | 'multiselect'
+  | 'radio'
+  | 'checkbox'
+  | 'toggle'
+  | 'date'
+  | 'datetime'
+  | 'file'
+  | 'json';
+
+type InteractionFormField = {
+  name: string;
+  label: string;
+  control: FormControlType;
+  required: boolean;
+  enumValues?: string[];
+  schema?: unknown;
+};
+
+type ExtractedInteractionSchema = {
+  fields: InteractionFormField[];
+  initialValues: Record<string, unknown>;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const extractInteractionSchema = (
+  schema: unknown,
+  existingPayload?: unknown,
+): ExtractedInteractionSchema => {
+  if (!isRecord(schema)) {
+    return {
+      fields: [
+        {
+          name: 'value',
+          label: 'Значение',
+          control: 'json',
+          required: false,
+        },
+      ],
+      initialValues: {
+        value: existingPayload ? JSON.stringify(existingPayload, null, 2) : '',
+      },
+    };
+  }
+
+  const type = typeof schema.type === 'string' ? schema.type : 'object';
+  if (type !== 'object' || !isRecord(schema.properties)) {
+    const control = resolveControl(schema);
+    return {
+      fields: [
+        {
+          name: 'value',
+          label: schema.title ? String(schema.title) : 'Значение',
+          control,
+          required: Boolean(Array.isArray(schema.required) && schema.required.length),
+          enumValues: Array.isArray(schema.enum)
+            ? schema.enum.filter((item): item is string => typeof item === 'string')
+            : undefined,
+          schema,
+        },
+      ],
+      initialValues: {
+        value: deriveInitialValue(control, existingPayload),
+      },
+    };
+  }
+
+  const requiredFields = new Set<string>();
+  if (Array.isArray(schema.required)) {
+    schema.required
+      .filter((item): item is string => typeof item === 'string')
+      .forEach((item) => requiredFields.add(item));
+  }
+
+  const fields: InteractionFormField[] = [];
+  const initialValues: Record<string, unknown> = {};
+  const properties = schema.properties as Record<string, unknown>;
+  for (const [name, definition] of Object.entries(properties)) {
+    const control = resolveControl(definition);
+    fields.push({
+      name,
+      label: createLabel(name, definition),
+      control,
+      required: requiredFields.has(name),
+      enumValues: extractEnum(definition),
+      schema: definition,
+    });
+    const value = isRecord(existingPayload) ? existingPayload[name] : undefined;
+    initialValues[name] = deriveInitialValue(control, value);
+  }
+
+  return { fields, initialValues };
+};
+
+const resolveControl = (schema: unknown): FormControlType => {
+  if (!isRecord(schema)) {
+    return 'json';
+  }
+  const type = typeof schema.type === 'string' ? schema.type : 'string';
+  const format = typeof schema.format === 'string' ? schema.format : undefined;
+
+  if (type === 'string') {
+    if (format === 'textarea') return 'textarea';
+    if (format === 'date') return 'date';
+    if (format === 'date-time') return 'datetime';
+    if (format === 'binary') return 'file';
+    if (format === 'json') return 'json';
+    if (format === 'radio') return 'radio';
+    if (Array.isArray(schema.enum)) return 'select';
+    return 'text';
+  }
+  if (type === 'number' || type === 'integer') {
+    return 'number';
+  }
+  if (type === 'boolean') {
+    return format === 'toggle' ? 'toggle' : 'checkbox';
+  }
+  if (type === 'array') {
+    const items = schema.items;
+    if (isRecord(items) && Array.isArray(items.enum)) {
+      return 'multiselect';
+    }
+    return 'json';
+  }
+  return 'json';
+};
+
+const extractEnum = (schema: unknown): string[] | undefined => {
+  if (!isRecord(schema) || !Array.isArray(schema.enum)) {
+    return undefined;
+  }
+  return schema.enum.filter((item): item is string => typeof item === 'string');
+};
+
+const deriveInitialValue = (
+  control: FormControlType,
+  payload: unknown,
+): unknown => {
+  switch (control) {
+    case 'number':
+      if (typeof payload === 'number') {
+        return String(payload);
+      }
+      if (typeof payload === 'string') {
+        return payload;
+      }
+      return '';
+    case 'checkbox':
+    case 'toggle':
+      return Boolean(payload);
+    case 'multiselect':
+      return Array.isArray(payload)
+        ? payload.filter((item) => typeof item === 'string')
+        : [];
+    case 'json':
+      return payload ? JSON.stringify(payload, null, 2) : '';
+    default:
+      return payload ?? '';
+  }
+};
+
+const createLabel = (name: string, schema: unknown): string => {
+  if (isRecord(schema) && typeof schema.title === 'string' && schema.title.trim()) {
+    return schema.title;
+  }
+  return name;
+};
+
+const isEmptyValue = (value: unknown): boolean => {
+  if (value === null || value === undefined) {
+    return true;
+  }
+  if (typeof value === 'string') {
+    return value.trim() === '';
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  return false;
+};
+
+const coerceValueForSubmit = (
+  control: FormControlType,
+  value: unknown,
+): unknown => {
+  switch (control) {
+    case 'number': {
+      if (value === '' || value === null || value === undefined) {
+        return undefined;
+      }
+      const parsed = Number(value);
+      if (Number.isNaN(parsed)) {
+        throw new Error('Введите корректное число');
+      }
+      return parsed;
+    }
+    case 'checkbox':
+    case 'toggle':
+      return Boolean(value);
+    case 'multiselect':
+      return Array.isArray(value) ? value : [];
+    case 'json':
+      if (value === '' || value === null || value === undefined) {
+        return undefined;
+      }
+      if (typeof value !== 'string') {
+        return value;
+      }
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        throw new Error('Некорректный JSON: ' + (error as Error).message);
+      }
+    case 'file':
+      return value ?? null;
+    default:
+      return value === '' ? undefined : value;
+  }
+};
+
+const buildSubmissionPayload = (
+  fields: InteractionFormField[],
+  values: Record<string, unknown>,
+): Record<string, unknown> | undefined => {
+  if (fields.length === 0) {
+    return undefined;
+  }
+
+  const payload: Record<string, unknown> = {};
+  fields.forEach((field) => {
+    const value = values[field.name];
+    if (isEmptyValue(value)) {
+      return;
+    }
+    payload[field.name] = coerceValueForSubmit(field.control, value);
+  });
+  if (Object.keys(payload).length === 0) {
+    return undefined;
+  }
+  return payload;
+};
 
 type PollState = {
   nextSince?: number;
@@ -115,6 +366,11 @@ const FlowSessionsPage = () => {
   const [events, setEvents] = useState<FlowEvent[]>([]);
   const [telemetry, setTelemetry] = useState<FlowTelemetrySnapshot | null>(null);
   const [interactions, setInteractions] = useState<FlowInteractionItemDto[]>([]);
+  const [selectedInteraction, setSelectedInteraction] = useState<FlowInteractionItemDto | null>(null);
+  const [interactionFields, setInteractionFields] = useState<InteractionFormField[]>([]);
+  const [interactionValues, setInteractionValues] = useState<Record<string, unknown>>({});
+  const [interactionErrors, setInteractionErrors] = useState<Record<string, string>>({});
+  const [interactionSubmitting, setInteractionSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -153,6 +409,10 @@ const FlowSessionsPage = () => {
       setEvents(initial.events ?? []);
       setTelemetry(initial.telemetry ?? null);
       setInteractions([]);
+      setSelectedInteraction(null);
+      setInteractionFields([]);
+      setInteractionValues({});
+      setInteractionErrors({});
       pollRef.current = {
         nextSince: initial.nextSinceEventId,
         stateVersion: initial.state.stateVersion,
@@ -162,6 +422,10 @@ const FlowSessionsPage = () => {
       setEvents([]);
       setTelemetry(null);
       setInteractions([]);
+      setSelectedInteraction(null);
+      setInteractionFields([]);
+      setInteractionValues({});
+      setInteractionErrors({});
       pollRef.current = {};
     }
   }, []);
@@ -421,6 +685,118 @@ const FlowSessionsPage = () => {
     hasSession && (isStarting || isSnapshotLoading || (isPolling && !status));
   const showEventSkeleton = hasSession && isPolling && events.length === 0;
 
+  const validateInteractionForm = useCallback(() => {
+    if (!interactionFields.length) {
+      return {};
+    }
+    const errors: Record<string, string> = {};
+    interactionFields.forEach((field) => {
+      const value = interactionValues[field.name];
+      if (field.required && isEmptyValue(value)) {
+        errors[field.name] = 'Обязательное поле';
+        return;
+      }
+      if (field.control === 'json' && typeof value === 'string' && value.trim()) {
+        try {
+          JSON.parse(value);
+        } catch (error) {
+          errors[field.name] = 'Некорректный JSON: ' + (error as Error).message;
+        }
+      }
+      if (field.control === 'number' && value !== '' && value !== null && value !== undefined) {
+        const parsed = Number(value);
+        if (Number.isNaN(parsed)) {
+          errors[field.name] = 'Введите корректное число';
+        }
+      }
+    });
+    setInteractionErrors(errors);
+    return errors;
+  }, [interactionFields, interactionValues]);
+
+  const handleSubmitInteraction = useCallback(async () => {
+    if (!sessionId || !selectedInteraction) {
+      return;
+    }
+    const errors = validateInteractionForm();
+    if (errors && Object.keys(errors).length > 0) {
+      return;
+    }
+    try {
+      setInteractionSubmitting(true);
+      const payloadObject = buildSubmissionPayload(interactionFields, interactionValues);
+      const response = await respondToFlowInteraction(sessionId, selectedInteraction.requestId, {
+        chatSessionId: selectedInteraction.chatSessionId,
+        payload: payloadObject,
+      });
+      setSelectedInteraction(response);
+      const extracted = extractInteractionSchema(
+        response.payloadSchema,
+        response.response?.payload ?? {},
+      );
+      setInteractionFields(extracted.fields);
+      setInteractionValues(extracted.initialValues);
+      setInteractionErrors({});
+      await refreshInteractions();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setInteractionSubmitting(false);
+    }
+  }, [interactionFields, interactionValues, refreshInteractions, selectedInteraction, sessionId, validateInteractionForm]);
+
+  const handleSkipInteraction = useCallback(async () => {
+    if (!sessionId || !selectedInteraction) {
+      return;
+    }
+    try {
+      setInteractionSubmitting(true);
+      const response = await skipFlowInteraction(sessionId, selectedInteraction.requestId, {
+        chatSessionId: selectedInteraction.chatSessionId,
+      });
+      setSelectedInteraction(response);
+      const extracted = extractInteractionSchema(
+        response.payloadSchema,
+        response.response?.payload ?? {},
+      );
+      setInteractionFields(extracted.fields);
+      setInteractionValues(extracted.initialValues);
+      setInteractionErrors({});
+      await refreshInteractions();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setInteractionSubmitting(false);
+    }
+  }, [refreshInteractions, selectedInteraction, sessionId]);
+
+  const handleAutoResolveInteraction = useCallback(async () => {
+    if (!sessionId || !selectedInteraction) {
+      return;
+    }
+    try {
+      setInteractionSubmitting(true);
+      const response = await autoResolveFlowInteraction(
+        sessionId,
+        selectedInteraction.requestId,
+        {},
+      );
+      setSelectedInteraction(response);
+      const extracted = extractInteractionSchema(
+        response.payloadSchema,
+        response.response?.payload ?? {},
+      );
+      setInteractionFields(extracted.fields);
+      setInteractionValues(extracted.initialValues);
+      setInteractionErrors({});
+      await refreshInteractions();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setInteractionSubmitting(false);
+    }
+  }, [refreshInteractions, selectedInteraction, sessionId]);
+
   return (
     <div className="flows-page">
       <h2>Оркестрация флоу</h2>
@@ -461,6 +837,85 @@ const FlowSessionsPage = () => {
           {isStarting ? 'Запуск...' : 'Запустить флоу'}
         </button>
       </section>
+
+      {selectedInteraction && (
+        <section className="flow-section flow-interaction-panel">
+          <h3>Текущий запрос</h3>
+          <div className="flow-interaction-meta">
+            <span>
+              Статус:{' '}
+              <strong>
+                {interactionStatusLabel[selectedInteraction.status] ??
+                  selectedInteraction.status.toLowerCase()}
+              </strong>
+            </span>
+            <span>
+              Шаг: <strong>{selectedInteraction.stepId}</strong>
+            </span>
+            <span>Дедлайн: {formatDateTime(selectedInteraction.dueAt)}</span>
+          </div>
+          {selectedInteraction.response && (
+            <div className="interaction-response">
+              <header>Предыдущий ответ</header>
+              <div>
+                Источник:{' '}
+                <strong>{selectedInteraction.response.source.toLowerCase()}</strong>
+              </div>
+              {selectedInteraction.response.respondedBy && (
+                <div>Ответил: {selectedInteraction.response.respondedBy}</div>
+              )}
+              {selectedInteraction.response.respondedAt && (
+                <div>Время: {formatDateTime(selectedInteraction.response.respondedAt)}</div>
+              )}
+              {selectedInteraction.response.payload && (
+                <pre>
+                  {JSON.stringify(selectedInteraction.response.payload, null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
+          {interactionFields.length === 0 ? (
+            <p className="flow-empty flow-empty--inline">
+              Для этого запроса не требуется ввод данных — можно пропустить или
+              автозавершить.
+            </p>
+          ) : (
+            <div className="interaction-form-grid">
+              {interactionFields.map((field) => renderInteractionField(field))}
+            </div>
+          )}
+          {selectedInteraction.suggestedActions && (
+            <details className="interaction-suggested">
+              <summary>Подсказки</summary>
+              <pre>{JSON.stringify(selectedInteraction.suggestedActions, null, 2)}</pre>
+            </details>
+          )}
+          <div className="interaction-actions">
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={handleSubmitInteraction}
+              disabled={interactionSubmitting || !sessionId}
+            >
+              {interactionSubmitting ? 'Отправка...' : 'Отправить ответ'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSkipInteraction}
+              disabled={interactionSubmitting || !sessionId}
+            >
+              Пропустить
+            </button>
+            <button
+              type="button"
+              onClick={handleAutoResolveInteraction}
+              disabled={interactionSubmitting || !sessionId}
+            >
+              Авторазрешить
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="flow-section">
         <h3>Мониторинг</h3>
@@ -597,7 +1052,14 @@ const FlowSessionsPage = () => {
               ) : (
                 <ul className="flow-interactions-list">
                   {interactions.map((item) => (
-                    <li key={item.requestId} className="flow-interactions-item">
+                    <li
+                      key={item.requestId}
+                      className={`flow-interactions-item${
+                        selectedInteraction?.requestId === item.requestId
+                          ? ' flow-interactions-item--active'
+                          : ''
+                      }`}
+                    >
                       <div className="flow-interactions-item__title">
                         {item.title || interactionTypeLabel[item.type] || item.type}
                       </div>
@@ -615,6 +1077,15 @@ const FlowSessionsPage = () => {
                       {item.description && (
                         <p className="flow-interactions-item__description">{item.description}</p>
                       )}
+                      <div className="flow-interactions-item__actions">
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => handleSelectInteraction(item)}
+                        >
+                          Открыть
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -796,7 +1267,221 @@ export default FlowSessionsPage;
     try {
       const response = await fetchFlowInteractions(sessionId);
       setInteractions(response.active);
+      if (selectedInteraction) {
+        const updated = [...response.active].find(
+          (item) => item.requestId === selectedInteraction.requestId,
+        );
+        if (!updated) {
+          setSelectedInteraction((prev) => prev);
+        } else {
+          setSelectedInteraction(updated);
+          const extracted = extractInteractionSchema(
+            updated.payloadSchema,
+            updated.response?.payload ?? {},
+          );
+          setInteractionFields(extracted.fields);
+          setInteractionValues(extracted.initialValues);
+        }
+      }
     } catch (err) {
       console.warn('Не удалось обновить интерактивные запросы', err);
     }
-  }, [sessionId]);
+  }, [selectedInteraction, sessionId]);
+
+  const handleSelectInteraction = useCallback(
+    (interaction: FlowInteractionItemDto) => {
+      const extracted = extractInteractionSchema(
+        interaction.payloadSchema,
+        interaction.response?.payload ?? {},
+      );
+      setSelectedInteraction(interaction);
+      setInteractionFields(extracted.fields);
+      setInteractionValues(extracted.initialValues);
+      setInteractionErrors({});
+    },
+    [],
+  );
+
+  const handleFieldChange = useCallback((name: string, value: unknown) => {
+    setInteractionValues((prev) => ({ ...prev, [name]: value }));
+  }, []);
+
+  const handleFileChange = useCallback(
+    (name: string, files: FileList | null) => {
+      if (!files || files.length === 0) {
+        handleFieldChange(name, null);
+        return;
+      }
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = () => {
+        handleFieldChange(name, reader.result);
+      };
+      reader.onerror = () => {
+        console.error('Не удалось прочитать файл');
+      };
+      reader.readAsDataURL(file);
+    },
+    [handleFieldChange],
+  );
+
+  const renderInteractionField = useCallback(
+    (field: InteractionFormField) => {
+      const value = interactionValues[field.name];
+      const error = interactionErrors[field.name];
+      const commonProps = {
+        id: `interaction-field-${field.name}`,
+        name: field.name,
+      };
+
+      switch (field.control) {
+        case 'textarea':
+        case 'json':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <textarea
+                {...commonProps}
+                value={typeof value === 'string' ? value : ''}
+                onChange={(event) => handleFieldChange(field.name, event.target.value)}
+              />
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'number':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <input
+                {...commonProps}
+                type="number"
+                value={typeof value === 'string' ? value : ''}
+                onChange={(event) => handleFieldChange(field.name, event.target.value)}
+              />
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'select':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <select
+                {...commonProps}
+                value={typeof value === 'string' ? value : ''}
+                onChange={(event) => handleFieldChange(field.name, event.target.value)}
+              >
+                <option value="">—</option>
+                {field.enumValues?.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'multiselect':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <select
+                {...commonProps}
+                multiple
+                value={Array.isArray(value) ? (value as string[]) : []}
+                onChange={(event) => {
+                  const selected = Array.from(event.target.selectedOptions).map(
+                    (option) => option.value,
+                  );
+                  handleFieldChange(field.name, selected);
+                }}
+              >
+                {field.enumValues?.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'radio':
+          return (
+            <fieldset key={field.name} className="interaction-field">
+              <legend>
+                {field.label}
+                {field.required ? ' *' : ''}
+              </legend>
+              <div className="interaction-field__radio-group">
+                {field.enumValues?.map((option) => (
+                  <label key={option} className="interaction-field__radio">
+                    <input
+                      type="radio"
+                      name={field.name}
+                      value={option}
+                      checked={value === option}
+                      onChange={() => handleFieldChange(field.name, option)}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+              {error && <span className="interaction-field__error">{error}</span>}
+            </fieldset>
+          );
+        case 'checkbox':
+        case 'toggle':
+          return (
+            <label key={field.name} className="interaction-field interaction-field--checkbox">
+              <input
+                {...commonProps}
+                type="checkbox"
+                checked={Boolean(value)}
+                onChange={(event) => handleFieldChange(field.name, event.target.checked)}
+              />
+              <span>{field.label}</span>
+            </label>
+          );
+        case 'date':
+        case 'datetime':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <input
+                {...commonProps}
+                type={field.control === 'date' ? 'date' : 'datetime-local'}
+                value={typeof value === 'string' ? value : ''}
+                onChange={(event) => handleFieldChange(field.name, event.target.value)}
+              />
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'file':
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <input
+                {...commonProps}
+                type="file"
+                onChange={(event) => handleFileChange(field.name, event.target.files)}
+              />
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+        case 'text':
+        default:
+          return (
+            <label key={field.name} className="interaction-field">
+              {field.label}
+              <input
+                {...commonProps}
+                type="text"
+                value={typeof value === 'string' ? value : ''}
+                onChange={(event) => handleFieldChange(field.name, event.target.value)}
+              />
+              {error && <span className="interaction-field__error">{error}</span>}
+            </label>
+          );
+      }
+    },
+    [handleFieldChange, handleFileChange, interactionErrors, interactionValues],
+  );

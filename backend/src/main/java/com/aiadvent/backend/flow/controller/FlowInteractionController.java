@@ -145,6 +145,7 @@ public class FlowInteractionController {
 
     return new FlowInteractionItemResponse(
         request.getId(),
+        request.getChatSessionId(),
         request.getFlowStepExecution().getStepId(),
         request.getStatus(),
         request.getType(),
