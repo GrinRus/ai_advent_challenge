@@ -7,10 +7,13 @@ import {
   respondToFlowInteraction,
   skipFlowInteraction,
   autoResolveFlowInteraction,
+  expireFlowInteraction,
   pollFlowStatus,
   sendFlowControlCommand,
   startFlow,
   subscribeToFlowEvents,
+  type FlowSuggestedAction,
+  type FlowSuggestedActions,
 } from '../lib/apiClient';
 import type {
   FlowControlCommand,
@@ -24,6 +27,7 @@ import './FlowSessions.css';
 import {
   extractInteractionSchema,
   buildSubmissionPayload,
+  computeSuggestedActionUpdates,
   type InteractionFormField,
 } from '../lib/interactionSchema';
 
@@ -758,6 +762,91 @@ const FlowSessionsPage = () => {
 
   const hasSharedContext = status?.sharedContext !== undefined && status?.sharedContext !== null;
 
+  const suggestedActions: FlowSuggestedActions | null =
+    selectedInteraction?.suggestedActions ?? null;
+  const hasSuggestedActions = Boolean(
+    (suggestedActions?.ruleBased?.length ?? 0) +
+      (suggestedActions?.llm?.length ?? 0) +
+      (suggestedActions?.analytics?.length ?? 0),
+  );
+
+  const handleApplySuggestedAction = useCallback(
+    (action: FlowSuggestedAction) => {
+      if (!interactionFields.length) {
+        showToast('Для этого запроса нет полей для применения действия');
+        return;
+      }
+
+      const { updates, appliedFields } = computeSuggestedActionUpdates(
+        interactionFields,
+        action.payload,
+      );
+
+      if (!appliedFields.length) {
+        showToast('Не удалось сопоставить данные действия с полями формы');
+        return;
+      }
+
+      setInteractionValues((prev) => ({ ...prev, ...updates }));
+      setInteractionErrors((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const next = { ...prev };
+        appliedFields.forEach((key) => {
+          delete next[key];
+        });
+        return next;
+      });
+      showToast(`Действие «${action.label}» применено`);
+    },
+    [
+      interactionFields,
+      setInteractionErrors,
+      setInteractionValues,
+      showToast,
+    ],
+  );
+
+  const renderSuggestedActionGroup = useCallback(
+    (title: string, actions: FlowSuggestedAction[], variant: 'primary' | 'secondary') => (
+      <div className={`interaction-suggested__group interaction-suggested__group--${variant}`}>
+        <header className="interaction-suggested__header">
+          <span>{title}</span>
+          {variant === 'secondary' && (
+            <span className="interaction-suggested__badge" aria-label="AI recommendation">
+              AI
+            </span>
+          )}
+        </header>
+        <ul className="interaction-suggested__list">
+          {actions.map((item) => (
+            <li key={`${item.source}:${item.id}`}>
+              <div className="interaction-action">
+                <div className="interaction-action__text">
+                  <div className="interaction-action__title">{item.label}</div>
+                  {item.description && (
+                    <p className="interaction-action__description">{item.description}</p>
+                  )}
+                </div>
+                <div className="interaction-action__controls">
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => handleApplySuggestedAction(item)}
+                  >
+                    {item.ctaLabel ?? 'Применить'}
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ),
+    [handleApplySuggestedAction],
+  );
+
   useEffect(() => {
     if (!retryStepId && latestStepId) {
       setRetryStepId(latestStepId);
@@ -878,6 +967,7 @@ const FlowSessionsPage = () => {
       const response = await autoResolveFlowInteraction(
         sessionId,
         selectedInteraction.requestId,
+        selectedInteraction.chatSessionId,
         {},
       );
       setSelectedInteraction(response);
@@ -889,6 +979,35 @@ const FlowSessionsPage = () => {
       setInteractionValues(extracted.initialValues);
       setInteractionErrors({});
       showToast('Запрос автозавершён');
+      await refreshInteractions();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setInteractionSubmitting(false);
+    }
+  }, [refreshInteractions, selectedInteraction, sessionId, showToast]);
+
+  const handleExpireInteraction = useCallback(async () => {
+    if (!sessionId || !selectedInteraction) {
+      return;
+    }
+    try {
+      setInteractionSubmitting(true);
+      const response = await expireFlowInteraction(
+        sessionId,
+        selectedInteraction.requestId,
+        selectedInteraction.chatSessionId,
+        {},
+      );
+      setSelectedInteraction(response);
+      const extracted = extractInteractionSchema(
+        response.payloadSchema,
+        response.response?.payload ?? {},
+      );
+      setInteractionFields(extracted.fields);
+      setInteractionValues(extracted.initialValues);
+      setInteractionErrors({});
+      showToast('Запрос помечен как просроченный');
       await refreshInteractions();
     } catch (error) {
       setError((error as Error).message);
@@ -984,11 +1103,23 @@ const FlowSessionsPage = () => {
               {interactionFields.map<ReactNode>((field) => renderInteractionField(field))}
             </div>
           )}
-          {selectedInteraction.suggestedActions != null ? (
-            <details className="interaction-suggested">
-              <summary>Подсказки</summary>
-              <pre>{JSON.stringify(selectedInteraction.suggestedActions, null, 2) ?? ''}</pre>
-            </details>
+          {hasSuggestedActions ? (
+            <div className="interaction-suggested">
+              {suggestedActions?.ruleBased?.length
+                ? renderSuggestedActionGroup('Доступные действия', suggestedActions.ruleBased, 'primary')
+                : null}
+              {suggestedActions?.llm?.length
+                ? renderSuggestedActionGroup('Рекомендации AI', suggestedActions.llm, 'secondary')
+                : null}
+              {suggestedActions?.analytics?.length
+                ? renderSuggestedActionGroup('Подсказки аналитики', suggestedActions.analytics, 'secondary')
+                : null}
+              {suggestedActions?.filtered?.length ? (
+                <p className="interaction-suggested__note">
+                  {`Отфильтровано ${suggestedActions.filtered.length} рекомендаций, не входящих в allowlist.`}
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <div className="interaction-actions">
             <button
@@ -1012,6 +1143,13 @@ const FlowSessionsPage = () => {
               disabled={interactionSubmitting || !sessionId}
             >
               Авторазрешить
+            </button>
+            <button
+              type="button"
+              onClick={handleExpireInteraction}
+              disabled={interactionSubmitting || !sessionId}
+            >
+              Истёк SLA
             </button>
           </div>
         </section>

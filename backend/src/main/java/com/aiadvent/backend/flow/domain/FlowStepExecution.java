@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -43,6 +44,10 @@ public class FlowStepExecution {
 
   @Column(name = "attempt", nullable = false)
   private int attempt = 1;
+
+  @OneToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "interaction_request_id")
+  private FlowInteractionRequest interactionRequest;
 
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "agent_version_id")
@@ -139,6 +144,14 @@ public class FlowStepExecution {
 
   public void setAgentVersion(AgentVersion agentVersion) {
     this.agentVersion = agentVersion;
+  }
+
+  public FlowInteractionRequest getInteractionRequest() {
+    return interactionRequest;
+  }
+
+  public void setInteractionRequest(FlowInteractionRequest interactionRequest) {
+    this.interactionRequest = interactionRequest;
   }
 
   public String getPrompt() {

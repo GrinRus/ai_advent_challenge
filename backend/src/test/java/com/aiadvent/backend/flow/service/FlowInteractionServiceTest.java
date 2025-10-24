@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -32,7 +33,9 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
 import java.util.Optional;
@@ -51,6 +54,7 @@ class FlowInteractionServiceTest {
   private FlowTelemetryService telemetry;
   private ObjectMapper objectMapper;
   private FlowInteractionSchemaValidator schemaValidator;
+  private SuggestedActionsSanitizer suggestedActionsSanitizer;
 
   private FlowInteractionService flowInteractionService;
 
@@ -65,6 +69,7 @@ class FlowInteractionServiceTest {
     telemetry = mock(FlowTelemetryService.class);
     objectMapper = new ObjectMapper();
     schemaValidator = new FlowInteractionSchemaValidator();
+    suggestedActionsSanitizer = new SuggestedActionsSanitizer(objectMapper);
 
     flowInteractionService =
         new FlowInteractionService(
@@ -76,7 +81,8 @@ class FlowInteractionServiceTest {
             jobQueuePort,
             telemetry,
             objectMapper,
-            schemaValidator);
+            schemaValidator,
+            suggestedActionsSanitizer);
   }
 
   @Test
@@ -136,8 +142,94 @@ class FlowInteractionServiceTest {
     assertThat(request.getDueAt()).isNotNull();
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.WAITING_USER_INPUT);
     assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.WAITING_USER_INPUT);
+    assertThat(stepExecution.getInteractionRequest()).isEqualTo(request);
     verify(flowEventRepository).save(any(FlowEvent.class));
     verify(telemetry).interactionCreated(request.getId());
+  }
+
+  @Test
+  void ensureRequestSanitizesSuggestedActions() {
+    FlowSession session =
+        new FlowSession(mock(com.aiadvent.backend.flow.domain.FlowDefinition.class), 1, FlowSessionStatus.RUNNING, 0L, 0L);
+    UUID sessionId = UUID.randomUUID();
+    setField(session, "id", sessionId);
+    session.setChatSessionId(UUID.randomUUID());
+
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, "collect", FlowStepStatus.PENDING, 1);
+    setField(stepExecution, "id", UUID.randomUUID());
+
+    AgentVersion agentVersion =
+        new AgentVersion(
+            new AgentDefinition("agent", "Agent", null, true),
+            1,
+            AgentVersionStatus.PUBLISHED,
+            com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    setField(agentVersion, "id", UUID.randomUUID());
+
+    ObjectNode suggested = objectMapper.createObjectNode();
+    ArrayNode ruleBased = suggested.putArray("ruleBased");
+    ObjectNode approve = ruleBased.addObject();
+    approve.put("id", "approve");
+    approve.put("label", "Approve");
+
+    ArrayNode allow = suggested.putArray("allow");
+    allow.add("approve");
+
+    ArrayNode llm = suggested.putArray("llm");
+    ObjectNode discount = llm.addObject();
+    discount.put("id", "discount");
+    discount.put("label", "Offer discount");
+
+    FlowInteractionConfig config =
+        new FlowInteractionConfig(
+            com.aiadvent.backend.flow.domain.FlowInteractionType.APPROVAL,
+            "Confirm",
+            "Approve action",
+            objectMapper.createObjectNode(),
+            suggested,
+            15);
+
+    when(requestRepository.findByFlowStepExecutionId(stepExecution.getId()))
+        .thenReturn(Optional.empty());
+    when(requestRepository.save(any(FlowInteractionRequest.class)))
+        .thenAnswer(
+            invocation -> {
+              FlowInteractionRequest req = invocation.getArgument(0);
+              setField(req, "id", UUID.randomUUID());
+              return req;
+            });
+    when(flowEventRepository.save(any(FlowEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowSessionRepository)
+        .save(any(FlowSession.class));
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowStepExecutionRepository)
+        .save(any(FlowStepExecution.class));
+
+    FlowInteractionRequest request =
+        flowInteractionService.ensureRequest(session, stepExecution, config, agentVersion);
+
+    JsonNode sanitized = request.getSuggestedActions();
+    assertThat(sanitized).isNotNull();
+    JsonNode ruleBasedRaw = sanitized.get("ruleBased");
+    assertThat(ruleBasedRaw).isNotNull();
+    ArrayNode ruleBasedNode = (ArrayNode) ruleBasedRaw;
+    assertThat(ruleBasedNode.size()).isEqualTo(1);
+    JsonNode ruleBasedAction = ruleBasedNode.get(0);
+    assertThat(ruleBasedAction.path("id").asText()).isEqualTo("approve");
+    assertThat(ruleBasedAction.path("source").asText()).isEqualTo("ruleBased");
+
+    JsonNode llmNode = sanitized.get("llm");
+    assertThat(llmNode == null || (llmNode.isArray() && llmNode.size() == 0)).isTrue();
+
+    JsonNode filteredRaw = sanitized.get("filtered");
+    assertThat(filteredRaw).isNotNull();
+    ArrayNode filteredNode = (ArrayNode) filteredRaw;
+    assertThat(filteredNode.size()).isEqualTo(1);
+    assertThat(filteredNode.get(0).path("id").asText()).isEqualTo("discount");
   }
 
   @Test
@@ -167,6 +259,7 @@ class FlowInteractionServiceTest {
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
+    stepExecution.setInteractionRequest(request);
 
     when(requestRepository.findById(request.getId())).thenReturn(Optional.of(request));
     when(responseRepository.existsByRequest(request)).thenReturn(false);
@@ -195,6 +288,7 @@ class FlowInteractionServiceTest {
     assertThat(request.getStatus()).isEqualTo(FlowInteractionStatus.ANSWERED);
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
     assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.PENDING);
+    assertThat(stepExecution.getInteractionRequest()).isNull();
     verify(jobQueuePort)
         .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
     verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.ANSWERED));
@@ -225,6 +319,7 @@ class FlowInteractionServiceTest {
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
+    execution.setInteractionRequest(request);
 
     when(requestRepository.findByFlowSessionAndStatus(session, FlowInteractionStatus.PENDING))
         .thenReturn(java.util.List.of(request));
@@ -245,9 +340,125 @@ class FlowInteractionServiceTest {
 
     assertThat(request.getStatus()).isEqualTo(FlowInteractionStatus.AUTO_RESOLVED);
     assertThat(execution.getStatus()).isEqualTo(FlowStepStatus.CANCELLED);
+    assertThat(execution.getInteractionRequest()).isNull();
     verify(jobQueuePort, never())
         .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
     verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.AUTO_RESOLVED));
+  }
+
+  @Test
+  void expireMovesRequestToExpiredAndResumesStep() {
+    FlowSession session =
+        new FlowSession(mock(com.aiadvent.backend.flow.domain.FlowDefinition.class), 1, FlowSessionStatus.WAITING_USER_INPUT, 0L, 0L);
+    UUID sessionId = UUID.randomUUID();
+    setField(session, "id", sessionId);
+
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
+    UUID stepExecutionId = UUID.randomUUID();
+    setField(stepExecution, "id", stepExecutionId);
+
+    FlowInteractionRequest request =
+        new FlowInteractionRequest(
+            session,
+            stepExecution,
+            UUID.randomUUID(),
+            new AgentVersion(
+                new AgentDefinition("agent", "Agent", null, true),
+                1,
+                AgentVersionStatus.PUBLISHED,
+                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+                "openai",
+                "gpt-4o-mini"),
+            com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
+            FlowInteractionStatus.PENDING);
+    setField(request, "id", UUID.randomUUID());
+    request.setDueAt(Instant.now().minusSeconds(60));
+    stepExecution.setInteractionRequest(request);
+
+    when(requestRepository.findById(request.getId())).thenReturn(Optional.of(request));
+    when(responseRepository.existsByRequest(request)).thenReturn(false);
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowSessionRepository)
+        .save(any(FlowSession.class));
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowStepExecutionRepository)
+        .save(any(FlowStepExecution.class));
+    when(responseRepository.save(any(FlowInteractionResponse.class)))
+        .thenAnswer(invocation -> {
+          FlowInteractionResponse response = invocation.getArgument(0);
+          setField(response, "id", UUID.randomUUID());
+          return response;
+        });
+
+    FlowInteractionResponse response =
+        flowInteractionService.expire(sessionId, request.getId(), FlowInteractionResponseSource.SYSTEM, null);
+
+    assertThat(response).isNotNull();
+    assertThat(request.getStatus()).isEqualTo(FlowInteractionStatus.EXPIRED);
+    assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
+    assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.PENDING);
+    assertThat(stepExecution.getInteractionRequest()).isNull();
+    verify(jobQueuePort)
+        .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
+    verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.EXPIRED));
+  }
+
+  @Test
+  void expireOverdueRequestsHandlesPendingInteractions() {
+    FlowSession session =
+        new FlowSession(mock(com.aiadvent.backend.flow.domain.FlowDefinition.class), 1, FlowSessionStatus.WAITING_USER_INPUT, 0L, 0L);
+    UUID sessionId = UUID.randomUUID();
+    setField(session, "id", sessionId);
+
+    FlowStepExecution stepExecution =
+        new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
+    setField(stepExecution, "id", UUID.randomUUID());
+
+    FlowInteractionRequest request =
+        new FlowInteractionRequest(
+            session,
+            stepExecution,
+            UUID.randomUUID(),
+            new AgentVersion(
+                new AgentDefinition("agent", "Agent", null, true),
+                1,
+                AgentVersionStatus.PUBLISHED,
+                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+                "openai",
+                "gpt-4o-mini"),
+            com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
+            FlowInteractionStatus.PENDING);
+    setField(request, "id", UUID.randomUUID());
+    request.setDueAt(Instant.now().minusSeconds(120));
+    stepExecution.setInteractionRequest(request);
+
+    when(requestRepository.findDueRequests(eq(FlowInteractionStatus.PENDING), any(Instant.class)))
+        .thenReturn(java.util.List.of(request));
+    when(requestRepository.findById(request.getId())).thenReturn(Optional.of(request));
+    when(responseRepository.existsByRequest(request)).thenReturn(false);
+    when(responseRepository.save(any(FlowInteractionResponse.class)))
+        .thenAnswer(invocation -> {
+          FlowInteractionResponse response = invocation.getArgument(0);
+          setField(response, "id", UUID.randomUUID());
+          return response;
+        });
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowSessionRepository)
+        .save(any(FlowSession.class));
+    doAnswer(invocation -> invocation.getArgument(0))
+        .when(flowStepExecutionRepository)
+        .save(any(FlowStepExecution.class));
+
+    int processed = flowInteractionService.expireOverdueRequests(Instant.now());
+
+    assertThat(processed).isEqualTo(1);
+    assertThat(request.getStatus()).isEqualTo(FlowInteractionStatus.EXPIRED);
+    assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.PENDING);
+    verify(jobQueuePort)
+        .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
+    verify(telemetry, atLeastOnce())
+        .interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.EXPIRED));
   }
 
   @Test

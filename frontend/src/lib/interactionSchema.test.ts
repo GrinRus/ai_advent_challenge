@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractInteractionSchema,
   buildSubmissionPayload,
+  computeSuggestedActionUpdates,
   type InteractionFormField,
 } from './interactionSchema';
 
@@ -90,5 +91,46 @@ describe('interaction schema helpers', () => {
       { name: 'config', label: 'Config', control: 'json', required: false },
     ];
     expect(() => buildSubmissionPayload(jsonField, { config: '{oops}' })).toThrow();
+  });
+
+  it('computes suggested action updates for object payloads', () => {
+    const fields: InteractionFormField[] = [
+      { name: 'reason', label: 'Reason', control: 'text', required: true },
+      { name: 'count', label: 'Count', control: 'number', required: false },
+    ];
+
+    const { updates, appliedFields } = computeSuggestedActionUpdates(fields, {
+      reason: 'approve',
+      count: 3,
+      ignored: 'value',
+    });
+
+    expect(updates).toEqual({ reason: 'approve', count: '3' });
+    expect(appliedFields).toEqual(['reason', 'count']);
+  });
+
+  it('computes suggested action update for scalar payload', () => {
+    const fields: InteractionFormField[] = [
+      { name: 'decision', label: 'Decision', control: 'select', required: true },
+    ];
+
+    const { updates, appliedFields } = computeSuggestedActionUpdates(fields, 'approve');
+
+    expect(updates).toEqual({ decision: 'approve' });
+    expect(appliedFields).toEqual(['decision']);
+  });
+
+  it('returns empty updates when payload cannot be mapped', () => {
+    const fields: InteractionFormField[] = [
+      { name: 'comment', label: 'Comment', control: 'text', required: false },
+      { name: 'due', label: 'Due', control: 'datetime', required: false },
+    ];
+
+    const { updates, appliedFields } = computeSuggestedActionUpdates(fields, {
+      unknown: 'value',
+    });
+
+    expect(updates).toEqual({});
+    expect(appliedFields).toHaveLength(0);
   });
 });

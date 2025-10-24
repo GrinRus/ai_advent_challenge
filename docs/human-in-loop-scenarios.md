@@ -132,3 +132,107 @@
 - **Rule-based конфигурация** — статически описываем список действий на уровне `AgentVersion`/шага. Обеспечивает предсказуемость и простое ревью, но требует ручного обновления.
 - **LLM-подсказки** — агент формирует кандидатов в ходе промпта, backend фильтрует через allowlist и отображает итог. Подходит, когда спектр действий динамичен и зависит от контекста шага.
 - **Data-driven рекомендации** — агрегируем ответы из `flow_interaction_response`, строим top-N действий по типу шага и выдаём их как предложения. Повышает релевантность, но требует аналитической витрины и контроля качества.
+
+## Примеры конфигурации
+
+### Шаг с формой ввода
+```jsonc
+{
+  "id": "collect_parameters",
+  "name": "Сбор параметров",
+  "agentVersionId": "dcdee5be-4ee3-4cfc-8f81-6bf328fa9157",
+  "prompt": "Уточни параметры доставки у оператора",
+  "interaction": {
+    "type": "INPUT_FORM",
+    "title": "Нужны параметры доставки",
+    "description": "Укажите адрес и дедлайн, чтобы агент мог оформить доставку.",
+    "dueInMinutes": 30,
+    "payloadSchema": {
+      "type": "object",
+      "required": ["city", "deadline"],
+      "properties": {
+        "city": {
+          "type": "string",
+          "title": "Город",
+          "format": "textarea",
+          "minLength": 2
+        },
+        "deadline": {
+          "type": "string",
+          "title": "Дедлайн",
+          "format": "date-time"
+        },
+        "comment": {
+          "type": "string",
+          "title": "Комментарий",
+          "format": "textarea"
+        }
+      }
+    },
+    "suggestedActions": {
+      "allow": ["confirm", "cancel"],
+      "ruleBased": [
+        {
+          "id": "confirm",
+          "label": "Подтвердить параметры",
+          "description": "Передать параметры агенту и продолжить сценарий.",
+          "payload": {"decision": "confirm"}
+        },
+        {
+          "id": "cancel",
+          "label": "Отменить запрос",
+          "payload": {"decision": "cancel"}
+        }
+      ],
+      "llm": [
+        {
+          "id": "reschedule",
+          "label": "Предложить новую дату",
+          "description": "LLM рекомендует перенести доставку на 1 день",
+          "payload": {"decision": "reschedule", "shiftDays": 1}
+        }
+      ]
+    }
+  },
+  "transitions": {
+    "onSuccess": {"next": "confirm_order"},
+    "onFailure": {"next": "manual_review", "fail": false}
+  }
+}
+```
+
+### Быстрое подтверждение шага
+```jsonc
+"interaction": {
+  "type": "APPROVAL",
+  "title": "Подтвердите действия агента",
+  "description": "Агент готов списать бонусы и оформить скидку 10%.",
+  "dueInMinutes": 10,
+  "payloadSchema": {
+    "type": "object",
+    "properties": {
+      "comment": {"type": "string", "title": "Комментарий"}
+    }
+  },
+  "suggestedActions": {
+    "allow": ["approve", "decline"],
+    "ruleBased": [
+      {"id": "approve", "label": "Одобрить", "payload": {"decision": "approve"}},
+      {"id": "decline", "label": "Отклонить", "payload": {"decision": "decline"}}
+    ]
+  }
+}
+```
+
+### Рекомендации по контенту
+- Заголовок: отвечает на вопрос «что нужно сделать».  
+- Описание: 1–2 предложения, подчёркивающие риск/ценность.  
+- Подсказки: rule-based должны дублировать обязательные сценарии. AI-кандидаты должны содержать payload, совместимый со схемой, иначе будут отброшены sanitizer’ом.
+
+### Чек-лист перед релизом
+- [ ] Проверена схема формы (`FlowInteractionSchemaValidator`).  
+- [ ] SLA согласован, `dueInMinutes` обновлён.  
+- [ ] Rule-based действия покрывают основные сценарии.  
+- [ ] AI/analytics подсказки перечислены в allowlist.  
+- [ ] Добавлены unit- и e2e-тесты, обновлена документация (`docs/infra.md`, `docs/processes.md`, `docs/runbooks/human-in-loop.md`).  
+- [ ] Поля формы не содержат необезличенные PII; при необходимости предусмотрена маскировка/удаление после завершения шага.

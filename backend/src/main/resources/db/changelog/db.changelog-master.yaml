@@ -1137,3 +1137,25 @@ databaseChangeLog:
             columns:
               - column:
                   name: chat_session_id
+  - changeSet:
+      id: 0014-add-interaction-request-reference-to-step
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: flow_step_execution
+            columns:
+              - column:
+                  name: interaction_request_id
+                  type: UUID
+        - addForeignKeyConstraint:
+            baseTableName: flow_step_execution
+            baseColumnNames: interaction_request_id
+            referencedTableName: flow_interaction_request
+            referencedColumnNames: id
+            constraintName: fk_flow_step_execution_interaction
+            onDelete: SET NULL
+        - addUniqueConstraint:
+            tableName: flow_step_execution
+            columnNames: interaction_request_id
+            constraintName: uq_flow_step_execution_interaction

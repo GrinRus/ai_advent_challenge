@@ -265,6 +265,29 @@ export type FlowInteractionResponseSummaryDto = {
   payload?: unknown;
 };
 
+export type FlowSuggestedAction = {
+  id: string;
+  label: string;
+  source: 'ruleBased' | 'llm' | 'analytics' | string;
+  description?: string | null;
+  ctaLabel?: string | null;
+  payload?: unknown;
+};
+
+export type FlowSuggestedActionFilter = {
+  id?: string;
+  source?: string;
+  reason: string;
+};
+
+export type FlowSuggestedActions = {
+  ruleBased: FlowSuggestedAction[];
+  llm?: FlowSuggestedAction[];
+  analytics?: FlowSuggestedAction[];
+  allow?: string[];
+  filtered?: FlowSuggestedActionFilter[];
+};
+
 export type FlowInteractionItemDto = {
   requestId: string;
   chatSessionId: string;
@@ -274,7 +297,7 @@ export type FlowInteractionItemDto = {
   title?: string | null;
   description?: string | null;
   payloadSchema?: unknown;
-  suggestedActions?: unknown;
+  suggestedActions?: FlowSuggestedActions | null;
   createdAt: string;
   updatedAt: string;
   dueAt?: string | null;
@@ -911,6 +934,7 @@ export async function respondToFlowInteraction(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-Chat-Session-Id': payload.chatSessionId,
       },
       body: JSON.stringify(payload),
     },
@@ -934,6 +958,7 @@ export async function skipFlowInteraction(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-Chat-Session-Id': payload.chatSessionId,
       },
       body: JSON.stringify(payload),
     },
@@ -948,6 +973,7 @@ export async function skipFlowInteraction(
 export async function autoResolveFlowInteraction(
   sessionId: string,
   requestId: string,
+  chatSessionId: string,
   payload: FlowInteractionAutoResolvePayload = {},
 ): Promise<FlowInteractionItemDto> {
   const response = await fetch(
@@ -957,6 +983,7 @@ export async function autoResolveFlowInteraction(
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        'X-Chat-Session-Id': chatSessionId,
       },
       body: JSON.stringify(payload),
     },
@@ -965,6 +992,31 @@ export async function autoResolveFlowInteraction(
   return handleJsonResponse<FlowInteractionItemDto>(
     response,
     'Не удалось автозавершить запрос',
+  );
+}
+
+export async function expireFlowInteraction(
+  sessionId: string,
+  requestId: string,
+  chatSessionId: string,
+  payload: FlowInteractionAutoResolvePayload = {},
+): Promise<FlowInteractionItemDto> {
+  const response = await fetch(
+    `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/expire`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Chat-Session-Id': chatSessionId,
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return handleJsonResponse<FlowInteractionItemDto>(
+    response,
+    'Не удалось пометить запрос как просроченный',
   );
 }
 

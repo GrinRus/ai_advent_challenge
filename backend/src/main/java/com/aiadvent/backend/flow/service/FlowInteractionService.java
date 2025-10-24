@@ -47,6 +47,7 @@ public class FlowInteractionService {
   private final FlowTelemetryService telemetry;
   private final ObjectMapper objectMapper;
   private final FlowInteractionSchemaValidator schemaValidator;
+  private final SuggestedActionsSanitizer suggestedActionsSanitizer;
 
   public FlowInteractionService(
       FlowInteractionRequestRepository requestRepository,
@@ -57,7 +58,8 @@ public class FlowInteractionService {
       JobQueuePort jobQueuePort,
       FlowTelemetryService telemetry,
       ObjectMapper objectMapper,
-      FlowInteractionSchemaValidator schemaValidator) {
+      FlowInteractionSchemaValidator schemaValidator,
+      SuggestedActionsSanitizer suggestedActionsSanitizer) {
     this.requestRepository = requestRepository;
     this.responseRepository = responseRepository;
     this.flowSessionRepository = flowSessionRepository;
@@ -67,6 +69,7 @@ public class FlowInteractionService {
     this.telemetry = telemetry;
     this.objectMapper = objectMapper;
     this.schemaValidator = schemaValidator;
+    this.suggestedActionsSanitizer = suggestedActionsSanitizer;
   }
 
   @Transactional(readOnly = true)
@@ -152,6 +155,37 @@ public class FlowInteractionService {
   }
 
   @Transactional
+  public FlowInteractionResponse expire(
+      UUID sessionId,
+      UUID requestId,
+      FlowInteractionResponseSource source,
+      UUID respondedBy) {
+
+    FlowInteractionRequest request =
+        requestRepository
+            .findById(requestId)
+            .orElseThrow(() -> new IllegalArgumentException("Interaction request not found: " + requestId));
+
+    if (!request.getFlowSession().getId().equals(sessionId)) {
+      throw new IllegalArgumentException(
+          "Interaction request " + requestId + " does not belong to session " + sessionId);
+    }
+
+    FlowInteractionResponseSource effectiveSource =
+        source != null ? source : FlowInteractionResponseSource.SYSTEM;
+
+    return recordResponse(
+        requestId,
+        request.getChatSessionId(),
+        respondedBy,
+        null,
+        effectiveSource,
+        FlowInteractionStatus.EXPIRED,
+        FlowEventType.HUMAN_INTERACTION_EXPIRED,
+        true);
+  }
+
+  @Transactional
   public FlowInteractionResponse respond(
       UUID sessionId,
       UUID requestId,
@@ -193,6 +227,37 @@ public class FlowInteractionService {
   }
 
   @Transactional
+  public int expireOverdueRequests() {
+    return expireOverdueRequests(Instant.now());
+  }
+
+  @Transactional
+  public int expireOverdueRequests(Instant deadline) {
+    Instant effectiveDeadline = deadline != null ? deadline : Instant.now();
+    java.util.List<FlowInteractionRequest> due =
+        requestRepository.findDueRequests(FlowInteractionStatus.PENDING, effectiveDeadline);
+
+    int processed = 0;
+    for (FlowInteractionRequest request : due) {
+      try {
+        expire(
+            request.getFlowSession().getId(),
+            request.getId(),
+            FlowInteractionResponseSource.SYSTEM,
+            null);
+        processed++;
+      } catch (IllegalStateException | IllegalArgumentException exception) {
+        log.warn(
+            "Failed to expire interaction {} for session {}: {}",
+            request.getId(),
+            request.getFlowSession().getId(),
+            exception.getMessage());
+      }
+    }
+    return processed;
+  }
+
+  @Transactional
   public FlowInteractionRequest ensureRequest(
       FlowSession session,
       FlowStepExecution stepExecution,
@@ -205,6 +270,10 @@ public class FlowInteractionService {
     if (existing.isPresent()) {
       FlowInteractionRequest request = existing.get();
       if (request.getStatus() == FlowInteractionStatus.PENDING) {
+        if (stepExecution.getInteractionRequest() == null) {
+          stepExecution.setInteractionRequest(request);
+          flowStepExecutionRepository.save(stepExecution);
+        }
         return request;
       }
       if (request.getStatus() == FlowInteractionStatus.ANSWERED
@@ -230,7 +299,7 @@ public class FlowInteractionService {
     request.setTitle(config.title());
     request.setDescription(config.description());
     request.setPayloadSchema(cloneNode(config.payloadSchema()));
-    request.setSuggestedActions(cloneNode(config.suggestedActions()));
+    request.setSuggestedActions(sanitizeSuggestedActions(config.suggestedActions()));
     if (config.dueInMinutes() != null) {
       request.setDueAt(Instant.now().plus(Duration.ofMinutes(config.dueInMinutes())));
     }
@@ -238,6 +307,7 @@ public class FlowInteractionService {
     request = requestRepository.save(request);
 
     stepExecution.setStatus(FlowStepStatus.WAITING_USER_INPUT);
+    stepExecution.setInteractionRequest(request);
     flowStepExecutionRepository.save(stepExecution);
 
     session.setStatus(FlowSessionStatus.WAITING_USER_INPUT);
@@ -274,9 +344,7 @@ public class FlowInteractionService {
       FlowEventType eventType,
       boolean resumeStep) {
 
-    if (finalStatus == null
-        || finalStatus == FlowInteractionStatus.PENDING
-        || finalStatus == FlowInteractionStatus.EXPIRED) {
+    if (finalStatus == null || finalStatus == FlowInteractionStatus.PENDING) {
       throw new IllegalArgumentException("Unsupported final status for response: " + finalStatus);
     }
 
@@ -317,6 +385,7 @@ public class FlowInteractionService {
       stepExecution.setStatus(FlowStepStatus.PENDING);
       stepExecution.setInputPayload(
           mergeInteractionResponse(stepExecution.getInputPayload(), request, payload, source, finalStatus));
+      stepExecution.setInteractionRequest(null);
       flowStepExecutionRepository.save(stepExecution);
 
       session.setStatus(FlowSessionStatus.RUNNING);
@@ -325,6 +394,7 @@ public class FlowInteractionService {
     } else {
       stepExecution.setStatus(FlowStepStatus.CANCELLED);
       stepExecution.setCompletedAt(Instant.now());
+      stepExecution.setInteractionRequest(null);
       flowStepExecutionRepository.save(stepExecution);
       flowSessionRepository.save(session);
     }
@@ -437,5 +507,13 @@ public class FlowInteractionService {
       return null;
     }
     return node.deepCopy();
+  }
+
+  private JsonNode sanitizeSuggestedActions(JsonNode raw) {
+    if (raw == null || raw.isNull()) {
+      return null;
+    }
+    JsonNode sanitized = suggestedActionsSanitizer.sanitize(raw);
+    return sanitized != null ? sanitized.deepCopy() : null;
   }
 }

@@ -24,4 +24,10 @@ public interface FlowInteractionRequestRepository
   Optional<FlowInteractionRequest> findByFlowStepExecutionId(UUID stepExecutionId);
 
   List<FlowInteractionRequest> findByFlowSessionIdOrderByCreatedAtDesc(UUID flowSessionId);
+
+  @Query(
+      "select r from FlowInteractionRequest r "
+          + "where r.status = :status and r.dueAt is not null and r.dueAt <= :deadline")
+  List<FlowInteractionRequest> findDueRequests(
+      FlowInteractionStatus status, java.time.Instant deadline);
 }

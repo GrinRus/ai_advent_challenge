@@ -96,6 +96,11 @@ const deriveInitialValue = (control: FormControlType, payload: unknown): unknown
   }
 };
 
+export const formatValueForField = (
+  field: InteractionFormField,
+  payload: unknown,
+): unknown => deriveInitialValue(field.control, payload);
+
 export const extractInteractionSchema = (
   schema: unknown,
   existingPayload?: unknown,
@@ -239,4 +244,33 @@ export const __test_utils = {
   deriveInitialValue,
   coerceValueForSubmit,
   isEmptyValue,
+};
+
+export const computeSuggestedActionUpdates = (
+  fields: InteractionFormField[],
+  rawPayload: unknown,
+): { updates: Record<string, unknown>; appliedFields: string[] } => {
+  const updates: Record<string, unknown> = {};
+  const applied: string[] = [];
+
+  if (rawPayload !== null
+      && typeof rawPayload === 'object'
+      && !Array.isArray(rawPayload)) {
+    const payloadRecord = rawPayload as Record<string, unknown>;
+    fields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(payloadRecord, field.name)) {
+        updates[field.name] = formatValueForField(field, payloadRecord[field.name]);
+        applied.push(field.name);
+      }
+    });
+    return { updates, appliedFields: applied };
+  }
+
+  if (fields.length === 1) {
+    const field = fields[0];
+    updates[field.name] = formatValueForField(field, rawPayload);
+    applied.push(field.name);
+  }
+
+  return { updates, appliedFields: applied };
 };

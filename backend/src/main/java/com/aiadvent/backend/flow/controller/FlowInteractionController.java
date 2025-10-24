@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -61,10 +62,18 @@ public class FlowInteractionController {
   public FlowInteractionItemResponse respond(
       @PathVariable UUID sessionId,
       @PathVariable UUID requestId,
+      @RequestHeader("X-Chat-Session-Id") UUID chatSessionIdHeader,
       @RequestBody FlowInteractionRespondRequest request) {
 
     if (request == null || request.chatSessionId() == null) {
       throw new IllegalArgumentException("chatSessionId is required");
+    }
+
+    FlowInteractionRequest interaction =
+        requireChatSession(sessionId, requestId, chatSessionIdHeader);
+
+    if (!interaction.getChatSessionId().equals(request.chatSessionId())) {
+      throw new IllegalArgumentException("chatSessionId in body must match header value");
     }
 
     FlowInteractionResponseSource source =
@@ -73,7 +82,7 @@ public class FlowInteractionController {
     flowInteractionService.respond(
         sessionId,
         requestId,
-        request.chatSessionId(),
+        chatSessionIdHeader,
         request.respondedBy(),
         sanitizePayload(request.payload()),
         source,
@@ -88,12 +97,10 @@ public class FlowInteractionController {
   public FlowInteractionItemResponse skip(
       @PathVariable UUID sessionId,
       @PathVariable UUID requestId,
+      @RequestHeader("X-Chat-Session-Id") UUID chatSessionIdHeader,
       @RequestBody(required = false) FlowInteractionRespondRequest request) {
 
-    UUID chatSessionId = request != null ? request.chatSessionId() : null;
-    if (chatSessionId == null) {
-      throw new IllegalArgumentException("chatSessionId is required to skip interaction");
-    }
+    requireChatSession(sessionId, requestId, chatSessionIdHeader);
 
     JsonNode payload = request != null ? sanitizePayload(request.payload()) : null;
 
@@ -105,7 +112,7 @@ public class FlowInteractionController {
     flowInteractionService.respond(
         sessionId,
         requestId,
-        chatSessionId,
+        chatSessionIdHeader,
         request != null ? request.respondedBy() : null,
         payload,
         source,
@@ -120,6 +127,7 @@ public class FlowInteractionController {
   public FlowInteractionItemResponse autoResolve(
       @PathVariable UUID sessionId,
       @PathVariable UUID requestId,
+      @RequestHeader("X-Chat-Session-Id") UUID chatSessionIdHeader,
       @RequestBody(required = false) FlowInteractionAutoResolveRequest request) {
 
     JsonNode payload = request != null ? sanitizePayload(request.payload()) : null;
@@ -129,11 +137,51 @@ public class FlowInteractionController {
             ? request.source()
             : FlowInteractionResponseSource.SYSTEM;
 
+    requireChatSession(sessionId, requestId, chatSessionIdHeader);
+
     flowInteractionService.autoResolve(
-        sessionId, requestId, payload, source, request != null ? request.respondedBy() : null);
+        sessionId,
+        requestId,
+        payload,
+        source,
+        request != null ? request.respondedBy() : null);
+
+    return toItemResponse(flowInteractionService.getRequest(sessionId, requestId));
+  }
+
+  @PostMapping("/{requestId}/expire")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public FlowInteractionItemResponse expire(
+      @PathVariable UUID sessionId,
+      @PathVariable UUID requestId,
+      @RequestHeader("X-Chat-Session-Id") UUID chatSessionIdHeader,
+      @RequestBody(required = false) FlowInteractionAutoResolveRequest request) {
+
+    requireChatSession(sessionId, requestId, chatSessionIdHeader);
+
+    FlowInteractionResponseSource source =
+        request != null && request.source() != null
+            ? request.source()
+            : FlowInteractionResponseSource.SYSTEM;
+
+    flowInteractionService.expire(
+        sessionId, requestId, source, request != null ? request.respondedBy() : null);
 
     FlowInteractionRequest updated = flowInteractionService.getRequest(sessionId, requestId);
     return toItemResponse(updated);
+  }
+
+  private FlowInteractionRequest requireChatSession(
+      UUID sessionId, UUID requestId, UUID chatSessionIdHeader) {
+    if (chatSessionIdHeader == null) {
+      throw new IllegalArgumentException("X-Chat-Session-Id header is required");
+    }
+    FlowInteractionRequest interaction = flowInteractionService.getRequest(sessionId, requestId);
+    if (!interaction.getChatSessionId().equals(chatSessionIdHeader)) {
+      throw new IllegalArgumentException(
+          "Provided chat session does not match interaction channel");
+    }
+    return interaction;
   }
 
   private FlowInteractionItemResponse toItemResponse(FlowInteractionRequest request) {

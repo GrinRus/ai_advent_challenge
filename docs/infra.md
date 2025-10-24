@@ -242,6 +242,33 @@ app:
   - `Flows / Definitions` — визуальный редактор флоу: конструктор шагов с выбором опубликованных `agentVersionId`, настройкой промптов/памяти/переходов и автоматической валидацией JSON; история версий отображает diff и change notes.
   - `Flow Workspace` — мониторинг сессии (progress bar, текущий step, latency/cost, usage source, retries), агрегированная телеметрия (`stepsCompleted`, `stepsFailed`, `retriesScheduled`, `totalCostUsd`, `promptTokens`, `completionTokens`, `lastUpdated`), collapsible shared context. Компонент `FlowTimeline` подписывается на long-poll/SSE, отображает `traceId`/`spanId`, usage/cost и позволяет экспортировать логи шага в JSON.
 
+### Human-in-the-loop взаимодействия
+- **Домен и хранения.**  
+  - `flow_interaction_request` фиксирует канал маршрутизации (`chat_session_id`), связанный шаг (`flow_step_execution_id`), версию агента, тип запроса, SLA (`due_at`), JSON Schema формы (`payload_schema`) и подсказки (`suggested_actions`). Перед сохранением подсказки проходят санитарную обработку: rule-based элементы остаются, AI/analytics рекомендaции фильтруются allowlist-ом, запрещённые кандидаты попадают в `filtered`.  
+  - `flow_interaction_response` хранит payload ответа, источник (`USER|AUTO_POLICY|SYSTEM`) и инициатора (`responded_by`), что позволяет строить аудит.
+- **Сервисный слой.**  
+  - `FlowInteractionService.ensureRequest` переводит шаг в `WAITING_USER_INPUT`, сессию — в `WAITING_USER_INPUT`, публикует `HUMAN_INTERACTION_REQUIRED` и останавливает очередь, пока не придёт ответ.  
+  - `FlowInteractionExpiryScheduler` (параметр `app.flow.interaction.expiry-check-delay`, дефолт `PT1M`) закрывает просроченные заявки, создаёт событие `HUMAN_INTERACTION_EXPIRED` и возвращает шаг в очередь.  
+  - `FlowControlService.cancel` и `FlowInteractionService.autoResolvePendingRequests` обеспечивают автоматическое закрытие заявок при отмене флоу.
+- **API и проверки.**  
+  - `GET /api/flows/{sessionId}/interactions` — список активных и исторических заявок.  
+  - `POST /api/flows/{sessionId}/interactions/{requestId}/respond|skip|auto|expire` — требуют заголовок `X-Chat-Session-Id`, совпадающий с каналом из запроса; тело валидируется `FlowInteractionSchemaValidator` с поддержкой Spring AI форматов (`date`, `date-time`, `binary`, `json`).  
+  - Стриминг событий — через `GET /api/flows/{sessionId}/events/stream` (SSE) и long-poll `GET /api/flows/{sessionId}`.  
+  - Чатовый режим (Spring AI `ChatClient`) проставляет `requiresReply` → `ChatSyncController` создаёт `flow_interaction_request`, отображая bubble с CTA в UI.
+- **Фронтенд.**  
+  - Панель операторов отображает rule-based действия отдельным блоком, AI/analytics рекомендации — с бейджем “AI”; кнопка «Применить» переносит значения в форму, используя схему (`interactionSchema.ts`).  
+  - Хедер `X-Chat-Session-Id` автоматически подставляется при любом POST запросе из UI, поэтому несогласованные каналы отклоняются на backend.
+- **Наблюдаемость.**  
+  - Micrometer: `flow_interaction_created`, `flow_interaction_responded`, `flow_interaction_auto_resolved`, `flow_interaction_expired`, gauge `flow_interaction_open`, timer `flow_interaction_wait_duration`.  
+  - Логи содержат `interactionId`, `stepId`, `sessionId`, тип действия; WARN/ERROR применяются для неуспешных ответов и просрочек.  
+  - При необходимости аномалий заводите оповещения на превышение открытых заявок или долю просроченных (threshold SLA маппится на `due_at`).
+- **SLA и ретеншн.**  
+  - SLA задаётся полем `interaction.dueInMinutes` в JSON определения шага; обновление не требует миграций.  
+  - История заявок и ответов хранится 30 дней, очистка описана в runbook (см. `docs/runbooks/human-in-loop.md`).  
+  - Для интеграции с внешними уведомлениями используйте `flow_event` и webhook-адаптер (`FlowNotificationService` roadmap).
+- **Ссылки на Spring AI.**  
+  - Поведение форм Align с [Spring AI Chat Client](https://docs.spring.io/spring-ai/reference/api/chatclients/index.html); поля `defaultOptions` и overrides управляют температурой, topP и лимитом токенов как для стандартных шагов, так и для human-in-the-loop веток.
+
 ## Тестирование
 - `./gradlew test` прогоняет smoke-тест `ChatStreamControllerIntegrationTest` на MockMvc и HTTP e2e-сценарий `ChatStreamHttpE2ETest`, проверяющие потоковые ответы и сохранение истории.
 - Для локального запуска используйте JDK 21 (на macOS: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew test`), тесты работают на H2 и заглушенном Spring AI клиенте, поэтому не требуют реального LLM.

@@ -66,3 +66,28 @@
 - Волны (Wave) фиксируются в `docs/backlog.md`.
 - По завершении задачи отмечайте статус и указывайте дату/версию, если критично.
 - Крупные изменения сопровождайте коротким пост-мортем или заметками в `docs/overview.md`.
+
+## Human-in-the-loop
+- **Перед добавлением шага:**  
+  1. Настроить `interaction` в JSON-файле флоу (`type`, `title`, `description`, `payloadSchema`, `dueInMinutes`, `suggestedActions`).  
+  2. Прогнать схему через `FlowInteractionSchemaValidator` (поддерживаемые форматы: `date`, `date-time`, `binary`, `json`, `textarea`, `radio`, `toggle`).  
+  3. Rule-based подсказки заносим в `allow` и `ruleBased`, AI/analytics — в `llm`/`analytics`, чтобы sanitizer не показал элементы вне allowlist.
+- **UX и SLA:**  
+  - Заголовок ≤ 60 символов, описание содержит контекст и ожидаемое действие.  
+  - Обязательные поля форм помечаем `required`, добавляем пример/placeholder.  
+  - SLA (`dueInMinutes`) согласовываем с бизнесом, фиксируем в описании шага и runbook; auto-expire обязан корректно отрабатывать через scheduler.
+- **Проверка PR:**  
+  - Backend: unit (`FlowInteractionService`, `FlowInteractionSchemaValidator`, `SuggestedActionsSanitizer`), интеграционные тесты `/respond|skip|auto|expire` с `X-Chat-Session-Id`, проверка `FlowInteractionExpiryScheduler`.  
+  - Frontend: unit (форма + подсказки), e2e (оператор отвечает, пропускает, SLA истёк), визуальные снапшоты панели.  
+  - Документация: обновить `docs/infra.md`, `docs/human-in-loop-scenarios.md`, `docs/runbooks/human-in-loop.md` и данный документ.
+- **Поддержка:**  
+  - Руководствуется runbook’ом (`docs/runbooks/human-in-loop.md`) для поиска, переадресации и ручного автозавершения заявок.  
+  - Следит за дашбордами `flow_interaction_open`, `flow_interaction_wait_duration`, долей `status=EXPIRED`, корректностью внешних уведомлений (Slack/email/webhook).  
+  - При эскалации закрывает заявку, запускает новую сессию с другим `chat_session_id`, ссылку на старую фиксирует в комментарии.
+
+## Чек-лист тестирования human-in-the-loop
+- Backend unit: `FlowInteractionService.ensureRequest/recordResponse/autoResolve/expire`, `FlowInteractionSchemaValidator`, `SuggestedActionsSanitizer`.  
+- Backend integration: REST (`respond|skip|auto|expire`) с корректным/некорректным `X-Chat-Session-Id`, `FlowInteractionExpiryScheduler`, `FlowControlService.cancel` → `autoResolvePendingRequests`.  
+- Frontend: unit (генерация формы, применение подсказок, локальная валидация), e2e (ответ оператора, пропуск/auto-resolve), визуальные тесты панели и блока suggested actions.  
+- Документация: `docs/infra.md`, `docs/human-in-loop-scenarios.md`, `docs/runbooks/human-in-loop.md`, текущий файл.  
+- Наблюдаемость: алерты на `flow_interaction_*`, heartbeat SSE, проверка интеграций уведомлений.

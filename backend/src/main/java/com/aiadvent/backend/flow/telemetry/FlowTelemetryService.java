@@ -39,6 +39,7 @@ public class FlowTelemetryService {
   private final Counter interactionCreatedCounter;
   private final Counter interactionRespondedCounter;
   private final Counter interactionAutoResolvedCounter;
+  private final Counter interactionExpiredCounter;
   private final Timer interactionWaitTimer;
 
   public FlowTelemetryService(MeterRegistry meterRegistry) {
@@ -58,6 +59,7 @@ public class FlowTelemetryService {
       this.interactionRespondedCounter = meterRegistry.counter("flow_interaction_responded");
       this.interactionAutoResolvedCounter =
           meterRegistry.counter("flow_interaction_auto_resolved");
+      this.interactionExpiredCounter = meterRegistry.counter("flow_interaction_expired");
       this.interactionWaitTimer = meterRegistry.timer("flow_interaction_wait_duration");
     } else {
       SimpleMeterRegistry noopRegistry = new SimpleMeterRegistry();
@@ -70,6 +72,8 @@ public class FlowTelemetryService {
           Counter.builder("flow_interaction_responded").register(noopRegistry);
       this.interactionAutoResolvedCounter =
           Counter.builder("flow_interaction_auto_resolved").register(noopRegistry);
+      this.interactionExpiredCounter =
+          Counter.builder("flow_interaction_expired").register(noopRegistry);
       this.interactionWaitTimer =
           Timer.builder("flow_interaction_wait_duration").register(noopRegistry);
     }
@@ -217,6 +221,8 @@ public class FlowTelemetryService {
     }
     if (status == FlowInteractionStatus.AUTO_RESOLVED) {
       interactionAutoResolvedCounter.increment();
+    } else if (status == FlowInteractionStatus.EXPIRED) {
+      interactionExpiredCounter.increment();
     } else {
       interactionRespondedCounter.increment();
     }
