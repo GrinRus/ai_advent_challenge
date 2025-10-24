@@ -708,6 +708,7 @@ const LLMChat = () => {
   const [lastProvider, setLastProvider] = useState<string | null>(null);
   const [lastModel, setLastModel] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pendingInteractions, setPendingInteractions] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -733,6 +734,17 @@ const LLMChat = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ count?: number }>).detail;
+      setPendingInteractions(Math.max(0, detail?.count ?? 0));
+    };
+    window.addEventListener('flow-interactions-badge', handler as EventListener);
+    return () => {
+      window.removeEventListener('flow-interactions-badge', handler as EventListener);
+    };
+  }, []);
 
   function updateActiveTabForModel(model: ProviderModel | null) {
     if (!model) {
@@ -1842,7 +1854,25 @@ const LLMChat = () => {
                 Сессия: <code>{sessionId}</code>
               </span>
             )}
-            <NavLink to="/flows/launch" className="llm-chat-launch" aria-label="Launch Flow UI">
+            <NavLink
+              to="/flows/sessions"
+              className="llm-chat-link"
+              aria-label="Открыть список сессий"
+            >
+              <span className="llm-chat-link__content">
+                Flow Sessions
+                {pendingInteractions > 0 && (
+                  <span
+                    className="llm-chat-link__badge"
+                    aria-live="polite"
+                    aria-label={`Активных запросов: ${pendingInteractions}`}
+                  >
+                    {pendingInteractions}
+                  </span>
+                )}
+              </span>
+            </NavLink>
+            <NavLink to="/flows/launch" className="llm-chat-link" aria-label="Launch Flow UI">
               Launch Flow
             </NavLink>
           </div>

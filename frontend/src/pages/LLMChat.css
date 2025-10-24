@@ -61,7 +61,7 @@
   white-space: nowrap;
 }
 
-.llm-chat-launch {
+.llm-chat-link {
   text-decoration: none;
   padding: 0.5rem 1rem;
   border-radius: 999px;
@@ -72,15 +72,33 @@
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.llm-chat-launch:hover {
+.llm-chat-link:hover {
   background: #e8ebfb;
   border-color: #9aa5d9;
   transform: translateY(-1px);
 }
 
-.llm-chat-launch:focus-visible {
+.llm-chat-link:focus-visible {
   outline: 3px solid #a5b4fc;
   outline-offset: 3px;
+}
+
+.llm-chat-link__content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.llm-chat-link__badge {
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #f97316;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.4rem;
+  text-align: center;
 }
 
 .llm-chat-model-info {

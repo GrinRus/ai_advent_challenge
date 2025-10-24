@@ -178,6 +178,18 @@
   gap: 0.65rem;
 }
 
+.flow-interactions-item {
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: #f9fafb;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.flow-interactions-item:hover {
+  border-color: #6366f1;
+}
+
 .flow-interactions-item__title {
   font-weight: 600;
   color: #1f2937;
@@ -226,6 +238,31 @@
 .status-tag--auto_resolved {
   background: #e0e7ff;
   color: #3730a3;
+}
+
+.flow-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: #111827;
+  color: #f9fafb;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.35);
+  font-weight: 500;
+  z-index: 2000;
+  animation: flow-toast-fade-in 0.2s ease;
+}
+
+@keyframes flow-toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .flow-control {

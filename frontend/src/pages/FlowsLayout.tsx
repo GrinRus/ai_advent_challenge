@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './FlowsLayout.css';
 
 type Crumb = {
@@ -27,6 +27,18 @@ const formatSegmentLabel = (segment: string) => {
 
 const FlowsLayout = () => {
   const location = useLocation();
+  const [interactionBadge, setInteractionBadge] = useState(0);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ count?: number }>).detail;
+      setInteractionBadge(Math.max(0, detail?.count ?? 0));
+    };
+    window.addEventListener('flow-interactions-badge', handler as EventListener);
+    return () => {
+      window.removeEventListener('flow-interactions-badge', handler as EventListener);
+    };
+  }, []);
 
   const crumbs = useMemo<Crumb[]>(() => {
     const pathname = location.pathname.replace(/\/$/, '');
@@ -75,7 +87,20 @@ const FlowsLayout = () => {
               `flows-layout__tab ${isActive ? 'flows-layout__tab--active' : ''}`
             }
           >
-            Сессии
+            {() => (
+              <span className="flows-layout__tab-content">
+                Сессии
+                {interactionBadge > 0 && (
+                  <span
+                    className="flows-layout__tab-badge"
+                    aria-label={`Активных запросов: ${interactionBadge}`}
+                    aria-live="polite"
+                  >
+                    {interactionBadge}
+                  </span>
+                )}
+              </span>
+            )}
           </NavLink>
           <NavLink
             to="/flows/definitions"
