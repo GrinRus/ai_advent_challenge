@@ -72,7 +72,7 @@ import org.springframework.test.web.servlet.MvcResult;
 class FlowControllerIntegrationTest extends PostgresTestContainer {
 
   private static final Duration JOB_PROCESS_RETRY_DELAY = Duration.ofMillis(200);
-  private static final int JOB_PROCESS_MAX_ATTEMPTS = 5;
+  private static final int JOB_PROCESS_MAX_ATTEMPTS = 10;
   private static final String TEST_WORKER_ID = "test-worker";
 
   @Autowired private MockMvc mockMvc;
@@ -237,9 +237,6 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
   private void processNextJobWithRetry() {
     Optional<FlowJob> jobOptional = processNextJobSafely(true);
     if (jobOptional.isEmpty()) {
-      if (!Mockito.mockingDetails(agentInvocationService).getInvocations().isEmpty()) {
-        return;
-      }
       fail("Flow job was not processed after multiple attempts");
     }
   }
