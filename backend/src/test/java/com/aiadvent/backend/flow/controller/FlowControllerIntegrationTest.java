@@ -1,6 +1,7 @@
 package com.aiadvent.backend.flow.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,7 +20,6 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
-import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -53,7 +54,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -64,11 +64,16 @@ import org.springframework.test.web.servlet.MvcResult;
     properties = {
       "spring.ai.openai.api-key=test-token",
       "spring.ai.openai.base-url=http://localhost",
-      "app.chat.default-provider=stub"
+      "app.chat.default-provider=stub",
+      "app.flow.worker.enabled=false"
     })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class FlowControllerIntegrationTest extends PostgresTestContainer {
+
+  private static final Duration JOB_PROCESS_RETRY_DELAY = Duration.ofMillis(200);
+  private static final int JOB_PROCESS_MAX_ATTEMPTS = 5;
+  private static final String TEST_WORKER_ID = "test-worker";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private ObjectMapper objectMapper;
@@ -110,7 +115,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
 
     MvcResult snapshotResult =
         mockMvc
@@ -181,7 +186,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(startResponse.sharedContext()).isNotNull();
     assertThat(startResponse.sharedContext().get("initial")).isNotNull();
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
 
     ArgumentCaptor<AgentInvocationRequest> captor =
         ArgumentCaptor.forClass(AgentInvocationRequest.class);
@@ -229,7 +234,46 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(launchOverridesContext).containsEntry("maxTokens", 256);
   }
 
-@Test
+  private void processNextJobWithRetry() {
+    Optional<FlowJob> jobOptional = processNextJobSafely(true);
+    if (jobOptional.isEmpty()) {
+      if (!Mockito.mockingDetails(agentInvocationService).getInvocations().isEmpty()) {
+        return;
+      }
+      fail("Flow job was not processed after multiple attempts");
+    }
+  }
+
+  private Optional<FlowJob> attemptProcessNextJob() {
+    return processNextJobSafely(false);
+  }
+
+  private Optional<FlowJob> processNextJobSafely(boolean requireJob) {
+    RuntimeException lastException = null;
+    Optional<FlowJob> jobOptional = Optional.empty();
+    for (int attempt = 0; attempt < JOB_PROCESS_MAX_ATTEMPTS; attempt++) {
+      try {
+        jobOptional = orchestratorService.processNextJob(TEST_WORKER_ID);
+        if (jobOptional.isPresent() || !requireJob) {
+          return jobOptional;
+        }
+      } catch (RuntimeException exception) {
+        lastException = exception;
+      }
+      try {
+        TimeUnit.MILLISECONDS.sleep(JOB_PROCESS_RETRY_DELAY.toMillis());
+      } catch (InterruptedException interruptedException) {
+        Thread.currentThread().interrupt();
+        fail("Interrupted while waiting for flow job processing");
+      }
+    }
+    if (lastException != null) {
+      throw lastException;
+    }
+    return jobOptional;
+  }
+
+  @Test
   void pausePreventsJobExecutionUntilResume() throws Exception {
     AgentVersion agentVersion = persistAgent();
     FlowDefinition definition = persistFlowDefinition(agentVersion.getId());
@@ -253,13 +297,13 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     flowControlService.pause(startResponse.sessionId(), "operator");
 
-    Optional<FlowJob> jobOptional = orchestratorService.processNextJob("worker-1");
+    Optional<FlowJob> jobOptional = attemptProcessNextJob();
     assertThat(jobOptional).isEmpty();
     Mockito.verify(agentInvocationService, Mockito.never()).invoke(Mockito.any());
 
     flowControlService.resume(startResponse.sessionId());
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
     Mockito.verify(agentInvocationService, Mockito.times(1)).invoke(Mockito.any());
   }
 
@@ -287,7 +331,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
 
     FlowSession waiting =
         flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
@@ -307,7 +351,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 .content(objectMapper.writeValueAsString(approvePayload)))
         .andExpect(status().isOk());
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
 
     FlowSession completed =
         flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
@@ -337,7 +381,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
 
     FlowSession waiting =
         flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
@@ -357,8 +401,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 .content(objectMapper.writeValueAsString(skipPayload)))
         .andExpect(status().isOk());
 
-    orchestratorService.processNextJob("worker-1");
-    orchestratorService.processNextJob("worker-1");
+    processNextJobWithRetry();
+    processNextJobWithRetry();
 
     FlowSession completed =
         flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();

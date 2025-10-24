@@ -347,6 +347,8 @@ const FlowSessionsPage = () => {
     };
   }, [status?.status, telemetry]);
 
+  const hasSharedContext = status?.sharedContext !== undefined && status?.sharedContext !== null;
+
   useEffect(() => {
     if (!retryStepId && latestStepId) {
       setRetryStepId(latestStepId);
@@ -525,7 +527,7 @@ const FlowSessionsPage = () => {
                 </dl>
               </div>
             )}
-            {status.sharedContext && (
+            {hasSharedContext && (
               <details className="flow-shared-context">
                 <summary>Shared context</summary>
                 <pre>{sharedContextText}</pre>
