@@ -1,10 +1,11 @@
 package com.aiadvent.backend.flow.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
@@ -21,6 +22,7 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
+import com.aiadvent.backend.flow.domain.FlowInteractionResponseSource;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
@@ -49,6 +51,7 @@ class FlowControlServiceTest {
   @Mock private AgentVersionRepository agentVersionRepository;
   @Mock private JobQueuePort jobQueuePort;
   @Mock private FlowTelemetryService telemetryService;
+  @Mock private FlowInteractionService flowInteractionService;
 
   private FlowControlService flowControlService;
   private FlowSession session;
@@ -65,7 +68,8 @@ class FlowControlServiceTest {
             agentVersionRepository,
             jobQueuePort,
             new ObjectMapper(),
-            telemetryService);
+            telemetryService,
+            flowInteractionService);
 
     FlowDefinition definition =
         new FlowDefinition(
@@ -114,6 +118,20 @@ class FlowControlServiceTest {
     assertThat(result.getStatus()).isEqualTo(FlowSessionStatus.CANCELLED);
     verify(telemetryService)
         .sessionCompleted(eq(sessionId), eq(FlowSessionStatus.CANCELLED), any());
+    verify(flowInteractionService)
+        .autoResolvePendingRequests(eq(session), eq(FlowInteractionResponseSource.SYSTEM), eq(null), eq(false));
+  }
+
+  @Test
+  void resumeKeepsWaitingUserInputState() {
+    UUID sessionId = UUID.randomUUID();
+    session.setStatus(FlowSessionStatus.WAITING_USER_INPUT);
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+    FlowSession result = flowControlService.resume(sessionId);
+
+    assertThat(result.getStatus()).isEqualTo(FlowSessionStatus.WAITING_USER_INPUT);
+    verify(flowEventRepository, never()).save(any());
   }
 
   @Test
@@ -132,6 +150,7 @@ class FlowControlServiceTest {
             "Review",
             UUID.randomUUID(),
             "prompt",
+            null,
             null,
             List.of(),
             List.of(),
@@ -172,6 +191,7 @@ class FlowControlServiceTest {
             agentVersionId,
             "prompt",
             null,
+            null,
             List.of(),
             List.of(),
             new FlowStepTransitions(null, true, "fallback", false),
@@ -182,6 +202,7 @@ class FlowControlServiceTest {
             "Fallback",
             agentVersionId,
             "cleanup",
+            null,
             null,
             List.of(),
             List.of(),

@@ -142,7 +142,15 @@ public class AgentInvocationService {
             latencyMs);
       }
 
-      return new AgentInvocationResult(content, usageCost, memoryUpdates);
+      return new AgentInvocationResult(
+          content,
+          usageCost,
+          memoryUpdates,
+          selection,
+          effectiveOverrides,
+          agentVersion.getSystemPrompt(),
+          memoryMessages,
+          userMessage);
 
     } catch (RuntimeException ex) {
       logAttemptFailure(retryContext, flowSession.getId(), selection.providerId(), ex);
@@ -228,7 +236,6 @@ public class AgentInvocationService {
 
     ObjectNode copy = ((ObjectNode) inputContext).deepCopy();
     copy.remove("launchParameters");
-    copy.remove("lastOutput");
     copy.remove("currentContext");
 
     JsonNode sharedContext = copy.get("sharedContext");

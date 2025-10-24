@@ -12,4 +12,5 @@ public record FlowStartResponse(
     Instant startedAt,
     JsonNode launchParameters,
     JsonNode sharedContext,
-    ChatRequestOverrides overrides) {}
+    ChatRequestOverrides overrides,
+    UUID chatSessionId) {}

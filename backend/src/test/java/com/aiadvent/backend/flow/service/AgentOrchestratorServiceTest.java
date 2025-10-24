@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,6 +36,7 @@ import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -61,6 +63,7 @@ class AgentOrchestratorServiceTest {
   @Mock private AgentVersionRepository agentVersionRepository;
   @Mock private AgentInvocationService agentInvocationService;
   @Mock private FlowMemoryService flowMemoryService;
+  @Mock private FlowInteractionService flowInteractionService;
   @Mock private JobQueuePort jobQueuePort;
   @Mock private FlowTelemetryService telemetry;
 
@@ -86,6 +89,7 @@ class AgentOrchestratorServiceTest {
             agentVersionRepository,
             agentInvocationService,
             flowMemoryService,
+            flowInteractionService,
             jobQueuePort,
             objectMapper,
             telemetry);
@@ -108,13 +112,15 @@ class AgentOrchestratorServiceTest {
             "openai",
             "gpt-4o-mini");
     setField(agentVersion, "id", UUID.randomUUID());
+    agentVersion.setSystemPrompt("Base agent system prompt");
 
     FlowStepConfig stepConfig =
-            new FlowStepConfig(
+        new FlowStepConfig(
             STEP_ID,
             "First step",
             agentVersion.getId(),
             "solve task",
+            null,
             null,
             List.of(),
             List.of(),
@@ -151,7 +157,7 @@ class AgentOrchestratorServiceTest {
 
     FlowSession session =
         orchestratorService.start(
-            definition.getId(), objectMapper.nullNode(), objectMapper.nullNode(), null);
+            definition.getId(), objectMapper.nullNode(), objectMapper.nullNode(), null, null);
 
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
     verify(flowEventRepository).save(org.mockito.ArgumentMatchers.any(FlowEvent.class));
@@ -168,13 +174,26 @@ class AgentOrchestratorServiceTest {
     FlowStepExecution stepExecution =
         new FlowStepExecution(session, STEP_ID, FlowStepStatus.PENDING, 1);
     setField(stepExecution, "id", UUID.randomUUID());
+    stepExecution.setStepName("First step");
+    stepExecution.setAgentVersion(agentVersion);
+    stepExecution.setPrompt("solve task");
     FlowJob job = buildJob(session, stepExecution, FlowJobStatus.RUNNING);
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
     when(flowDefinitionParser.parse(definition)).thenReturn(document);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
-    when(agentInvocationService.invoke(any())).thenReturn(new AgentInvocationResult("answer", UsageCostEstimate.empty(), List.of()));
+    when(agentInvocationService.invoke(any()))
+        .thenReturn(
+            new AgentInvocationResult(
+                "answer",
+                UsageCostEstimate.empty(),
+                List.of(),
+                new com.aiadvent.backend.chat.provider.model.ChatProviderSelection("openai", "gpt-4o-mini"),
+                new com.aiadvent.backend.chat.provider.model.ChatRequestOverrides(0.2, 0.9, 512),
+                "validator-system",
+                List.of("snapshot-1"),
+                "user message body"));
 
     FlowSession persistedSession =
         new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);
@@ -190,6 +209,49 @@ class AgentOrchestratorServiceTest {
     verify(telemetry)
         .stepCompleted(eq(session.getId()), eq(stepExecution.getId()), eq(STEP_ID), eq(1), any(), any());
     verify(telemetry).sessionCompleted(eq(session.getId()), eq(FlowSessionStatus.COMPLETED), any());
+
+    ArgumentCaptor<FlowEvent> eventCaptor = ArgumentCaptor.forClass(FlowEvent.class);
+    verify(flowEventRepository, atLeastOnce()).save(eventCaptor.capture());
+    List<FlowEvent> savedEvents = eventCaptor.getAllValues();
+
+    FlowEvent stepStartedEvent =
+        savedEvents.stream()
+            .filter(event -> event.getEventType() == FlowEventType.STEP_STARTED)
+            .findFirst()
+            .orElseThrow();
+    JsonNode stepStartedPayload = stepStartedEvent.getPayload();
+    assertThat(stepStartedPayload.path("stepId").asText()).isEqualTo(STEP_ID);
+    assertThat(stepStartedPayload.path("stepName").asText()).isEqualTo("First step");
+    assertThat(stepStartedPayload.path("agentVersion").path("modelId").asText()).isEqualTo("gpt-4o-mini");
+    JsonNode startedStepMeta = stepStartedPayload.path("step");
+    assertThat(startedStepMeta.path("stepExecutionId").asText()).isEqualTo(stepExecution.getId().toString());
+    assertThat(startedStepMeta.path("status").asText()).isEqualTo("RUNNING");
+    assertThat(startedStepMeta.path("prompt").asText()).isEqualTo("solve task");
+
+    FlowEvent stepCompletedEvent =
+        savedEvents.stream()
+            .filter(event -> event.getEventType() == FlowEventType.STEP_COMPLETED)
+            .findFirst()
+            .orElseThrow();
+    JsonNode stepCompletedPayload = stepCompletedEvent.getPayload();
+    assertThat(stepCompletedPayload.path("content").asText()).isEqualTo("answer");
+
+    JsonNode requestNode = stepCompletedPayload.path("request");
+    assertThat(requestNode.path("provider").path("providerId").asText()).isEqualTo("openai");
+    assertThat(requestNode.path("provider").path("modelId").asText()).isEqualTo("gpt-4o-mini");
+    assertThat(requestNode.path("overrides").path("temperature").doubleValue()).isEqualTo(0.2d);
+    assertThat(requestNode.path("overrides").path("topP").doubleValue()).isEqualTo(0.9d);
+    assertThat(requestNode.path("overrides").path("maxTokens").intValue()).isEqualTo(512);
+    assertThat(requestNode.path("systemPrompt").asText()).isEqualTo("validator-system");
+    assertThat(requestNode.path("memorySnapshots").isArray()).isTrue();
+    assertThat(requestNode.path("memorySnapshots").get(0).asText()).isEqualTo("snapshot-1");
+    assertThat(requestNode.path("userMessage").asText()).isEqualTo("user message body");
+
+    JsonNode stepMeta = stepCompletedPayload.path("step");
+    assertThat(stepMeta.path("stepExecutionId").asText()).isEqualTo(stepExecution.getId().toString());
+    assertThat(stepMeta.path("agentVersion").path("providerId").asText()).isEqualTo("openai");
+    assertThat(stepMeta.path("agentVersion").path("modelId").asText()).isEqualTo("gpt-4o-mini");
+    assertThat(stepMeta.path("agentVersion").path("systemPrompt").asText()).isEqualTo("Base agent system prompt");
   }
 
   @Test
@@ -208,6 +270,7 @@ class AgentOrchestratorServiceTest {
             "Retry step",
             agentVersion.getId(),
             "prompt",
+            null,
             null,
             List.of(),
             List.of(),
@@ -251,6 +314,7 @@ class AgentOrchestratorServiceTest {
             "Retry step",
             agentVersion.getId(),
             "prompt",
+            null,
             null,
             List.of(),
             List.of(),
@@ -299,6 +363,7 @@ class AgentOrchestratorServiceTest {
             agentVersion.getId(),
             "prompt",
             null,
+            null,
             List.of(),
             List.of(),
             new FlowStepTransitions(null, true, "fallback", false),
@@ -309,6 +374,7 @@ class AgentOrchestratorServiceTest {
             "Fallback",
             agentVersion.getId(),
             "cleanup",
+            null,
             null,
             List.of(),
             List.of(),

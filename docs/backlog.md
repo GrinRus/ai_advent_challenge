@@ -441,22 +441,21 @@
 ### Продукт и UX
 - [x] Сформировать сценарии human-in-the-loop для агентов: запрос уточнений, подтверждение действий, ввод параметров; описать user journey во Flow workspace, из чатового UI и для фоново запущенных флоу.
   - Зафиксировать SLA на ответ, fallback при отсутствии пользователя (auto-cancel, автоответ по умолчанию, эскалация).
-- [ ] Определить UX-паттерны отображения интерактивных запросов: модальное окно, боковая панель, inline в таймлайне, push-уведомления; согласовать приоритет уведомлений и связь с существующими чатами.
-- [ ] Спроектировать модель ролей и доступа: кто может отвечать за конкретный флоу, как делегировать или переадресовывать запросы, как работать в командном режиме.
+- [x] Определить UX-паттерны отображения интерактивных запросов: основной сценарий — side panel во Flow Workspace с inline-карточкой в таймлайне, навигационный бейдж + toast; push/web уведомления подключаются для неактивных пользователей; чатовый UI показывает bubble с CTA «Открыть форму».
+- [x] Зафиксировать модель маршрутизации по `chat_session_id`: id создаётся при запуске и остаётся неизменным, все `flow_interaction_request` жёстко привязаны к нему; для эскалаций требуется запуск новой чат-сессии вместо reassignment (см. `docs/human-in-loop-scenarios.md`).
 
 ### Архитектура
-- [ ] Определить каноническую модель `AgentUiRequest` (id, stepId, agentId, тип, текст/описание, payloadSchema, dueAt, suggestedActions) и жизненный цикл (`pending`, `answered`, `expired`, `autoResolved`) с привязкой к `flow_session`/`flow_event`.
-- [ ] Обновить state machine оркестратора: ввести состояние `WAITING_USER_INPUT`, правила возврата в `RUNNING`, таймауты, автоматические решения и уведомления команд управления (`pause`, `resume`, `cancel`).
-- [ ] Подготовить ADR с вариантами доставки запросов на UI и рекомендацией по внедрению.
-  - Вариант A: события `human_interaction_required` в long-poll/SSE `/flows/{sessionId}` + выделенный API для ответов.
-  - Вариант B: переиспользование существующей чат-сессии (инъекция сообщений с флагом `requiresReply`, ответ через чатовый POST).
-  - Вариант C: глобальная шина уведомлений (web push/email/Slack) для пользователей вне Flow UI; оркестратор продолжает работу после подтверждения.
+- [x] Определить каноническую модель `AgentUiRequest` (id, stepId, agentId, тип, payloadSchema, dueAt, suggestedActions) и жизненный цикл (`pending`, `answered`, `expired`, `autoResolved`) с привязкой к `flow_session`/`flow_event` (см. `docs/architecture/human-in-loop.md`).
+- [x] Обновить state machine оркестратора: добавить состояния `WAITING_USER_INPUT`/`BLOCKED_WAITING_USER`, правила возврата в `RUNNING`, таймауты, автоматические решения и команды управления (`docs/architecture/human-in-loop.md`).
+- [x] Зафиксировать подход к доставке запросов: гибрид SSE событий и чатового bubble; вариант глобальной шины откладываем на Wave 10.2 (`docs/architecture/human-in-loop.md`).
+- [x] Зафиксировать стратегию `suggestedActions`: rule-based минимум в `AgentVersion`, LLM-рекомендации с allowlist-фильтром, аналитические подсказки в следующих волнах (`docs/architecture/human-in-loop.md`).
 
 ### Backend
-- [ ] Расширить модель данных: таблицы `flow_interaction_request` и `flow_interaction_response`, индексы, миграции, аудит доступа.
-- [ ] Реализовать `FlowInteractionService`, обновить `AgentOrchestratorService` и step-адаптеры для генерации запросов, публикации событий и блокировки шага до ответа.
-- [ ] Добавить REST-эндпоинты: `GET /api/flows/{sessionId}/interactions`, `POST /api/flows/{sessionId}/interactions/{requestId}/respond`, `POST /api/flows/{sessionId}/interactions/{requestId}/skip`/`auto`.
-- [ ] Интегрировать с `FlowControlService`: возобновление очередей после ответа, логирование latency/usage, idempotency-токены для повторных отправок, политика дедупликации.
+- [x] Расширить модель данных: таблицы `flow_interaction_request` и `flow_interaction_response`, индексы, миграции, аудит доступа.
+- [x] Реализовать `FlowInteractionService`, обновить `AgentOrchestratorService` для генерации запросов, публикации событий и блокировки шага до ответа (`FlowInteractionService`, `FlowInteractionController`).
+- [x] Добавить REST-эндпоинты: `GET /api/flows/{sessionId}/interactions`, `POST /api/flows/{sessionId}/interactions/{requestId}/respond`, `POST /api/flows/{sessionId}/interactions/{requestId}/skip`/`auto`.
+- [x] Интегрировать с `FlowControlService`: автоматическое auto-resolve при cancel, возобновление очередей после ответа (`FlowInteractionService`, `FlowControlService`).
+- [ ] Валидация `payloadSchema`: поддержать типы `text`, `textarea`, `number`, `select`, `multiselect`, `radio`, `checkbox`, `toggle`, `date`, `datetime`, `file`, `json` и проверять `format` для каждого.
 - [ ] Настроить телеметрию и алерты: метрики количества запросов, времени ожидания, доли авторазрешений, ошибочных ответов.
 
 ### Frontend и API
@@ -464,6 +463,8 @@
 - [ ] Реализовать UI-компоненты Flow workspace: список активных запросов, карточка запроса (контент, хинты, форма), модальное окно или side panel, история закрытых запросов.
 - [ ] Добавить механизмы уведомлений: бейджи и badge-count в навигации, toast/desktop уведомления, интеграция с чатовым UI (для сценария B), маркеры активности в списках флоу.
 - [ ] Покрыть сценарии тестами: unit (формы, стейт-менеджмент), e2e (создание запроса, ответ пользователя, таймаут, автозавершение, параллельные ответы), визуальные снапшоты.
+- [ ] Реализовать виджеты для указанных типов `payloadSchema` (multiselect, date/datetime picker, file upload, JSON-редактор) и отобразить подсказки из `suggestedActions`.
+- [ ] Отобразить `suggestedActions`: базовый набор из конфигурации шага + дополнительные рекомендации, полученные от LLM и помеченные как «рекомендации».
 
 ### Документация и процессы
 - [ ] Обновить `docs/infra.md` и `docs/processes.md`: описать поток человек↔агент, схемы данных, SLA и таймауты, best practices по UX copy.

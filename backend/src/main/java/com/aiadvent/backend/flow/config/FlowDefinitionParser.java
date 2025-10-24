@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.config;
 
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
+import com.aiadvent.backend.flow.domain.FlowInteractionType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import java.util.LinkedHashMap;
@@ -58,13 +59,43 @@ public class FlowDefinitionParser {
     String prompt = textValue(stepNode, "prompt");
 
     ChatRequestOverrides overrides = parseOverrides(stepNode.path("overrides"));
+    FlowInteractionConfig interaction = parseInteraction(stepNode.path("interaction"));
     List<MemoryReadConfig> reads = applyDefaultMemoryReads(parseMemoryReads(stepNode.path("memoryReads")));
     List<MemoryWriteConfig> writes = applyDefaultMemoryWrites(parseMemoryWrites(stepNode.path("memoryWrites")));
     FlowStepTransitions transitions = parseTransitions(stepNode.path("transitions"));
     int maxAttempts = intValue(stepNode, "maxAttempts", 1);
 
     return new FlowStepConfig(
-        id, name, agentVersionId, prompt, overrides, reads, writes, transitions, maxAttempts);
+        id, name, agentVersionId, prompt, overrides, interaction, reads, writes, transitions, maxAttempts);
+  }
+
+  private FlowInteractionConfig parseInteraction(JsonNode node) {
+    if (node == null || node.isMissingNode() || node.isNull()) {
+      return null;
+    }
+    String typeRaw = textValue(node, "type");
+    FlowInteractionType type = FlowInteractionType.INPUT_FORM;
+    if (typeRaw != null && !typeRaw.isBlank()) {
+      try {
+        type = FlowInteractionType.valueOf(typeRaw.toUpperCase());
+      } catch (IllegalArgumentException exception) {
+        throw new IllegalArgumentException("Unsupported interaction type: " + typeRaw, exception);
+      }
+    }
+
+    String title = textValue(node, "title");
+    String description = textValue(node, "description");
+    JsonNode payloadSchema = node.get("payloadSchema");
+    JsonNode suggestedActions = node.get("suggestedActions");
+    Integer dueInMinutes = null;
+    if (node.hasNonNull("dueInMinutes")) {
+      dueInMinutes = node.get("dueInMinutes").asInt();
+      if (dueInMinutes <= 0) {
+        throw new IllegalArgumentException("dueInMinutes must be positive when specified");
+      }
+    }
+
+    return new FlowInteractionConfig(type, title, description, payloadSchema, suggestedActions, dueInMinutes);
   }
 
   private ChatRequestOverrides parseOverrides(JsonNode node) {

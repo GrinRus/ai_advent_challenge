@@ -48,6 +48,9 @@ public class FlowSession {
   @Column(name = "current_memory_version", nullable = false)
   private long currentMemoryVersion;
 
+  @Column(name = "chat_session_id")
+  private UUID chatSessionId;
+
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "launch_parameters")
   private JsonNode launchParameters;
@@ -145,6 +148,14 @@ public class FlowSession {
 
   public void setCurrentMemoryVersion(long currentMemoryVersion) {
     this.currentMemoryVersion = currentMemoryVersion;
+  }
+
+  public UUID getChatSessionId() {
+    return chatSessionId;
+  }
+
+  public void setChatSessionId(UUID chatSessionId) {
+    this.chatSessionId = chatSessionId;
   }
 
   public JsonNode getLaunchParameters() {

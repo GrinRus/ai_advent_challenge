@@ -111,7 +111,12 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
             new AgentInvocationResult(
                 "Completed result",
                 new UsageCostEstimate(10, 5, 15, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "USD", com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
-                List.of()));
+                List.of(),
+                null,
+                null,
+                null,
+                List.of(),
+                null));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -166,7 +171,12 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                     BigDecimal.ZERO,
                     "USD",
                     com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
-                List.of()));
+                List.of(),
+                null,
+                null,
+                null,
+                List.of(),
+                null));
 
     ObjectNode body = objectMapper.createObjectNode();
     ObjectNode parameters = body.putObject("parameters");
@@ -288,7 +298,12 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                     BigDecimal.ZERO,
                     "USD",
                     com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
-                List.of()));
+                List.of(),
+                null,
+                null,
+                null,
+                List.of(),
+                null));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -324,7 +339,12 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                     BigDecimal.ZERO,
                     "USD",
                     com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
-                List.of()));
+                List.of(),
+                null,
+                null,
+                null,
+                List.of(),
+                null));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -374,7 +394,12 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                     BigDecimal.ZERO,
                     "USD",
                     com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
-                List.of()));
+                List.of(),
+                null,
+                null,
+                null,
+                List.of(),
+                null));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 

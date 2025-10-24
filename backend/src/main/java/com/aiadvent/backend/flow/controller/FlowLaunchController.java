@@ -36,8 +36,10 @@ public class FlowLaunchController {
     JsonNode parameters = sanitizeNode(request != null ? request.parameters() : null);
     JsonNode context = sanitizeNode(request != null ? request.sharedContext() : null);
     ChatRequestOverrides overrides = request != null ? request.overrides() : null;
+    UUID chatSessionId = request != null ? request.chatSessionId() : null;
 
-    var session = agentOrchestratorService.start(flowId, parameters, context, overrides);
+    var session =
+        agentOrchestratorService.start(flowId, parameters, context, overrides, chatSessionId);
     ChatRequestOverrides sessionOverrides = extractOverrides(session.getLaunchOverrides());
 
     return new FlowStartResponse(
@@ -46,7 +48,8 @@ public class FlowLaunchController {
         session.getStartedAt(),
         session.getLaunchParameters(),
         session.getSharedContext(),
-        sessionOverrides);
+        sessionOverrides,
+        session.getChatSessionId());
   }
 
   private JsonNode sanitizeNode(JsonNode node) {

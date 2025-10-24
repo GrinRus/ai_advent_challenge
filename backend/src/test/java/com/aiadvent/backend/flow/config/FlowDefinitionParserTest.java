@@ -39,4 +39,35 @@ class FlowDefinitionParserTest {
         .extracting(MemoryReadConfig::channel)
         .contains("shared");
   }
+
+  @Test
+  void parsesInteractionConfiguration() {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "step-1");
+    ArrayNode steps = root.putArray("steps");
+    ObjectNode step = steps.addObject();
+    step.put("id", "step-1");
+    step.put("name", "Collect context");
+    step.put("agentVersionId", UUID.randomUUID().toString());
+    ObjectNode interaction = step.putObject("interaction");
+    interaction.put("type", "input_form");
+    interaction.put("title", "Need details");
+    interaction.put("description", "Provide missing inputs");
+    interaction.put("dueInMinutes", 15);
+    interaction.putObject("payloadSchema").put("type", "object");
+
+    FlowDefinition definition =
+        new FlowDefinition("interaction-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+
+    FlowDefinitionDocument document = parser.parse(definition);
+    FlowStepConfig config = document.step("step-1");
+
+    assertThat(config.interaction()).isNotNull();
+    assertThat(config.interaction().type())
+        .isEqualTo(com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM);
+    assertThat(config.interaction().title()).isEqualTo("Need details");
+    assertThat(config.interaction().description()).isEqualTo("Provide missing inputs");
+    assertThat(config.interaction().dueInMinutes()).isEqualTo(15);
+    assertThat(config.interaction().payloadSchema()).isNotNull();
+  }
 }

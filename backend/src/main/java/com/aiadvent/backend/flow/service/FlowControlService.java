@@ -6,6 +6,7 @@ import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowEvent;
 import com.aiadvent.backend.flow.domain.FlowEventType;
+import com.aiadvent.backend.flow.domain.FlowInteractionResponseSource;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
@@ -36,6 +37,7 @@ public class FlowControlService {
   private final JobQueuePort jobQueuePort;
   private final ObjectMapper objectMapper;
   private final FlowTelemetryService telemetry;
+  private final FlowInteractionService flowInteractionService;
 
   public FlowControlService(
       FlowSessionRepository flowSessionRepository,
@@ -45,7 +47,8 @@ public class FlowControlService {
       AgentVersionRepository agentVersionRepository,
       JobQueuePort jobQueuePort,
       ObjectMapper objectMapper,
-      FlowTelemetryService telemetry) {
+      FlowTelemetryService telemetry,
+      FlowInteractionService flowInteractionService) {
     this.flowSessionRepository = flowSessionRepository;
     this.flowStepExecutionRepository = flowStepExecutionRepository;
     this.flowEventRepository = flowEventRepository;
@@ -54,6 +57,7 @@ public class FlowControlService {
     this.jobQueuePort = jobQueuePort;
     this.objectMapper = objectMapper;
     this.telemetry = telemetry;
+    this.flowInteractionService = flowInteractionService;
   }
 
   @Transactional
@@ -71,8 +75,11 @@ public class FlowControlService {
   @Transactional
   public FlowSession resume(UUID sessionId) {
     FlowSession session = getSession(sessionId);
+    if (session.getStatus() == FlowSessionStatus.WAITING_USER_INPUT) {
+      return session;
+    }
     session.setStatus(FlowSessionStatus.RUNNING);
-     flowSessionRepository.save(session);
+    flowSessionRepository.save(session);
     recordEvent(session, FlowEventType.FLOW_RESUMED, "running", null);
     return session;
   }
@@ -84,6 +91,8 @@ public class FlowControlService {
     session.setCompletedAt(Instant.now());
     flowSessionRepository.save(session);
     recordEvent(session, FlowEventType.FLOW_CANCELLED, "cancelled", reason);
+    flowInteractionService.autoResolvePendingRequests(
+        session, FlowInteractionResponseSource.SYSTEM, null, false);
     telemetry.sessionCompleted(
         sessionId,
         session.getStatus(),

@@ -10,6 +10,7 @@ public record FlowStepConfig(
     UUID agentVersionId,
     String prompt,
     ChatRequestOverrides overrides,
+    FlowInteractionConfig interaction,
     List<MemoryReadConfig> memoryReads,
     List<MemoryWriteConfig> memoryWrites,
     FlowStepTransitions transitions,
@@ -24,6 +25,7 @@ public record FlowStepConfig(
     }
     prompt = prompt != null ? prompt.trim() : "";
     overrides = overrides != null ? overrides : ChatRequestOverrides.empty();
+    interaction = interaction;
     memoryReads = memoryReads != null ? List.copyOf(memoryReads) : List.of();
     memoryWrites = memoryWrites != null ? List.copyOf(memoryWrites) : List.of();
     transitions = transitions != null ? transitions : FlowStepTransitions.defaults();

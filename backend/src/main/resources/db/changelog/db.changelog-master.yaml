@@ -962,3 +962,178 @@ databaseChangeLog:
               - column:
                   name: launch_overrides
                   type: JSONB
+  - changeSet:
+      id: 0012-create-flow-interaction-tables
+      author: ai-advent
+      context: local,prod
+      changes:
+        - createTable:
+            tableName: flow_interaction_request
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: flow_step_execution_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chat_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: agent_version_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: VARCHAR(512)
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: payload_schema
+                  type: JSONB
+              - column:
+                  name: suggested_actions
+                  type: JSONB
+              - column:
+                  name: due_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_interaction_request
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_interaction_session
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: flow_interaction_request
+            baseColumnNames: flow_step_execution_id
+            referencedTableName: flow_step_execution
+            referencedColumnNames: id
+            constraintName: fk_flow_interaction_step_execution
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: flow_interaction_request
+            baseColumnNames: agent_version_id
+            referencedTableName: agent_version
+            referencedColumnNames: id
+            constraintName: fk_flow_interaction_agent_version
+        - createIndex:
+            tableName: flow_interaction_request
+            indexName: idx_flow_interaction_session_status
+            columns:
+              - column:
+                  name: flow_session_id
+              - column:
+                  name: status
+        - createIndex:
+            tableName: flow_interaction_request
+            indexName: idx_flow_interaction_step
+            columns:
+              - column:
+                  name: flow_step_execution_id
+        - createTable:
+            tableName: flow_interaction_response
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: request_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chat_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: responded_by
+                  type: UUID
+              - column:
+                  name: payload
+                  type: JSONB
+              - column:
+                  name: source
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_interaction_response
+            baseColumnNames: request_id
+            referencedTableName: flow_interaction_request
+            referencedColumnNames: id
+            constraintName: fk_flow_interaction_response_request
+            onDelete: CASCADE
+        - addUniqueConstraint:
+            tableName: flow_interaction_response
+            columnNames: request_id
+            constraintName: uq_flow_interaction_response_request
+        - createIndex:
+            tableName: flow_interaction_response
+            indexName: idx_flow_interaction_response_request
+            columns:
+              - column:
+                  name: request_id
+  - changeSet:
+      id: 0013-add-flow-session-chat-session-id
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: flow_session
+            columns:
+              - column:
+                  name: chat_session_id
+                  type: UUID
+        - createIndex:
+            tableName: flow_session
+            indexName: idx_flow_session_chat_session_id
+            columns:
+              - column:
+                  name: chat_session_id
