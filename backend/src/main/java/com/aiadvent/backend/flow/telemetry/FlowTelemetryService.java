@@ -1,6 +1,7 @@
 package com.aiadvent.backend.flow.telemetry;
 
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.domain.FlowInteractionStatus;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -33,22 +34,44 @@ public class FlowTelemetryService {
   private final DistributionSummary costSummary;
   private final Map<UUID, Long> sessionActiveGauge;
   private final Map<UUID, SessionTelemetryMetrics> sessionTelemetry;
+  private final AtomicInteger openInteractions;
+  private final Map<UUID, Instant> interactionOpenTimes;
+  private final Counter interactionCreatedCounter;
+  private final Counter interactionRespondedCounter;
+  private final Counter interactionAutoResolvedCounter;
+  private final Timer interactionWaitTimer;
 
   public FlowTelemetryService(MeterRegistry meterRegistry) {
     this.meterRegistry = meterRegistry;
     this.activeSessions = new AtomicInteger();
     this.sessionActiveGauge = new ConcurrentHashMap<>();
     this.sessionTelemetry = new ConcurrentHashMap<>();
+    this.openInteractions = new AtomicInteger();
+    this.interactionOpenTimes = new ConcurrentHashMap<>();
     if (meterRegistry != null) {
       meterRegistry.gauge("flow_sessions_active", activeSessions);
       this.stepDurationTimer = meterRegistry.timer("flow_step_duration");
       this.retryCounter = meterRegistry.counter("flow_retry_count");
       this.costSummary = meterRegistry.summary("flow_cost_usd");
+      meterRegistry.gauge("flow_interaction_open", openInteractions);
+      this.interactionCreatedCounter = meterRegistry.counter("flow_interaction_created");
+      this.interactionRespondedCounter = meterRegistry.counter("flow_interaction_responded");
+      this.interactionAutoResolvedCounter =
+          meterRegistry.counter("flow_interaction_auto_resolved");
+      this.interactionWaitTimer = meterRegistry.timer("flow_interaction_wait_duration");
     } else {
       SimpleMeterRegistry noopRegistry = new SimpleMeterRegistry();
       this.stepDurationTimer = Timer.builder("flow_step_duration").register(noopRegistry);
       this.retryCounter = Counter.builder("flow_retry_count").register(noopRegistry);
       this.costSummary = DistributionSummary.builder("flow_cost_usd").register(noopRegistry);
+      this.interactionCreatedCounter =
+          Counter.builder("flow_interaction_created").register(noopRegistry);
+      this.interactionRespondedCounter =
+          Counter.builder("flow_interaction_responded").register(noopRegistry);
+      this.interactionAutoResolvedCounter =
+          Counter.builder("flow_interaction_auto_resolved").register(noopRegistry);
+      this.interactionWaitTimer =
+          Timer.builder("flow_interaction_wait_duration").register(noopRegistry);
     }
   }
 
@@ -174,6 +197,30 @@ public class FlowTelemetryService {
     } else {
       log.info("Flow session {} event {}", sessionId, event);
     }
+  }
+
+  public void interactionCreated(UUID interactionId) {
+    interactionCreatedCounter.increment();
+    interactionOpenTimes.put(interactionId, Instant.now());
+    openInteractions.incrementAndGet();
+    log.debug("Interaction {} created", interactionId);
+  }
+
+  public void interactionResolved(UUID interactionId, FlowInteractionStatus status) {
+    Instant startedAt = interactionOpenTimes.remove(interactionId);
+    if (startedAt != null) {
+      interactionWaitTimer.record(Duration.between(startedAt, Instant.now()));
+    }
+    int remaining = openInteractions.decrementAndGet();
+    if (remaining < 0) {
+      openInteractions.set(0);
+    }
+    if (status == FlowInteractionStatus.AUTO_RESOLVED) {
+      interactionAutoResolvedCounter.increment();
+    } else {
+      interactionRespondedCounter.increment();
+    }
+    log.debug("Interaction {} resolved with status {}", interactionId, status);
   }
 
   public Optional<FlowTelemetrySnapshot> snapshot(UUID sessionId) {

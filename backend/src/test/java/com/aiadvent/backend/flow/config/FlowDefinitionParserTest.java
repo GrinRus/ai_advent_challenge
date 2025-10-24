@@ -1,9 +1,11 @@
 package com.aiadvent.backend.flow.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -13,7 +15,8 @@ import org.junit.jupiter.api.Test;
 class FlowDefinitionParserTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
-  private final FlowDefinitionParser parser = new FlowDefinitionParser();
+  private final FlowDefinitionParser parser =
+      new FlowDefinitionParser(new FlowInteractionSchemaValidator());
 
   @Test
   void appliesDefaultSharedMemoryConfiguration() {
@@ -69,5 +72,25 @@ class FlowDefinitionParserTest {
     assertThat(config.interaction().description()).isEqualTo("Provide missing inputs");
     assertThat(config.interaction().dueInMinutes()).isEqualTo(15);
     assertThat(config.interaction().payloadSchema()).isNotNull();
+  }
+
+  @Test
+  void rejectsUnsupportedFormat() {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "step-1");
+    ArrayNode steps = root.putArray("steps");
+    ObjectNode step = steps.addObject();
+    step.put("id", "step-1");
+    step.put("name", "Collect context");
+    step.put("agentVersionId", UUID.randomUUID().toString());
+    ObjectNode interaction = step.putObject("interaction");
+    interaction.putObject("payloadSchema").put("type", "string").put("format", "unsupported");
+
+    FlowDefinition definition =
+        new FlowDefinition("invalid-format", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+
+    assertThatThrownBy(() -> parser.parse(definition))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("format");
   }
 }

@@ -1,7 +1,9 @@
 package com.aiadvent.backend.flow.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -29,7 +31,9 @@ import com.aiadvent.backend.flow.persistence.FlowInteractionResponseRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
+import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,6 +50,7 @@ class FlowInteractionServiceTest {
   private JobQueuePort jobQueuePort;
   private FlowTelemetryService telemetry;
   private ObjectMapper objectMapper;
+  private FlowInteractionSchemaValidator schemaValidator;
 
   private FlowInteractionService flowInteractionService;
 
@@ -59,6 +64,7 @@ class FlowInteractionServiceTest {
     jobQueuePort = mock(JobQueuePort.class);
     telemetry = mock(FlowTelemetryService.class);
     objectMapper = new ObjectMapper();
+    schemaValidator = new FlowInteractionSchemaValidator();
 
     flowInteractionService =
         new FlowInteractionService(
@@ -69,7 +75,8 @@ class FlowInteractionServiceTest {
             flowEventRepository,
             jobQueuePort,
             telemetry,
-            objectMapper);
+            objectMapper,
+            schemaValidator);
   }
 
   @Test
@@ -130,6 +137,7 @@ class FlowInteractionServiceTest {
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.WAITING_USER_INPUT);
     assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.WAITING_USER_INPUT);
     verify(flowEventRepository).save(any(FlowEvent.class));
+    verify(telemetry).interactionCreated(request.getId());
   }
 
   @Test
@@ -189,6 +197,7 @@ class FlowInteractionServiceTest {
     assertThat(stepExecution.getStatus()).isEqualTo(FlowStepStatus.PENDING);
     verify(jobQueuePort)
         .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
+    verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.ANSWERED));
   }
 
   @Test
@@ -238,6 +247,61 @@ class FlowInteractionServiceTest {
     assertThat(execution.getStatus()).isEqualTo(FlowStepStatus.CANCELLED);
     verify(jobQueuePort, never())
         .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
+    verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.AUTO_RESOLVED));
+  }
+
+  @Test
+  void respondWithInvalidPayloadThrows() {
+    FlowSession session =
+        new FlowSession(mock(com.aiadvent.backend.flow.domain.FlowDefinition.class), 1, FlowSessionStatus.WAITING_USER_INPUT, 0L, 0L);
+    setField(session, "id", UUID.randomUUID());
+
+    FlowStepExecution execution =
+        new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
+    setField(execution, "id", UUID.randomUUID());
+
+    FlowInteractionRequest request =
+        new FlowInteractionRequest(
+            session,
+            execution,
+            UUID.randomUUID(),
+            new AgentVersion(
+                new AgentDefinition("agent", "Agent", null, true),
+                1,
+                AgentVersionStatus.PUBLISHED,
+                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+                "openai",
+                "gpt-4o-mini"),
+            com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
+            FlowInteractionStatus.PENDING);
+    setField(request, "id", UUID.randomUUID());
+
+    ObjectNode schema = objectMapper.createObjectNode();
+    schema.put("type", "object");
+    ObjectNode props = schema.putObject("properties");
+    props.putObject("count").put("type", "number").put("minimum", 0);
+    schema.putArray("required").add("count");
+    request.setPayloadSchema(schema);
+
+    when(requestRepository.findById(request.getId())).thenReturn(Optional.of(request));
+    when(responseRepository.existsByRequest(request)).thenReturn(false);
+
+    assertThatThrownBy(
+            () ->
+                flowInteractionService.respond(
+                    session.getId(),
+                    request.getId(),
+                    request.getChatSessionId(),
+                    UUID.randomUUID(),
+                    objectMapper.createObjectNode().put("count", "oops"),
+                    FlowInteractionResponseSource.USER,
+                    FlowInteractionStatus.ANSWERED))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("count");
+
+    verify(jobQueuePort, never())
+        .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
+    verify(telemetry, never()).interactionResolved(eq(request.getId()), any(FlowInteractionStatus.class));
   }
 
   private static void setField(Object target, String fieldName, Object value) {

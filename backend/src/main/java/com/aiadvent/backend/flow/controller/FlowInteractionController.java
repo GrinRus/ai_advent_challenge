@@ -12,7 +12,6 @@ import com.aiadvent.backend.flow.domain.FlowInteractionStatus;
 import com.aiadvent.backend.flow.service.FlowInteractionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.NullNode;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -96,10 +95,7 @@ public class FlowInteractionController {
       throw new IllegalArgumentException("chatSessionId is required to skip interaction");
     }
 
-    JsonNode payload =
-        request != null && request.payload() != null
-            ? sanitizePayload(request.payload())
-            : objectMapper.createObjectNode().put("action", "skip");
+    JsonNode payload = request != null ? sanitizePayload(request.payload()) : null;
 
     FlowInteractionResponseSource source =
         request != null && request.source() != null
@@ -126,8 +122,7 @@ public class FlowInteractionController {
       @PathVariable UUID requestId,
       @RequestBody(required = false) FlowInteractionAutoResolveRequest request) {
 
-    JsonNode payload =
-        request != null && request.payload() != null ? sanitizePayload(request.payload()) : NullNode.getInstance();
+    JsonNode payload = request != null ? sanitizePayload(request.payload()) : null;
 
     FlowInteractionResponseSource source =
         request != null && request.source() != null
@@ -182,6 +177,9 @@ public class FlowInteractionController {
   }
 
   private JsonNode sanitizePayload(JsonNode payload) {
-    return payload != null ? payload : NullNode.getInstance();
+    if (payload == null || payload.isNull()) {
+      return null;
+    }
+    return payload;
   }
 }

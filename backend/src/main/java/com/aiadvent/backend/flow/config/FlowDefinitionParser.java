@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.config;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowInteractionType;
+import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import java.util.LinkedHashMap;
@@ -14,7 +15,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class FlowDefinitionParser {
 
-  public FlowDefinitionParser() {}
+  private final FlowInteractionSchemaValidator schemaValidator;
+
+  public FlowDefinitionParser(FlowInteractionSchemaValidator schemaValidator) {
+    this.schemaValidator = schemaValidator;
+  }
 
   public FlowDefinitionDocument parse(FlowDefinition definition) {
     JsonNode root = definition.getDefinition();
@@ -86,6 +91,7 @@ public class FlowDefinitionParser {
     String title = textValue(node, "title");
     String description = textValue(node, "description");
     JsonNode payloadSchema = node.get("payloadSchema");
+    schemaValidator.validateSchema(payloadSchema);
     JsonNode suggestedActions = node.get("suggestedActions");
     Integer dueInMinutes = null;
     if (node.hasNonNull("dueInMinutes")) {

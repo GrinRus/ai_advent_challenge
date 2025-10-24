@@ -455,8 +455,8 @@
 - [x] Реализовать `FlowInteractionService`, обновить `AgentOrchestratorService` для генерации запросов, публикации событий и блокировки шага до ответа (`FlowInteractionService`, `FlowInteractionController`).
 - [x] Добавить REST-эндпоинты: `GET /api/flows/{sessionId}/interactions`, `POST /api/flows/{sessionId}/interactions/{requestId}/respond`, `POST /api/flows/{sessionId}/interactions/{requestId}/skip`/`auto`.
 - [x] Интегрировать с `FlowControlService`: автоматическое auto-resolve при cancel, возобновление очередей после ответа (`FlowInteractionService`, `FlowControlService`).
-- [ ] Валидация `payloadSchema`: поддержать типы `text`, `textarea`, `number`, `select`, `multiselect`, `radio`, `checkbox`, `toggle`, `date`, `datetime`, `file`, `json` и проверять `format` для каждого.
-- [ ] Настроить телеметрию и алерты: метрики количества запросов, времени ожидания, доли авторазрешений, ошибочных ответов.
+- [x] Валидация `payloadSchema`: добавить `FlowInteractionSchemaValidator` (тип/format, enum, required) и проверку входных payload в `FlowInteractionService`.
+- [x] Настроить телеметрию и алерты: `FlowTelemetryService` фиксирует счётчики созданных/закрытых запросов, gauge открытых, таймер ожидания; алерты подвяжем на новые метрики.
 
 ### Frontend и API
 - [ ] Расширить клиент `apiClient`: методы для получения/ответа на запросы, поддержка SSE/long-poll событий `humanInteractionRequired`, кэширование и optimistic updates.

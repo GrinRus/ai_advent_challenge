@@ -20,6 +20,7 @@ import com.aiadvent.backend.flow.persistence.FlowInteractionResponseRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
+import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -45,6 +46,7 @@ public class FlowInteractionService {
   private final JobQueuePort jobQueuePort;
   private final FlowTelemetryService telemetry;
   private final ObjectMapper objectMapper;
+  private final FlowInteractionSchemaValidator schemaValidator;
 
   public FlowInteractionService(
       FlowInteractionRequestRepository requestRepository,
@@ -54,7 +56,8 @@ public class FlowInteractionService {
       FlowEventRepository flowEventRepository,
       JobQueuePort jobQueuePort,
       FlowTelemetryService telemetry,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      FlowInteractionSchemaValidator schemaValidator) {
     this.requestRepository = requestRepository;
     this.responseRepository = responseRepository;
     this.flowSessionRepository = flowSessionRepository;
@@ -63,6 +66,7 @@ public class FlowInteractionService {
     this.jobQueuePort = jobQueuePort;
     this.telemetry = telemetry;
     this.objectMapper = objectMapper;
+    this.schemaValidator = schemaValidator;
   }
 
   @Transactional(readOnly = true)
@@ -132,6 +136,10 @@ public class FlowInteractionService {
     FlowInteractionResponseSource effectiveSource =
         source != null ? source : FlowInteractionResponseSource.SYSTEM;
 
+    if (payload != null && !payload.isNull()) {
+      schemaValidator.validatePayload(request.getPayloadSchema(), payload);
+    }
+
     return recordResponse(
         requestId,
         request.getChatSessionId(),
@@ -165,6 +173,8 @@ public class FlowInteractionService {
       throw new IllegalArgumentException(
           "Interaction request " + requestId + " does not belong to session " + sessionId);
     }
+
+    schemaValidator.validatePayload(request.getPayloadSchema(), payload);
 
     FlowEventType eventType =
         finalStatus == FlowInteractionStatus.AUTO_RESOLVED
@@ -233,6 +243,8 @@ public class FlowInteractionService {
     session.setStatus(FlowSessionStatus.WAITING_USER_INPUT);
     session.setStateVersion(session.getStateVersion() + 1);
     flowSessionRepository.save(session);
+
+    telemetry.interactionCreated(request.getId());
 
     FlowEvent event =
         new FlowEvent(session, FlowEventType.HUMAN_INTERACTION_REQUIRED, "waiting", eventPayload(request));
@@ -336,6 +348,8 @@ public class FlowInteractionService {
               session.getId(), stepExecution.getId(), stepExecution.getStepId(), stepExecution.getAttempt());
       jobQueuePort.enqueueStepJob(session, stepExecution, jobPayload, Instant.now());
     }
+
+    telemetry.interactionResolved(request.getId(), finalStatus);
 
     log.debug(
         "Recorded response {} for interaction {} and re-enqueued step {}",
