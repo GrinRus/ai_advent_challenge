@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   fetchFlowSnapshot,
+  fetchFlowInteractions,
   pollFlowStatus,
   sendFlowControlCommand,
   startFlow,
+  subscribeToFlowEvents,
 } from '../lib/apiClient';
 import type {
   FlowControlCommand,
   FlowEvent,
+  FlowInteractionItemDto,
   FlowStatusResponse,
   FlowState,
   FlowTelemetrySnapshot,
@@ -88,6 +91,21 @@ const eventAccent = (type?: string) => {
   return 'neutral';
 };
 
+const interactionStatusLabel: Record<string, string> = {
+  PENDING: 'ожидание ответа',
+  ANSWERED: 'ответ получен',
+  EXPIRED: 'просрочен',
+  AUTO_RESOLVED: 'закрыт автоматически',
+};
+
+const interactionTypeLabel: Record<string, string> = {
+  INPUT_FORM: 'форма ввода',
+  APPROVAL: 'подтверждение',
+  CONFIRMATION: 'подтверждение',
+  REVIEW: 'ревью',
+  INFORMATION: 'информация',
+};
+
 const FlowSessionsPage = () => {
   const [flowId, setFlowId] = useState('');
   const [parameters, setParameters] = useState('');
@@ -96,6 +114,7 @@ const FlowSessionsPage = () => {
   const [status, setStatus] = useState<FlowState | null>(null);
   const [events, setEvents] = useState<FlowEvent[]>([]);
   const [telemetry, setTelemetry] = useState<FlowTelemetrySnapshot | null>(null);
+  const [interactions, setInteractions] = useState<FlowInteractionItemDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -133,6 +152,7 @@ const FlowSessionsPage = () => {
       setStatus(initial.state);
       setEvents(initial.events ?? []);
       setTelemetry(initial.telemetry ?? null);
+      setInteractions([]);
       pollRef.current = {
         nextSince: initial.nextSinceEventId,
         stateVersion: initial.state.stateVersion,
@@ -141,6 +161,7 @@ const FlowSessionsPage = () => {
       setStatus(null);
       setEvents([]);
       setTelemetry(null);
+      setInteractions([]);
       pollRef.current = {};
     }
   }, []);
@@ -233,12 +254,52 @@ const FlowSessionsPage = () => {
       setIsSnapshotLoading(true);
       const snapshot = await fetchFlowSnapshot(sessionId);
       resetSessionData(snapshot);
+      await refreshInteractions();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setIsSnapshotLoading(false);
     }
-  }, [resetSessionData, sessionId]);
+  }, [refreshInteractions, resetSessionData, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return undefined;
+    }
+
+    const source = subscribeToFlowEvents(sessionId, {
+      onFlow: (payload) => {
+        setStatus(payload.state);
+        appendEvents(payload.events);
+        if (payload.telemetry) {
+          setTelemetry(payload.telemetry);
+        }
+        pollRef.current = {
+          nextSince: payload.nextSinceEventId,
+          stateVersion: payload.state.stateVersion,
+        };
+
+        if (payload.events.some((evt) => evt.type?.startsWith('HUMAN_INTERACTION'))) {
+          refreshInteractions();
+        }
+
+        if (payload.state.status?.endsWith('ED')) {
+          setIsPolling(false);
+        }
+      },
+      onHeartbeat: () => {
+        /* keep-alive */
+      },
+      onError: () => {
+        console.warn('SSE поток закрыт, переключаемся на poll');
+        setIsPolling(true);
+      },
+    });
+
+    return () => {
+      source.close();
+    };
+  }, [appendEvents, refreshInteractions, sessionId]);
 
   useEffect(() => {
     if (!isPolling || !sessionId) {
@@ -527,6 +588,38 @@ const FlowSessionsPage = () => {
                 </dl>
               </div>
             )}
+            <div className="flow-interactions">
+              <header>Активные запросы к пользователю</header>
+              {interactions.length === 0 ? (
+                <p className="flow-empty flow-empty--inline">
+                  Нет запросов, ожидающих ответа.
+                </p>
+              ) : (
+                <ul className="flow-interactions-list">
+                  {interactions.map((item) => (
+                    <li key={item.requestId} className="flow-interactions-item">
+                      <div className="flow-interactions-item__title">
+                        {item.title || interactionTypeLabel[item.type] || item.type}
+                      </div>
+                      <div className="flow-interactions-item__meta">
+                        <span className={`status-tag status-tag--${item.status.toLowerCase()}`}>
+                          {interactionStatusLabel[item.status] ?? item.status.toLowerCase()}
+                        </span>
+                        <span>
+                          Шаг: <strong>{item.stepId}</strong>
+                        </span>
+                        <span>
+                          Дедлайн: {formatDateTime(item.dueAt)}
+                        </span>
+                      </div>
+                      {item.description && (
+                        <p className="flow-interactions-item__description">{item.description}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {hasSharedContext && (
               <details className="flow-shared-context">
                 <summary>Shared context</summary>
@@ -696,3 +789,14 @@ const FlowSessionsPage = () => {
 };
 
 export default FlowSessionsPage;
+  const refreshInteractions = useCallback(async () => {
+    if (!sessionId) {
+      return;
+    }
+    try {
+      const response = await fetchFlowInteractions(sessionId);
+      setInteractions(response.active);
+    } catch (err) {
+      console.warn('Не удалось обновить интерактивные запросы', err);
+    }
+  }, [sessionId]);

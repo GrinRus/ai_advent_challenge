@@ -155,6 +155,79 @@
   font-size: 0.85rem;
 }
 
+.flow-interactions {
+  margin-top: 0.75rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  background: #eef2ff;
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.flow-interactions header {
+  font-weight: 600;
+  color: #3730a3;
+}
+
+.flow-interactions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.flow-interactions-item__title {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.flow-interactions-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.flow-interactions-item__description {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-tag--pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-tag--answered {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-tag--expired {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-tag--auto_resolved {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
 .flow-control {
   margin-top: 1.25rem;
 }
