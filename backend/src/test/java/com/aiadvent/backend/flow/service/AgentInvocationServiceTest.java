@@ -22,6 +22,7 @@ import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -183,5 +184,81 @@ class AgentInvocationServiceTest {
     assertThat(result.appliedOverrides().temperature()).isEqualTo(overridesCaptor.getValue().temperature());
     assertThat(result.appliedOverrides().topP()).isEqualTo(overridesCaptor.getValue().topP());
     assertThat(result.appliedOverrides().maxTokens()).isEqualTo(overridesCaptor.getValue().maxTokens());
+  }
+
+  @Test
+  void triggerFlowSummariesIncludesConversationByDefault() {
+    UUID sessionId = UUID.randomUUID();
+    FlowSession flowSession = mock(FlowSession.class);
+    when(flowSession.getId()).thenReturn(sessionId);
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(flowSession));
+
+    AgentVersion agentVersion =
+        new AgentVersion(
+            new AgentDefinition("agent-flow", "Flow Agent", null, true),
+            1,
+            AgentVersionStatus.PUBLISHED,
+            ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    agentVersion.setSystemPrompt("System");
+
+    ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
+    when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
+        .thenReturn(selection);
+    when(chatProviderService.provider(selection.providerId()))
+        .thenReturn(new ChatProvidersProperties.Provider());
+
+    ChatResponse chatResponse =
+        new ChatResponse(List.of(new Generation(AssistantMessage.builder().content("ok").build())));
+    when(chatProviderService.chatSyncWithOverrides(
+            eq(selection), eq(agentVersion.getSystemPrompt()), anyList(), anyMap(), anyString(), any()))
+        .thenReturn(chatResponse);
+
+    UsageCostEstimate usageCost =
+        new UsageCostEstimate(
+            0,
+            0,
+            0,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            "USD",
+            UsageSource.NATIVE);
+    when(chatProviderService.estimateUsageCost(eq(selection), any(), anyString(), anyString()))
+        .thenReturn(usageCost);
+
+    when(flowMemorySummarizerService.supportsChannel(FlowMemoryChannels.CONVERSATION)).thenReturn(true);
+    when(
+            flowMemorySummarizerService.preflight(
+                eq(sessionId),
+                eq(FlowMemoryChannels.CONVERSATION),
+                eq(selection.providerId()),
+                eq(selection.modelId()),
+                anyString()))
+        .thenReturn(Optional.empty());
+
+    AgentInvocationRequest request =
+        new AgentInvocationRequest(
+            sessionId,
+            UUID.randomUUID(),
+            agentVersion,
+            "Hello!",
+            objectMapper.createObjectNode(),
+            objectMapper.createObjectNode(),
+            ChatRequestOverrides.empty(),
+            ChatRequestOverrides.empty(),
+            List.of(),
+            List.of());
+
+    agentInvocationService.invoke(request);
+
+    verify(flowMemorySummarizerService)
+        .preflight(
+            eq(sessionId),
+            eq(FlowMemoryChannels.CONVERSATION),
+            eq(selection.providerId()),
+            eq(selection.modelId()),
+            anyString());
   }
 }

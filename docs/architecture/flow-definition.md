@@ -9,6 +9,7 @@
 - Версионирование управляется полями `status` (`DRAFT|PUBLISHED`), `is_active` и историей (`flow_definition_history`).
 - Идентификаторы `flowId`, `steps[].id`, `steps[].agentVersionId`, `transitions.*.next` — slug или UUID, уникальные внутри флоу.
 - Каждый шаг обязан ссылаться на опубликованную активную версию агента (`agent_version`) через `agentVersionId`.
+- Все пользовательские/агентские сообщения дублируются в канал `conversation`, чтобы FlowMemorySummarizerService мог автоматически строить summary без правок DSL; дополнительные shared-каналы используются только для специализированных контекстов.
 
 ## Верхний уровень
 
@@ -60,6 +61,7 @@
 - `overrides.temperature/topP/maxTokens` — переопределения опций вызова для конкретного шага.
 - `memoryReads[]` — список каналов памяти с лимитом сообщений (по умолчанию 10).
 - `memoryWrites[]` — запись в память. `mode`: `AGENT_OUTPUT` (сохраняется ответ агента) или `STATIC` (фиксированный payload).
+- Summary сохраняются в `flow_memory_summary` с `metadata.summary=true`, `metadata.schemaVersion`, `agent_version_id`, `language`, `attempt_start/end`. UI должен учитывать эти поля при отображении карточек памяти.
 - `transitions.onSuccess` / `transitions.onFailure` — определяют следующее состояние. Если `next` пустой и `complete`/`fail` не переопределены, применяются дефолты (`completeOnSuccess=true`, `failFlowOnFailure=true`).
 - `maxAttempts` — количество автоматических повторов шага (≥1).
 

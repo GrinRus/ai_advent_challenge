@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.flow.config.FlowInteractionConfig;
@@ -21,6 +22,9 @@ import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.JobQueuePort;
+import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
+import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
@@ -29,6 +33,8 @@ import com.aiadvent.backend.flow.persistence.FlowInteractionRequestRepository;
 import com.aiadvent.backend.flow.persistence.FlowInteractionResponseRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
+import com.aiadvent.backend.flow.persistence.FlowMemoryVersionRepository;
+import com.aiadvent.backend.flow.persistence.FlowMemorySummaryRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.aiadvent.backend.support.PostgresTestContainer;
@@ -52,6 +58,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
     replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
 @org.springframework.context.annotation.Import({
   FlowInteractionService.class,
+  FlowMemoryService.class,
   FlowInteractionSchemaValidator.class,
   SuggestedActionsSanitizer.class,
   FlowInteractionServiceIntegrationTest.TestConfig.class
@@ -71,6 +78,12 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowInteractionSchemaValidator schemaValidator;
   @Autowired private FlowTelemetryService telemetry;
   @Autowired private JobQueuePort jobQueuePort;
+  @Autowired private FlowMemoryService flowMemoryService;
+  @Autowired private FlowMemoryVersionRepository flowMemoryVersionRepository;
+  @Autowired private FlowMemorySummaryRepository flowMemorySummaryRepository;
+
+  @org.springframework.boot.test.mock.mockito.MockBean
+  private FlowMemorySummarizerService flowMemorySummarizerService;
 
   @BeforeEach
   void cleanDatabase() {
@@ -83,10 +96,18 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
     flowDefinitionRepository.deleteAll();
     agentVersionRepository.deleteAll();
     agentDefinitionRepository.deleteAll();
+    flowMemoryVersionRepository.deleteAll();
+    flowMemorySummaryRepository.deleteAll();
   }
 
   @Test
   void respondResumesStepAndEnqueuesJob() {
+    when(flowMemorySummarizerService.supportsChannel("conversation")).thenReturn(true);
+    when(flowMemorySummarizerService.preflight(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.isNull()))
+        .thenReturn(java.util.Optional.empty());
+
     FlowContext context = persistFlowContext();
     FlowInteractionRequest request =
         flowInteractionService.ensureRequest(
@@ -147,6 +168,21 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
     assertThat(enqueuedStep.getId()).isEqualTo(stepExecution.getId());
     assertThat(payloadValue.flowSessionId()).isEqualTo(context.session().getId());
     assertThat(payloadValue.stepExecutionId()).isEqualTo(stepExecution.getId());
+
+    java.util.List<com.fasterxml.jackson.databind.JsonNode> history =
+        flowMemoryService.history(
+            context.session().getId(), FlowMemoryChannels.CONVERSATION, 5);
+    assertThat(history).isNotEmpty();
+    com.fasterxml.jackson.databind.JsonNode last = history.get(history.size() - 1);
+    assertThat(last.path("prompt").asText()).contains("Interaction response");
+
+    org.mockito.Mockito.verify(flowMemorySummarizerService)
+        .preflight(
+            context.session().getId(),
+            FlowMemoryChannels.CONVERSATION,
+            "openai",
+            "gpt-4o-mini",
+            null);
   }
 
   @Test

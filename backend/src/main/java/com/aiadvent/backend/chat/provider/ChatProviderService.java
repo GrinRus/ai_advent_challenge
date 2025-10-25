@@ -57,6 +57,15 @@ public class ChatProviderService {
     return adapter.chatClient();
   }
 
+  public ChatClient statelessChatClient(String providerId) {
+    ChatProviderAdapter adapter = adaptersById.get(providerId);
+    if (adapter == null) {
+      throw new IllegalArgumentException(
+          "No chat client adapter registered for provider '" + providerId + "'");
+    }
+    return adapter.statelessChatClient();
+  }
+
   public ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides) {
     ChatProviderAdapter adapter = adaptersById.get(selection.providerId());
     if (adapter == null) {

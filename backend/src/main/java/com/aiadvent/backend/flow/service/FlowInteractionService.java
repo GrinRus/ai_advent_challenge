@@ -21,6 +21,11 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
+import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
+import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
+import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
+import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -45,6 +50,8 @@ public class FlowInteractionService {
   private final FlowEventRepository flowEventRepository;
   private final JobQueuePort jobQueuePort;
   private final FlowTelemetryService telemetry;
+  private final FlowMemoryService flowMemoryService;
+  private final FlowMemorySummarizerService flowMemorySummarizerService;
   private final ObjectMapper objectMapper;
   private final FlowInteractionSchemaValidator schemaValidator;
   private final SuggestedActionsSanitizer suggestedActionsSanitizer;
@@ -57,6 +64,8 @@ public class FlowInteractionService {
       FlowEventRepository flowEventRepository,
       JobQueuePort jobQueuePort,
       FlowTelemetryService telemetry,
+      FlowMemoryService flowMemoryService,
+      FlowMemorySummarizerService flowMemorySummarizerService,
       ObjectMapper objectMapper,
       FlowInteractionSchemaValidator schemaValidator,
       SuggestedActionsSanitizer suggestedActionsSanitizer) {
@@ -67,6 +76,8 @@ public class FlowInteractionService {
     this.flowEventRepository = flowEventRepository;
     this.jobQueuePort = jobQueuePort;
     this.telemetry = telemetry;
+    this.flowMemoryService = flowMemoryService;
+    this.flowMemorySummarizerService = flowMemorySummarizerService;
     this.objectMapper = objectMapper;
     this.schemaValidator = schemaValidator;
     this.suggestedActionsSanitizer = suggestedActionsSanitizer;
@@ -399,6 +410,8 @@ public class FlowInteractionService {
       flowSessionRepository.save(session);
     }
 
+    recordInteractionMemory(session, stepExecution, request, payload, source);
+
     FlowEvent event =
         new FlowEvent(
             session,
@@ -500,6 +513,62 @@ public class FlowInteractionService {
     }
     node.put("status", finalStatus.name());
     return node;
+  }
+
+  private void recordInteractionMemory(
+      FlowSession session,
+      FlowStepExecution stepExecution,
+      FlowInteractionRequest request,
+      JsonNode payload,
+      FlowInteractionResponseSource source) {
+    if (flowMemoryService == null || session == null || stepExecution == null) {
+      return;
+    }
+    FlowMemoryMetadata metadata =
+        FlowMemoryMetadata.builder()
+            .sourceType(FlowMemorySourceType.USER_INPUT)
+            .stepId(stepExecution.getStepId())
+            .stepAttempt(stepExecution.getAttempt())
+            .agentVersionId(request.getAgentVersion() != null ? request.getAgentVersion().getId() : null)
+            .createdByStepId(stepExecution.getId())
+            .build();
+    ObjectNode memoryPayload = objectMapper.createObjectNode();
+    memoryPayload.put("prompt", renderInteractionPrompt(request, source));
+    if (payload != null && !payload.isNull()) {
+      memoryPayload.set("context", cloneNode(payload));
+    }
+    flowMemoryService.append(session.getId(), FlowMemoryChannels.CONVERSATION, memoryPayload, metadata);
+    triggerSummariesAfterInteraction(session.getId(), request);
+  }
+
+  private void triggerSummariesAfterInteraction(UUID sessionId, FlowInteractionRequest request) {
+    if (flowMemorySummarizerService == null
+        || request == null
+        || request.getAgentVersion() == null) {
+      return;
+    }
+    flowMemorySummarizerService
+        .preflight(
+            sessionId,
+            FlowMemoryChannels.CONVERSATION,
+            request.getAgentVersion().getProviderId(),
+            request.getAgentVersion().getModelId(),
+            null)
+        .ifPresent(flowMemorySummarizerService::processPreflightResult);
+  }
+
+  private String renderInteractionPrompt(
+      FlowInteractionRequest request, FlowInteractionResponseSource source) {
+    StringBuilder builder =
+        new StringBuilder("Interaction response (").append(request.getType().name().toLowerCase());
+    if (source != null) {
+      builder.append(", ").append(source.name().toLowerCase());
+    }
+    builder.append(")");
+    if (request.getTitle() != null) {
+      builder.append(": ").append(request.getTitle());
+    }
+    return builder.toString();
   }
 
   private JsonNode cloneNode(JsonNode node) {

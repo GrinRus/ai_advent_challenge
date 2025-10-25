@@ -11,6 +11,9 @@ import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator.Estimate;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator.EstimateRequest;
+import com.aiadvent.backend.shared.text.SimpleLanguageDetector;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -60,6 +63,7 @@ public class ChatMemorySummarizerService {
   private static final String SUMMARY_QUEUE_REJECTIONS_METRIC = "chat_summary_queue_rejections_total";
   private static final int FAILURE_ALERT_THRESHOLD = 3;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
+  private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
 
   private final ChatMemoryProperties properties;
   private final TokenUsageEstimator tokenUsageEstimator;
@@ -67,6 +71,7 @@ public class ChatMemorySummarizerService {
   private final ChatSessionRepository chatSessionRepository;
   private final ChatProviderService chatProviderService;
   private final ChatMemoryRepository chatMemoryRepository;
+  private final ObjectMapper objectMapper;
   private final Semaphore concurrencyLimiter;
   private final ThreadPoolExecutor summarizationExecutor;
   private final Counter summaryCounter;
@@ -88,7 +93,8 @@ public class ChatMemorySummarizerService {
       ChatSessionRepository chatSessionRepository,
       ChatProviderService chatProviderService,
       ChatMemoryRepository chatMemoryRepository,
-      MeterRegistry meterRegistry) {
+      MeterRegistry meterRegistry,
+      ObjectMapper objectMapper) {
     this.properties = Objects.requireNonNull(properties, "properties must not be null");
     this.tokenUsageEstimator =
         Objects.requireNonNull(tokenUsageEstimator, "tokenUsageEstimator must not be null");
@@ -100,6 +106,7 @@ public class ChatMemorySummarizerService {
         Objects.requireNonNull(chatProviderService, "chatProviderService must not be null");
     this.chatMemoryRepository =
         Objects.requireNonNull(chatMemoryRepository, "chatMemoryRepository must not be null");
+    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
 
     ChatMemoryProperties.SummarizationProperties summarization = properties.getSummarization();
     int concurrency =
@@ -419,8 +426,11 @@ public class ChatMemorySummarizerService {
     int endOrder = startOrder + summaryCount - 1;
     ChatMemorySummary entity = new ChatMemorySummary(session, startOrder, endOrder, summaryText);
     entity.setTokenCount(Long.valueOf(summaryCount));
+    entity.setLanguage(SimpleLanguageDetector.detectLanguage(summaryText));
+    entity.setMetadata(buildSummaryMetadata(startOrder, endOrder));
     summaryRepository.save(entity);
     session.setSummaryUntilOrder(endOrder);
+    session.setSummaryMetadata(buildSessionMetadata(endOrder));
     chatSessionRepository.save(session);
   }
 
@@ -456,7 +466,7 @@ public class ChatMemorySummarizerService {
       try {
         ChatResponse response =
             chatProviderService
-                .chatClient(envelope.selection().providerId())
+                .statelessChatClient(envelope.selection().providerId())
                 .prompt()
                 .system("Ты assistant, который делает краткие summary диалогов. Пиши на языке источника.")
                 .user(prompt)
@@ -668,6 +678,32 @@ public class ChatMemorySummarizerService {
       String modelId,
       List<Message> messages,
       SummarizationDecision decision) {}
+
+  private ObjectNode buildSummaryMetadata(int startOrder, int endOrder) {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put("schemaVersion", SUMMARY_METADATA_SCHEMA_VERSION);
+    node.put("summary", true);
+    node.put("sourceStartOrder", startOrder);
+    node.put("sourceEndOrder", endOrder);
+    return node;
+  }
+
+  private ObjectNode buildSessionMetadata(int endOrder) {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put("schemaVersion", SUMMARY_METADATA_SCHEMA_VERSION);
+    node.put("summaryUntilOrder", endOrder);
+    node.put("updatedAt", Instant.now().toString());
+    if (StringUtils.hasText(summarizerProviderId) || StringUtils.hasText(summarizerModelId)) {
+      ObjectNode modelNode = node.putObject("model");
+      if (StringUtils.hasText(summarizerProviderId)) {
+        modelNode.put("providerId", summarizerProviderId);
+      }
+      if (StringUtils.hasText(summarizerModelId)) {
+        modelNode.put("modelId", summarizerModelId);
+      }
+    }
+    return node;
+  }
 
   private static final class SummarizationException extends RuntimeException {
     private SummarizationException(String message, Throwable cause) {

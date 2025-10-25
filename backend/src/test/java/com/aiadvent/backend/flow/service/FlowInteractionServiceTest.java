@@ -3,7 +3,9 @@ package com.aiadvent.backend.flow.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -26,6 +28,9 @@ import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
+import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
+import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowInteractionRequestRepository;
 import com.aiadvent.backend.flow.persistence.FlowInteractionResponseRepository;
@@ -52,6 +57,8 @@ class FlowInteractionServiceTest {
   private FlowEventRepository flowEventRepository;
   private JobQueuePort jobQueuePort;
   private FlowTelemetryService telemetry;
+  private FlowMemoryService flowMemoryService;
+  private FlowMemorySummarizerService flowMemorySummarizerService;
   private ObjectMapper objectMapper;
   private FlowInteractionSchemaValidator schemaValidator;
   private SuggestedActionsSanitizer suggestedActionsSanitizer;
@@ -67,6 +74,8 @@ class FlowInteractionServiceTest {
     flowEventRepository = mock(FlowEventRepository.class);
     jobQueuePort = mock(JobQueuePort.class);
     telemetry = mock(FlowTelemetryService.class);
+    flowMemoryService = mock(FlowMemoryService.class);
+    flowMemorySummarizerService = mock(FlowMemorySummarizerService.class);
     objectMapper = new ObjectMapper();
     schemaValidator = new FlowInteractionSchemaValidator();
     suggestedActionsSanitizer = new SuggestedActionsSanitizer(objectMapper);
@@ -80,9 +89,16 @@ class FlowInteractionServiceTest {
             flowEventRepository,
             jobQueuePort,
             telemetry,
+            flowMemoryService,
+            flowMemorySummarizerService,
             objectMapper,
             schemaValidator,
             suggestedActionsSanitizer);
+
+    when(flowMemoryService.append(any(UUID.class), anyString(), any(JsonNode.class), any(FlowMemoryMetadata.class)))
+        .thenReturn(mock(com.aiadvent.backend.flow.domain.FlowMemoryVersion.class));
+    when(flowMemorySummarizerService.preflight(any(), anyString(), anyString(), anyString(), any()))
+        .thenReturn(java.util.Optional.empty());
   }
 
   @Test
@@ -292,6 +308,10 @@ class FlowInteractionServiceTest {
     verify(jobQueuePort)
         .enqueueStepJob(any(FlowSession.class), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
     verify(telemetry).interactionResolved(eq(request.getId()), eq(FlowInteractionStatus.ANSWERED));
+    verify(flowMemoryService)
+        .append(eq(sessionId), eq("conversation"), any(JsonNode.class), any(FlowMemoryMetadata.class));
+    verify(flowMemorySummarizerService)
+        .preflight(eq(sessionId), eq("conversation"), eq("openai"), eq("gpt-4o-mini"), isNull());
   }
 
   @Test

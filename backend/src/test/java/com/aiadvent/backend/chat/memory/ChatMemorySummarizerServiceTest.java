@@ -9,6 +9,7 @@ import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -38,11 +39,13 @@ class ChatMemorySummarizerServiceTest {
   @Mock private ChatMemoryRepository chatMemoryRepository;
 
   private SimpleMeterRegistry meterRegistry;
+  private ObjectMapper objectMapper;
   private ChatMemorySummarizerService service;
 
   @BeforeEach
   void setUp() {
     meterRegistry = new SimpleMeterRegistry();
+    objectMapper = new ObjectMapper();
     ChatMemoryProperties properties = new ChatMemoryProperties();
     properties.getSummarization().setEnabled(true);
     properties.getSummarization().setModel("stub:model");
@@ -54,7 +57,8 @@ class ChatMemorySummarizerServiceTest {
             chatSessionRepository,
             chatProviderService,
             chatMemoryRepository,
-            meterRegistry);
+            meterRegistry,
+            objectMapper);
   }
 
   @AfterEach

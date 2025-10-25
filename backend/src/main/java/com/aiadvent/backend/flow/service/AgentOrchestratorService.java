@@ -25,6 +25,7 @@ import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
+import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
@@ -284,6 +285,8 @@ public class AgentOrchestratorService {
     flowStepExecutionRepository.save(stepExecution);
 
     List<FlowMemoryVersion> updates = new ArrayList<>();
+    boolean agentOutputWrittenToConversation = false;
+    FlowMemoryMetadata lastAgentOutputMetadata = null;
     for (MemoryWriteConfig write : stepConfig.memoryWrites()) {
       FlowMemorySourceType sourceType = mapSourceType(write.mode());
       FlowMemoryMetadata metadata =
@@ -298,6 +301,10 @@ public class AgentOrchestratorService {
         updates.add(
             flowMemoryService.append(
                 session.getId(), write.channel(), cloneNode(stepOutput), metadata));
+        lastAgentOutputMetadata = metadata;
+        if (FlowMemoryChannels.CONVERSATION.equalsIgnoreCase(write.channel())) {
+          agentOutputWrittenToConversation = true;
+        }
       } else if (write.mode() == MemoryWriteMode.STATIC && write.payload() != null) {
         updates.add(
             flowMemoryService.append(session.getId(), write.channel(), write.payload(), metadata));
@@ -305,6 +312,15 @@ public class AgentOrchestratorService {
         updates.add(
             flowMemoryService.append(session.getId(), write.channel(), write.payload(), metadata));
       }
+    }
+
+    if (lastAgentOutputMetadata != null && !agentOutputWrittenToConversation) {
+      updates.add(
+          flowMemoryService.append(
+              session.getId(),
+              FlowMemoryChannels.CONVERSATION,
+              cloneNode(stepOutput),
+              lastAgentOutputMetadata));
     }
 
     if (!updates.isEmpty()) {
@@ -889,7 +905,7 @@ public class AgentOrchestratorService {
     if (inputContext != null) {
       payload.set("context", inputContext.deepCopy());
     }
-    flowMemoryService.append(session.getId(), "conversation", payload, metadata);
+    flowMemoryService.append(session.getId(), FlowMemoryChannels.CONVERSATION, payload, metadata);
   }
 
   private JsonNode cloneNode(JsonNode node) {

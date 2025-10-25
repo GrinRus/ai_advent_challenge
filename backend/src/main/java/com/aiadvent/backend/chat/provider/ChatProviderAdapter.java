@@ -12,6 +12,10 @@ public interface ChatProviderAdapter {
 
   ChatClient chatClient();
 
+  default ChatClient statelessChatClient() {
+    return chatClient();
+  }
+
   ChatOptions buildOptions(ChatProviderSelection selection, ChatRequestOverrides overrides);
 
   default ChatOptions buildStreamingOptions(

@@ -13,4 +13,6 @@ public interface FlowMemorySummaryRepository extends JpaRepository<FlowMemorySum
 
   Optional<FlowMemorySummary> findFirstByFlowSessionAndChannelOrderBySourceVersionEndDesc(
       FlowSession flowSession, String channel);
+
+  void deleteByFlowSessionAndChannel(FlowSession flowSession, String channel);
 }

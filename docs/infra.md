@@ -226,6 +226,11 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - `flow_event` — журнал (`event_type`, `status`, `payload_jsonb`, `usage/cost`, `trace_id`, `span_id`) для SSE и аудита.
   - `flow_memory_version` — shared/isolated память, версии и TTL. Держим последние 10 версий и чистим записи старше 30 дней батчем.
 
+### Наблюдаемость flow саммари
+- `FlowMemorySummarizerService` отдаёт отдельные метрики с тегом `scope=flow`: `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failures_total`, `flow_summary_failure_alerts_total`. Экспортируйте Micrometer в Prometheus/OTLP и добавьте теги `providerId`/`channel`, если нужен более детальный анализ.
+- Рекомендуемые алерты: `flow_summary_queue_size` превышает настроенный `maxConcurrentSummaries` более 3 минут (застрявший воркер); рост `flow_summary_failure_alerts_total` (>0 за последние 5 минут) указывает на деградацию провайдера; отсутствие новых записей `flow_memory_summary`/`chat_session.summary_metadata.updatedAt` дольше допустимого окна (например, 15 минут) сигнализирует о зациклившихся сессиях. Последний сценарий удобно проверять SQL/Prometheus-правилом по `max(now() - summary.created_at)`.
+- Для ручных перезапусков держим `/api/admin/flows/sessions/{sessionId}/summary/rebuild` и CLI (`app.flow.summary.cli.*`). При активации CLI обязательно задавайте `session-id`, `provider-id`, `model-id` и убедитесь, что алерты выключены на время массового backfill, чтобы избежать ложных срабатываний.
+
 ### Формат flow definition
 - JSON содержит `startStepId`, массив `steps[]` (id, name, `agentVersionId`, `prompt`, `overrides`, `memoryReads`, `memoryWrites`, `transitions`, `maxAttempts`).
 - `memoryReads` описывают канал (`channel`, `limit`). `memoryWrites` — канал/режим (`AGENT_OUTPUT|STATIC`) и сериализованный payload (для STATIC).

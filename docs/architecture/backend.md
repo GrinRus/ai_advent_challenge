@@ -23,3 +23,9 @@ Backend реализован на Spring Boot (Java 21) и следует при
 
 ## Диаграммы и дополнительные материалы
 Графические схемы backend размещаются в `docs/architecture/diagrams`. При обновлениях диаграмм добавляйте исходники (PlantUML, Excalidraw) и экспорт.
+
+## Flow summaries
+- Админский REST-эндпоинт `/api/admin/flows/sessions/{sessionId}/summary/rebuild` заставляет `FlowMemorySummarizerService` пересчитать summary для указанных каналов и провайдера (по умолчанию канал `conversation`).
+- Для офлайновых перезапусков добавлен CLI-раннер (`app.flow.summary.cli.*`): достаточно передать `session-id`, `provider-id`, `model-id` и (опционально) список каналов, после чего при старте приложения будет инициирован пересчёт.
+- Результаты взаимодействий (HITL) записываются в канал `conversation` через `FlowInteractionService` и сразу прогоняются через summarizer, поэтому операторы и агенты всегда видят окно «summary + хвост» без ручного вмешательства.
+- Наблюдаемость обеспечивается отдельными метриками `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failures_total`, `flow_summary_failure_alerts_total`, чтобы отличать health flow-саммаризации от чатового воркера и строить алерты.

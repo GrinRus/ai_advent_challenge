@@ -2,6 +2,8 @@ package com.aiadvent.backend.flow.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.CONVERSATION;
+import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.SHARED;
 
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
@@ -37,10 +39,10 @@ class FlowDefinitionParserTest {
 
     assertThat(config.memoryWrites())
         .extracting(MemoryWriteConfig::channel)
-        .contains("shared");
+        .contains(SHARED);
     assertThat(config.memoryReads())
         .extracting(MemoryReadConfig::channel)
-        .contains("shared");
+        .contains(SHARED, CONVERSATION);
   }
 
   @Test

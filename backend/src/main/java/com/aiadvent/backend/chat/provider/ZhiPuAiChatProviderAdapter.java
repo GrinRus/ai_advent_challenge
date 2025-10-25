@@ -20,6 +20,7 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
   private final String providerId;
   private final ChatProvidersProperties.Provider providerConfig;
   private final ChatClient chatClient;
+  private final ChatClient statelessChatClient;
 
   public ZhiPuAiChatProviderAdapter(
       String providerId,
@@ -40,6 +41,7 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
     ZhiPuAiChatModel chatModel = new ZhiPuAiChatModel(providerApi, defaultOptions);
     this.chatClient =
         ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor).build();
+    this.statelessChatClient = ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor).build();
   }
 
   private ZhiPuAiApi mutateApi(ZhiPuAiApi baseZhiPuAiApi, ChatProvidersProperties.Provider provider) {
@@ -84,6 +86,11 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
   @Override
   public ChatClient chatClient() {
     return chatClient;
+  }
+
+  @Override
+  public ChatClient statelessChatClient() {
+    return statelessChatClient;
   }
 
   @Override

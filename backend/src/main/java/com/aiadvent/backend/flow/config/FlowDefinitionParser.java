@@ -1,5 +1,8 @@
 package com.aiadvent.backend.flow.config;
 
+import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.CONVERSATION;
+import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.SHARED;
+
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowInteractionType;
@@ -149,23 +152,30 @@ public class FlowDefinitionParser {
 
   private List<MemoryReadConfig> applyDefaultMemoryReads(List<MemoryReadConfig> reads) {
     boolean hasShared =
-        reads.stream().anyMatch(read -> "shared".equalsIgnoreCase(read.channel()));
-    if (hasShared) {
+        reads.stream().anyMatch(read -> SHARED.equalsIgnoreCase(read.channel()));
+    boolean hasConversation =
+        reads.stream().anyMatch(read -> CONVERSATION.equalsIgnoreCase(read.channel()));
+    if (hasShared && hasConversation) {
       return reads;
     }
     List<MemoryReadConfig> augmented = new java.util.ArrayList<>(reads);
-    augmented.add(new MemoryReadConfig("shared", 5));
+    if (!hasShared) {
+      augmented.add(new MemoryReadConfig(SHARED, 5));
+    }
+    if (!hasConversation) {
+      augmented.add(new MemoryReadConfig(CONVERSATION, 10));
+    }
     return List.copyOf(augmented);
   }
 
   private List<MemoryWriteConfig> applyDefaultMemoryWrites(List<MemoryWriteConfig> writes) {
     boolean hasShared =
-        writes.stream().anyMatch(write -> "shared".equalsIgnoreCase(write.channel()));
+        writes.stream().anyMatch(write -> SHARED.equalsIgnoreCase(write.channel()));
     if (hasShared) {
       return writes;
     }
     List<MemoryWriteConfig> augmented = new java.util.ArrayList<>(writes);
-    augmented.add(new MemoryWriteConfig("shared", MemoryWriteMode.AGENT_OUTPUT, null));
+    augmented.add(new MemoryWriteConfig(SHARED, MemoryWriteMode.AGENT_OUTPUT, null));
     return List.copyOf(augmented);
   }
 

@@ -30,6 +30,7 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
   private final String providerId;
   private final ChatProvidersProperties.Provider providerConfig;
   private final ChatClient chatClient;
+  private final ChatClient statelessChatClient;
 
   public OpenAiChatProviderAdapter(
       String providerId,
@@ -50,6 +51,7 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
         OpenAiChatModel.builder().openAiApi(providerApi).defaultOptions(defaultOptions).build();
     this.chatClient =
         ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor).build();
+    this.statelessChatClient = ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor).build();
   }
 
   private OpenAiApi mutateApi(OpenAiApi baseOpenAiApi, ChatProvidersProperties.Provider provider) {
@@ -85,6 +87,11 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
   @Override
   public ChatClient chatClient() {
     return chatClient;
+  }
+
+  @Override
+  public ChatClient statelessChatClient() {
+    return statelessChatClient;
   }
 
   @Override

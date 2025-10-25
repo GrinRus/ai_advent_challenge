@@ -7,6 +7,7 @@ import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
+import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
@@ -20,6 +21,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -490,11 +492,17 @@ public class AgentInvocationService {
       AgentInvocationRequest request,
       ChatProviderSelection selection,
       String forthcomingUserMessage) {
-    if (flowMemorySummarizerService == null || request.memoryReads().isEmpty()) {
+    if (flowMemorySummarizerService == null) {
       return;
     }
+    Set<String> channels = new LinkedHashSet<>();
     request.memoryReads().stream()
         .map(MemoryReadInstruction::channel)
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .forEach(channels::add);
+    channels.add(FlowMemoryChannels.CONVERSATION);
+    channels.stream()
         .filter(flowMemorySummarizerService::supportsChannel)
         .distinct()
         .forEach(

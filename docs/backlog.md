@@ -519,35 +519,35 @@
 
 ## Wave 10.2 — Завершение rollout саммаризации во флоу
 Цель: довести flow-саммаризацию до продакшн-готовности — автоматический запуск без ручных правок DSL, полные метаданные и наблюдаемость, единый UX для операторов/агентов.
-
+ 
 ### Backend
-- [ ] Нормализовать канал, в котором живёт «пользователь ↔ агент»: либо всегда дублировать оба сообщения в `conversation`, либо расширить `FlowMemorySummarizerService` так, чтобы он принимал любой канал из `memoryReads` и помечал summary в `metadata.summary=true`.
-- [ ] Независимо от выбранного подхода гарантировать, что `AgentInvocationService.triggerFlowSummaries` срабатывает перед каждым вызовом агента без дополнительных настроек в DSL (дефолтно добавляем `conversation` в `memoryReads`).
-- [ ] Исправить записи памяти: `recordUserPrompt` и блок сохранения AGENT_OUTPUT должны писать в один и тот же канал, чтобы summary описывали пары, а не только пользовательский input.
-- [ ] При сохранении summary в `flow_memory_summary`/`chat_memory_summary` заполнять `agent_version_id`, `language`, `attempt_start/end`, `metadata.schemaVersion`, а также обновлять `ChatSession.summaryMetadata` (прогресс и модель).
-- [ ] Добавить API/CLI для форсированного пересчёта flow-summaries (аналог admin-эндпоинта для чатов) с ограничением по сессиям/каналам.
-- [ ] Интегрировать `FlowInteractionService` и воркер: при создании/ответе на interaction pipeline обязан пересобирать окно «summary + хвост» и публиковать его операторам/агентам.
-- [ ] GAP: **Flow summaries пока обрезаны и не запускаются по умолчанию.** Пользовательские сообщения всегда складываются в канал `conversation`, тогда как `AGENT_OUTPUT` попадает в каналы из DSL (`shared` по умолчанию), а `FlowMemorySummarizerService` умеет читать только `conversation`. В итоге summary строятся только из пользовательских реплик, а когда шаг не читает `conversation`, `triggerFlowSummaries` вообще не вызывается.
-- [ ] GAP: **Нет связи HITL ↔ память ↔ summary.** `FlowInteractionService` никак не записывает payload ответов/авто‑резолвов обратно в память и не дергает summarizer, поэтому длинные формы и ответы операторов не попадают в «summary + хвост», хотя того требует дизайн 10.2.
-- [ ] GAP: **Метаданные summary не заполняются.** В `FlowMemorySummarizerService.persistSummary` и `ChatMemorySummarizerService.persistSummary` остаются `null` для `agent_version_id`, `language`, диапазонов попыток и `metadata.schemaVersion`, а `ChatSession.summaryMetadata` никогда не обновляется — аналитика и прогресс, описанные в волне, недоступны.
-- [ ] GAP: **Нет ручного восстановления flow-саммари.** Админ-эндпоинт реализован только для чатов (`/api/admin/chat/...`), у FlowSummaries нет ни REST, ни CLI для rebuild/backfill, которые зафиксированы в требованиях.
-- [ ] GAP: **Отсутствует наблюдаемость flow-саммари.** В сервис не подтянут `MeterRegistry`, нет метрик `flow_summary_runs_total`, queue size/rejections и alert counters, поэтому алерты волны 10.2 невозможно подключить.
-- [ ] GAP: **MessageChatMemoryAdvisor мешает внутренним LLM-вызовам.** Summarizer и backfill ходят в `ChatClient` с advisor-цепочкой, из-за чего в `chat_memory` попадают служебные запросы с `conversationId=default` и валятся предупреждения. Нужно выделить отдельный client без `MessageChatMemoryAdvisor` для внутренних вызовов или научить advisor пропускать такие сценарии.
-- [ ] GAP: **Тестов продакшн-уровня нет.** Имеются только unit-тесты на сервисы памяти; сценарии из волны (длинный flow → summary, interaction → summary, ручной rebuild, гонки воркеров) не покрыты даже частично.
+- [x] Нормализовать канал, в котором живёт «пользователь ↔ агент»: либо всегда дублировать оба сообщения в `conversation`, либо расширить `FlowMemorySummarizerService` так, чтобы он принимал любой канал из `memoryReads` и помечал summary в `metadata.summary=true`.
+- [x] Независимо от выбранного подхода гарантировать, что `AgentInvocationService.triggerFlowSummaries` срабатывает перед каждым вызовом агента без дополнительных настроек в DSL (дефолтно добавляем `conversation` в `memoryReads`).
+- [x] Исправить записи памяти: `recordUserPrompt` и блок сохранения AGENT_OUTPUT должны писать в один и тот же канал, чтобы summary описывали пары, а не только пользовательский input.
+- [x] При сохранении summary в `flow_memory_summary`/`chat_memory_summary` заполнять `agent_version_id`, `language`, `attempt_start/end`, `metadata.schemaVersion`, а также обновлять `ChatSession.summaryMetadata` (прогресс и модель).
+- [x] Добавить API/CLI для форсированного пересчёта flow-summaries (аналог admin-эндпоинта для чатов) с ограничением по сессиям/каналам.
+- [x] Интегрировать `FlowInteractionService` и воркер: при создании/ответе на interaction pipeline обязан пересобирать окно «summary + хвост» и публиковать его операторам/агентам.
+- [x] GAP: **Flow summaries пока обрезаны и не запускаются по умолчанию.** Пользовательские сообщения всегда складываются в канал `conversation`, тогда как `AGENT_OUTPUT` попадает в каналы из DSL (`shared` по умолчанию), а `FlowMemorySummarizerService` умеет читать только `conversation`. В итоге summary строятся только из пользовательских реплик, а когда шаг не читает `conversation`, `triggerFlowSummaries` вообще не вызывается.
+- [x] GAP: **Нет связи HITL ↔ память ↔ summary.** `FlowInteractionService` никак не записывает payload ответов/авто‑резолвов обратно в память и не дергает summarizer, поэтому длинные формы и ответы операторов не попадают в «summary + хвост», хотя того требует дизайн 10.2.
+- [x] GAP: **Метаданные summary не заполняются.** В `FlowMemorySummarizerService.persistSummary` и `ChatMemorySummarizerService.persistSummary` остаются `null` для `agent_version_id`, `language`, диапазонов попыток и `metadata.schemaVersion`, а `ChatSession.summaryMetadata` никогда не обновляется — аналитика и прогресс, описанные в волне, недоступны.
+- [x] GAP: **Нет ручного восстановления flow-саммари.** Админ-эндпоинт реализован только для чатов (`/api/admin/chat/...`), у FlowSummaries нет ни REST, ни CLI для rebuild/backfill, которые зафиксированы в требованиях.
+- [x] GAP: **Отсутствует наблюдаемость flow-саммари.** В сервис не подтянут `MeterRegistry`, нет метрик `flow_summary_runs_total`, queue size/rejections и alert counters, поэтому алерты волны 10.2 невозможно подключить.
+- [x] GAP: **MessageChatMemoryAdvisor мешает внутренним LLM-вызовам.** Summarizer и backfill ходят в `ChatClient` с advisor-цепочкой, из-за чего в `chat_memory` попадают служебные запросы с `conversationId=default` и валятся предупреждения. Нужно выделить отдельный client без `MessageChatMemoryAdvisor` для внутренних вызовов или научить advisor пропускать такие сценарии.
+- [x] GAP: **Тестов продакшн-уровня нет.** Имеются только unit-тесты на сервисы памяти; сценарии из волны (длинный flow → summary, interaction → summary, ручной rebuild, гонки воркеров) не покрыты даже частично.
 
 ### Observability & QA
-- [ ] Ввести отдельные метрики с лейблом `scope=flow`: `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failure{,_alerts}_total`.
-- [ ] Настроить алерты на переполнение очереди, >3 подряд ошибок по одной сессии и отсутствие `summary_metadata` дольше N минут при включённом воркере.
-- [ ] Добавить интеграционные тесты:
+- [x] Ввести отдельные метрики с лейблом `scope=flow`: `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failure{,_alerts}_total`.
+- [x] Настроить алерты на переполнение очереди, >3 подряд ошибок по одной сессии и отсутствие `summary_metadata` дольше N минут при включённом воркере.
+- [x] Добавить интеграционные тесты:
   - длинный flow превышает лимит → появляется запись в `flow_memory_summary`, а `FlowMemoryService.history()` возвращает summary + tail;
   - FlowInteraction после ответа возобновляет шаг с учётом summary;
   - ручной ребилд обновляет summary и метаданные.
-- [ ] Смоук-тест для конкурирующих summarizer-джобов (параллельные сессии) — проверяем семафор и очередь.
+- [x] Смоук-тест для конкурирующих summarizer-джобов (параллельные сессии) — проверяем семафор и очередь.
 
 ### Документация и процессы
-- [ ] Обновить `docs/infra.md`, `docs/processes.md`, `docs/architecture/flow-definition.md` — описать выбранную стратегию каналов, формат `summary_metadata`, ручные процедуры (rebuild/backfill) и SLO.
-- [ ] Дополнить runbook инструкциями для операторов: как убедиться, что summary приклеилось к interaction, как перезапустить воркер, какие параметры менять при деградации.
-- [ ] Зафиксировать решение по выбору варианта (канон. канал vs мультиканальный режим) в ADR с описанием компромиссов:
+- [x] Обновить `docs/infra.md`, `docs/processes.md`, `docs/architecture/flow-definition.md` — описать выбранную стратегию каналов, формат `summary_metadata`, ручные процедуры (rebuild/backfill) и SLO.
+- [x] Дополнить runbook инструкциями для операторов: как убедиться, что summary приклеилось к interaction, как перезапустить воркер, какие параметры менять при деградации.
+- [x] Зафиксировать решение по выбору варианта (канон. канал vs мультиканальный режим) в ADR с описанием компромиссов:
   1. **Channel unification** — минимум ветвлений, простой DX, но требует миграции существующих flow на `conversation`.
   2. **Multi-channel summaries** — гибко для специализированных каналов, но сложнее history + фронта.
   3. **Гибрид** — дефолт `conversation` + whitelist иных каналов в DSL, даёт постепенный rollout ценой дополнительной конфигурации.
