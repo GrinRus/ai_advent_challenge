@@ -191,6 +191,7 @@ describe('FlowLaunch', () => {
       <MemoryRouter initialEntries={['/flows/launch?definitionId=11111111-1111-1111-1111-111111111111']}>
         <Routes>
           <Route path="/flows/launch" element={<FlowLaunch />} />
+          <Route path="/flows/sessions/:sessionId" element={<div>Session overview</div>} />
         </Routes>
       </MemoryRouter>,
     );
