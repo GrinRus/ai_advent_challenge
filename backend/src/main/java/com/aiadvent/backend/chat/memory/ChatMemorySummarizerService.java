@@ -377,12 +377,10 @@ public class ChatMemorySummarizerService {
             .orElseThrow(() -> new IllegalStateException("Chat session not found during summarisation"));
 
     int totalMessages = conversation.size();
-    int tailSize = Math.max(4, properties.getWindowSize());
-    if (totalMessages <= tailSize) {
+    int summaryCount = computeSummaryCount(totalMessages);
+    if (summaryCount <= 0) {
       return;
     }
-
-    int summaryCount = Math.max(1, totalMessages - tailSize);
     List<Message> toSummarize = new ArrayList<>(conversation.subList(0, summaryCount));
     List<Message> tail = new ArrayList<>(conversation.subList(summaryCount, conversation.size()));
 
@@ -666,5 +664,21 @@ public class ChatMemorySummarizerService {
     private SummarizationException(String message, Throwable cause) {
       super(message, cause);
     }
+  }
+
+  int resolveTailCount(int totalMessages) {
+    if (totalMessages <= 1) {
+      return 0;
+    }
+    int configuredTail = Math.max(4, properties.getWindowSize());
+    int maxTail = Math.min(configuredTail, totalMessages - 1);
+    return Math.max(1, maxTail);
+  }
+
+  private int computeSummaryCount(int totalMessages) {
+    if (totalMessages < 2) {
+      return 0;
+    }
+    return Math.max(1, totalMessages - resolveTailCount(totalMessages));
   }
 }

@@ -95,4 +95,14 @@ class ChatMemorySummarizerServiceTest {
     Optional<String> summary = service.summarizeTranscript(UUID.randomUUID(), "   ", "test");
     assertThat(summary).isEmpty();
   }
+
+  @Test
+  void resolveTailCountKeepsAtLeastOneMessageWhenWindowIsLargerThanTranscript() {
+    assertThat(service.resolveTailCount(5)).isEqualTo(4);
+  }
+
+  @Test
+  void resolveTailCountHonoursWindowWhenTranscriptIsLonger() {
+    assertThat(service.resolveTailCount(64)).isEqualTo(20);
+  }
 }
