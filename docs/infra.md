@@ -118,6 +118,22 @@ Frontend контейнер проксирует все запросы `/api/*` 
 
 Подробная схема доступна в OpenAPI (`/v3/api-docs`, swagger-ui настраивается через `backend/src/main/resources/application.yaml`).
 
+### Саммаризация длинных диалогов
+
+- Префлайт-обёртка `ChatSummarizationPreflightManager` срабатывает перед каждым обращением к LLM (стриминг, plain sync, structured sync, flow-агенты). Она оценивает размер будущего промпта (`TokenUsageEstimator`) и, при превышении `summarization.trigger-token-limit`, ставит задачу в очередь.
+- Рабочий пул `ChatMemorySummarizerService` ограничен параметрами `summarization.max-concurrent-summaries` и `summarization.max-queue-size`. Пока задача ждёт в очереди, метрика `chat_summary_queue_size` отражает её длину, а отфутболенные задачи считаются в `chat_summary_queue_rejections_total`.
+- Основные переменные окружения (см. `.env.example`):
+  - `CHAT_MEMORY_SUMMARIZATION_ENABLED` — включение механизма.
+  - `CHAT_MEMORY_SUMMARIZATION_TRIGGER` и `CHAT_MEMORY_SUMMARIZATION_TARGET` — порог и целевой размер промпта (в токенах).
+  - `CHAT_MEMORY_SUMMARIZATION_MODEL` — идентификатор `provider:model` (по умолчанию `openai:gpt-4o-mini`).
+  - `CHAT_MEMORY_SUMMARIZATION_MAX_CONCURRENT` — число параллельных запросов к summarizer-модели.
+  - `CHAT_MEMORY_SUMMARIZATION_MAX_QUEUE_SIZE` — длина очереди задач до отказа.
+  - `CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED`, `..._MIN_MESSAGES`, `..._BATCH_SIZE`, `..._MAX_ITERATIONS` — настройки повторяемого бэкфилла (при включении сервис запустит утилиту и будет пересобирать summary батчами).
+- Надёжность: каждая задача делает до 3 попыток с backoff 250→2000 мс. При нескольких подряд сбоях по сессии логируется alert, а счётчики `chat_summary_failures_total`/`chat_summary_failure_alerts_total` позволяют настроить алерты в Grafana.
+- Набор метрик: `chat_summary_runs_total`, `chat_summary_duration_seconds`, `chat_summary_tokens_saved_total`, `chat_summary_queue_size`, `chat_summary_queue_rejections_total`, `chat_summary_failures_total`, `chat_summary_failure_alerts_total`.
+- Flow-память использует тот же механизм (`FlowMemorySummarizerService`), summary сохраняются в `flow_memory_summary`, а при чтении `FlowMemoryService` автоматически собирает «summary + хвост» канала.
+- Ручной пересчёт: `POST /api/admin/chat/sessions/{sessionId}/summary/rebuild` (нужно указать `providerId` и `modelId`). Массовый бэкфилл запускается установкой `CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED=true` и рестартом backend — после окончания лог сообщает количество обработанных сессий.
+
 ### Синхронный структурированный ответ
 - Новый plain sync эндпоинт `POST /api/llm/chat/sync` возвращает `ChatSyncResponse`: текстовую completion, метаданные провайдера/модели, задержку и usage/cost. Формат запроса повторяет стриминг (`ChatSyncRequest`). При отсутствии `sessionId` создаётся новая сессия, её идентификатор возвращается в заголовке `X-Session-Id`; флаг `X-New-Session` сигнализирует о создании диалога.
 - Структурированный sync-эндпоинт перемещён на `POST /api/llm/chat/sync/structured`. Он по-прежнему принимает `ChatSyncRequest`, но отвечает `StructuredSyncResponse` и требует поддержки `structuredEnabled` у модели.

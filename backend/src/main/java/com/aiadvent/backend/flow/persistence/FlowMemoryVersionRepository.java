@@ -20,6 +20,12 @@ public interface FlowMemoryVersionRepository extends JpaRepository<FlowMemoryVer
   List<FlowMemoryVersion> findByFlowSessionAndChannelOrderByVersionDesc(
       FlowSession flowSession, String channel);
 
+  List<FlowMemoryVersion> findByFlowSessionAndChannelOrderByVersionAsc(
+      FlowSession flowSession, String channel);
+
+  List<FlowMemoryVersion> findByFlowSessionAndChannelAndVersionGreaterThanOrderByVersionAsc(
+      FlowSession flowSession, String channel, long version);
+
   @Modifying
   @Query(
       "delete from FlowMemoryVersion v where v.flowSession = :session and v.channel = :channel and v.version < :minVersion")

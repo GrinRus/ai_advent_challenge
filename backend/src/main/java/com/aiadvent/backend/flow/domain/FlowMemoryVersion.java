@@ -1,8 +1,11 @@
 package com.aiadvent.backend.flow.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -43,6 +46,19 @@ public class FlowMemoryVersion {
 
   @Column(name = "created_by_step_id")
   private UUID createdByStepId;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "source_type", length = 32)
+  private FlowMemorySourceType sourceType;
+
+  @Column(name = "step_id", length = 128)
+  private String stepId;
+
+  @Column(name = "step_attempt")
+  private Integer stepAttempt;
+
+  @Column(name = "agent_version_id")
+  private UUID agentVersionId;
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -105,5 +121,37 @@ public class FlowMemoryVersion {
 
   public Instant getCreatedAt() {
     return createdAt;
+  }
+
+  public FlowMemorySourceType getSourceType() {
+    return sourceType;
+  }
+
+  public void setSourceType(FlowMemorySourceType sourceType) {
+    this.sourceType = sourceType;
+  }
+
+  public String getStepId() {
+    return stepId;
+  }
+
+  public void setStepId(String stepId) {
+    this.stepId = stepId;
+  }
+
+  public Integer getStepAttempt() {
+    return stepAttempt;
+  }
+
+  public void setStepAttempt(Integer stepAttempt) {
+    this.stepAttempt = stepAttempt;
+  }
+
+  public UUID getAgentVersionId() {
+    return agentVersionId;
+  }
+
+  public void setAgentVersionId(UUID agentVersionId) {
+    this.agentVersionId = agentVersionId;
   }
 }

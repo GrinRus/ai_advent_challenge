@@ -10,12 +10,13 @@ import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import org.springframework.ai.chat.memory.ChatMemory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.ChatOptions;
@@ -32,8 +33,14 @@ public class SyncChatService extends AbstractSyncService {
 
   private static final Logger log = LoggerFactory.getLogger(SyncChatService.class);
 
-  public SyncChatService(ChatProviderService chatProviderService, ChatService chatService) {
+  private final ChatSummarizationPreflightManager preflightManager;
+
+  public SyncChatService(
+      ChatProviderService chatProviderService,
+      ChatService chatService,
+      ChatSummarizationPreflightManager preflightManager) {
     super(chatProviderService, chatService);
+    this.preflightManager = preflightManager;
   }
 
   public SyncChatResult sync(ChatSyncRequest request) {
@@ -86,6 +93,8 @@ public class SyncChatService extends AbstractSyncService {
     Instant attemptStart = now();
     ChatOptions options = chatProviderService.buildOptions(selection, overrides);
     String userPrompt = sanitizeMessage(request.message());
+
+    preflightManager.run(conversation.sessionId(), selection, userPrompt, "sync-chat");
 
     try {
       var response =
@@ -191,6 +200,7 @@ public class SyncChatService extends AbstractSyncService {
   protected Logger logger() {
     return log;
   }
+
 
   public record SyncChatResult(ConversationContext context, ChatSyncResponse response) {}
 }

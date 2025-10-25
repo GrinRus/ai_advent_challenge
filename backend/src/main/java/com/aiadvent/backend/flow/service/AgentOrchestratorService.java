@@ -25,7 +25,9 @@ import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
 import com.aiadvent.backend.flow.job.JobQueuePort;
+import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
@@ -206,12 +208,15 @@ public class AgentOrchestratorService {
       ObjectNode stepStartedPayload =
           buildStepStartedPayload(stepExecution, agentVersion, stepConfig, sessionOverrides);
       recordEvent(session, stepExecution, FlowEventType.STEP_STARTED, "running", stepStartedPayload, null);
+      String userPrompt = resolvePrompt(stepConfig, session);
+      recordUserPrompt(session, stepExecution, agentVersion, userPrompt, inputContext);
+
       AgentInvocationRequest request =
           new AgentInvocationRequest(
               session.getId(),
               stepExecution.getId(),
               agentVersion,
-              resolvePrompt(stepConfig, session),
+              userPrompt,
               inputContext,
               session.getLaunchParameters(),
               stepConfig.overrides(),
@@ -221,7 +226,7 @@ public class AgentOrchestratorService {
 
       AgentInvocationResult result = agentInvocationService.invoke(request);
 
-      JsonNode stepOutput = applyAgentResult(stepExecution, result, session, stepConfig);
+      JsonNode stepOutput = applyAgentResult(stepExecution, result, session, agentVersion, stepConfig);
 
       FlowStepTransitions transitions = stepConfig.transitions();
 
@@ -265,6 +270,7 @@ public class AgentOrchestratorService {
       FlowStepExecution stepExecution,
       AgentInvocationResult result,
       FlowSession session,
+      AgentVersion agentVersion,
       FlowStepConfig stepConfig) {
 
     stepExecution.setStatus(FlowStepStatus.COMPLETED);
@@ -279,17 +285,25 @@ public class AgentOrchestratorService {
 
     List<FlowMemoryVersion> updates = new ArrayList<>();
     for (MemoryWriteConfig write : stepConfig.memoryWrites()) {
+      FlowMemorySourceType sourceType = mapSourceType(write.mode());
+      FlowMemoryMetadata metadata =
+          FlowMemoryMetadata.builder()
+              .sourceType(sourceType)
+              .stepId(stepExecution.getStepId())
+              .stepAttempt(stepExecution.getAttempt())
+              .agentVersionId(agentVersion != null ? agentVersion.getId() : null)
+              .createdByStepId(stepExecution.getId())
+              .build();
       if (write.mode() == MemoryWriteMode.AGENT_OUTPUT) {
         updates.add(
             flowMemoryService.append(
-                session.getId(),
-                write.channel(),
-                cloneNode(stepOutput),
-                stepExecution.getId()));
+                session.getId(), write.channel(), cloneNode(stepOutput), metadata));
       } else if (write.mode() == MemoryWriteMode.STATIC && write.payload() != null) {
         updates.add(
-            flowMemoryService.append(
-                session.getId(), write.channel(), write.payload(), stepExecution.getId()));
+            flowMemoryService.append(session.getId(), write.channel(), write.payload(), metadata));
+      } else if (write.mode() == MemoryWriteMode.USER_INPUT && write.payload() != null) {
+        updates.add(
+            flowMemoryService.append(session.getId(), write.channel(), write.payload(), metadata));
       }
     }
 
@@ -852,6 +866,32 @@ public class AgentOrchestratorService {
     return node.size() > 0 ? node : null;
   }
 
+  private void recordUserPrompt(
+      FlowSession session,
+      FlowStepExecution stepExecution,
+      AgentVersion agentVersion,
+      String userPrompt,
+      JsonNode inputContext) {
+    if (!StringUtils.hasText(userPrompt)) {
+      return;
+    }
+    FlowMemoryMetadata metadata =
+        FlowMemoryMetadata.builder()
+            .sourceType(FlowMemorySourceType.USER_INPUT)
+            .stepId(stepExecution.getStepId())
+            .stepAttempt(stepExecution.getAttempt())
+            .agentVersionId(agentVersion != null ? agentVersion.getId() : null)
+            .createdByStepId(stepExecution.getId())
+            .build();
+
+    ObjectNode payload = objectMapper.createObjectNode();
+    payload.put("prompt", userPrompt);
+    if (inputContext != null) {
+      payload.set("context", inputContext.deepCopy());
+    }
+    flowMemoryService.append(session.getId(), "conversation", payload, metadata);
+  }
+
   private JsonNode cloneNode(JsonNode node) {
     if (node == null || node.isNull()) {
       return objectMapper.nullNode();
@@ -888,5 +928,16 @@ public class AgentOrchestratorService {
       return null;
     }
     return Duration.between(start, end);
+  }
+
+  private FlowMemorySourceType mapSourceType(MemoryWriteMode mode) {
+    if (mode == null) {
+      return FlowMemorySourceType.SYSTEM;
+    }
+    return switch (mode) {
+      case USER_INPUT -> FlowMemorySourceType.USER_INPUT;
+      case AGENT_OUTPUT -> FlowMemorySourceType.AGENT_OUTPUT;
+      case STATIC -> FlowMemorySourceType.SYSTEM;
+    };
   }
 }

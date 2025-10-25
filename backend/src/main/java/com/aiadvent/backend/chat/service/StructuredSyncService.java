@@ -14,6 +14,7 @@ import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -49,15 +50,18 @@ public class StructuredSyncService extends AbstractSyncService {
 
   private final BeanOutputConverter<StructuredSyncResponse> outputConverter;
   private final ObjectMapper objectMapper;
+  private final ChatSummarizationPreflightManager preflightManager;
 
   public StructuredSyncService(
       ChatProviderService chatProviderService,
       ChatService chatService,
       BeanOutputConverter<StructuredSyncResponse> outputConverter,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ChatSummarizationPreflightManager preflightManager) {
     super(chatProviderService, chatService);
     this.outputConverter = outputConverter;
     this.objectMapper = objectMapper;
+    this.preflightManager = preflightManager;
   }
 
   public StructuredSyncResult sync(ChatSyncRequest request) {
@@ -116,6 +120,8 @@ public class StructuredSyncService extends AbstractSyncService {
     String systemInstruction =
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());
     String userPrompt = enrichUserPrompt(request.message(), provider.getType());
+
+    preflightManager.run(conversation.sessionId(), selection, userPrompt, "structured-sync");
 
     try {
       ChatResponse response =
@@ -264,4 +270,5 @@ public class StructuredSyncService extends AbstractSyncService {
   protected Logger logger() {
     return log;
   }
+
 }

@@ -1,0 +1,98 @@
+package com.aiadvent.backend.chat.memory;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.aiadvent.backend.chat.config.ChatMemoryProperties;
+import com.aiadvent.backend.chat.persistence.ChatMemorySummaryRepository;
+import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
+import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
+import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.chat.token.TokenUsageEstimator;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+@ExtendWith(MockitoExtension.class)
+class ChatMemorySummarizerServiceTest {
+
+  @Mock private TokenUsageEstimator tokenUsageEstimator;
+  @Mock private ChatMemorySummaryRepository summaryRepository;
+  @Mock private ChatSessionRepository chatSessionRepository;
+  @Mock private ChatProviderService chatProviderService;
+  @Mock private ChatMemoryRepository chatMemoryRepository;
+
+  private SimpleMeterRegistry meterRegistry;
+  private ChatMemorySummarizerService service;
+
+  @BeforeEach
+  void setUp() {
+    meterRegistry = new SimpleMeterRegistry();
+    ChatMemoryProperties properties = new ChatMemoryProperties();
+    properties.getSummarization().setEnabled(true);
+    properties.getSummarization().setModel("stub:model");
+    service =
+        new ChatMemorySummarizerService(
+            properties,
+            tokenUsageEstimator,
+            summaryRepository,
+            chatSessionRepository,
+            chatProviderService,
+            chatMemoryRepository,
+            meterRegistry);
+  }
+
+  @AfterEach
+  void tearDown() {
+    service.shutdown();
+    meterRegistry.close();
+  }
+
+  @Test
+  void buildSummarisationPromptKeepsRoleOrder() {
+    List<Message> messages =
+        List.of(
+            SystemMessage.builder().text("Context").build(),
+            UserMessage.builder().text("Question").build(),
+            AssistantMessage.builder().content("Answer").build());
+
+    String prompt = service.buildSummarisationPrompt(messages);
+
+    assertThat(prompt).contains("system: Context");
+    assertThat(prompt).contains("user: Question");
+    assertThat(prompt).contains("assistant: Answer");
+    assertThat(prompt).contains("Сформируй краткое");
+  }
+
+  @Test
+  void extractContentReturnsFirstNonEmptyGeneration() {
+    ChatResponse response =
+        new ChatResponse(
+            List.of(
+                new Generation(AssistantMessage.builder().content("first").build()),
+                new Generation(AssistantMessage.builder().content("second").build())));
+
+    assertThat(service.extractContent(response)).isEqualTo("first");
+  }
+
+  @Test
+  void summarizeTranscriptSkipsBlankPrompt() {
+    Optional<String> summary = service.summarizeTranscript(UUID.randomUUID(), "   ", "test");
+    assertThat(summary).isEmpty();
+  }
+}

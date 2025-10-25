@@ -1159,3 +1159,198 @@ databaseChangeLog:
             tableName: flow_step_execution
             columnNames: interaction_request_id
             constraintName: uq_flow_step_execution_interaction
+  - changeSet:
+      id: 0015-create-chat-memory-summary
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: chat_session
+            columns:
+              - column:
+                  name: summary_until_order
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary_metadata
+                  type: JSONB
+        - createTable:
+            tableName: chat_memory_summary
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_start_order
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_end_order
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary_text
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token_count
+                  type: BIGINT
+              - column:
+                  name: language
+                  type: VARCHAR(16)
+              - column:
+                  name: metadata
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: chat_memory_summary
+            baseColumnNames: session_id
+            referencedTableName: chat_session
+            referencedColumnNames: id
+            constraintName: fk_chat_memory_summary_session
+            onDelete: CASCADE
+        - createIndex:
+            tableName: chat_memory_summary
+            indexName: idx_chat_memory_summary_session_range
+            columns:
+              - column:
+                  name: session_id
+              - column:
+                  name: source_start_order
+              - column:
+                  name: source_end_order
+  - changeSet:
+      id: 0016-create-flow-memory-summary
+      author: ai-advent
+      context: local,prod
+      changes:
+        - createTable:
+            tableName: flow_memory_summary
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: flow_session_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: channel
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: step_id
+                  type: VARCHAR(128)
+              - column:
+                  name: agent_version_id
+                  type: UUID
+              - column:
+                  name: attempt_start
+                  type: INT
+              - column:
+                  name: attempt_end
+                  type: INT
+              - column:
+                  name: source_version_start
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_version_end
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: summary_text
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token_count
+                  type: BIGINT
+              - column:
+                  name: language
+                  type: VARCHAR(16)
+              - column:
+                  name: metadata
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: flow_memory_summary
+            baseColumnNames: flow_session_id
+            referencedTableName: flow_session
+            referencedColumnNames: id
+            constraintName: fk_flow_memory_summary_session
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: flow_memory_summary
+            baseColumnNames: agent_version_id
+            referencedTableName: agent_version
+            referencedColumnNames: id
+            constraintName: fk_flow_memory_summary_agent_version
+        - createIndex:
+            tableName: flow_memory_summary
+            indexName: idx_flow_memory_summary_session_channel
+            columns:
+              - column:
+                  name: flow_session_id
+              - column:
+                  name: channel
+        - createIndex:
+            tableName: flow_memory_summary
+            indexName: idx_flow_memory_summary_step_attempt
+            columns:
+              - column:
+                  name: step_id
+              - column:
+                  name: attempt_start
+              - column:
+                  name: attempt_end
+  - changeSet:
+      id: 0017-extend-flow-memory-version-metadata
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: flow_memory_version
+            columns:
+              - column:
+                  name: source_type
+                  type: VARCHAR(32)
+              - column:
+                  name: step_id
+                  type: VARCHAR(128)
+              - column:
+                  name: step_attempt
+                  type: INT
+              - column:
+                  name: agent_version_id
+                  type: UUID

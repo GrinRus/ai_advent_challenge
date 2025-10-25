@@ -1,9 +1,14 @@
 package com.aiadvent.backend.support;
 
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+@Import(TestTokenUsageConfiguration.class)
 public abstract class PostgresTestContainer {
+  static {
+    System.setProperty("app.chat.token-usage.lightweight-mode", "true");
+  }
 
   private static final SingletonPostgresContainer POSTGRES =
       SingletonPostgresContainer.getInstance();
@@ -20,5 +25,7 @@ public abstract class PostgresTestContainer {
     registry.add("spring.ai.openai.api-key", () -> "test-key");
     registry.add("spring.ai.openai.base-url", () -> "https://example.invalid");
     registry.add("spring.ai.openai.chat.options.model", () -> "gpt-4o-mini");
+    registry.add("app.flow.worker.enabled", () -> "false");
+    registry.add("app.chat.token-usage.lightweight-mode", () -> "true");
   }
 }

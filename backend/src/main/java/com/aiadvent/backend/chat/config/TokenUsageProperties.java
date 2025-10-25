@@ -15,6 +15,7 @@ public class TokenUsageProperties {
   private String defaultTokenizer = "cl100k_base";
 
   private Cache cache = new Cache();
+  private boolean lightweightMode = false;
 
   public String getDefaultTokenizer() {
     return defaultTokenizer;
@@ -30,6 +31,14 @@ public class TokenUsageProperties {
 
   public void setCache(Cache cache) {
     this.cache = cache;
+  }
+
+  public boolean isLightweightMode() {
+    return lightweightMode;
+  }
+
+  public void setLightweightMode(boolean lightweightMode) {
+    this.lightweightMode = lightweightMode;
   }
 
   public static class Cache {
@@ -74,4 +83,3 @@ public class TokenUsageProperties {
     }
   }
 }
-

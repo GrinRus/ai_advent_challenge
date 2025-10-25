@@ -20,12 +20,12 @@ class DefaultTokenUsageEstimatorTest {
 
   @Test
   void estimatesTokensWithDefaultTokenizer() {
-    EncodingRegistry registry = Encodings.newDefaultEncodingRegistry();
-    Encoding encoding = registry.getEncoding(EncodingType.CL100K_BASE);
+    CountingEncoding encoding = new CountingEncoding();
+    InMemoryEncodingRegistry registry = new InMemoryEncodingRegistry(encoding);
 
     TokenUsageEstimator estimator =
         new DefaultTokenUsageEstimator(
-            registry, TokenUsageCache.noOp(), "cl100k_base", "chat:usage");
+            registry, TokenUsageCache.noOp(), "test-encoding", "chat:usage");
 
     String prompt = "Hello Spring AI!";
     String completion = "Привет, мир.";
@@ -33,8 +33,8 @@ class DefaultTokenUsageEstimatorTest {
     TokenUsageEstimator.Estimate estimate =
         estimator.estimate(new TokenUsageEstimator.EstimateRequest("openai", "gpt-4o", null, prompt, completion));
 
-    assertThat(estimate.promptTokens()).isEqualTo(encoding.countTokensOrdinary(prompt));
-    assertThat(estimate.completionTokens()).isEqualTo(encoding.countTokensOrdinary(completion));
+    assertThat(estimate.promptTokens()).isEqualTo(prompt.length());
+    assertThat(estimate.completionTokens()).isEqualTo(completion.length());
     assertThat(estimate.totalTokens())
         .isEqualTo(estimate.promptTokens() + estimate.completionTokens());
     assertThat(estimate.promptCached()).isFalse();

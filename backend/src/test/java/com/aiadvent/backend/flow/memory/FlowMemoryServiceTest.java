@@ -5,13 +5,16 @@ import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.domain.FlowMemorySummary;
 import com.aiadvent.backend.flow.domain.FlowMemoryVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
+import com.aiadvent.backend.flow.persistence.FlowMemorySummaryRepository;
 import com.aiadvent.backend.flow.persistence.FlowMemoryVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +28,7 @@ class FlowMemoryServiceTest {
 
   @Mock private FlowSessionRepository flowSessionRepository;
   @Mock private FlowMemoryVersionRepository flowMemoryVersionRepository;
+  @Mock private FlowMemorySummaryRepository flowMemorySummaryRepository;
 
   private FlowMemoryService flowMemoryService;
   private FlowSession session;
@@ -33,12 +37,38 @@ class FlowMemoryServiceTest {
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
-    flowMemoryService = new FlowMemoryService(flowSessionRepository, flowMemoryVersionRepository, objectMapper);
+    flowMemoryService =
+        new FlowMemoryService(
+            flowSessionRepository, flowMemoryVersionRepository, flowMemorySummaryRepository, objectMapper);
 
     FlowDefinition definition =
         new FlowDefinition("memory", 1, FlowDefinitionStatus.PUBLISHED, true, objectMapper.createObjectNode());
     session = new FlowSession(definition, 1, FlowSessionStatus.RUNNING, 0L, 0L);
     setField(session, "id", UUID.randomUUID());
+  }
+
+  @Test
+  void historyIncludesSummariesAndTail() {
+    UUID sessionId = session.getId();
+    String channel = "conversation";
+
+    FlowMemoryVersion v5 = new FlowMemoryVersion(session, channel, 5L, objectMapper.createObjectNode(), null);
+    FlowMemoryVersion v6 = new FlowMemoryVersion(session, channel, 6L, objectMapper.createObjectNode(), null);
+
+    FlowMemorySummary summary =
+        new FlowMemorySummary(session, channel, 1L, 4L, "Earlier summary content");
+
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+    when(flowMemorySummaryRepository.findByFlowSessionAndChannelOrderBySourceVersionStart(session, channel))
+        .thenReturn(java.util.List.of(summary));
+    when(flowMemoryVersionRepository.findByFlowSessionAndChannelAndVersionGreaterThanOrderByVersionAsc(session, channel, 4L))
+        .thenReturn(java.util.List.of(v5, v6));
+
+    java.util.List<com.fasterxml.jackson.databind.JsonNode> history =
+        flowMemoryService.history(sessionId, channel, 10);
+
+    assertThat(history).hasSize(3);
+    assertThat(history.get(0).get("type").asText()).isEqualTo("summary");
   }
 
   @Test
@@ -54,7 +84,17 @@ class FlowMemoryServiceTest {
         .thenReturn(Optional.of(latest));
     when(flowMemoryVersionRepository.save(Mockito.any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-    FlowMemoryVersion saved = flowMemoryService.append(sessionId, channel, objectMapper.createObjectNode(), null);
+    FlowMemoryMetadata metadata =
+        FlowMemoryMetadata.builder()
+            .sourceType(FlowMemorySourceType.AGENT_OUTPUT)
+            .stepId("step-1")
+            .stepAttempt(1)
+            .agentVersionId(UUID.randomUUID())
+            .createdByStepId(UUID.randomUUID())
+            .build();
+
+    FlowMemoryVersion saved =
+        flowMemoryService.append(sessionId, channel, objectMapper.createObjectNode(), metadata);
 
     assertThat(saved.getVersion()).isEqualTo(13L);
     Mockito.verify(flowMemoryVersionRepository)

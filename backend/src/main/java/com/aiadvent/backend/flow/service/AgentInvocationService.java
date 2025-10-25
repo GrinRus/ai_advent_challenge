@@ -7,7 +7,10 @@ import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
+import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
+import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -45,6 +48,7 @@ public class AgentInvocationService {
   private final ChatProviderService chatProviderService;
   private final FlowSessionRepository flowSessionRepository;
   private final FlowMemoryService flowMemoryService;
+  private final FlowMemorySummarizerService flowMemorySummarizerService;
   private final ObjectMapper objectMapper;
   private final ConcurrentMap<String, RetryTemplate> retryTemplates = new ConcurrentHashMap<>();
 
@@ -52,10 +56,12 @@ public class AgentInvocationService {
       ChatProviderService chatProviderService,
       FlowSessionRepository flowSessionRepository,
       FlowMemoryService flowMemoryService,
+      FlowMemorySummarizerService flowMemorySummarizerService,
       ObjectMapper objectMapper) {
     this.chatProviderService = chatProviderService;
     this.flowSessionRepository = flowSessionRepository;
     this.flowMemoryService = flowMemoryService;
+    this.flowMemorySummarizerService = flowMemorySummarizerService;
     this.objectMapper = objectMapper;
   }
 
@@ -102,6 +108,9 @@ public class AgentInvocationService {
         computeOverrides(agentVersion, request.stepOverrides(), request.sessionOverrides());
     String userMessage =
         buildUserMessage(request.userPrompt(), request.launchParameters(), request.inputContext());
+
+    triggerFlowSummaries(flowSession.getId(), request, selection, userMessage);
+
     List<String> memoryMessages = buildMemorySnapshots(flowSession, request.memoryReads());
     Map<String, Object> advisorParams = new java.util.HashMap<>();
     if (request.stepId() != null) {
@@ -326,7 +335,12 @@ public class AgentInvocationService {
     }
     List<com.aiadvent.backend.flow.domain.FlowMemoryVersion> updates = new ArrayList<>(writes.size());
     for (MemoryWriteInstruction write : writes) {
-      updates.add(flowMemoryService.append(flowSessionId, write.channel(), write.payload(), stepId));
+      FlowMemoryMetadata metadata =
+          FlowMemoryMetadata.builder()
+              .createdByStepId(stepId)
+              .sourceType(FlowMemorySourceType.SYSTEM)
+              .build();
+      updates.add(flowMemoryService.append(flowSessionId, write.channel(), write.payload(), metadata));
     }
     return updates;
   }
@@ -470,5 +484,28 @@ public class AgentInvocationService {
       }
     }
     return builder.toString();
+  }
+  private void triggerFlowSummaries(
+      UUID flowSessionId,
+      AgentInvocationRequest request,
+      ChatProviderSelection selection,
+      String forthcomingUserMessage) {
+    if (flowMemorySummarizerService == null || request.memoryReads().isEmpty()) {
+      return;
+    }
+    request.memoryReads().stream()
+        .map(MemoryReadInstruction::channel)
+        .filter(flowMemorySummarizerService::supportsChannel)
+        .distinct()
+        .forEach(
+            channel ->
+                flowMemorySummarizerService
+                    .preflight(
+                        flowSessionId,
+                        channel,
+                        selection.providerId(),
+                        selection.modelId(),
+                        forthcomingUserMessage)
+                    .ifPresent(flowMemorySummarizerService::processPreflightResult));
   }
 }

@@ -50,6 +50,22 @@ logging:
 
 app:
   chat:
+    memory:
+      window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
+      retention: ${CHAT_MEMORY_RETENTION:PT6H}
+      cleanup-interval: ${CHAT_MEMORY_CLEANUP_INTERVAL:PT30M}
+      summarization:
+        enabled: ${CHAT_MEMORY_SUMMARIZATION_ENABLED:false}
+        trigger-token-limit: ${CHAT_MEMORY_SUMMARIZATION_TRIGGER:12000}
+        target-token-count: ${CHAT_MEMORY_SUMMARIZATION_TARGET:6000}
+        model: ${CHAT_MEMORY_SUMMARIZATION_MODEL:openai:gpt-4o-mini}
+        max-concurrent-summaries: ${CHAT_MEMORY_SUMMARIZATION_MAX_CONCURRENT:4}
+        max-queue-size: ${CHAT_MEMORY_SUMMARIZATION_MAX_QUEUE_SIZE:100}
+        backfill:
+          enabled: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED:false}
+          min-messages: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_MIN_MESSAGES:40}
+          batch-size: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_BATCH_SIZE:25}
+          max-iterations: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_MAX_ITERATIONS:20}
     default-provider: zhipu
     providers:
       zhipu:

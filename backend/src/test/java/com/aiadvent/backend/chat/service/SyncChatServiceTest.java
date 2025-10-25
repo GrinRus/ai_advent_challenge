@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,11 +27,13 @@ class SyncChatServiceTest {
 
   @Mock private ChatService chatService;
 
+  @Mock private ChatSummarizationPreflightManager preflightManager;
+
   private SyncChatService syncChatService;
 
   @BeforeEach
   void setUp() {
-    syncChatService = new SyncChatService(chatProviderService, chatService);
+    syncChatService = new SyncChatService(chatProviderService, chatService, preflightManager);
   }
 
   @Test

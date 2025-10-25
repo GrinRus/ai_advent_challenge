@@ -23,6 +23,7 @@ import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
+import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -41,6 +42,7 @@ class AgentInvocationServiceTest {
   private ChatProviderService chatProviderService;
   private FlowSessionRepository flowSessionRepository;
   private FlowMemoryService flowMemoryService;
+  private FlowMemorySummarizerService flowMemorySummarizerService;
   private ObjectMapper objectMapper;
 
   private AgentInvocationService agentInvocationService;
@@ -50,11 +52,16 @@ class AgentInvocationServiceTest {
     chatProviderService = mock(ChatProviderService.class);
     flowSessionRepository = mock(FlowSessionRepository.class);
     flowMemoryService = mock(FlowMemoryService.class);
+    flowMemorySummarizerService = mock(FlowMemorySummarizerService.class);
     objectMapper = new ObjectMapper();
 
     agentInvocationService =
         new AgentInvocationService(
-            chatProviderService, flowSessionRepository, flowMemoryService, objectMapper);
+            chatProviderService,
+            flowSessionRepository,
+            flowMemoryService,
+            flowMemorySummarizerService,
+            objectMapper);
   }
 
   @Test
@@ -121,6 +128,7 @@ class AgentInvocationServiceTest {
     ObjectNode memoryEntry = objectMapper.createObjectNode();
     memoryEntry.put("content", "memory note");
     when(flowMemoryService.history(sessionId, "shared", 3)).thenReturn(List.of(memoryEntry));
+    when(flowMemorySummarizerService.supportsChannel(anyString())).thenReturn(false);
 
     ChatRequestOverrides stepOverrides = new ChatRequestOverrides(0.3, null, 2048);
     ChatRequestOverrides sessionOverrides = new ChatRequestOverrides(null, 0.9, null);

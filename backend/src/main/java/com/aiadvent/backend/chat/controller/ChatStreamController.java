@@ -11,6 +11,7 @@ import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.UUID;
@@ -43,10 +44,15 @@ public class ChatStreamController {
 
   private final ChatService chatService;
   private final ChatProviderService chatProviderService;
+  private final ChatSummarizationPreflightManager preflightManager;
 
-  public ChatStreamController(ChatService chatService, ChatProviderService chatProviderService) {
+  public ChatStreamController(
+      ChatService chatService,
+      ChatProviderService chatProviderService,
+      ChatSummarizationPreflightManager preflightManager) {
     this.chatService = chatService;
     this.chatProviderService = chatProviderService;
+    this.preflightManager = preflightManager;
   }
 
   @PostMapping(
@@ -66,6 +72,8 @@ public class ChatStreamController {
     ConversationContext context =
         chatService.registerUserMessage(
             request.sessionId(), request.message(), selection.providerId(), selection.modelId());
+
+    preflightManager.run(context.sessionId(), selection, request.message(), "stream-chat");
 
     SseEmitter emitter = new SseEmitter(0L);
     AtomicReference<Usage> usageRef = new AtomicReference<>();
@@ -303,4 +311,5 @@ public class ChatStreamController {
     }
     return new ChatRequestOverrides(options.temperature(), options.topP(), options.maxTokens());
   }
+
 }

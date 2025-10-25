@@ -6,7 +6,12 @@ import com.aiadvent.backend.chat.token.TokenUsageEstimator;
 import com.aiadvent.backend.chat.token.TokenUsageMetrics;
 import com.aiadvent.backend.chat.token.RedisTokenUsageCache;
 import com.knuddels.jtokkit.Encodings;
+import com.knuddels.jtokkit.api.Encoding;
 import com.knuddels.jtokkit.api.EncodingRegistry;
+import com.knuddels.jtokkit.api.EncodingResult;
+import com.knuddels.jtokkit.api.EncodingType;
+import com.knuddels.jtokkit.api.IntArrayList;
+import com.knuddels.jtokkit.api.ModelType;
 import java.time.Duration;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
@@ -20,8 +25,10 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 public class TokenUsageConfiguration {
 
   @Bean
-  public EncodingRegistry encodingRegistry() {
-    return Encodings.newDefaultEncodingRegistry();
+  public EncodingRegistry encodingRegistry(TokenUsageProperties properties) {
+    return properties.isLightweightMode()
+        ? new LightweightEncodingRegistry()
+        : Encodings.newDefaultEncodingRegistry();
   }
 
   @Bean
@@ -54,5 +61,91 @@ public class TokenUsageConfiguration {
         Optional.ofNullable(properties.getCache()).orElseGet(TokenUsageProperties.Cache::new);
     return new DefaultTokenUsageEstimator(
         encodingRegistry, cache, properties.getDefaultTokenizer(), cacheProperties.getKeyPrefix());
+  }
+
+  private static final class LightweightEncodingRegistry implements EncodingRegistry {
+    private final Encoding encoding = new StubEncoding();
+
+    @Override
+    public Optional<Encoding> getEncoding(String encodingName) {
+      return Optional.of(encoding);
+    }
+
+    @Override
+    public Encoding getEncoding(EncodingType encodingType) {
+      return encoding;
+    }
+
+    @Override
+    public Optional<Encoding> getEncodingForModel(String modelName) {
+      return Optional.of(encoding);
+    }
+
+    @Override
+    public Encoding getEncodingForModel(ModelType modelType) {
+      return encoding;
+    }
+
+    @Override
+    public EncodingRegistry registerGptBytePairEncoding(
+        com.knuddels.jtokkit.api.GptBytePairEncodingParams parameters) {
+      return this;
+    }
+
+    @Override
+    public EncodingRegistry registerCustomEncoding(Encoding encoding) {
+      return this;
+    }
+  }
+
+  private static final class StubEncoding implements Encoding {
+    @Override
+    public IntArrayList encode(String text) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public EncodingResult encode(String text, int maxTokens) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public IntArrayList encodeOrdinary(String text) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public EncodingResult encodeOrdinary(String text, int maxTokens) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int countTokens(String text) {
+      return length(text);
+    }
+
+    @Override
+    public int countTokensOrdinary(String text) {
+      return length(text);
+    }
+
+    @Override
+    public String decode(IntArrayList tokens) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public byte[] decodeBytes(IntArrayList tokens) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public String getName() {
+      return "lightweight-encoding";
+    }
+
+    private static int length(String value) {
+      return value != null ? value.length() : 0;
+    }
   }
 }

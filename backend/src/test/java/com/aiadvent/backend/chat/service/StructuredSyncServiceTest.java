@@ -10,6 +10,7 @@ import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncStatus;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -39,12 +40,19 @@ class StructuredSyncServiceTest {
 
   @Mock private BeanOutputConverter<StructuredSyncResponse> outputConverter;
 
+  @Mock private ChatSummarizationPreflightManager preflightManager;
+
   private StructuredSyncService structuredSyncService;
 
   @BeforeEach
   void setUp() {
     structuredSyncService =
-        new StructuredSyncService(chatProviderService, chatService, outputConverter, new ObjectMapper());
+        new StructuredSyncService(
+            chatProviderService,
+            chatService,
+            outputConverter,
+            new ObjectMapper(),
+            preflightManager);
   }
 
   @Test

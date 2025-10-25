@@ -25,6 +25,8 @@ public class ChatMemoryProperties {
    */
   private Duration cleanupInterval = Duration.ofMinutes(30);
 
+  private SummarizationProperties summarization = new SummarizationProperties();
+
   public int getWindowSize() {
     return windowSize;
   }
@@ -47,5 +49,169 @@ public class ChatMemoryProperties {
 
   public void setCleanupInterval(Duration cleanupInterval) {
     this.cleanupInterval = cleanupInterval;
+  }
+
+  public SummarizationProperties getSummarization() {
+    return summarization;
+  }
+
+  public void setSummarization(SummarizationProperties summarization) {
+    this.summarization = summarization;
+  }
+
+  public static class SummarizationProperties {
+
+    /**
+     * Enables LLM-based summarisation of long conversations before they are sent to a provider.
+     */
+    private boolean enabled = false;
+
+    /**
+     * Maximum number of tokens allowed in the assembled prompt before the preflight check requests
+     * a summary.
+     */
+    private int triggerTokenLimit = 12000;
+
+    /**
+     * Target number of tokens after summarisation. The service trims history until the estimate
+     * goes below this number.
+     */
+    private int targetTokenCount = 6000;
+
+    /**
+     * Identifier of the model used for summarisation.
+     */
+    private String model = "openai:gpt-4o-mini";
+
+    /**
+     * Maximum number of concurrent summarisation jobs executed at the same time.
+     */
+    private int maxConcurrentSummaries = 4;
+
+    /**
+     * Maximum number of summarisation jobs waiting in the queue before new requests are rejected.
+     */
+    private int maxQueueSize = 100;
+
+    /**
+     * Configuration for the repeatable backfill script that populates initial summaries for long
+     * sessions recorded before the online worker was enabled.
+     */
+    private BackfillProperties backfill = new BackfillProperties();
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public int getTriggerTokenLimit() {
+      return triggerTokenLimit;
+    }
+
+    public void setTriggerTokenLimit(int triggerTokenLimit) {
+      this.triggerTokenLimit = triggerTokenLimit;
+    }
+
+    public int getTargetTokenCount() {
+      return targetTokenCount;
+    }
+
+    public void setTargetTokenCount(int targetTokenCount) {
+      this.targetTokenCount = targetTokenCount;
+    }
+
+    public String getModel() {
+      return model;
+    }
+
+    public void setModel(String model) {
+      this.model = model;
+    }
+
+    public int getMaxConcurrentSummaries() {
+      return maxConcurrentSummaries;
+    }
+
+    public void setMaxConcurrentSummaries(int maxConcurrentSummaries) {
+      this.maxConcurrentSummaries = maxConcurrentSummaries;
+    }
+
+    public int getMaxQueueSize() {
+      return maxQueueSize;
+    }
+
+    public void setMaxQueueSize(int maxQueueSize) {
+      this.maxQueueSize = maxQueueSize;
+    }
+
+    public BackfillProperties getBackfill() {
+      return backfill;
+    }
+
+    public void setBackfill(BackfillProperties backfill) {
+      this.backfill = backfill;
+    }
+  }
+
+  public static class BackfillProperties {
+
+    /**
+     * Enables the repeatable backfill runner. The runner is invoked manually and does not execute
+     * in regular application modes unless explicitly enabled.
+     */
+    private boolean enabled = false;
+
+    /**
+     * Minimum number of windowed messages that a chat session must contain before it becomes a
+     * candidate for backfill summarisation.
+     */
+    private int minMessages = 40;
+
+    /**
+     * Maximum number of sessions processed in a single iteration. The runner keeps executing until
+     * no candidates remain or {@link #maxIterations} is reached.
+     */
+    private int batchSize = 25;
+
+    /**
+     * Guards against accidental infinite loops when new sessions are being created while the
+     * backfill script is running.
+     */
+    private int maxIterations = 20;
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public int getMinMessages() {
+      return minMessages;
+    }
+
+    public void setMinMessages(int minMessages) {
+      this.minMessages = minMessages;
+    }
+
+    public int getBatchSize() {
+      return batchSize;
+    }
+
+    public void setBatchSize(int batchSize) {
+      this.batchSize = batchSize;
+    }
+
+    public int getMaxIterations() {
+      return maxIterations;
+    }
+
+    public void setMaxIterations(int maxIterations) {
+      this.maxIterations = maxIterations;
+    }
   }
 }

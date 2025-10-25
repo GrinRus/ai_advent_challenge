@@ -22,7 +22,15 @@
   - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
   - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).
   - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`, проверка telemetry snapshot (aggregate counters, shared context, progress bar) и экспорт событий.
-  - Scheduler: для `FlowJobWorker` пишем unit-тесты (Mock `AgentOrchestratorService`, проверяем `processed|empty|error`) и smoke-интеграцию с включённым `@Scheduled` bean. Логи на INFO содержат `workerId`, результат и длительность; ошибки фиксируем на ERROR и проверяем Micrometer (`flow.job.poll.count/duration`).
+- Scheduler: для `FlowJobWorker` пишем unit-тесты (Mock `AgentOrchestratorService`, проверяем `processed|empty|error`) и smoke-интеграцию с включённым `@Scheduled` bean. Логи на INFO содержат `workerId`, результат и длительность; ошибки фиксируем на ERROR и проверяем Micrometer (`flow.job.poll.count/duration`).
+
+## Runbook: саммаризация истории
+
+1. **Мониторинг.** Следим за метриками `chat_summary_runs_total`, `chat_summary_tokens_saved_total`, `chat_summary_duration_seconds`, `chat_summary_queue_size`, `chat_summary_queue_rejections_total`, `chat_summary_failures_total` и `chat_summary_failure_alerts_total`. Рост очереди без снижения `runs_total` — повод увеличить `CHAT_MEMORY_SUMMARIZATION_MAX_CONCURRENT` или `...MAX_QUEUE_SIZE`. Повторяющиеся failure alerts сигнализируют о деградации провайдера — переключаем модель (`CHAT_MEMORY_SUMMARIZATION_MODEL`) или временно выключаем summarizer (`CHAT_MEMORY_SUMMARIZATION_ENABLED=false`).
+2. **Диагностика.** Логи уровня INFO содержат сообщения о постановке задач в очередь и её отказах, WARN фиксируют временные ошибки модели, ERROR появляется после трёх подряд неудач по одной сессии. Для flow-сессий дополнительно сверяем `flow_memory_summary` диапазоны.
+3. **Ручной пересчёт.** Для отдельного диалога вызываем `POST /api/admin/chat/sessions/{sessionId}/summary/rebuild` с телом `{ "providerId": "openai", "modelId": "gpt-4o-mini" }`. Для массового пересчёта включаем `CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED=true`, задаём пороги `...MIN_MESSAGES`/`...BATCH_SIZE` и перезапускаем backend — job логирует количество обработанных сессий.
+4. **Восстановление после сбоя.** При полном отказе summarizer-а отключаем feature flag, очищаем очередь (перезапуском сервиса) и восстанавливаем флаг после нормализации провайдера. История диалогов не теряется: пока summarizer выключен, `MessageWindowChatMemory` отдаёт хвост без summary.
+5. **Документация.** Любые изменения конфигурации фиксируем в `docs/infra.md` и README, а для прод-окружения сохраняем overrides в секрет-хранилище.
 
 ## Документация оркестратора
 - При изменении схемы `flow_definition`/`flow_job`/`flow_memory_version` обновляйте раздел «Оркестрация» в `docs/infra.md` (архитектура, форматы JSON, политика памяти, worker-параметры).
