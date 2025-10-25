@@ -568,7 +568,38 @@
 - [ ] Внедрить правило строгой типизации во всех сервисах: на backend использовать явные DTO/валидаторы и исключать неявные маппинги, на frontend включить строгий режим TypeScript и типизацию API.
 - [ ] Настроить линтеры и проверки CI, блокирующие появление нестрого типизированных конструкций (`any`, `Map<String,Object>` и т. п.).
 
-## Wave 12 — Расширенные event-логи оркестратора
+## Wave 12 — Typed flow builder и конструктор агентов
+Цель: объединить создание агентов и флоу в одну типизированную воронку и избавиться от ручного JSON в UI/БЭК. Сейчас редакторы опираются на сырые структуры (`frontend/src/pages/FlowAgents.tsx:234-302`, `frontend/src/pages/FlowDefinitions.tsx:700-755`, `frontend/src/lib/flowDefinitionForm.ts:15-138`), а backend хранит схему в `JsonNode` (`backend/src/main/java/com/aiadvent/backend/flow/domain/AgentVersion.java:55-168`, `backend/src/main/java/com/aiadvent/backend/flow/domain/FlowDefinition.java:41-117`) и парсит лишь минимальное подмножество (`backend/src/main/java/com/aiadvent/backend/flow/config/FlowDefinitionParser.java:24-194`). Wave 11 вводит строгие DTO; здесь строим UX и сервисы поверх них.
+
+### Product & UX
+- [ ] Описать end-to-end journey «создать агента → собрать flow → запустить»: роли, happy path/ошибки, возвраты из Flow launch preview, зависимости от статусов версий.
+- [ ] Подготовить UI kit/wireframes для визуального конструктора агентов и flow builder (многошаговый wizard, панели памяти/переходов, inline preview затрат), опираясь на текущие экраны `FlowDefinitions.tsx` и `FlowLaunch.tsx`.
+- [ ] Обновить критерии приемки и чек-лист тестирования нового UX (валидации, undo/redo, RBAC, совместная работа нескольких операторов).
+
+### Backend & API
+- [ ] Реализовать `FlowBlueprint` value-объекты и репозиторий: заменить хранение `FlowDefinition.definition` (`backend/src/main/java/com/aiadvent/backend/flow/domain/FlowDefinition.java:41-117`) и ручной парсинг `FlowDefinitionParser` (`backend/src/main/java/com/aiadvent/backend/flow/config/FlowDefinitionParser.java:24-194`) на типизированную схему с явными блоками `metadata`, `launchParameters`, `memory`, `steps`.
+- [ ] Добавить `FlowBlueprintCompiler`, который преобразует blueprint в runtime `FlowStepConfig`/`Memory*Config`, и подключить его в `AgentOrchestratorService` (`backend/src/main/java/com/aiadvent/backend/flow/service/AgentOrchestratorService.java:107-211`) и `FlowLaunchPreviewService` (`backend/src/main/java/com/aiadvent/backend/flow/service/FlowLaunchPreviewService.java:47-190`), включая кеширование и валидацию ссылок.
+- [ ] Ввести typed-конфигурацию агента (`AgentInvocationOptions`, `ToolBinding`, `CostProfile`) вместо `JsonNode` полей `AgentVersion` (`backend/src/main/java/com/aiadvent/backend/flow/domain/AgentVersion.java:55-168`) и `Map<String,Object>` advisor параметров в `AgentInvocationService` (`backend/src/main/java/com/aiadvent/backend/flow/service/AgentInvocationService.java:114-178`); реализовать `AgentConstructorService` + REST API для генерации и валидации конфигураций.
+- [ ] Выпустить API v2 для flow builder/агентного конструктора: `GET/PUT /api/flows/definitions/{id}` и `FlowLaunchPreviewResponse` возвращают `FlowBlueprint`, добавить эндпоинт валидации шага, справочники memory каналов/interaction-схем, новые команды в `AgentDefinitionController`; сохранить обратную совместимость через feature-flag.
+
+### Frontend
+- [ ] Переписать `Flows / Agents` в режим конструктора: убрать JSON-текстовые поля (`frontend/src/pages/FlowAgents.tsx:234-302`), добавить формы для provider/model, temperature/topP/maxTokens, справочники tool binding и cost profile, превью capability payload’ов и проверки схем.
+- [ ] Перенести `Flows / Definitions` на typed blueprint: устранить `raw`/`memoryReadsText`/`transitionsText` из `flowDefinitionForm` (`frontend/src/lib/flowDefinitionForm.ts:15-138`) и редактора (`frontend/src/pages/FlowDefinitions.tsx:700-755`), добавить визуальные редакторы launch parameters, shared memory, transitions, HITL-конфигураций и связь с cost preview.
+- [ ] Добавить inline создание/публикацию агента прямо из редактора шага (modal поверх `Flows / Definitions`), синхронизировать список версий без перезагрузки и блокировать сохранение шага без валидированного `agentVersionId`.
+- [ ] Обновить `apiClient.ts` (`frontend/src/lib/apiClient.ts:42-200`) и стейт менеджмент Flow UI на новые типы: сгенерировать TS-модели из backend схемы (`FlowBlueprint`, `AgentVersionConfig`), добавить runtime-валидацию и удалить `unknown`/ручной JSON парсинг.
+
+### Data & Migration
+- [ ] Liquibase: добавить новые структуры хранения (`blueprint_schema_version`, таблицы для agent config/tool binding), мигрировать существующие `flow_definition` и `agent_version` записи, пересчитать checksum и обновить ограничения.
+- [ ] Написать миграционный job/CLI, который конвертирует legacy JSON в blueprint/typed config, валидирует через `FlowBlueprintCompiler`, поддерживает dry-run/rollback и health-check, блокирующий сохранение старого формата.
+
+### QA & Observability
+- [ ] Расширить unit/integration тесты: контракты Flow builder API ↔ TS типов, интеграционные сценарии `FlowDefinitionController`/`AgentDefinitionController`, нагрузочные тесты сохранения blueprint и генерации `FlowLaunchPreview`.
+- [ ] Добавить телеметрию и аудит: метрики сохранений blueprint/агентов, ошибки валидации, пользовательские события конструктора; настроить алерты и дашборды.
+
+### Документация
+- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md` и `docs/processes.md`: описать новый blueprint, API v2, конструктор агентов, миграцию и чек-лист тестирования; добавить запись в CHANGELOG/runbook с планом отката.
+
+## Wave 13 — Расширенные event-логи оркестратора
 
 Выбран подход **расширения схемы БД** для `flow_event`: ключевые атрибуты шага и управляющих операций храним в отдельных колонках, а JSON оставляем для детализированного содержимого. Это упростит аналитические запросы, трассировку и построение отчетов без сложной версификации payload.
 
