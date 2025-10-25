@@ -532,6 +532,7 @@
 - [ ] GAP: **Метаданные summary не заполняются.** В `FlowMemorySummarizerService.persistSummary` и `ChatMemorySummarizerService.persistSummary` остаются `null` для `agent_version_id`, `language`, диапазонов попыток и `metadata.schemaVersion`, а `ChatSession.summaryMetadata` никогда не обновляется — аналитика и прогресс, описанные в волне, недоступны.
 - [ ] GAP: **Нет ручного восстановления flow-саммари.** Админ-эндпоинт реализован только для чатов (`/api/admin/chat/...`), у FlowSummaries нет ни REST, ни CLI для rebuild/backfill, которые зафиксированы в требованиях.
 - [ ] GAP: **Отсутствует наблюдаемость flow-саммари.** В сервис не подтянут `MeterRegistry`, нет метрик `flow_summary_runs_total`, queue size/rejections и alert counters, поэтому алерты волны 10.2 невозможно подключить.
+- [ ] GAP: **MessageChatMemoryAdvisor мешает внутренним LLM-вызовам.** Summarizer и backfill ходят в `ChatClient` с advisor-цепочкой, из-за чего в `chat_memory` попадают служебные запросы с `conversationId=default` и валятся предупреждения. Нужно выделить отдельный client без `MessageChatMemoryAdvisor` для внутренних вызовов или научить advisor пропускать такие сценарии.
 - [ ] GAP: **Тестов продакшн-уровня нет.** Имеются только unit-тесты на сервисы памяти; сценарии из волны (длинный flow → summary, interaction → summary, ручной rebuild, гонки воркеров) не покрыты даже частично.
 
 ### Observability & QA

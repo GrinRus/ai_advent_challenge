@@ -371,18 +371,27 @@ public class ChatMemorySummarizerService {
       return;
     }
 
+    List<Message> transcript =
+        conversation.stream()
+            .filter(message -> !isSummaryMessage(message))
+            .collect(Collectors.toList());
+
+    if (transcript.size() < 2) {
+      return;
+    }
+
     ChatSession session =
         chatSessionRepository
             .findById(result.sessionId())
             .orElseThrow(() -> new IllegalStateException("Chat session not found during summarisation"));
 
-    int totalMessages = conversation.size();
+    int totalMessages = transcript.size();
     int summaryCount = computeSummaryCount(totalMessages);
     if (summaryCount <= 0) {
       return;
     }
-    List<Message> toSummarize = new ArrayList<>(conversation.subList(0, summaryCount));
-    List<Message> tail = new ArrayList<>(conversation.subList(summaryCount, conversation.size()));
+    List<Message> toSummarize = new ArrayList<>(transcript.subList(0, summaryCount));
+    List<Message> tail = new ArrayList<>(transcript.subList(summaryCount, transcript.size()));
 
     String prompt = buildSummarisationPrompt(toSummarize);
     if (!StringUtils.hasText(prompt)) {
@@ -680,5 +689,16 @@ public class ChatMemorySummarizerService {
       return 0;
     }
     return Math.max(1, totalMessages - resolveTailCount(totalMessages));
+  }
+
+  private boolean isSummaryMessage(Message message) {
+    if (message == null || message.getMetadata() == null) {
+      return false;
+    }
+    Object flag = message.getMetadata().get("summary");
+    if (flag instanceof Boolean booleanValue) {
+      return booleanValue;
+    }
+    return flag != null && Boolean.parseBoolean(flag.toString());
   }
 }
