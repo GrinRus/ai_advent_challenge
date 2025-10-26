@@ -13,6 +13,7 @@ import com.aiadvent.backend.chat.token.TokenUsageEstimator;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator.Estimate;
 import com.aiadvent.backend.support.PostgresTestContainer;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -79,10 +80,24 @@ class ChatSummarizationSmokeTest extends PostgresTestContainer {
     UUID sessionId = session.getId();
     String conversationId = sessionId.toString();
 
+    int baseSize = buildLongHistory().size();
     chatMemoryRepository.saveAll(conversationId, buildLongHistory());
+    int sizeAfterUser = appendMessage(conversationId, UserMessage.builder().text("Continue").build());
+    assertThat(sizeAfterUser)
+        .withFailMessage("sizeAfterUser=%s baseSize=%s", sizeAfterUser, baseSize)
+        .isEqualTo(baseSize + 1);
 
     preflightManager.run(
         sessionId, new ChatProviderSelection("openai", "gpt-4o-mini"), "Continue", "smoke");
+
+    int sizeAfterAssistant =
+        appendMessage(
+        conversationId,
+        AssistantMessage.builder().content("Continuation acknowledged with summary context").build());
+    assertThat(sizeAfterAssistant)
+        .withFailMessage(
+            "sizeAfterAssistant=%s sizeAfterUser=%s", sizeAfterAssistant, sizeAfterUser)
+        .isEqualTo(sizeAfterUser + 1);
 
     var summaries = awaitSummary(sessionId);
     assertThat(summaries).hasSize(1);
@@ -125,5 +140,12 @@ class ChatSummarizationSmokeTest extends PostgresTestContainer {
       Thread.sleep(50);
     }
     throw new AssertionError("Summary was not created within timeout");
+  }
+
+  private int appendMessage(String conversationId, Message message) {
+    List<Message> existing = new ArrayList<>(chatMemoryRepository.findByConversationId(conversationId));
+    existing.add(message);
+    chatMemoryRepository.saveAll(conversationId, existing);
+    return existing.size();
   }
 }
