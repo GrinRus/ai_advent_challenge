@@ -129,4 +129,47 @@ class ChatMemorySummarizerServiceTest {
     Mockito.verify(summaryRepository).save(captor.capture());
     assertThat(captor.getValue().getTokenCount()).isEqualTo(42L);
   }
+
+  @Test
+  void loadConversationSnapshotWaitsForAssistantTail() {
+    UUID sessionId = UUID.randomUUID();
+    List<Message> fallback =
+        List.of(UserMessage.builder().text("Question").build());
+    List<Message> pending =
+        List.of(UserMessage.builder().text("Question").build());
+    List<Message> ready =
+        List.of(
+            UserMessage.builder().text("Question").build(),
+            AssistantMessage.builder().content("Answer").build());
+
+    Mockito.when(chatMemoryRepository.findByConversationId(sessionId.toString()))
+        .thenReturn(pending)
+        .thenReturn(ready);
+
+    @SuppressWarnings("unchecked")
+    List<Message> resolved =
+        (List<Message>)
+            ReflectionTestUtils.invokeMethod(
+                service, "loadConversationSnapshot", sessionId, fallback);
+
+    assertThat(resolved).isEqualTo(ready);
+  }
+
+  @Test
+  void loadConversationSnapshotFallsBackToProvidedMessagesWhenHistoryMissing() {
+    UUID sessionId = UUID.randomUUID();
+    List<Message> fallback =
+        List.of(UserMessage.builder().text("Only user").build());
+
+    Mockito.when(chatMemoryRepository.findByConversationId(sessionId.toString()))
+        .thenReturn(List.of());
+
+    @SuppressWarnings("unchecked")
+    List<Message> resolved =
+        (List<Message>)
+            ReflectionTestUtils.invokeMethod(
+                service, "loadConversationSnapshot", sessionId, fallback);
+
+    assertThat(resolved).isEqualTo(fallback);
+  }
 }

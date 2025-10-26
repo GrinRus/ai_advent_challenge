@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -63,6 +64,8 @@ public class ChatMemorySummarizerService {
   private static final String SUMMARY_QUEUE_REJECTIONS_METRIC = "chat_summary_queue_rejections_total";
   private static final int FAILURE_ALERT_THRESHOLD = 3;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
+  private static final int HISTORY_REFRESH_ATTEMPTS = 5;
+  private static final long HISTORY_REFRESH_DELAY_MS = 200L;
   private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
 
   private final ChatMemoryProperties properties;
@@ -373,7 +376,7 @@ public class ChatMemorySummarizerService {
   }
 
   private void summarizeConversation(PreflightResult result) {
-    List<Message> conversation = result.messages();
+    List<Message> conversation = loadConversationSnapshot(result.sessionId(), result.messages());
     if (conversation == null || conversation.size() < 2) {
       return;
     }
@@ -419,6 +422,48 @@ public class ChatMemorySummarizerService {
         summaryCount,
         tail.size(),
         result.decision().estimatedTokens());
+  }
+
+  List<Message> loadConversationSnapshot(UUID sessionId, List<Message> fallback) {
+    if (sessionId == null) {
+      return fallback != null ? fallback : List.of();
+    }
+
+    List<Message> latestSnapshot = null;
+    String conversationId = sessionId.toString();
+    for (int attempt = 0; attempt < HISTORY_REFRESH_ATTEMPTS; attempt++) {
+      latestSnapshot = chatMemoryRepository.findByConversationId(conversationId);
+      if (isConversationReady(latestSnapshot)) {
+        return latestSnapshot;
+      }
+      if (attempt < HISTORY_REFRESH_ATTEMPTS - 1) {
+        sleepQuietly(HISTORY_REFRESH_DELAY_MS);
+      }
+    }
+    if (latestSnapshot != null && !latestSnapshot.isEmpty()) {
+      return latestSnapshot;
+    }
+    return fallback != null ? fallback : List.of();
+  }
+
+  private boolean isConversationReady(List<Message> conversation) {
+    if (conversation == null || conversation.isEmpty()) {
+      return false;
+    }
+    return conversation.stream()
+        .filter(message -> !isSummaryMessage(message))
+        .reduce((first, second) -> second)
+        .map(Message::getMessageType)
+        .map(type -> type == MessageType.ASSISTANT)
+        .orElse(false);
+  }
+
+  private void sleepQuietly(long millis) {
+    try {
+      Thread.sleep(millis);
+    } catch (InterruptedException interruptedException) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void persistSummary(ChatSession session, String summaryText, int summaryCount) {
