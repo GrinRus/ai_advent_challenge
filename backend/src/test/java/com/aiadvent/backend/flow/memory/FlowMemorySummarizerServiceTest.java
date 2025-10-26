@@ -328,8 +328,8 @@ class FlowMemorySummarizerServiceTest {
     }
 
     assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
-    assertThat(meterRegistry.find("flow_summary_failures_total").counter().count()).isEqualTo(3.0d);
-    assertThat(meterRegistry.find("flow_summary_failure_alerts_total").counter().count()).isEqualTo(1.0d);
+    awaitCounter("flow_summary_failures_total", 3.0d);
+    awaitCounter("flow_summary_failure_alerts_total", 1.0d);
   }
 
   private List<FlowMemoryVersion> sampleVersions(FlowSession session) {
@@ -360,6 +360,23 @@ class FlowMemorySummarizerServiceTest {
       throw new RuntimeException(exception);
     }
   }
+
+  private void awaitCounter(String counterName, double expectedValue) throws InterruptedException {
+    double observed = 0.0d;
+    long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500);
+    while (System.nanoTime() < deadline) {
+      var counter = meterRegistry.find(counterName).counter();
+      if (counter != null) {
+        observed = counter.count();
+        if (observed >= expectedValue) {
+          break;
+        }
+      }
+      Thread.sleep(25);
+    }
+    assertThat(observed).isEqualTo(expectedValue);
+  }
+
   private FlowMemorySummarizerService createService(ChatMemoryProperties properties) {
     return new FlowMemorySummarizerService(
         flowSessionRepository,
