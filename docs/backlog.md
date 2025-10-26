@@ -567,12 +567,35 @@
 - [ ] Для `FlowSession` и связанных сущностей заменить поля `JsonNode` (`launchParameters`, `sharedContext`, `launchOverrides`, `telemetry`) на value-объекты с описанной схемой и конверторами.
 - [ ] Типизировать JSON-поля домена (`AgentVersion.defaultOptions/toolBindings/costProfile`, `FlowDefinition.definition`, `FlowDefinitionHistory.definition`, `FlowStepExecution.*Payload/usage/cost`, `FlowEvent.payload`, `AgentCapability.payload`, `ChatMessage.structuredPayload`) через отдельные value-объекты и конвертеры, исключив «сырые» `JsonNode`.
 - [ ] Обновить трассировку/логирование после типизации, чтобы не полагаться на произвольные JSON-структуры.
+- [ ] FlowSession value objects: определить модели (`FlowLaunchParameters`, `FlowSharedContext`, `FlowOverrides`, `FlowTelemetrySnapshot`), реализовать `AttributeConverter`/`JsonColumn<T>` и мигрировать `FlowSession`, `FlowStartResponse`, `FlowStatusService`.
+- [ ] Agent payloads: создать DTO (`AgentDefaultOptions`, `AgentToolBinding`, `AgentCostProfile`, `AgentCapabilityPayload`) + конвертеры, внедрить в `AgentVersion`, `AgentCapability` и сервисы чтения/записи.
+- [ ] Flow execution payloads: добавить `FlowStepInputPayload`, `FlowStepOutputPayload`, `UsageCostPayload` и `FlowEventPayload` + mapper-сервис (`FlowPayloadMapper`), переписать `AgentOrchestratorService`/`FlowStatusService`/`FlowEventRepository`.
+- [ ] Тесты конвертеров/mapper'ов: покрыть round-trip сериализацию и схемы дефолтов (JUnit).
+
+**Варианты реализации Backend**
+- **Value Object + Converter слой.** Вводим пакет `flow/types` с Java records (`LaunchParameters`, `SharedContext`, `FlowEventPayload`, `AgentOptions` и т. д.). Для каждого JSON-поля определяем `AttributeConverter` или реиспользуем `JsonColumn<T>` (Jackson + `@Converter(autoApply = true)`), сервисы работают только с типами, а сериализация скрыта. Плюсы: прозрачный контроль схемы и простые unit-тесты конвертеров. Минусы: ручная поддержка DTO.
+- **Schema-driven + codegen.** Фиксируем JSON-схемы/компоненты OpenAPI и генерируем классы (`jsonschema2pojo`, `openapi-generator`, `quicktype`). Конвертеры остаются, но сами DTO обновляются из схем. Плюсы: единый источник правды для FE/BE, меньше рутины. Минусы: нужен пайплайн генерации, ревизии схем и контроль совместимости.
+- **Mapper модуль.** Добавляем сервисы вроде `FlowPayloadMapper`/`AgentOptionsMapper`, которые отвечают за преобразование домен ↔ DTO ↔ JSON (включая дефолты, санитайзеры, версионирование). Логику сериализации из `AgentOrchestratorService` переносим сюда. Этот вариант можно комбинировать с любым из двух подходов выше и применять там, где нужно поддерживать несколько версий payload.
+
+**Решение (backend):** стартуем с подхода *Value Object + Converter* и параллельно вводим легкий mapper-слой для payload (чтобы вынести serialization/санитизацию из сервисов). Когда схемы стабилизируются, отдельно рассмотрим генерацию DTO, но она не блокирует rollout.
 ### Frontend
 - [ ] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
 - [ ] Переписать `FlowAgents` и другие потребители API так, чтобы парсинг JSON (например, `parseOptionalJson`) возвращал строго типизированные объекты с проверкой схемы.
 - [ ] Перестроить `FlowDefinitionForm`/`FlowLaunch` стейт: вместо `Record<string, unknown>` и массовых `JSON.parse` использовать строгие интерфейсы (`FlowDefinitionDraft`, `FlowLaunchPayload`) + валидаторы.
 - [ ] Обновить обработку ответов `requestSync`/`requestStructuredSync`: валидировать JSON (type guards/zod) перед приведениями `as`, чтобы поймать несовместимые схемы.
 - [ ] Добавить unit-тесты/типовые проверки для новых типов, чтобы предотвратить регрессии строгой типизации.
+- [ ] Создать модуль `frontend/src/lib/types/flow.ts` c доменными интерфейсами (`FlowDefinitionDraft`, `AgentOptions`, `FlowEventPayload` и т. д.) и `zod`-схемами/type guards.
+- [ ] Переписать `apiClient.ts` на новые типы и guards: распарсивать ответы через `safeParse`, выбрасывать ошибки при несовпадении схемы.
+- [ ] FlowAgents: заменить `parseOptionalJson` на typed builder + `zod`-валидацию, хранить `VersionFormState` в терминах новых DTO и адаптеров.
+- [ ] FlowDefinitionForm/FlowLaunch: ввести `deserialize/serialize` адаптеры для форм-стейта, убрать прямой `JSON.parse`.
+- [ ] Тесты: добавить unit-тесты на guards и адаптеры (например, `flowDefinitionForm.adapters.test.ts`, `apiClient.types.test.ts`).
+
+**Варианты реализации Frontend**
+- **Генерация типов из OpenAPI + Zod.** Поддерживаем спецификацию API и генерируем `types.ts` через `openapi-typescript`/`orval`. Для рантайм-валидации используем `zod` (можно генерировать схемы из OpenAPI или поддерживать вручную). Плюсы: FE и BE живут по одной схеме, легко ловить несовместимости. Минусы: нужно наладить процесс генерации и версионирования схем.
+- **Ручные доменные модели + type guards.** Создаем модуль `lib/types/flow.ts` с интерфейсами (`FlowDefinitionDraft`, `AgentCapabilityPayload`, `FlowEventPayload`). Для данных с сервера добавляем type guard / `safeParse` функции (`zod`, `superstruct`). Подход быстро внедряется, но требует дисциплины при эволюции API.
+- **State adapters в UI.** Для сложных форм вводим адаптеры `deserializeDraft(json) -> FlowDefinitionDraft` и `serializeDraft(draft) -> FlowDefinitionPayload`, чтобы компоненты работали только с типизированным состоянием. Плюс: можно постепенно заменять `Record<string, unknown>` и `JSON.parse`, не дожидаясь полной генерации типов, и покрыть адаптеры unit-тестами.
+
+**Решение (frontend):** фиксируем ручные доменные модели + `zod` type guards как базовый путь (совмещаем со state adapters для форм). Генерацию типов из OpenAPI планируем как следующий этап, когда backend стабилизирует схемы.
 ### Инженерные требования
 - [ ] Внедрить правило строгой типизации во всех сервисах: на backend использовать явные DTO/валидаторы и исключать неявные маппинги, на frontend включить строгий режим TypeScript и типизацию API.
 - [ ] Настроить линтеры и проверки CI, блокирующие появление нестрого типизированных конструкций (`any`, `Map<String,Object>` и т. п.).

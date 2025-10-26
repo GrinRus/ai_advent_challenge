@@ -40,7 +40,8 @@ import org.springframework.test.context.TestPropertySource;
       "app.chat.memory.summarization.target-token-count=5",
       "app.chat.memory.summarization.model=openai:gpt-4o-mini",
       "app.chat.memory.summarization.max-concurrent-summaries=1",
-      "app.chat.memory.summarization.max-queue-size=2"
+      "app.chat.memory.summarization.max-queue-size=2",
+      "app.chat.memory.summarization.retained-messages=4"
     })
 class ChatSummarizationSmokeTest extends PostgresTestContainer {
 

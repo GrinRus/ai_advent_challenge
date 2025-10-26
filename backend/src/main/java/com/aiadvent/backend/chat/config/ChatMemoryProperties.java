@@ -94,6 +94,13 @@ public class ChatMemoryProperties {
     private int maxQueueSize = 100;
 
     /**
+     * Number of most recent messages that should remain verbatim after summarisation. Older
+     * messages are condensed into summary entries. Set to a non-positive value to retain the
+     * entire transcript.
+     */
+    private int retainedMessages = 200;
+
+    /**
      * Configuration for the repeatable backfill script that populates initial summaries for long
      * sessions recorded before the online worker was enabled.
      */
@@ -153,6 +160,14 @@ public class ChatMemoryProperties {
 
     public void setBackfill(BackfillProperties backfill) {
       this.backfill = backfill;
+    }
+
+    public int getRetainedMessages() {
+      return retainedMessages;
+    }
+
+    public void setRetainedMessages(int retainedMessages) {
+      this.retainedMessages = retainedMessages;
     }
   }
 

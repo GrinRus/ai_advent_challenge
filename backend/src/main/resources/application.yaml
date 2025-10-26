@@ -65,6 +65,7 @@ app:
         model: ${CHAT_MEMORY_SUMMARIZATION_MODEL:openai:gpt-4o-mini}
         max-concurrent-summaries: ${CHAT_MEMORY_SUMMARIZATION_MAX_CONCURRENT:4}
         max-queue-size: ${CHAT_MEMORY_SUMMARIZATION_MAX_QUEUE_SIZE:100}
+        retained-messages: ${CHAT_MEMORY_SUMMARY_RETAINED_MESSAGES:200}
         backfill:
           enabled: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED:false}
           min-messages: ${CHAT_MEMORY_SUMMARIZATION_BACKFILL_MIN_MESSAGES:40}

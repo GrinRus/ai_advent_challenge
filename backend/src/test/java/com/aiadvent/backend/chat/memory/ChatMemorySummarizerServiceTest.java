@@ -54,6 +54,7 @@ class ChatMemorySummarizerServiceTest {
     ChatMemoryProperties properties = new ChatMemoryProperties();
     properties.getSummarization().setEnabled(true);
     properties.getSummarization().setModel("stub:model");
+    properties.getSummarization().setRetainedMessages(20);
     service =
         new TestableChatMemorySummarizerService(
             properties,
@@ -113,6 +114,15 @@ class ChatMemorySummarizerServiceTest {
   @Test
   void resolveTailCountHonoursWindowWhenTranscriptIsLonger() {
     assertThat(service.resolveTailCount(64)).isEqualTo(20);
+  }
+
+  @Test
+  void resolveTailCountRetainsAllMessagesWhenLimitDisabled() {
+    ChatMemoryProperties properties =
+        (ChatMemoryProperties) ReflectionTestUtils.getField(service, "properties");
+    properties.getSummarization().setRetainedMessages(0);
+
+    assertThat(service.resolveTailCount(10)).isEqualTo(9);
   }
 
   @Test

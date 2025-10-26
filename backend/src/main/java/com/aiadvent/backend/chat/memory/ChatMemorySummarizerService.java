@@ -65,6 +65,8 @@ public class ChatMemorySummarizerService {
   private static final int FAILURE_ALERT_THRESHOLD = 3;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
   private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
+  private static final int MIN_TAIL_MESSAGES = 4;
+  private static final int MIN_SUMMARY_BATCH = 2;
 
   private final ChatMemoryProperties properties;
   private final TokenUsageEstimator tokenUsageEstimator;
@@ -395,7 +397,7 @@ public class ChatMemorySummarizerService {
 
     int totalMessages = transcript.size();
     int summaryCount = computeSummaryCount(totalMessages);
-    if (summaryCount <= 0) {
+    if (summaryCount < MIN_SUMMARY_BATCH) {
       return;
     }
     summaryCount = normalizeSummaryCount(transcript, summaryCount);
@@ -772,9 +774,13 @@ public class ChatMemorySummarizerService {
     if (totalMessages <= 1) {
       return 0;
     }
-    int configuredTail = Math.max(4, properties.getWindowSize());
-    int maxTail = Math.min(configuredTail, totalMessages - 1);
-    return Math.max(1, maxTail);
+    ChatMemoryProperties.SummarizationProperties summarization = properties.getSummarization();
+    int configuredTail = summarization != null ? summarization.getRetainedMessages() : properties.getWindowSize();
+    if (configuredTail <= 0) {
+      return Math.max(1, totalMessages - 1);
+    }
+    int boundedTail = Math.min(Math.max(MIN_TAIL_MESSAGES, configuredTail), totalMessages - 1);
+    return Math.max(1, boundedTail);
   }
 
   private int computeSummaryCount(int totalMessages) {
