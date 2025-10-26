@@ -26,6 +26,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Optional;
@@ -54,7 +55,7 @@ class ChatMemorySummarizerServiceTest {
     properties.getSummarization().setEnabled(true);
     properties.getSummarization().setModel("stub:model");
     service =
-        new ChatMemorySummarizerService(
+        new TestableChatMemorySummarizerService(
             properties,
             tokenUsageEstimator,
             summaryRepository,
@@ -171,5 +172,74 @@ class ChatMemorySummarizerServiceTest {
                 service, "loadConversationSnapshot", sessionId, fallback);
 
     assertThat(resolved).isEqualTo(fallback);
+  }
+
+  @Test
+  void normalizeSummaryCountExpandsToIncludeAssistantReply() {
+    List<Message> transcript =
+        List.of(
+            UserMessage.builder().text("q1").build(),
+            AssistantMessage.builder().content("a1").build(),
+            UserMessage.builder().text("q2").build(),
+            AssistantMessage.builder().content("a2").build());
+
+    int adjusted =
+        ReflectionTestUtils.invokeMethod(service, "normalizeSummaryCount", transcript, 3);
+
+    assertThat(adjusted).isEqualTo(4);
+  }
+
+  @Test
+  void normalizeSummaryCountRequiresAssistantPresence() {
+    List<Message> transcript =
+        List.of(
+            UserMessage.builder().text("q1").build(),
+            UserMessage.builder().text("q2").build());
+
+    int adjusted =
+        ReflectionTestUtils.invokeMethod(service, "normalizeSummaryCount", transcript, 2);
+
+    assertThat(adjusted).isZero();
+  }
+
+  @Test
+  void normalizeSummaryCountEnsuresMinimumPair() {
+    List<Message> transcript =
+        List.of(
+            UserMessage.builder().text("q1").build(),
+            AssistantMessage.builder().content("a1").build());
+
+    int adjusted =
+        ReflectionTestUtils.invokeMethod(service, "normalizeSummaryCount", transcript, 1);
+
+    assertThat(adjusted).isEqualTo(2);
+  }
+}
+
+class TestableChatMemorySummarizerService extends ChatMemorySummarizerService {
+
+  TestableChatMemorySummarizerService(
+      ChatMemoryProperties properties,
+      TokenUsageEstimator tokenUsageEstimator,
+      ChatMemorySummaryRepository summaryRepository,
+      ChatSessionRepository chatSessionRepository,
+      ChatProviderService chatProviderService,
+      ChatMemoryRepository chatMemoryRepository,
+      MeterRegistry meterRegistry,
+      ObjectMapper objectMapper) {
+    super(
+        properties,
+        tokenUsageEstimator,
+        summaryRepository,
+        chatSessionRepository,
+        chatProviderService,
+        chatMemoryRepository,
+        meterRegistry,
+        objectMapper);
+  }
+
+  @Override
+  void sleepQuietly(long millis) {
+    // no-op in tests
   }
 }

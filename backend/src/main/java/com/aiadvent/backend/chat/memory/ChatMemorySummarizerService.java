@@ -64,8 +64,8 @@ public class ChatMemorySummarizerService {
   private static final String SUMMARY_QUEUE_REJECTIONS_METRIC = "chat_summary_queue_rejections_total";
   private static final int FAILURE_ALERT_THRESHOLD = 3;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
-  private static final int HISTORY_REFRESH_ATTEMPTS = 5;
-  private static final long HISTORY_REFRESH_DELAY_MS = 200L;
+  private static final int HISTORY_REFRESH_ATTEMPTS = 20; // ~10 seconds max wait with 500ms sleeps
+  private static final long HISTORY_REFRESH_DELAY_MS = 500L;
   private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
 
   private final ChatMemoryProperties properties;
@@ -400,6 +400,13 @@ public class ChatMemorySummarizerService {
     if (summaryCount <= 0) {
       return;
     }
+    summaryCount = normalizeSummaryCount(transcript, summaryCount);
+    if (summaryCount <= 0) {
+      log.debug(
+          "Skipping summarisation for session {} because transcript lacks a complete user/assistant turn",
+          result.sessionId());
+      return;
+    }
     List<Message> toSummarize = new ArrayList<>(transcript.subList(0, summaryCount));
     List<Message> tail = new ArrayList<>(transcript.subList(summaryCount, transcript.size()));
 
@@ -425,40 +432,93 @@ public class ChatMemorySummarizerService {
   }
 
   List<Message> loadConversationSnapshot(UUID sessionId, List<Message> fallback) {
+    int baselineCount = countNonSummaryMessages(fallback);
     if (sessionId == null) {
       return fallback != null ? fallback : List.of();
     }
 
     List<Message> latestSnapshot = null;
+    ReadinessStatus lastStatus = null;
     String conversationId = sessionId.toString();
     for (int attempt = 0; attempt < HISTORY_REFRESH_ATTEMPTS; attempt++) {
       latestSnapshot = chatMemoryRepository.findByConversationId(conversationId);
-      if (isConversationReady(latestSnapshot)) {
+      lastStatus = assessConversationReadiness(latestSnapshot, baselineCount);
+      if (lastStatus.ready()) {
+        if (log.isDebugEnabled() && attempt > 0) {
+          log.debug(
+              "Conversation {} ready for summarisation after {} attempt(s) (nonSummaryCount={}, lastType={})",
+              sessionId,
+              attempt + 1,
+              lastStatus.currentNonSummaryCount(),
+              lastStatus.lastNonSummaryType());
+        }
         return latestSnapshot;
+      }
+      if (log.isDebugEnabled()) {
+        log.debug(
+            "Waiting for assistant reply in conversation {} (attempt {}/{}, baselineNonSummary={}, currentNonSummary={}, lastType={})",
+            sessionId,
+            attempt + 1,
+            HISTORY_REFRESH_ATTEMPTS,
+            baselineCount,
+            lastStatus.currentNonSummaryCount(),
+            lastStatus.lastNonSummaryType());
       }
       if (attempt < HISTORY_REFRESH_ATTEMPTS - 1) {
         sleepQuietly(HISTORY_REFRESH_DELAY_MS);
       }
     }
     if (latestSnapshot != null && !latestSnapshot.isEmpty()) {
+      if (log.isDebugEnabled()) {
+        log.debug(
+            "Conversation {} not fully ready after {} attempts, proceeding with latest snapshot (nonSummaryCount={}, lastType={})",
+            sessionId,
+            HISTORY_REFRESH_ATTEMPTS,
+            lastStatus != null ? lastStatus.currentNonSummaryCount() : "n/a",
+            lastStatus != null ? lastStatus.lastNonSummaryType() : "n/a");
+      }
       return latestSnapshot;
     }
+    log.warn(
+        "Conversation {} history is empty after waiting ~{}s; falling back to cached messages",
+        sessionId,
+        (HISTORY_REFRESH_ATTEMPTS * HISTORY_REFRESH_DELAY_MS) / 1000);
     return fallback != null ? fallback : List.of();
   }
 
-  private boolean isConversationReady(List<Message> conversation) {
-    if (conversation == null || conversation.isEmpty()) {
-      return false;
+  private int countNonSummaryMessages(List<Message> messages) {
+    if (messages == null || messages.isEmpty()) {
+      return 0;
     }
-    return conversation.stream()
-        .filter(message -> !isSummaryMessage(message))
-        .reduce((first, second) -> second)
-        .map(Message::getMessageType)
-        .map(type -> type == MessageType.ASSISTANT)
-        .orElse(false);
+    int count = 0;
+    for (Message message : messages) {
+      if (message != null && !isSummaryMessage(message)) {
+        count++;
+      }
+    }
+    return count;
   }
 
-  private void sleepQuietly(long millis) {
+  private ReadinessStatus assessConversationReadiness(List<Message> conversation, int baselineNonSummaryCount) {
+    if (conversation == null || conversation.isEmpty()) {
+      return new ReadinessStatus(false, 0, null);
+    }
+    int currentCount = 0;
+    MessageType lastType = null;
+    for (Message message : conversation) {
+      if (message == null || isSummaryMessage(message)) {
+        continue;
+      }
+      currentCount++;
+      lastType = message.getMessageType();
+    }
+    boolean ready = currentCount > baselineNonSummaryCount && lastType == MessageType.ASSISTANT;
+    return new ReadinessStatus(ready, currentCount, lastType);
+  }
+
+  private record ReadinessStatus(boolean ready, int currentNonSummaryCount, MessageType lastNonSummaryType) {}
+
+  void sleepQuietly(long millis) {
     try {
       Thread.sleep(millis);
     } catch (InterruptedException interruptedException) {
@@ -794,6 +854,29 @@ public class ChatMemorySummarizerService {
       return 0;
     }
     return Math.max(1, totalMessages - resolveTailCount(totalMessages));
+  }
+
+  int normalizeSummaryCount(List<Message> transcript, int desiredCount) {
+    if (transcript == null || transcript.size() < 2) {
+      return 0;
+    }
+    int count = Math.max(2, Math.min(desiredCount, transcript.size()));
+    while (count < transcript.size()
+        && transcript.get(count - 1).getMessageType() != MessageType.ASSISTANT) {
+      count++;
+    }
+    if (transcript.get(count - 1).getMessageType() != MessageType.ASSISTANT) {
+      return 0;
+    }
+    List<Message> window = transcript.subList(0, count);
+    boolean hasUser =
+        window.stream().anyMatch(message -> message != null && message.getMessageType() == MessageType.USER);
+    boolean hasAssistant =
+        window.stream().anyMatch(message -> message != null && message.getMessageType() == MessageType.ASSISTANT);
+    if (!hasUser || !hasAssistant) {
+      return 0;
+    }
+    return count;
   }
 
   private boolean isSummaryMessage(Message message) {
