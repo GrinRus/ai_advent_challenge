@@ -31,6 +31,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,27 +54,19 @@ class FlowMemorySummarizerServiceTest {
   private SimpleMeterRegistry meterRegistry;
   private FlowMemorySummarizerService flowMemorySummarizerService;
   private FlowSession session;
+  private ChatMemoryProperties chatMemoryProperties;
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
-    ChatMemoryProperties properties = new ChatMemoryProperties();
-    properties.getSummarization().setEnabled(true);
-    properties.setWindowSize(4);
+    chatMemoryProperties = new ChatMemoryProperties();
+    chatMemoryProperties.getSummarization().setEnabled(true);
+    chatMemoryProperties.getSummarization().setMaxQueueSize(4);
+    chatMemoryProperties.getSummarization().setMaxConcurrentSummaries(2);
+    chatMemoryProperties.setWindowSize(4);
     meterRegistry = new SimpleMeterRegistry();
-    flowMemorySummarizerService =
-        new FlowMemorySummarizerService(
-            flowSessionRepository,
-            flowMemoryVersionRepository,
-            flowMemorySummaryRepository,
-            agentVersionRepository,
-            chatMemorySummarizerService,
-            properties,
-            tokenUsageEstimator,
-            objectMapper,
-            chatProviderService,
-            meterRegistry);
+    flowMemorySummarizerService = createService(chatMemoryProperties);
 
     FlowDefinition definition =
         new FlowDefinition("def", 1, FlowDefinitionStatus.PUBLISHED, true, objectMapper.createObjectNode());
@@ -82,6 +76,9 @@ class FlowMemorySummarizerServiceTest {
 
   @AfterEach
   void tearDown() {
+    if (flowMemorySummarizerService != null) {
+      flowMemorySummarizerService.shutdown();
+    }
     if (meterRegistry != null) {
       meterRegistry.close();
     }
@@ -118,7 +115,35 @@ class FlowMemorySummarizerServiceTest {
   }
 
   @Test
-  void processPersistsSummary() {
+  void preflightDoesNotRequireWindowSizedHistory() {
+    UUID sessionId = session.getId();
+    when(chatMemorySummarizerService.isEnabled()).thenReturn(true);
+    when(chatMemorySummarizerService.triggerTokenLimit()).thenReturn(0);
+    when(chatMemorySummarizerService.targetTokenCount()).thenReturn(40);
+
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+    when(flowMemorySummaryRepository.findFirstByFlowSessionAndChannelOrderBySourceVersionEndDesc(session, "conversation"))
+        .thenReturn(Optional.empty());
+    when(flowMemoryVersionRepository.findByFlowSessionAndChannelOrderByVersionAsc(session, "conversation"))
+        .thenReturn(sampleVersions(session, 6));
+
+    ChatProvidersProperties.Model model = new ChatProvidersProperties.Model();
+    ChatProvidersProperties.Usage usage = new ChatProvidersProperties.Usage();
+    usage.setFallbackTokenizer("cl100k_base");
+    model.setUsage(usage);
+    when(chatProviderService.model("openai", "gpt-4o-mini")).thenReturn(model);
+    when(tokenUsageEstimator.estimate(any()))
+        .thenReturn(new Estimate(500, 0, 500, false, false));
+
+    var result =
+        flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().entries()).hasSize(2);
+  }
+
+  @Test
+  void processPersistsSummary() throws InterruptedException {
     UUID sessionId = session.getId();
     when(chatMemorySummarizerService.isEnabled()).thenReturn(true);
     when(chatMemorySummarizerService.triggerTokenLimit()).thenReturn(4000);
@@ -152,7 +177,14 @@ class FlowMemorySummarizerServiceTest {
         flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
     assertThat(preflight).isPresent();
 
+    CountDownLatch summarySaved = new CountDownLatch(1);
+    when(flowMemorySummaryRepository.save(any())).thenAnswer(invocation -> {
+      summarySaved.countDown();
+      return invocation.getArgument(0);
+    });
+
     flowMemorySummarizerService.processPreflightResult(preflight.get());
+    assertThat(summarySaved.await(1, TimeUnit.SECONDS)).isTrue();
 
     ArgumentCaptor<com.aiadvent.backend.flow.domain.FlowMemorySummary> summaryCaptor =
         ArgumentCaptor.forClass(com.aiadvent.backend.flow.domain.FlowMemorySummary.class);
@@ -205,18 +237,32 @@ class FlowMemorySummarizerServiceTest {
   }
 
   @Test
-  void processPreflightResultRecordsQueueRejectionsWhenWorkersBusy() {
+  void processPreflightResultRecordsQueueRejectionsWhenQueueIsFull() throws Exception {
     UUID sessionId = session.getId();
+    flowMemorySummarizerService.shutdown();
+    ChatMemoryProperties smallQueueProperties = new ChatMemoryProperties();
+    smallQueueProperties.getSummarization().setEnabled(true);
+    smallQueueProperties.getSummarization().setMaxQueueSize(1);
+    smallQueueProperties.getSummarization().setMaxConcurrentSummaries(1);
+    smallQueueProperties.setWindowSize(4);
+    flowMemorySummarizerService = createService(smallQueueProperties);
+
+    CountDownLatch latch = new CountDownLatch(1);
     when(chatMemorySummarizerService.isEnabled()).thenReturn(true);
     when(chatMemorySummarizerService.triggerTokenLimit()).thenReturn(1000);
     when(chatMemorySummarizerService.targetTokenCount()).thenReturn(500);
-    when(chatMemorySummarizerService.tryAcquireSlot()).thenReturn(false);
+    when(chatMemorySummarizerService.tryAcquireSlot()).thenReturn(true);
+    when(chatMemorySummarizerService.summarizeTranscript(any(), anyString(), eq("flow")))
+        .thenAnswer(invocation -> {
+          latch.await(1, TimeUnit.SECONDS);
+          return Optional.of("blocked");
+        });
 
     when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
     when(flowMemorySummaryRepository.findFirstByFlowSessionAndChannelOrderBySourceVersionEndDesc(session, "conversation"))
         .thenReturn(Optional.empty());
     when(flowMemoryVersionRepository.findByFlowSessionAndChannelOrderByVersionAsc(session, "conversation"))
-        .thenReturn(sampleVersions(session));
+        .thenAnswer(invocation -> sampleVersions(session));
 
     ChatProvidersProperties.Model model = new ChatProvidersProperties.Model();
     ChatProvidersProperties.Usage usage = new ChatProvidersProperties.Usage();
@@ -225,24 +271,32 @@ class FlowMemorySummarizerServiceTest {
     when(chatProviderService.model("openai", "gpt-4o-mini")).thenReturn(model);
     when(tokenUsageEstimator.estimate(any())).thenReturn(new Estimate(2000, 0, 2000, false, false));
 
-    var preflight =
+    var first =
         flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
-    assertThat(preflight).isPresent();
+    assertThat(first).isPresent();
+    flowMemorySummarizerService.processPreflightResult(first.get());
 
-    flowMemorySummarizerService.processPreflightResult(preflight.get());
+    var second =
+        flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
+    assertThat(second).isPresent();
+    flowMemorySummarizerService.processPreflightResult(second.get());
+
+    var third =
+        flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
+    assertThat(third).isPresent();
+    flowMemorySummarizerService.processPreflightResult(third.get());
 
     assertThat(meterRegistry.find("flow_summary_queue_rejections_total").counter().count()).isEqualTo(1.0d);
+    latch.countDown();
   }
 
   @Test
-  void processPreflightResultTracksFailuresAndAlerts() {
+  void processPreflightResultTracksFailuresAndAlerts() throws InterruptedException {
     UUID sessionId = session.getId();
     when(chatMemorySummarizerService.isEnabled()).thenReturn(true);
     when(chatMemorySummarizerService.triggerTokenLimit()).thenReturn(1000);
     when(chatMemorySummarizerService.targetTokenCount()).thenReturn(500);
     when(chatMemorySummarizerService.tryAcquireSlot()).thenReturn(true);
-    when(chatMemorySummarizerService.summarizeTranscript(any(), anyString(), eq("flow")))
-        .thenThrow(new RuntimeException("summariser down"));
 
     when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
     when(flowSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
@@ -262,21 +316,29 @@ class FlowMemorySummarizerServiceTest {
         flowMemorySummarizerService.preflight(sessionId, "conversation", "openai", "gpt-4o-mini", null);
     assertThat(preflight).isPresent();
 
+    CountDownLatch latch = new CountDownLatch(3);
+    when(chatMemorySummarizerService.summarizeTranscript(any(), anyString(), eq("flow")))
+        .thenAnswer(invocation -> {
+          latch.countDown();
+          throw new RuntimeException("summariser down");
+        });
+
     for (int attempt = 0; attempt < 3; attempt++) {
-      try {
-        flowMemorySummarizerService.processPreflightResult(preflight.get());
-      } catch (Exception ignored) {
-        // expected because summarizeTranscript throws
-      }
+      flowMemorySummarizerService.processPreflightResult(preflight.get());
     }
 
+    assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
     assertThat(meterRegistry.find("flow_summary_failures_total").counter().count()).isEqualTo(3.0d);
     assertThat(meterRegistry.find("flow_summary_failure_alerts_total").counter().count()).isEqualTo(1.0d);
   }
 
   private List<FlowMemoryVersion> sampleVersions(FlowSession session) {
+    return sampleVersions(session, 8);
+  }
+
+  private List<FlowMemoryVersion> sampleVersions(FlowSession session, int total) {
     List<FlowMemoryVersion> versions = new java.util.ArrayList<>();
-    for (int i = 1; i <= 8; i++) {
+    for (int i = 1; i <= total; i++) {
       ObjectNode payload = objectMapper.createObjectNode();
       payload.put("prompt", "message-" + i);
       FlowMemoryVersion version =
@@ -297,5 +359,18 @@ class FlowMemorySummarizerServiceTest {
     } catch (NoSuchFieldException | IllegalAccessException exception) {
       throw new RuntimeException(exception);
     }
+  }
+  private FlowMemorySummarizerService createService(ChatMemoryProperties properties) {
+    return new FlowMemorySummarizerService(
+        flowSessionRepository,
+        flowMemoryVersionRepository,
+        flowMemorySummaryRepository,
+        agentVersionRepository,
+        chatMemorySummarizerService,
+        properties,
+        tokenUsageEstimator,
+        objectMapper,
+        chatProviderService,
+        meterRegistry);
   }
 }

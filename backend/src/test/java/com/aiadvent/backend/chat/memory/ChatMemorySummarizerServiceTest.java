@@ -3,6 +3,8 @@ package com.aiadvent.backend.chat.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aiadvent.backend.chat.config.ChatMemoryProperties;
+import com.aiadvent.backend.chat.domain.ChatMemorySummary;
+import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMemorySummaryRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -20,6 +22,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -28,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class ChatMemorySummarizerServiceTest {
@@ -108,5 +112,21 @@ class ChatMemorySummarizerServiceTest {
   @Test
   void resolveTailCountHonoursWindowWhenTranscriptIsLonger() {
     assertThat(service.resolveTailCount(64)).isEqualTo(20);
+  }
+
+  @Test
+  void persistSummaryStoresEstimatedTokenCount() throws Exception {
+    Mockito.when(tokenUsageEstimator.estimate(Mockito.any()))
+        .thenReturn(new TokenUsageEstimator.Estimate(0, 42, 42, false, false));
+    Mockito.when(summaryRepository.save(Mockito.any(ChatMemorySummary.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+    ChatSession session = new ChatSession();
+    session.setSummaryUntilOrder(0);
+
+    ReflectionTestUtils.invokeMethod(service, "persistSummary", session, "Summary text", 3);
+
+    ArgumentCaptor<ChatMemorySummary> captor = ArgumentCaptor.forClass(ChatMemorySummary.class);
+    Mockito.verify(summaryRepository).save(captor.capture());
+    assertThat(captor.getValue().getTokenCount()).isEqualTo(42L);
   }
 }

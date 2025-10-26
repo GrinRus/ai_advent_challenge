@@ -425,13 +425,37 @@ public class ChatMemorySummarizerService {
     int startOrder = session.getSummaryUntilOrder() + 1;
     int endOrder = startOrder + summaryCount - 1;
     ChatMemorySummary entity = new ChatMemorySummary(session, startOrder, endOrder, summaryText);
-    entity.setTokenCount(Long.valueOf(summaryCount));
+    Long estimatedTokens = estimateSummaryTokens(summaryText);
+    if (estimatedTokens != null) {
+      entity.setTokenCount(estimatedTokens);
+    }
     entity.setLanguage(SimpleLanguageDetector.detectLanguage(summaryText));
     entity.setMetadata(buildSummaryMetadata(startOrder, endOrder));
     summaryRepository.save(entity);
     session.setSummaryUntilOrder(endOrder);
     session.setSummaryMetadata(buildSessionMetadata(endOrder));
     chatSessionRepository.save(session);
+  }
+
+  private Long estimateSummaryTokens(String summaryText) {
+    if (tokenUsageEstimator == null || !StringUtils.hasText(summaryText)) {
+      return null;
+    }
+    if (!StringUtils.hasText(summarizerProviderId) || !StringUtils.hasText(summarizerModelId)) {
+      return null;
+    }
+    try {
+      TokenUsageEstimator.Estimate estimate =
+          tokenUsageEstimator.estimate(
+              new TokenUsageEstimator.EstimateRequest(
+                  summarizerProviderId, summarizerModelId, null, null, summaryText));
+      if (estimate != null && estimate.hasUsage()) {
+        return Long.valueOf(Math.max(0, estimate.totalTokens()));
+      }
+    } catch (RuntimeException exception) {
+      log.debug("Failed to estimate summary token count", exception);
+    }
+    return null;
   }
 
   String buildSummarisationPrompt(List<Message> messages) {

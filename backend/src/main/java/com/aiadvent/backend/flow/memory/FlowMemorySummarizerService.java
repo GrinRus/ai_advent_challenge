@@ -23,6 +23,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -35,6 +36,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +59,9 @@ public class FlowMemorySummarizerService {
   private static final String DEFAULT_CHANNEL = FlowMemoryChannels.CONVERSATION;
   private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
   private static final int FAILURE_ALERT_THRESHOLD = 3;
+  private static final int MIN_TAIL_MESSAGES = 4;
+  private static final int DEFAULT_QUEUE_CAPACITY = 100;
+  private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
 
   private final FlowSessionRepository flowSessionRepository;
   private final FlowMemoryVersionRepository flowMemoryVersionRepository;
@@ -64,6 +72,7 @@ public class FlowMemorySummarizerService {
   private final TokenUsageEstimator tokenUsageEstimator;
   private final ObjectMapper objectMapper;
   private final ChatProviderService chatProviderService;
+  private final ThreadPoolExecutor dispatcherExecutor;
   private final Counter summaryCounter;
   private final Timer summaryTimer;
   private final Counter queueRejectedCounter;
@@ -97,6 +106,7 @@ public class FlowMemorySummarizerService {
     this.tokenUsageEstimator = Objects.requireNonNull(tokenUsageEstimator, "tokenUsageEstimator must not be null");
     this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     this.chatProviderService = Objects.requireNonNull(chatProviderService, "chatProviderService must not be null");
+    this.dispatcherExecutor = buildDispatcherExecutor(chatMemoryProperties);
     if (meterRegistry != null) {
       this.summaryCounter =
           Counter.builder("flow_summary_runs_total")
@@ -118,8 +128,11 @@ public class FlowMemorySummarizerService {
           Counter.builder("flow_summary_failure_alerts_total")
               .description("Number of times flow summary failures reached alert threshold")
               .register(meterRegistry);
-      Gauge.builder("flow_summary_queue_size", activeSummaries, AtomicInteger::get)
+      Gauge.builder("flow_summary_active_jobs", activeSummaries, AtomicInteger::get)
           .description("Number of flow summary jobs currently executing")
+          .register(meterRegistry);
+      Gauge.builder("flow_summary_queue_size", dispatcherExecutor, exec -> exec.getQueue().size())
+          .description("Number of flow summary jobs waiting for execution")
           .register(meterRegistry);
     } else {
       this.summaryCounter = null;
@@ -128,6 +141,35 @@ public class FlowMemorySummarizerService {
       this.summaryFailureCounter = null;
       this.summaryFailureAlertCounter = null;
     }
+  }
+
+  private ThreadPoolExecutor buildDispatcherExecutor(ChatMemoryProperties chatMemoryProperties) {
+    ChatMemoryProperties.SummarizationProperties properties = chatMemoryProperties.getSummarization();
+    int queueCapacity =
+        properties != null && properties.getMaxQueueSize() > 0
+            ? properties.getMaxQueueSize()
+            : DEFAULT_QUEUE_CAPACITY;
+    queueCapacity = Math.max(1, queueCapacity);
+    int workerCount =
+        properties != null && properties.getMaxConcurrentSummaries() > 0
+            ? properties.getMaxConcurrentSummaries()
+            : 1;
+    workerCount = Math.max(1, workerCount);
+    ThreadFactory threadFactory =
+        runnable -> {
+          Thread thread = new Thread(runnable);
+          thread.setName("flow-summary-" + WORKER_SEQUENCE.incrementAndGet());
+          thread.setDaemon(true);
+          return thread;
+        };
+    return new ThreadPoolExecutor(
+        workerCount,
+        workerCount,
+        0L,
+        TimeUnit.MILLISECONDS,
+        new LinkedBlockingQueue<>(queueCapacity),
+        threadFactory,
+        new ThreadPoolExecutor.AbortPolicy());
   }
 
   public boolean supportsChannel(String channel) {
@@ -191,7 +233,7 @@ public class FlowMemorySummarizerService {
           modelId);
       flowMemorySummaryRepository.deleteByFlowSessionAndChannel(session, channel);
       preparePlan(session, channel, providerId, modelId, null, true)
-          .ifPresent(this::processPreflightResult);
+          .ifPresent(this::executeSummary);
     }
   }
 
@@ -219,7 +261,8 @@ public class FlowMemorySummarizerService {
     }
 
     List<FlowTranscriptEntry> orderedEntries = versions.stream().map(this::toEntry).toList();
-    if (orderedEntries.size() <= tailSize()) {
+    int tailCount = resolveTailCount(orderedEntries.size());
+    if (tailCount >= orderedEntries.size()) {
       return Optional.empty();
     }
 
@@ -240,7 +283,7 @@ public class FlowMemorySummarizerService {
       return Optional.empty();
     }
 
-    int summaryCount = transcript.size() - tailSize();
+    int summaryCount = orderedEntries.size() - tailCount;
     if (summaryCount <= 0) {
       return Optional.empty();
     }
@@ -263,41 +306,14 @@ public class FlowMemorySummarizerService {
     if (result == null || result.entries().isEmpty()) {
       return;
     }
-    log.info(
-        "Flow summarisation scheduled for session {} channel {} (estimated {} tokens, trigger {}).",
-        result.sessionId(),
-        result.channel(),
-        result.decision().estimatedTokens(),
-        result.decision().triggerTokenLimit());
-    if (!chatMemorySummarizerService.tryAcquireSlot()) {
-      log.info(
-          "Flow summarisation skipped for session {} because the summariser worker pool is busy",
-          result.sessionId());
-      recordQueueRejection();
-      return;
-    }
-    activeSummaries.incrementAndGet();
-    long started = System.nanoTime();
     try {
-      String prompt = buildPrompt(result.entries());
-      if (!StringUtils.hasText(prompt)) {
-        resetFailures(result.sessionId());
-        return;
-      }
-      Optional<String> summaryText =
-          chatMemorySummarizerService.summarizeTranscript(result.sessionId(), prompt, "flow");
-      if (summaryText.isEmpty()) {
-        recordFailure(result.sessionId(), "empty response", null);
-        return;
-      }
-      persistSummary(result, summaryText.get());
-      chatMemorySummarizerService.recordSummaryRun(System.nanoTime() - started);
-      recordSummaryRunMetrics(result.sessionId(), System.nanoTime() - started);
-    } catch (Exception exception) {
-      recordFailure(result.sessionId(), exception.getMessage(), exception);
-    } finally {
-      chatMemorySummarizerService.releaseSlot();
-      activeSummaries.decrementAndGet();
+      dispatcherExecutor.execute(() -> executeSummary(result));
+    } catch (RejectedExecutionException exception) {
+      recordQueueRejection();
+      log.warn(
+          "Flow summarisation queue is full; skipping session {} channel {}",
+          result.sessionId(),
+          result.channel());
     }
   }
 
@@ -542,8 +558,13 @@ public class FlowMemorySummarizerService {
     return null;
   }
 
-  private int tailSize() {
-    return Math.max(4, chatMemoryProperties.getWindowSize());
+  private int resolveTailCount(int totalEntries) {
+    if (totalEntries <= 1) {
+      return 0;
+    }
+    int dynamicTail = Math.max(MIN_TAIL_MESSAGES, totalEntries / 2);
+    int boundedTail = Math.min(dynamicTail, totalEntries - 1);
+    return Math.max(1, boundedTail);
   }
 
   public record PreflightResult(
@@ -569,5 +590,65 @@ public class FlowMemorySummarizerService {
         .filter(Objects::nonNull)
         .reduce((first, second) -> second)
         .orElse(null);
+  }
+
+  private void executeSummary(PreflightResult result) {
+    if (result == null || result.entries().isEmpty()) {
+      return;
+    }
+    log.info(
+        "Flow summarisation scheduled for session {} channel {} (estimated {} tokens, trigger {}).",
+        result.sessionId(),
+        result.channel(),
+        result.decision().estimatedTokens(),
+        result.decision().triggerTokenLimit());
+    boolean slotAcquired = false;
+    try {
+      slotAcquired = acquireSummarizerSlot();
+      if (!slotAcquired) {
+        log.warn("Flow summarisation skipped for session {} because workers are shutting down", result.sessionId());
+        return;
+      }
+      activeSummaries.incrementAndGet();
+      long started = System.nanoTime();
+      String prompt = buildPrompt(result.entries());
+      if (!StringUtils.hasText(prompt)) {
+        resetFailures(result.sessionId());
+        return;
+      }
+      Optional<String> summaryText =
+          chatMemorySummarizerService.summarizeTranscript(result.sessionId(), prompt, "flow");
+      if (summaryText.isEmpty()) {
+        recordFailure(result.sessionId(), "empty response", null);
+        return;
+      }
+      persistSummary(result, summaryText.get());
+      chatMemorySummarizerService.recordSummaryRun(System.nanoTime() - started);
+      recordSummaryRunMetrics(result.sessionId(), System.nanoTime() - started);
+    } catch (InterruptedException interruptedException) {
+      Thread.currentThread().interrupt();
+    } catch (Exception exception) {
+      recordFailure(result.sessionId(), exception.getMessage(), exception);
+    } finally {
+      if (slotAcquired) {
+        chatMemorySummarizerService.releaseSlot();
+        activeSummaries.decrementAndGet();
+      }
+    }
+  }
+
+  private boolean acquireSummarizerSlot() throws InterruptedException {
+    while (!dispatcherExecutor.isShutdown()) {
+      if (chatMemorySummarizerService.tryAcquireSlot()) {
+        return true;
+      }
+      Thread.sleep(50L);
+    }
+    return false;
+  }
+
+  @PreDestroy
+  void shutdown() {
+    dispatcherExecutor.shutdownNow();
   }
 }

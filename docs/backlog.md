@@ -552,6 +552,14 @@
   2. **Multi-channel summaries** — гибко для специализированных каналов, но сложнее history + фронта.
   3. **Гибрид** — дефолт `conversation` + whitelist иных каналов в DSL, даёт постепенный rollout ценой дополнительной конфигурации.
 
+## Wave 10.3 — Stabilisation flow/chat summarisation
+### Backend
+- [x] Убрать привязку flow-summarizer'а к chat window: `FlowMemorySummarizerService` теперь вычисляет хвост динамически (как максимум из 4 сообщений и половины истории), поэтому даже при retention в 10 версий preflight строит план и summary появляется без дополнительных настроек.
+- [x] В `ChatMemorySummarizerService.persistSummary` записывать реальный подсчёт токенов: теперь `tokenUsageEstimator` считает токены итогового summary и значение попадает в `chat_memory_summary.token_count`, что делает отчёты об экономии корректными.
+
+### Observability & Resilience
+- [x] Обеспечить управляемую очередь и метрики для flow-саммари: `FlowMemorySummarizerService` теперь отправляет план в ограниченную очередь `ThreadPoolExecutor` с метриками `flow_summary_queue_size`, `flow_summary_active_jobs` и счётчиком дропа при переполнении, а сами задачи ждут свободный слот вместо немедленного отказа.
+
 ## Wave 11 — Strict typing rollout
 ### Backend
 - [ ] Заменить `Map<String, Object>` в `ChatProviderService.chatSyncWithOverrides` и `AgentInvocationService` на явный DTO для advisor параметров, обеспечить валидацию содержимого.
