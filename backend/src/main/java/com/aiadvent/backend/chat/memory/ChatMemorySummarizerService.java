@@ -64,8 +64,6 @@ public class ChatMemorySummarizerService {
   private static final String SUMMARY_QUEUE_REJECTIONS_METRIC = "chat_summary_queue_rejections_total";
   private static final int FAILURE_ALERT_THRESHOLD = 3;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
-  private static final int HISTORY_REFRESH_ATTEMPTS = 20; // ~10 seconds max wait with 500ms sleeps
-  private static final long HISTORY_REFRESH_DELAY_MS = 500L;
   private static final int SUMMARY_METADATA_SCHEMA_VERSION = 1;
 
   private final ChatMemoryProperties properties;
@@ -432,60 +430,13 @@ public class ChatMemorySummarizerService {
   }
 
   List<Message> loadConversationSnapshot(UUID sessionId, List<Message> fallback) {
-    int baselineCount = countNonSummaryMessages(fallback);
     if (sessionId == null) {
       return fallback != null ? fallback : List.of();
     }
-
-    List<Message> latestSnapshot = null;
-    ReadinessStatus lastStatus = null;
-    boolean baselineHasAssistantTail = hasAssistantTail(fallback);
-    String conversationId = sessionId.toString();
-    for (int attempt = 0; attempt < HISTORY_REFRESH_ATTEMPTS; attempt++) {
-      latestSnapshot = chatMemoryRepository.findByConversationId(conversationId);
-      lastStatus = assessConversationReadiness(latestSnapshot, baselineCount, baselineHasAssistantTail);
-      if (lastStatus.ready()) {
-        if (log.isDebugEnabled() && attempt > 0) {
-          log.debug(
-              "Conversation {} ready for summarisation after {} attempt(s) (nonSummaryCount={}, lastType={})",
-              sessionId,
-              attempt + 1,
-              lastStatus.currentNonSummaryCount(),
-              lastStatus.lastNonSummaryType());
-        }
-        return latestSnapshot;
-      }
-      if (log.isDebugEnabled()) {
-        log.debug(
-            "Waiting for assistant reply in conversation {} (attempt {}/{}, baselineNonSummary={}, currentNonSummary={}, lastType={}, baselineReady={})",
-            sessionId,
-            attempt + 1,
-            HISTORY_REFRESH_ATTEMPTS,
-            baselineCount,
-            lastStatus.currentNonSummaryCount(),
-            lastStatus.lastNonSummaryType(),
-            baselineHasAssistantTail);
-      }
-      if (attempt < HISTORY_REFRESH_ATTEMPTS - 1) {
-        sleepQuietly(HISTORY_REFRESH_DELAY_MS);
-      }
+    List<Message> snapshot = chatMemoryRepository.findByConversationId(sessionId.toString());
+    if (snapshot != null && !snapshot.isEmpty()) {
+      return snapshot;
     }
-    if (latestSnapshot != null && !latestSnapshot.isEmpty()) {
-      if (log.isDebugEnabled()) {
-        log.debug(
-            "Conversation {} not fully ready after {} attempts, proceeding with latest snapshot (nonSummaryCount={}, lastType={}, baselineReady={})",
-            sessionId,
-            HISTORY_REFRESH_ATTEMPTS,
-            lastStatus != null ? lastStatus.currentNonSummaryCount() : "n/a",
-            lastStatus != null ? lastStatus.lastNonSummaryType() : "n/a",
-            baselineHasAssistantTail);
-      }
-      return latestSnapshot;
-    }
-    log.warn(
-        "Conversation {} history is empty after waiting ~{}s; falling back to cached messages",
-        sessionId,
-        (HISTORY_REFRESH_ATTEMPTS * HISTORY_REFRESH_DELAY_MS) / 1000);
     return fallback != null ? fallback : List.of();
   }
 
@@ -502,46 +453,6 @@ public class ChatMemorySummarizerService {
     return count;
   }
 
-  private ReadinessStatus assessConversationReadiness(
-      List<Message> conversation, int baselineNonSummaryCount, boolean baselineHasAssistantTail) {
-    if (conversation == null || conversation.isEmpty()) {
-      return new ReadinessStatus(false, 0, null);
-    }
-    int currentCount = 0;
-    MessageType lastType = null;
-    for (Message message : conversation) {
-      if (message == null || isSummaryMessage(message)) {
-        continue;
-      }
-      currentCount++;
-      lastType = message.getMessageType();
-    }
-    boolean hasAssistantTail = lastType == MessageType.ASSISTANT;
-    boolean ready = hasAssistantTail && (baselineHasAssistantTail || currentCount >= baselineNonSummaryCount);
-    return new ReadinessStatus(ready, currentCount, lastType);
-  }
-
-  private record ReadinessStatus(boolean ready, int currentNonSummaryCount, MessageType lastNonSummaryType) {}
-
-  private boolean hasAssistantTail(List<Message> messages) {
-    if (messages == null || messages.isEmpty()) {
-      return false;
-    }
-    return messages.stream()
-        .filter(message -> message != null && !isSummaryMessage(message))
-        .reduce((first, second) -> second)
-        .map(Message::getMessageType)
-        .map(type -> type == MessageType.ASSISTANT)
-        .orElse(false);
-  }
-
-  void sleepQuietly(long millis) {
-    try {
-      Thread.sleep(millis);
-    } catch (InterruptedException interruptedException) {
-      Thread.currentThread().interrupt();
-    }
-  }
 
   private void persistSummary(ChatSession session, String summaryText, int summaryCount) {
     int startOrder = session.getSummaryUntilOrder() + 1;
