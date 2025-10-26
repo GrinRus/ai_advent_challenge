@@ -55,6 +55,26 @@ class DatabaseChatMemoryRepositoryIntegrationTest extends PostgresTestContainer 
 
   @Test
   @Transactional
+  void findByConversationIdReturnsTailWhenOrdersRestartAfterSummary() {
+    UUID sessionId = UUID.randomUUID();
+    insertChatSession(sessionId);
+    insertSummary(sessionId, 1, 5, "Batch summary");
+    insertMessage(sessionId, 1, "USER", "tail-user");
+    insertMessage(sessionId, 2, "ASSISTANT", "tail-assistant");
+
+    List<org.springframework.ai.chat.messages.Message> history =
+        repository.findByConversationId(sessionId.toString());
+
+    assertThat(history).hasSize(3);
+    assertThat(history.get(0).getMetadata()).containsEntry("summary", true);
+    assertThat(history.get(1).getMessageType().name()).isEqualTo("USER");
+    assertThat(history.get(1).getText()).isEqualTo("tail-user");
+    assertThat(history.get(2).getMessageType().name()).isEqualTo("ASSISTANT");
+    assertThat(history.get(2).getText()).isEqualTo("tail-assistant");
+  }
+
+  @Test
+  @Transactional
   void saveAllPersistsMessagesInOrder() {
     UUID sessionId = UUID.randomUUID();
     org.springframework.ai.chat.messages.UserMessage userMessage =

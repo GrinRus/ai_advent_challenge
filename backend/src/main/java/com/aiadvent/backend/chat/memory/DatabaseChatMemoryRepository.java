@@ -110,8 +110,11 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
       result.add(summary.asMessage());
     }
 
+    boolean hasGlobalOrdering =
+        storedMessages.stream().anyMatch(entry -> entry.messageOrder() > summarizedOrder);
+
     storedMessages.stream()
-        .filter(entry -> entry.messageOrder() > summarizedOrder)
+        .filter(entry -> !hasGlobalOrdering || entry.messageOrder() > summarizedOrder)
         .map(StoredMessage::message)
         .forEach(result::add);
 
