@@ -779,7 +779,11 @@ public class ChatMemorySummarizerService {
     if (configuredTail <= 0) {
       return Math.max(1, totalMessages - 1);
     }
-    int boundedTail = Math.min(Math.max(MIN_TAIL_MESSAGES, configuredTail), totalMessages - 1);
+    int maxTailCapacity = totalMessages - MIN_SUMMARY_BATCH;
+    if (maxTailCapacity <= 0) {
+      return Math.max(1, totalMessages - 1);
+    }
+    int boundedTail = Math.min(Math.max(MIN_TAIL_MESSAGES, configuredTail), maxTailCapacity);
     return Math.max(1, boundedTail);
   }
 

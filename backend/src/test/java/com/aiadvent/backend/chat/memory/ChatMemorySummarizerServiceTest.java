@@ -107,13 +107,18 @@ class ChatMemorySummarizerServiceTest {
   }
 
   @Test
-  void resolveTailCountKeepsAtLeastOneMessageWhenWindowIsLargerThanTranscript() {
-    assertThat(service.resolveTailCount(5)).isEqualTo(4);
+  void resolveTailCountLeavesRoomForMinimumSummaryWhenTranscriptIsShort() {
+    assertThat(service.resolveTailCount(5)).isEqualTo(3);
   }
 
   @Test
   void resolveTailCountHonoursWindowWhenTranscriptIsLonger() {
     assertThat(service.resolveTailCount(64)).isEqualTo(20);
+  }
+
+  @Test
+  void resolveTailCountRespectsMinimumSummaryBatch() {
+    assertThat(service.resolveTailCount(20)).isEqualTo(18);
   }
 
   @Test
