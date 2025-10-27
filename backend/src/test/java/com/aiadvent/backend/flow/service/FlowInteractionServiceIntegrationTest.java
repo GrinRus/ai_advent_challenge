@@ -256,7 +256,7 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
                 1,
                 FlowDefinitionStatus.PUBLISHED,
                 true,
-                objectMapper.createObjectNode()));
+                com.aiadvent.backend.flow.TestFlowBlueprintFactory.simpleBlueprint()));
 
     FlowSession session =
         flowSessionRepository.save(

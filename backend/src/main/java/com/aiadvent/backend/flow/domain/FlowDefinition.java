@@ -1,7 +1,9 @@
 package com.aiadvent.backend.flow.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -12,9 +14,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
-import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "flow_definition")
@@ -38,9 +38,9 @@ public class FlowDefinition {
   @Column(name = "is_active", nullable = false)
   private boolean active;
 
-  @JdbcTypeCode(SqlTypes.JSON)
+  @Convert(converter = FlowBlueprintConverter.class)
   @Column(name = "definition", nullable = false, columnDefinition = "jsonb")
-  private JsonNode definition;
+  private FlowBlueprint definition;
 
   @Column(name = "description")
   private String description;
@@ -60,7 +60,7 @@ public class FlowDefinition {
   protected FlowDefinition() {}
 
   public FlowDefinition(
-      String name, int version, FlowDefinitionStatus status, boolean active, JsonNode definition) {
+      String name, int version, FlowDefinitionStatus status, boolean active, FlowBlueprint definition) {
     this.name = name;
     this.version = version;
     this.status = status;
@@ -108,11 +108,11 @@ public class FlowDefinition {
     this.active = active;
   }
 
-  public JsonNode getDefinition() {
+  public FlowBlueprint getDefinition() {
     return definition;
   }
 
-  public void setDefinition(JsonNode definition) {
+  public void setDefinition(FlowBlueprint definition) {
     this.definition = definition;
   }
 

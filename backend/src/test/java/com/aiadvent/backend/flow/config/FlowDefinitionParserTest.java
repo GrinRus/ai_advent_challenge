@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.CONVERSATION;
 import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.SHARED;
 
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -16,7 +18,8 @@ import org.junit.jupiter.api.Test;
 
 class FlowDefinitionParserTest {
 
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper =
+      new ObjectMapper().configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true);
   private final FlowDefinitionParser parser =
       new FlowDefinitionParser(new FlowInteractionSchemaValidator());
 
@@ -31,8 +34,7 @@ class FlowDefinitionParserTest {
     step.put("agentVersionId", UUID.randomUUID().toString());
     step.put("prompt", "Kick things off");
 
-    FlowDefinition definition =
-        new FlowDefinition("default-memory", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+    FlowDefinition definition = createDefinition("default-memory", root);
 
     FlowDefinitionDocument document = parser.parse(definition);
     FlowStepConfig config = document.step("step-1");
@@ -61,8 +63,7 @@ class FlowDefinitionParserTest {
     interaction.put("dueInMinutes", 15);
     interaction.putObject("payloadSchema").put("type", "object");
 
-    FlowDefinition definition =
-        new FlowDefinition("interaction-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+    FlowDefinition definition = createDefinition("interaction-flow", root);
 
     FlowDefinitionDocument document = parser.parse(definition);
     FlowStepConfig config = document.step("step-1");
@@ -88,11 +89,19 @@ class FlowDefinitionParserTest {
     ObjectNode interaction = step.putObject("interaction");
     interaction.putObject("payloadSchema").put("type", "string").put("format", "unsupported");
 
-    FlowDefinition definition =
-        new FlowDefinition("invalid-format", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+    FlowDefinition definition = createDefinition("invalid-format", root);
 
     assertThatThrownBy(() -> parser.parse(definition))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("format");
+  }
+
+  private FlowDefinition createDefinition(String name, ObjectNode root) {
+    try {
+      FlowBlueprint blueprint = objectMapper.treeToValue(root, FlowBlueprint.class);
+      return new FlowDefinition(name, 1, FlowDefinitionStatus.PUBLISHED, true, blueprint);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Failed to build blueprint for test", exception);
+    }
   }
 }

@@ -576,7 +576,7 @@
 ### Frontend
 - [x] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
 - [x] Переписать `FlowAgents` и другие потребители API так, чтобы парсинг JSON (например, `parseOptionalJson`) возвращал строго типизированные объекты с проверкой схемы.
-- [ ] Перестроить `FlowDefinitionForm`/`FlowLaunch` стейт: вместо `Record<string, unknown>` и массовых `JSON.parse` использовать строгие интерфейсы (`FlowDefinitionDraft`, `FlowLaunchPayload`) + валидаторы.
+- [x] Перестроить `FlowDefinitionForm`/`FlowLaunch` стейт: вместо `Record<string, unknown>` и массовых `JSON.parse` использовать строгие интерфейсы (`FlowDefinitionDraft`, `FlowLaunchPayload`) + валидаторы.
 - [x] Обновить обработку ответов `requestSync`/`requestStructuredSync`: валидировать JSON (type guards/zod) перед приведениями `as`, чтобы поймать несовместимые схемы.
 - [x] Добавить unit-тесты/типовые проверки для новых типов, чтобы предотвратить регрессии строгой типизации.
 - [x] Создать модуль `frontend/src/lib/types/flow.ts` c доменными интерфейсами (`FlowDefinitionDraft`, `AgentOptions`, `FlowEventPayload` и т. д.) и `zod`-схемами/type guards.

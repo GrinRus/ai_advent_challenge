@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
@@ -74,7 +75,7 @@ class FlowControlServiceTest {
 
     FlowDefinition definition =
         new FlowDefinition(
-            "test", 1, FlowDefinitionStatus.PUBLISHED, true, new ObjectMapper().createObjectNode());
+            "test", 1, FlowDefinitionStatus.PUBLISHED, true, TestFlowBlueprintFactory.simpleBlueprint());
     session =
         new FlowSession(
             definition,

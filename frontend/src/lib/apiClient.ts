@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import type { ZodSchema } from 'zod';
 import {
-  FlowLaunchParameters,
-  FlowSharedContext,
+  FlowLaunchPayloadSchema,
   FlowStartResponse,
   FlowStatusResponse,
   parseFlowStartResponse,
   parseFlowStatusResponse,
 } from './types/flow';
+import type { FlowLaunchPayload } from './types/flow';
 import {
   AgentDefinitionDetailsSchema,
   AgentDefinitionSummarySchema,
@@ -27,8 +27,10 @@ import {
 } from './types/flowDefinition';
 import type {
   FlowDefinitionDetails,
+  FlowDefinitionDocument,
   FlowDefinitionHistoryEntry,
   FlowDefinitionSummary,
+  FlowStepOverrides,
 } from './types/flowDefinition';
 import { FlowLaunchPreviewSchema } from './types/flowLaunch';
 import type { FlowLaunchPreview } from './types/flowLaunch';
@@ -357,11 +359,7 @@ export type FlowInteractionAutoResolvePayload = {
 
 export type FlowControlCommand = 'pause' | 'resume' | 'cancel' | 'retryStep';
 
-export type ChatRequestOverridesDto = {
-  temperature?: number | null;
-  topP?: number | null;
-  maxTokens?: number | null;
-};
+export type ChatRequestOverridesDto = FlowStepOverrides;
 
 export type SessionUsageMessage = {
   messageId?: string;
@@ -744,12 +742,11 @@ export async function requestStructuredSync(
 
 export async function startFlow(
   flowDefinitionId: string,
-  payload?: {
-    parameters?: FlowLaunchParameters;
-    sharedContext?: FlowSharedContext;
-    overrides?: ChatRequestOverridesDto | null;
-  },
+  payload?: FlowLaunchPayload,
 ): Promise<FlowStartResponse> {
+  const normalizedPayload =
+    payload != null ? FlowLaunchPayloadSchema.parse(payload) : {};
+
   const response = await fetch(
     `${API_BASE_URL}/flows/${flowDefinitionId}/start`,
     {
@@ -758,7 +755,7 @@ export async function startFlow(
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify(payload ?? {}),
+      body: JSON.stringify(normalizedPayload),
     },
   );
 
@@ -1064,7 +1061,7 @@ export async function createFlowDefinition(payload: {
   name: string;
   description?: string;
   updatedBy?: string;
-  definition: unknown;
+  definition: FlowDefinitionDocument;
   changeNotes?: string;
   sourceDefinitionId?: string;
 }): Promise<FlowDefinitionDetails> {
@@ -1089,7 +1086,7 @@ export async function updateFlowDefinition(
     description?: string;
     updatedBy?: string;
     changeNotes?: string;
-    definition: unknown;
+    definition: FlowDefinitionDocument;
   },
 ): Promise<FlowDefinitionDetails> {
   const response = await fetch(`${API_BASE_URL}/flows/definitions/${definitionId}`, {

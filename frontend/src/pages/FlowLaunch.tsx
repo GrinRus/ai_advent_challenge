@@ -4,11 +4,12 @@ import {
   fetchFlowDefinitions,
   fetchFlowLaunchPreview,
   startFlow,
+  type ChatRequestOverridesDto,
   type FlowDefinitionSummary,
   type FlowLaunchPreview,
   type FlowLaunchStep,
 } from '../lib/apiClient';
-import type { FlowLaunchParameters, FlowSharedContext } from '../lib/types/flow';
+import type { FlowLaunchParameters, FlowLaunchPayload, FlowSharedContext } from '../lib/types/flow';
 import {
   FlowLaunchParametersSchema,
   FlowSharedContextSchema,
@@ -36,13 +37,31 @@ const formatCost = (value?: number | null, currency?: string | null) => {
   return `${formatted} ${currency ?? 'USD'}`;
 };
 
-const hasOverrides = (overrides?: { temperature?: number | null; topP?: number | null; maxTokens?: number | null } | null) =>
+const hasOverrides = (overrides?: ChatRequestOverridesDto | null) =>
   Boolean(
     overrides &&
       (overrides.temperature != null ||
         overrides.topP != null ||
         overrides.maxTokens != null),
   );
+
+const buildLaunchPayload = (
+  parameters?: FlowLaunchParameters,
+  sharedContext?: FlowSharedContext,
+  overrides?: ChatRequestOverridesDto | null,
+): FlowLaunchPayload | undefined => {
+  const payload: FlowLaunchPayload = {};
+  if (parameters !== undefined) {
+    payload.parameters = parameters;
+  }
+  if (sharedContext !== undefined) {
+    payload.sharedContext = sharedContext;
+  }
+  if (overrides && hasOverrides(overrides)) {
+    payload.overrides = overrides;
+  }
+  return Object.keys(payload).length > 0 ? payload : undefined;
+};
 
 const FlowLaunchPage = () => {
   const [definitions, setDefinitions] = useState<FlowDefinitionSummary[]>([]);
@@ -202,11 +221,7 @@ const FlowLaunchPage = () => {
     }
 
     const nextErrors: FormErrors = {};
-    const overrides: {
-      temperature?: number;
-      topP?: number;
-      maxTokens?: number;
-    } = {};
+    const overrides: ChatRequestOverridesDto = {};
 
     const parametersResult = parseStructuredInput(
       'Параметры запуска',
@@ -268,18 +283,7 @@ const FlowLaunchPage = () => {
 
     try {
       setIsStarting(true);
-      const overridesPayload = Object.keys(overrides).length > 0 ? overrides : undefined;
-      const payload =
-        parsedParameters !== undefined ||
-        parsedSharedContext !== undefined ||
-        overridesPayload !== undefined
-          ? {
-              parameters: parsedParameters,
-              sharedContext: parsedSharedContext,
-              overrides: overridesPayload,
-            }
-          : undefined;
-
+      const payload = buildLaunchPayload(parsedParameters, parsedSharedContext, overrides);
       const response = await startFlow(selectedDefinitionId, payload);
       navigate(`/flows/sessions/${response.sessionId}`);
     } catch (error) {
@@ -315,11 +319,7 @@ const FlowLaunchPage = () => {
 
   const overridesPreview = useMemo(() => {
     const warnings: string[] = [];
-    const result: {
-      temperature?: number;
-      topP?: number;
-      maxTokens?: number;
-    } = {};
+    const result: ChatRequestOverridesDto = {};
 
     if (temperature.trim()) {
       const numeric = Number(temperature.trim());
@@ -348,8 +348,10 @@ const FlowLaunchPage = () => {
       }
     }
 
+    const value = hasOverrides(result) ? result : undefined;
+
     return {
-      value: Object.keys(result).length > 0 ? result : undefined,
+      value,
       warnings,
     };
   }, [maxTokens, temperature, topP]);
@@ -358,17 +360,12 @@ const FlowLaunchPage = () => {
     if (parametersPreview.error || sharedContextPreview.error) {
       return null;
     }
-    const payload: Record<string, unknown> = {};
-    if (parametersPreview.value !== undefined) {
-      payload.parameters = parametersPreview.value;
-    }
-    if (sharedContextPreview.value !== undefined) {
-      payload.sharedContext = sharedContextPreview.value;
-    }
-    if (overridesPreview.value) {
-      payload.overrides = overridesPreview.value;
-    }
-    if (Object.keys(payload).length === 0) {
+    const payload = buildLaunchPayload(
+      parametersPreview.value,
+      sharedContextPreview.value,
+      overridesPreview.value ?? null,
+    );
+    if (!payload) {
       return '{}';
     }
     return JSON.stringify(payload, null, 2);

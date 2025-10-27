@@ -78,7 +78,7 @@ describe('flowDefinitionForm helpers', () => {
 
     const built = buildFlowDefinition(form);
     expect(built.steps).toHaveLength(1);
-    const [step] = built.steps as Record<string, unknown>[];
+    const [step] = built.steps;
     expect(step.overrides).toEqual({
       temperature: 0.5,
       topP: 0.8,

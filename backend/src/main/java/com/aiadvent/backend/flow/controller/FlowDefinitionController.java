@@ -11,6 +11,7 @@ import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.service.FlowDefinitionService;
 import com.aiadvent.backend.flow.service.FlowLaunchPreviewService;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,17 +32,21 @@ public class FlowDefinitionController {
 
   private final FlowDefinitionService flowDefinitionService;
   private final FlowLaunchPreviewService flowLaunchPreviewService;
+  private final ObjectMapper objectMapper;
 
   public FlowDefinitionController(
-      FlowDefinitionService flowDefinitionService, FlowLaunchPreviewService flowLaunchPreviewService) {
+      FlowDefinitionService flowDefinitionService,
+      FlowLaunchPreviewService flowLaunchPreviewService,
+      ObjectMapper objectMapper) {
     this.flowDefinitionService = flowDefinitionService;
     this.flowLaunchPreviewService = flowLaunchPreviewService;
+    this.objectMapper = objectMapper;
   }
 
   @GetMapping
   public List<FlowDefinitionSummaryResponse> listDefinitions() {
     return flowDefinitionService.listDefinitions().stream()
-        .map(FlowDefinitionController::toSummary)
+        .map(this::toSummary)
         .collect(Collectors.toList());
   }
 
@@ -58,7 +63,7 @@ public class FlowDefinitionController {
   @GetMapping("/{id}/history")
   public List<FlowDefinitionHistoryResponse> getHistory(@PathVariable UUID id) {
     return flowDefinitionService.getHistory(id).stream()
-        .map(FlowDefinitionController::toHistory)
+        .map(this::toHistory)
         .collect(Collectors.toList());
   }
 
@@ -83,7 +88,7 @@ public class FlowDefinitionController {
     return toResponse(published);
   }
 
-  private static FlowDefinitionSummaryResponse toSummary(FlowDefinition definition) {
+  private FlowDefinitionSummaryResponse toSummary(FlowDefinition definition) {
     return new FlowDefinitionSummaryResponse(
         definition.getId(),
         definition.getName(),
@@ -96,8 +101,8 @@ public class FlowDefinitionController {
         definition.getPublishedAt());
   }
 
-  private static FlowDefinitionResponse toResponse(FlowDefinition definition) {
-    JsonNode definitionNode = definition.getDefinition();
+  private FlowDefinitionResponse toResponse(FlowDefinition definition) {
+    JsonNode definitionNode = objectMapper.valueToTree(definition.getDefinition());
     return new FlowDefinitionResponse(
         definition.getId(),
         definition.getName(),
@@ -112,12 +117,12 @@ public class FlowDefinitionController {
         definition.getPublishedAt());
   }
 
-  private static FlowDefinitionHistoryResponse toHistory(FlowDefinitionHistory history) {
+  private FlowDefinitionHistoryResponse toHistory(FlowDefinitionHistory history) {
     return new FlowDefinitionHistoryResponse(
         history.getId(),
         history.getVersion(),
         history.getStatus(),
-        history.getDefinition(),
+        objectMapper.valueToTree(history.getDefinition()),
         StringUtils.hasText(history.getChangeNotes()) ? history.getChangeNotes() : null,
         history.getCreatedBy(),
         history.getCreatedAt());

@@ -2,6 +2,9 @@ import {
   FlowDefinitionDraft,
   FlowDefinitionDraftSchema,
   FlowDefinitionSchema,
+  type FlowDefinitionDocument,
+  type FlowStepDefinition,
+  type FlowStepOverrides,
   parseMemoryReads,
   parseMemoryWrites,
   parseTransitions,
@@ -93,7 +96,7 @@ export function parseFlowDefinition(definition: unknown): FlowDefinitionFormStat
   };
 }
 
-export function buildFlowDefinition(form: FlowDefinitionFormState): Record<string, unknown> {
+export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefinitionDocument {
   if (!form.steps.length) {
     throw new Error('Добавьте хотя бы один шаг перед сохранением');
   }
@@ -103,7 +106,7 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): Record<strin
   draft.startStepId = form.startStepId || form.steps[0]?.id || '';
   draft.syncOnly = form.syncOnly !== false;
 
-  draft.steps = form.steps.map((step) => {
+  draft.steps = form.steps.map<FlowStepDefinition>((step) => {
     if (!step.id.trim()) {
       throw new Error('У каждого шага должен быть заполнен идентификатор');
     }
@@ -111,7 +114,7 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): Record<strin
       throw new Error(`Для шага "${step.id}" необходимо выбрать опубликованного агента`);
     }
 
-    const overrides: Record<string, number> = {};
+    const overrides: FlowStepOverrides = {};
     if (typeof step.temperature === 'number') {
       overrides.temperature = step.temperature;
     }
@@ -126,7 +129,7 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): Record<strin
     const memoryWrites = parseMemoryWrites('Memory Writes', step.memoryWritesText);
     const transitions = parseTransitions('Transitions', step.transitionsText);
 
-    const definition = {
+    const definition: FlowStepDefinition = {
       id: step.id.trim(),
       name: step.name.trim(),
       agentVersionId: step.agentVersionId.trim(),

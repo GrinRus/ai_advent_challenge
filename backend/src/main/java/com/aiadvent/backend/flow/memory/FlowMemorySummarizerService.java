@@ -42,7 +42,8 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
@@ -53,7 +54,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
-@Slf4j
 public class FlowMemorySummarizerService {
 
   private static final String DEFAULT_CHANNEL = FlowMemoryChannels.CONVERSATION;
@@ -62,6 +62,7 @@ public class FlowMemorySummarizerService {
   private static final int MIN_TAIL_MESSAGES = 4;
   private static final int DEFAULT_QUEUE_CAPACITY = 100;
   private static final AtomicInteger WORKER_SEQUENCE = new AtomicInteger();
+  private static final Logger log = LoggerFactory.getLogger(FlowMemorySummarizerService.class);
 
   private final FlowSessionRepository flowSessionRepository;
   private final FlowMemoryVersionRepository flowMemoryVersionRepository;

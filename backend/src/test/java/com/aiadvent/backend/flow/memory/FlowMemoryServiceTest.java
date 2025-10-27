@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.memory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.domain.FlowMemorySummary;
@@ -42,7 +43,8 @@ class FlowMemoryServiceTest {
             flowSessionRepository, flowMemoryVersionRepository, flowMemorySummaryRepository, objectMapper);
 
     FlowDefinition definition =
-        new FlowDefinition("memory", 1, FlowDefinitionStatus.PUBLISHED, true, objectMapper.createObjectNode());
+        new FlowDefinition(
+            "memory", 1, FlowDefinitionStatus.PUBLISHED, true, TestFlowBlueprintFactory.simpleBlueprint());
     session = new FlowSession(definition, 1, FlowSessionStatus.RUNNING, 0L, 0L);
     setField(session, "id", UUID.randomUUID());
   }

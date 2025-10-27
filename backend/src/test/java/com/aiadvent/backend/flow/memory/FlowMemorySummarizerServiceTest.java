@@ -15,6 +15,7 @@ import com.aiadvent.backend.chat.memory.ChatMemorySummarizerService.Summarizatio
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator.Estimate;
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.domain.FlowMemoryVersion;
@@ -69,7 +70,8 @@ class FlowMemorySummarizerServiceTest {
     flowMemorySummarizerService = createService(chatMemoryProperties);
 
     FlowDefinition definition =
-        new FlowDefinition("def", 1, FlowDefinitionStatus.PUBLISHED, true, objectMapper.createObjectNode());
+        new FlowDefinition(
+            "def", 1, FlowDefinitionStatus.PUBLISHED, true, TestFlowBlueprintFactory.simpleBlueprint());
     session = new FlowSession(definition, 1, FlowSessionStatus.RUNNING, 0L, 0L);
     setField(session, "id", UUID.randomUUID());
   }

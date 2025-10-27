@@ -11,6 +11,7 @@ import com.aiadvent.backend.flow.api.FlowStartResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.domain.FlowJob;
@@ -35,6 +36,7 @@ import com.aiadvent.backend.flow.service.FlowStatusService.FlowStatusResponse;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.support.PostgresTestContainer;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -468,7 +470,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     step.put("prompt", "Solve the task");
 
     FlowDefinition definition =
-        new FlowDefinition("simple-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+        new FlowDefinition("simple-flow", 1, FlowDefinitionStatus.PUBLISHED, true, toBlueprint(root));
     return flowDefinitionRepository.save(definition);
   }
 
@@ -486,7 +488,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     transitions.putObject("onFailure").put("fail", false);
 
     FlowDefinition definition =
-        new FlowDefinition("approval-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+        new FlowDefinition("approval-flow", 1, FlowDefinitionStatus.PUBLISHED, true, toBlueprint(root));
     return flowDefinitionRepository.save(definition);
   }
 
@@ -522,7 +524,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     finish.putObject("transitions").putObject("onSuccess").put("complete", true);
 
     FlowDefinition definition =
-        new FlowDefinition("fallback-flow", 1, FlowDefinitionStatus.PUBLISHED, true, root);
+        new FlowDefinition("fallback-flow", 1, FlowDefinitionStatus.PUBLISHED, true, toBlueprint(root));
     return flowDefinitionRepository.save(definition);
   }
 
@@ -533,5 +535,16 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 && execution.getStatus() == status)
         .findFirst()
         .orElseThrow();
+  }
+
+  private FlowBlueprint toBlueprint(ObjectNode root) {
+    try {
+      return objectMapper
+          .copy()
+          .configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true)
+          .treeToValue(root, FlowBlueprint.class);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Failed to build blueprint for test", exception);
+    }
   }
 }

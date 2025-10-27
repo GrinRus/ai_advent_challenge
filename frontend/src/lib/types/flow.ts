@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { JsonObjectSchema, JsonValueSchema } from './json';
+import { ChatRequestOverridesSchema } from './flowDefinition';
 
 export const FlowLaunchParametersSchema = JsonObjectSchema.default({});
 export type FlowLaunchParameters = z.infer<typeof FlowLaunchParametersSchema>;
@@ -16,6 +17,17 @@ export const FlowSharedContextSchema = z
   .passthrough()
   .default({});
 export type FlowSharedContext = z.infer<typeof FlowSharedContextSchema>;
+
+export const FlowLaunchPayloadSchema = z
+  .object({
+    parameters: FlowLaunchParametersSchema.optional(),
+    sharedContext: FlowSharedContextSchema.optional(),
+    overrides: ChatRequestOverridesSchema.nullish(),
+    chatSessionId: z.string().uuid().optional(),
+  })
+  .partial()
+  .strict();
+export type FlowLaunchPayload = z.infer<typeof FlowLaunchPayloadSchema>;
 
 export const FlowEventPayloadSchema = z
   .object({
@@ -94,13 +106,7 @@ export const FlowStartResponseSchema = z.object({
   startedAt: z.string().nullable().optional(),
   launchParameters: FlowLaunchParametersSchema.nullish(),
   sharedContext: FlowSharedContextSchema.nullish(),
-  overrides: z
-    .object({
-      temperature: z.number().nullable().optional(),
-      topP: z.number().nullable().optional(),
-      maxTokens: z.number().nullable().optional(),
-    })
-    .nullish(),
+  overrides: ChatRequestOverridesSchema.nullish(),
   chatSessionId: z.string().nullable().optional(),
 });
 export type FlowStartResponse = z.infer<typeof FlowStartResponseSchema>;

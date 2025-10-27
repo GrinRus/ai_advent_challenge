@@ -1,7 +1,9 @@
 package com.aiadvent.backend.flow.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,8 +16,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "flow_definition_history")
@@ -36,9 +36,9 @@ public class FlowDefinitionHistory {
   @Column(name = "status", nullable = false, length = 32)
   private FlowDefinitionStatus status;
 
-  @JdbcTypeCode(SqlTypes.JSON)
+  @Convert(converter = FlowBlueprintConverter.class)
   @Column(name = "definition", nullable = false, columnDefinition = "jsonb")
-  private JsonNode definition;
+  private FlowBlueprint definition;
 
   @Column(name = "change_notes")
   private String changeNotes;
@@ -55,7 +55,7 @@ public class FlowDefinitionHistory {
       FlowDefinition flowDefinition,
       int version,
       FlowDefinitionStatus status,
-      JsonNode definition,
+      FlowBlueprint definition,
       String changeNotes,
       String createdBy) {
     this.flowDefinition = flowDefinition;
@@ -87,7 +87,7 @@ public class FlowDefinitionHistory {
     return status;
   }
 
-  public JsonNode getDefinition() {
+  public FlowBlueprint getDefinition() {
     return definition;
   }
 

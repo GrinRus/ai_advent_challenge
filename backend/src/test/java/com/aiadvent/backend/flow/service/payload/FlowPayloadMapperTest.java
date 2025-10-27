@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.provider.model.UsageSource;
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -39,7 +40,8 @@ class FlowPayloadMapperTest {
     mapper = new FlowPayloadMapper(objectMapper);
 
     FlowDefinition definition =
-        new FlowDefinition("flow", 1, FlowDefinitionStatus.PUBLISHED, true, objectMapper.createObjectNode());
+        new FlowDefinition(
+            "flow", 1, FlowDefinitionStatus.PUBLISHED, true, TestFlowBlueprintFactory.simpleBlueprint());
     setField(definition, "id", UUID.randomUUID());
 
     session = new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);

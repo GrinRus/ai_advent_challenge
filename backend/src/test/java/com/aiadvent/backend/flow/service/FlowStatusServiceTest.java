@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.api.FlowEventDto;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
@@ -50,7 +51,7 @@ class FlowStatusServiceTest {
             1,
             FlowDefinitionStatus.PUBLISHED,
             true,
-            new ObjectMapper().createObjectNode().putArray("steps"));
+            TestFlowBlueprintFactory.simpleBlueprint());
     session =
         new FlowSession(
             definition,

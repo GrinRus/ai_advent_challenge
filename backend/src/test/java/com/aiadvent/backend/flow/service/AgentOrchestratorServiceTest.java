@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
@@ -103,7 +104,7 @@ class AgentOrchestratorServiceTest {
             1,
             FlowDefinitionStatus.PUBLISHED,
             true,
-            objectMapper.createObjectNode());
+            TestFlowBlueprintFactory.simpleBlueprint());
     setField(definition, "id", UUID.randomUUID());
 
     agentVersion =

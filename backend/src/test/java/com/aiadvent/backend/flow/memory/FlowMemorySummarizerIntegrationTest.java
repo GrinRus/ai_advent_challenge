@@ -152,7 +152,7 @@ class FlowMemorySummarizerIntegrationTest extends PostgresTestContainer {
                 1,
                 FlowDefinitionStatus.PUBLISHED,
                 true,
-                objectMapper.createObjectNode()));
+                com.aiadvent.backend.flow.TestFlowBlueprintFactory.simpleBlueprint()));
     FlowSession session =
         new FlowSession(definition, 1, FlowSessionStatus.RUNNING, 0L, 0L);
     session.setChatSessionId(UUID.randomUUID());

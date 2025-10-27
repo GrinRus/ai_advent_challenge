@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
@@ -14,7 +15,9 @@ import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -33,16 +36,19 @@ public class FlowDefinitionService {
   private final FlowDefinitionHistoryRepository flowDefinitionHistoryRepository;
   private final FlowDefinitionParser flowDefinitionParser;
   private final AgentVersionRepository agentVersionRepository;
+  private final ObjectMapper objectMapper;
 
   public FlowDefinitionService(
       FlowDefinitionRepository flowDefinitionRepository,
       FlowDefinitionHistoryRepository flowDefinitionHistoryRepository,
       FlowDefinitionParser flowDefinitionParser,
-      AgentVersionRepository agentVersionRepository) {
+      AgentVersionRepository agentVersionRepository,
+      ObjectMapper objectMapper) {
     this.flowDefinitionRepository = flowDefinitionRepository;
     this.flowDefinitionHistoryRepository = flowDefinitionHistoryRepository;
     this.flowDefinitionParser = flowDefinitionParser;
     this.agentVersionRepository = agentVersionRepository;
+    this.objectMapper = objectMapper;
   }
 
   @Transactional(readOnly = true)
@@ -82,7 +88,7 @@ public class FlowDefinitionService {
       throw new IllegalArgumentException("Flow definition name must not be empty");
     }
 
-    JsonNode definitionNode = definitionNode(request);
+    FlowBlueprint blueprint = blueprintFromRequest(request);
 
     int nextVersion =
         flowDefinitionRepository.findByNameOrderByVersionDesc(request.name()).stream()
@@ -93,7 +99,7 @@ public class FlowDefinitionService {
 
     FlowDefinition definition =
         new FlowDefinition(
-            request.name(), nextVersion, FlowDefinitionStatus.DRAFT, false, definitionNode);
+            request.name(), nextVersion, FlowDefinitionStatus.DRAFT, false, blueprint);
     definition.setDescription(request.description());
     definition.setUpdatedBy(request.updatedBy());
 
@@ -123,8 +129,8 @@ public class FlowDefinitionService {
       throw new IllegalStateException("Only DRAFT definitions can be updated");
     }
 
-    JsonNode definitionNode = definitionNode(request);
-    definition.setDefinition(definitionNode);
+    FlowBlueprint blueprint = blueprintFromRequest(request);
+    definition.setDefinition(blueprint);
     definition.setDescription(request.description());
     if (StringUtils.hasText(request.updatedBy())) {
       definition.setUpdatedBy(request.updatedBy());
@@ -194,16 +200,23 @@ public class FlowDefinitionService {
             });
   }
 
-  private JsonNode definitionNode(FlowDefinitionRequest request) {
-    JsonNode definitionNode = request.definition();
-    if (definitionNode == null && request.sourceDefinitionId() != null) {
+  private FlowBlueprint blueprintFromRequest(FlowDefinitionRequest request) {
+    JsonNode body = request.definition();
+    if (body == null && request.sourceDefinitionId() != null) {
       FlowDefinition source = getDefinition(request.sourceDefinitionId());
-      definitionNode = source.getDefinition();
+      return source.getDefinition();
     }
-    if (definitionNode == null) {
+    if (body == null) {
       throw new IllegalArgumentException("Flow definition body must not be null");
     }
-    return definitionNode;
+    try {
+      return objectMapper
+          .copy()
+          .configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true)
+          .treeToValue(body, FlowBlueprint.class);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalArgumentException("Invalid flow blueprint payload: " + exception.getMessage(), exception);
+    }
   }
 
   private void validateAgentVersions(FlowDefinitionDocument document) {
