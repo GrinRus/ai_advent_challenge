@@ -74,7 +74,7 @@ class ChatProvidersSmokeTest extends PostgresTestContainer {
             .uri("/api/llm/chat/stream")
             .contentType(MediaType.APPLICATION_JSON)
             .accept(MediaType.TEXT_EVENT_STREAM)
-            .bodyValue(new ChatStreamRequest(null, "smoke check", provider, model, null))
+            .bodyValue(new ChatStreamRequest(null, "smoke check", provider, model, null, null))
             .exchange()
             .expectStatus()
             .isOk()
