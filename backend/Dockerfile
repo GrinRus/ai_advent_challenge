@@ -14,19 +14,16 @@ RUN ./gradlew --no-daemon bootJar
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 
-# Install Node.js + npm and make sure MCP server is available without network on startup
 RUN apk add --no-cache nodejs npm \
-    && npm install -g @perplexity-ai/mcp-server npx \
-    # sanity checks (won't fail the build if help exits non-zero)
-    && mcp-server --help >/dev/null 2>&1 || true \
-    && node -v && npm -v && npx --version
+ && npm config set update-notifier false \
+ && npm install -g @perplexity-ai/mcp-server@latest \
+ && which perplexity-mcp && perplexity-mcp --help >/dev/null 2>&1 || true
 
-ENV PATH="/usr/local/bin:${PATH}" \
-    SPRING_PROFILES_ACTIVE=prod \
-    JAVA_OPTS=""
+ENV SPRING_PROFILES_ACTIVE=prod \
+    JAVA_OPTS="" \
+    PATH="/usr/local/bin:${PATH}"
 
 COPY --from=build /workspace/build/libs/*.jar app.jar
 
 EXPOSE 8080
-
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
