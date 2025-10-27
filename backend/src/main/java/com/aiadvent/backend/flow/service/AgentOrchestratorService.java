@@ -2,8 +2,8 @@ package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
 import com.aiadvent.backend.flow.config.MemoryReadConfig;
@@ -66,7 +66,7 @@ public class AgentOrchestratorService {
   private static final Logger log = LoggerFactory.getLogger(AgentOrchestratorService.class);
 
   private final FlowDefinitionService flowDefinitionService;
-  private final FlowDefinitionParser flowDefinitionParser;
+  private final FlowBlueprintCompiler flowBlueprintCompiler;
   private final FlowSessionRepository flowSessionRepository;
   private final FlowStepExecutionRepository flowStepExecutionRepository;
   private final FlowEventRepository flowEventRepository;
@@ -81,7 +81,7 @@ public class AgentOrchestratorService {
 
   public AgentOrchestratorService(
       FlowDefinitionService flowDefinitionService,
-      FlowDefinitionParser flowDefinitionParser,
+      FlowBlueprintCompiler flowBlueprintCompiler,
       FlowSessionRepository flowSessionRepository,
       FlowStepExecutionRepository flowStepExecutionRepository,
       FlowEventRepository flowEventRepository,
@@ -94,7 +94,7 @@ public class AgentOrchestratorService {
       FlowTelemetryService telemetry,
       FlowPayloadMapper flowPayloadMapper) {
     this.flowDefinitionService = flowDefinitionService;
-    this.flowDefinitionParser = flowDefinitionParser;
+    this.flowBlueprintCompiler = flowBlueprintCompiler;
     this.flowSessionRepository = flowSessionRepository;
     this.flowStepExecutionRepository = flowStepExecutionRepository;
     this.flowEventRepository = flowEventRepository;
@@ -118,7 +118,7 @@ public class AgentOrchestratorService {
     FlowDefinition flowDefinition =
         flowDefinitionService.getActivePublishedDefinition(flowDefinitionId);
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(flowDefinition);
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(flowDefinition);
     FlowStepConfig startStep = document.step(document.startStepId());
     AgentVersion agentVersion =
         agentVersionRepository
@@ -187,7 +187,8 @@ public class AgentOrchestratorService {
       return;
     }
 
-    FlowDefinitionDocument definitionDocument = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowDefinitionDocument definitionDocument =
+        flowBlueprintCompiler.compile(session.getFlowDefinition());
     FlowStepConfig stepConfig = definitionDocument.step(payload.stepId());
 
     AgentVersion agentVersion =

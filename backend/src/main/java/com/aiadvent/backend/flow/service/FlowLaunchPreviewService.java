@@ -3,8 +3,8 @@ package com.aiadvent.backend.flow.service;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponse;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -28,17 +28,17 @@ public class FlowLaunchPreviewService {
   private static final BigDecimal ONE_THOUSAND = BigDecimal.valueOf(1000);
 
   private final FlowDefinitionService flowDefinitionService;
-  private final FlowDefinitionParser flowDefinitionParser;
+  private final FlowBlueprintCompiler flowBlueprintCompiler;
   private final AgentVersionRepository agentVersionRepository;
   private final ChatProvidersProperties chatProvidersProperties;
 
   public FlowLaunchPreviewService(
       FlowDefinitionService flowDefinitionService,
-      FlowDefinitionParser flowDefinitionParser,
+      FlowBlueprintCompiler flowBlueprintCompiler,
       AgentVersionRepository agentVersionRepository,
       ChatProvidersProperties chatProvidersProperties) {
     this.flowDefinitionService = flowDefinitionService;
-    this.flowDefinitionParser = flowDefinitionParser;
+    this.flowBlueprintCompiler = flowBlueprintCompiler;
     this.agentVersionRepository = agentVersionRepository;
     this.chatProvidersProperties = chatProvidersProperties;
   }
@@ -46,7 +46,7 @@ public class FlowLaunchPreviewService {
   @Transactional(readOnly = true)
   public FlowLaunchPreviewResponse preview(UUID definitionId) {
     FlowDefinition definition = flowDefinitionService.getActivePublishedDefinition(definitionId);
-    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
 
     List<FlowLaunchPreviewResponse.Step> steps = new ArrayList<>();
     CostAccumulator totalAccumulator = new CostAccumulator();

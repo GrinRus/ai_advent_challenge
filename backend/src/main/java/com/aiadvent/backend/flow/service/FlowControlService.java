@@ -1,7 +1,7 @@
 package com.aiadvent.backend.flow.service;
 
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowEvent;
@@ -36,7 +36,7 @@ public class FlowControlService {
   private final FlowSessionRepository flowSessionRepository;
   private final FlowStepExecutionRepository flowStepExecutionRepository;
   private final FlowEventRepository flowEventRepository;
-  private final FlowDefinitionParser flowDefinitionParser;
+  private final FlowBlueprintCompiler flowBlueprintCompiler;
   private final AgentVersionRepository agentVersionRepository;
   private final JobQueuePort jobQueuePort;
   private final ObjectMapper objectMapper;
@@ -47,7 +47,7 @@ public class FlowControlService {
       FlowSessionRepository flowSessionRepository,
       FlowStepExecutionRepository flowStepExecutionRepository,
       FlowEventRepository flowEventRepository,
-      FlowDefinitionParser flowDefinitionParser,
+      FlowBlueprintCompiler flowBlueprintCompiler,
       AgentVersionRepository agentVersionRepository,
       JobQueuePort jobQueuePort,
       ObjectMapper objectMapper,
@@ -56,7 +56,7 @@ public class FlowControlService {
     this.flowSessionRepository = flowSessionRepository;
     this.flowStepExecutionRepository = flowStepExecutionRepository;
     this.flowEventRepository = flowEventRepository;
-    this.flowDefinitionParser = flowDefinitionParser;
+    this.flowBlueprintCompiler = flowBlueprintCompiler;
     this.agentVersionRepository = agentVersionRepository;
     this.jobQueuePort = jobQueuePort;
     this.objectMapper = objectMapper;
@@ -116,7 +116,7 @@ public class FlowControlService {
       throw new IllegalArgumentException("Step execution does not belong to session " + sessionId);
     }
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(session.getFlowDefinition());
     FlowStepConfig stepConfig = document.step(failedExecution.getStepId());
     AgentVersion agentVersion =
         agentVersionRepository
@@ -157,7 +157,7 @@ public class FlowControlService {
       throw new IllegalStateException("Step execution " + stepExecutionId + " is not waiting for approval");
     }
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(session.getFlowDefinition());
     FlowStepConfig config = document.step(execution.getStepId());
     AgentVersion agentVersion =
         agentVersionRepository
@@ -206,7 +206,7 @@ public class FlowControlService {
       throw new IllegalStateException("Step execution " + stepExecutionId + " is not waiting for approval");
     }
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(session.getFlowDefinition());
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(session.getFlowDefinition());
     FlowStepConfig config = document.step(execution.getStepId());
 
     execution.setStatus(FlowStepStatus.SKIPPED);

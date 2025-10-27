@@ -11,8 +11,8 @@ import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
@@ -57,7 +57,7 @@ class AgentOrchestratorServiceTest {
   private static final String STEP_ID = "step-1";
 
   @Mock private FlowDefinitionService flowDefinitionService;
-  @Mock private FlowDefinitionParser flowDefinitionParser;
+  @Mock private FlowBlueprintCompiler flowBlueprintCompiler;
   @Mock private FlowSessionRepository flowSessionRepository;
   @Mock private FlowStepExecutionRepository flowStepExecutionRepository;
   @Mock private FlowEventRepository flowEventRepository;
@@ -85,7 +85,7 @@ class AgentOrchestratorServiceTest {
     orchestratorService =
         new AgentOrchestratorService(
             flowDefinitionService,
-            flowDefinitionParser,
+            flowBlueprintCompiler,
             flowSessionRepository,
             flowStepExecutionRepository,
             flowEventRepository,
@@ -156,7 +156,7 @@ class AgentOrchestratorServiceTest {
   @Test
   void startCreatesSessionAndEnqueuesJob() {
     when(flowDefinitionService.getActivePublishedDefinition(definition.getId())).thenReturn(definition);
-    when(flowDefinitionParser.parse(definition)).thenReturn(document);
+    when(flowBlueprintCompiler.compile(definition)).thenReturn(document);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
 
     FlowSession session =
@@ -185,7 +185,8 @@ class AgentOrchestratorServiceTest {
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
-    when(flowDefinitionParser.parse(definition)).thenReturn(document);
+    when(flowBlueprintCompiler.compile(definition)).thenReturn(document);
+    when(flowBlueprintCompiler.compile(session.getFlowDefinition())).thenReturn(document);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
     when(agentInvocationService.invoke(any()))
         .thenReturn(
@@ -285,7 +286,7 @@ class AgentOrchestratorServiceTest {
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
-    when(flowDefinitionParser.parse(definition)).thenReturn(retryDocument);
+    when(flowBlueprintCompiler.compile(definition)).thenReturn(retryDocument);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
     when(agentInvocationService.invoke(any())).thenThrow(new RuntimeException("boom"));
 
@@ -329,7 +330,7 @@ class AgentOrchestratorServiceTest {
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
-    when(flowDefinitionParser.parse(definition)).thenReturn(retryDocument);
+    when(flowBlueprintCompiler.compile(definition)).thenReturn(retryDocument);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
     when(agentInvocationService.invoke(any())).thenThrow(new RuntimeException("boom"));
 
@@ -389,7 +390,7 @@ class AgentOrchestratorServiceTest {
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
-    when(flowDefinitionParser.parse(definition)).thenReturn(waitingDocument);
+    when(flowBlueprintCompiler.compile(definition)).thenReturn(waitingDocument);
     when(agentVersionRepository.findById(agentVersion.getId())).thenReturn(Optional.of(agentVersion));
     when(agentInvocationService.invoke(any())).thenThrow(new RuntimeException("boom"));
 

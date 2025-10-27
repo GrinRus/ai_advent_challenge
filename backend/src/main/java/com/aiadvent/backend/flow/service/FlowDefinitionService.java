@@ -3,8 +3,8 @@ package com.aiadvent.backend.flow.service;
 import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -34,19 +34,19 @@ public class FlowDefinitionService {
 
   private final FlowDefinitionRepository flowDefinitionRepository;
   private final FlowDefinitionHistoryRepository flowDefinitionHistoryRepository;
-  private final FlowDefinitionParser flowDefinitionParser;
+  private final FlowBlueprintCompiler flowBlueprintCompiler;
   private final AgentVersionRepository agentVersionRepository;
   private final ObjectMapper objectMapper;
 
   public FlowDefinitionService(
       FlowDefinitionRepository flowDefinitionRepository,
       FlowDefinitionHistoryRepository flowDefinitionHistoryRepository,
-      FlowDefinitionParser flowDefinitionParser,
+      FlowBlueprintCompiler flowBlueprintCompiler,
       AgentVersionRepository agentVersionRepository,
       ObjectMapper objectMapper) {
     this.flowDefinitionRepository = flowDefinitionRepository;
     this.flowDefinitionHistoryRepository = flowDefinitionHistoryRepository;
-    this.flowDefinitionParser = flowDefinitionParser;
+    this.flowBlueprintCompiler = flowBlueprintCompiler;
     this.agentVersionRepository = agentVersionRepository;
     this.objectMapper = objectMapper;
   }
@@ -103,7 +103,7 @@ public class FlowDefinitionService {
     definition.setDescription(request.description());
     definition.setUpdatedBy(request.updatedBy());
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
     validateAgentVersions(document);
 
     FlowDefinition saved = flowDefinitionRepository.save(definition);
@@ -136,7 +136,7 @@ public class FlowDefinitionService {
       definition.setUpdatedBy(request.updatedBy());
     }
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
     validateAgentVersions(document);
 
     FlowDefinition saved = flowDefinitionRepository.save(definition);
@@ -162,7 +162,7 @@ public class FlowDefinitionService {
       return definition;
     }
 
-    FlowDefinitionDocument document = flowDefinitionParser.parse(definition);
+    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
     validateAgentVersions(document);
 
     if (StringUtils.hasText(request.updatedBy())) {

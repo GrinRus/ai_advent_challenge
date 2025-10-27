@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
-import com.aiadvent.backend.flow.config.FlowDefinitionParser;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
@@ -49,7 +49,7 @@ class FlowControlServiceTest {
   @Mock private FlowSessionRepository flowSessionRepository;
   @Mock private FlowStepExecutionRepository flowStepExecutionRepository;
   @Mock private FlowEventRepository flowEventRepository;
-  @Mock private FlowDefinitionParser flowDefinitionParser;
+  @Mock private FlowBlueprintCompiler flowBlueprintCompiler;
   @Mock private AgentVersionRepository agentVersionRepository;
   @Mock private JobQueuePort jobQueuePort;
   @Mock private FlowTelemetryService telemetryService;
@@ -66,7 +66,7 @@ class FlowControlServiceTest {
             flowSessionRepository,
             flowStepExecutionRepository,
             flowEventRepository,
-            flowDefinitionParser,
+            flowBlueprintCompiler,
             agentVersionRepository,
             jobQueuePort,
             new ObjectMapper(),
@@ -85,6 +85,24 @@ class FlowControlServiceTest {
             0L);
     session.setStartedAt(Instant.now());
     setField(session, "id", UUID.randomUUID());
+
+    FlowDefinitionDocument document =
+        new FlowDefinitionDocument(
+            "step-1",
+            Map.of(
+                "step-1",
+                new FlowStepConfig(
+                    "step-1",
+                    "Test",
+                    UUID.randomUUID(),
+                    "",
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    FlowStepTransitions.defaults(),
+                    1)));
+    when(flowBlueprintCompiler.compile(session.getFlowDefinition())).thenReturn(document);
 
     when(flowStepExecutionRepository.save(any(FlowStepExecution.class)))
         .thenAnswer(
@@ -165,7 +183,7 @@ class FlowControlServiceTest {
 
     when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
     when(flowStepExecutionRepository.findById(execution.getId())).thenReturn(Optional.of(execution));
-    when(flowDefinitionParser.parse(session.getFlowDefinition())).thenReturn(document);
+    when(flowBlueprintCompiler.compile(session.getFlowDefinition())).thenReturn(document);
     when(agentVersionRepository.findById(config.agentVersionId())).thenReturn(Optional.of(agentVersion));
 
     FlowSession result = flowControlService.approveStep(sessionId, execution.getId());
@@ -217,7 +235,7 @@ class FlowControlServiceTest {
 
     when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
     when(flowStepExecutionRepository.findById(execution.getId())).thenReturn(Optional.of(execution));
-    when(flowDefinitionParser.parse(session.getFlowDefinition())).thenReturn(document);
+    when(flowBlueprintCompiler.compile(session.getFlowDefinition())).thenReturn(document);
     when(agentVersionRepository.findById(agentVersionId)).thenReturn(Optional.of(agentVersion));
 
     FlowSession result = flowControlService.skipStep(sessionId, execution.getId());
