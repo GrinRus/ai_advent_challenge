@@ -11,7 +11,10 @@ import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.service.FlowDefinitionService;
 import com.aiadvent.backend.flow.service.FlowLaunchPreviewService;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -102,7 +105,7 @@ public class FlowDefinitionController {
   }
 
   private FlowDefinitionResponse toResponse(FlowDefinition definition) {
-    JsonNode definitionNode = objectMapper.valueToTree(definition.getDefinition());
+    JsonNode definitionNode = sanitizeDefinition(objectMapper.valueToTree(definition.getDefinition()));
     return new FlowDefinitionResponse(
         definition.getId(),
         definition.getName(),
@@ -126,5 +129,29 @@ public class FlowDefinitionController {
         StringUtils.hasText(history.getChangeNotes()) ? history.getChangeNotes() : null,
         history.getCreatedBy(),
         history.getCreatedAt());
+  }
+
+  private JsonNode sanitizeDefinition(JsonNode node) {
+    if (!(node instanceof ObjectNode objectNode)) {
+      return node;
+    }
+
+    if (!objectNode.hasNonNull("title")) {
+      objectNode.put("title", "");
+    }
+
+    JsonNode stepsNode = objectNode.get("steps");
+    if (stepsNode instanceof ArrayNode stepsArray) {
+      for (JsonNode stepNode : stepsArray) {
+        if (stepNode instanceof ObjectNode stepObject) {
+          JsonNode overridesNode = stepObject.get("overrides");
+          if (!(overridesNode instanceof ObjectNode)) {
+            stepObject.set("overrides", objectMapper.createObjectNode());
+          }
+        }
+      }
+    }
+
+    return objectNode;
   }
 }
