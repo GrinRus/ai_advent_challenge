@@ -29,6 +29,24 @@ export const FlowLaunchPayloadSchema = z
   .strict();
 export type FlowLaunchPayload = z.infer<typeof FlowLaunchPayloadSchema>;
 
+const NonNegativeIntDefaultZero = z.number().int().nonnegative().optional().default(0);
+
+export const FlowTelemetrySnapshotSchema = z
+  .object({
+    stepsCompleted: NonNegativeIntDefaultZero,
+    stepsFailed: NonNegativeIntDefaultZero,
+    retriesScheduled: NonNegativeIntDefaultZero,
+    totalCostUsd: z.number().optional().default(0),
+    promptTokens: NonNegativeIntDefaultZero,
+    completionTokens: NonNegativeIntDefaultZero,
+    startedAt: z.string().nullable().optional(),
+    lastUpdated: z.string().nullable().optional(),
+    completedAt: z.string().nullable().optional(),
+    status: z.string().optional(),
+  })
+  .passthrough();
+export type FlowTelemetrySnapshot = z.infer<typeof FlowTelemetrySnapshotSchema>;
+
 export const FlowEventPayloadSchema = z
   .object({
     data: JsonValueSchema.optional(),
@@ -96,7 +114,7 @@ export const FlowStatusResponseSchema = z.object({
   state: FlowStateSchema,
   events: z.array(FlowEventSchema),
   nextSinceEventId: z.number(),
-  telemetry: JsonValueSchema.nullable().optional(),
+  telemetry: FlowTelemetrySnapshotSchema.nullish(),
 });
 export type FlowStatusResponse = z.infer<typeof FlowStatusResponseSchema>;
 

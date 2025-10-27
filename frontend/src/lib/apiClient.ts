@@ -2,19 +2,17 @@ import { z } from 'zod';
 import type { ZodSchema } from 'zod';
 import {
   FlowLaunchPayloadSchema,
-  FlowStartResponse,
-  FlowStatusResponse,
   parseFlowStartResponse,
   parseFlowStatusResponse,
 } from './types/flow';
-import type { FlowLaunchPayload } from './types/flow';
+import type { FlowLaunchPayload, FlowStartResponse, FlowStatusResponse } from './types/flow';
 import {
   AgentDefinitionDetailsSchema,
   AgentDefinitionSummarySchema,
   AgentVersionSchema,
 } from './types/agent';
 import type {
-  AgentCapabilityPayload,
+  AgentCapability,
   AgentDefinitionDetails,
   AgentDefinitionSummary,
   AgentDefaultOptions,
@@ -46,7 +44,13 @@ import type {
 } from './types/flowInteraction';
 import type { JsonValue } from './types/json';
 
-export type { FlowEvent, FlowStartResponse, FlowState, FlowStatusResponse } from './types/flow';
+export type {
+  FlowEvent,
+  FlowStartResponse,
+  FlowState,
+  FlowStatusResponse,
+  FlowTelemetrySnapshot,
+} from './types/flow';
 export type {
   AgentCapability,
   AgentCapabilityPayload,
@@ -201,12 +205,12 @@ export type AgentVersionPayload = {
   syncOnly?: boolean;
   maxTokens?: number;
   createdBy: string;
-  capabilities?: AgentCapabilityPayload[];
+  capabilities?: AgentCapability[];
 };
 
 export type AgentVersionPublishPayload = {
   updatedBy: string;
-  capabilities?: AgentCapabilityPayload[];
+  capabilities?: AgentCapability[];
 };
 
 export type ChatSyncResponse = {
@@ -327,18 +331,94 @@ const StructuredSyncResponseSchema = z.object({
   timestamp: z.string().optional(),
 });
 
-export type FlowTelemetrySnapshot = {
-  stepsCompleted: number;
-  stepsFailed: number;
-  retriesScheduled: number;
-  totalCostUsd: number;
-  promptTokens: number;
-  completionTokens: number;
-  startedAt?: string | null;
-  lastUpdated?: string | null;
-  completedAt?: string | null;
-  status?: string;
-};
+type ProviderSchemaInput = z.infer<typeof StructuredSyncProviderSchema>;
+type UsageSchemaInput = z.infer<typeof StructuredSyncUsageStatsSchema> | null | undefined;
+type CostSchemaInput = z.infer<typeof UsageCostDetailsSchema> | null | undefined;
+type AnswerSchemaInput = z.infer<typeof StructuredSyncAnswerSchema> | null | undefined;
+
+function normalizeStructuredProvider(
+  provider?: ProviderSchemaInput,
+): StructuredSyncProvider | undefined {
+  if (!provider) {
+    return undefined;
+  }
+  const normalized: StructuredSyncProvider = {};
+  if (provider.type != null) {
+    normalized.type = provider.type;
+  }
+  if (provider.model != null) {
+    normalized.model = provider.model;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeUsage(usage?: UsageSchemaInput): StructuredSyncUsageStats | undefined {
+  if (!usage) {
+    return undefined;
+  }
+  const normalized: StructuredSyncUsageStats = {};
+  if (usage.promptTokens != null) {
+    normalized.promptTokens = usage.promptTokens;
+  }
+  if (usage.completionTokens != null) {
+    normalized.completionTokens = usage.completionTokens;
+  }
+  if (usage.totalTokens != null) {
+    normalized.totalTokens = usage.totalTokens;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeCost(cost?: CostSchemaInput): UsageCostDetails | undefined {
+  if (!cost) {
+    return undefined;
+  }
+  const normalized: UsageCostDetails = {};
+  if (cost.input != null) {
+    normalized.input = cost.input;
+  }
+  if (cost.output != null) {
+    normalized.output = cost.output;
+  }
+  if (cost.total != null) {
+    normalized.total = cost.total;
+  }
+  if (cost.currency != null) {
+    normalized.currency = cost.currency;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeStructuredAnswer(
+  answer?: AnswerSchemaInput,
+): StructuredSyncAnswer | undefined {
+  if (!answer) {
+    return undefined;
+  }
+  const normalized: StructuredSyncAnswer = {};
+  if (answer.summary != null) {
+    normalized.summary = answer.summary;
+  }
+  if (answer.items && answer.items.length > 0) {
+    normalized.items = answer.items.map((item) => {
+      const normalizedItem: StructuredSyncItem = {};
+      if (item.title != null) {
+        normalizedItem.title = item.title;
+      }
+      if (item.details != null) {
+        normalizedItem.details = item.details;
+      }
+      if (item.tags && item.tags.length > 0) {
+        normalizedItem.tags = item.tags;
+      }
+      return normalizedItem;
+    });
+  }
+  if (answer.confidence != null) {
+    normalized.confidence = answer.confidence;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
 
 export type FlowInteractionResponseSummaryDto = FlowInteractionResponseSummary;
 export type FlowInteractionItemDto = FlowInteractionItem;
@@ -693,7 +773,15 @@ export async function requestSync(
     ? newSessionHeader.toLowerCase() === 'true'
     : undefined;
 
-  return { body, sessionId, newSession };
+  const sanitizedBody: ChatSyncResponse = {
+    ...body,
+    provider: normalizeStructuredProvider(body.provider),
+    usage: normalizeUsage(body.usage),
+    cost: normalizeCost(body.cost),
+    latencyMs: body.latencyMs ?? undefined,
+  };
+
+  return { body: sanitizedBody, sessionId, newSession };
 }
 
 export async function requestStructuredSync(
@@ -737,7 +825,16 @@ export async function requestStructuredSync(
     ? newSessionHeader.toLowerCase() === 'true'
     : undefined;
 
-  return { body, sessionId, newSession };
+  const sanitizedBody: StructuredSyncResponse = {
+    ...body,
+    provider: normalizeStructuredProvider(body.provider),
+    usage: normalizeUsage(body.usage),
+    cost: normalizeCost(body.cost),
+    answer: normalizeStructuredAnswer(body.answer),
+    latencyMs: body.latencyMs ?? undefined,
+  };
+
+  return { body: sanitizedBody, sessionId, newSession };
 }
 
 export async function startFlow(

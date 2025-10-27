@@ -23,6 +23,12 @@ import type {
   FlowState,
   FlowTelemetrySnapshot,
 } from '../lib/apiClient';
+import {
+  FlowLaunchParametersSchema,
+  FlowSharedContextSchema,
+  type FlowLaunchPayload,
+} from '../lib/types/flow';
+import { JsonValueSchema } from '../lib/types/json';
 import './FlowSessions.css';
 import {
   extractInteractionSchema,
@@ -567,10 +573,15 @@ const FlowSessionsPage = () => {
       setIsStarting(true);
       setError(null);
       setTelemetry(null);
-      const payload = {
-        parameters: parseJson(parameters),
-        sharedContext: parseJson(sharedContext),
-      };
+      const payload: FlowLaunchPayload = {};
+      const parsedParameters = parseJson(parameters);
+      if (parsedParameters !== undefined) {
+        payload.parameters = FlowLaunchParametersSchema.parse(parsedParameters);
+      }
+      const parsedSharedContext = parseJson(sharedContext);
+      if (parsedSharedContext !== undefined) {
+        payload.sharedContext = FlowSharedContextSchema.parse(parsedSharedContext);
+      }
       const response = await startFlow(flowId.trim(), payload);
       routeSyncGuardRef.current = true;
       navigate(`/flows/sessions/${response.sessionId}`);
@@ -748,15 +759,19 @@ const FlowSessionsPage = () => {
     if (!telemetry) {
       return null;
     }
-    const totalAttempts = telemetry.stepsCompleted + telemetry.stepsFailed;
+    const stepsCompleted = telemetry.stepsCompleted ?? 0;
+    const stepsFailed = telemetry.stepsFailed ?? 0;
+    const totalAttempts = stepsCompleted + stepsFailed;
     const progressPercent = totalAttempts
-      ? Math.min(100, Math.round((telemetry.stepsCompleted / totalAttempts) * 100))
+      ? Math.min(100, Math.round((stepsCompleted / totalAttempts) * 100))
       : status?.status?.startsWith('COMPLETED')
       ? 100
       : 0;
     return {
       progressPercent,
       totalAttempts,
+      stepsCompleted,
+      stepsFailed,
     };
   }, [status?.status, telemetry]);
 
@@ -911,9 +926,11 @@ const FlowSessionsPage = () => {
     try {
       setInteractionSubmitting(true);
       const payloadObject = buildSubmissionPayload(interactionFields, interactionValues);
+      const payloadJson =
+        payloadObject === undefined ? undefined : JsonValueSchema.parse(payloadObject);
       const response = await respondToFlowInteraction(sessionId, selectedInteraction.requestId, {
         chatSessionId: selectedInteraction.chatSessionId,
-        payload: payloadObject,
+        payload: payloadJson,
       });
       setSelectedInteraction(response);
       const extracted = extractInteractionSchema(
@@ -1231,7 +1248,7 @@ const FlowSessionsPage = () => {
             {telemetryStats && (
               <div className="flow-progress">
                 <div className="flow-progress-label">
-                  Выполнено шагов: {telemetry?.stepsCompleted ?? 0}
+                  Выполнено шагов: {telemetryStats.stepsCompleted}
                   {telemetryStats.totalAttempts > 0 ? ` из ${telemetryStats.totalAttempts}` : ''}
                 </div>
                 <div className="flow-progress-bar">
@@ -1252,27 +1269,27 @@ const FlowSessionsPage = () => {
                 <dl>
                   <div>
                     <dt>Успешных шагов</dt>
-                    <dd>{telemetry.stepsCompleted}</dd>
+                    <dd>{telemetry.stepsCompleted ?? 0}</dd>
                   </div>
                   <div>
                     <dt>Ошибок</dt>
-                    <dd>{telemetry.stepsFailed}</dd>
+                    <dd>{telemetry.stepsFailed ?? 0}</dd>
                   </div>
                   <div>
                     <dt>Запланированных ретраев</dt>
-                    <dd>{telemetry.retriesScheduled}</dd>
+                    <dd>{telemetry.retriesScheduled ?? 0}</dd>
                   </div>
                   <div>
                     <dt>Стоимость</dt>
-                    <dd>{formatCost(telemetry.totalCostUsd, 'USD')}</dd>
+                    <dd>{formatCost(telemetry.totalCostUsd ?? 0, 'USD')}</dd>
                   </div>
                   <div>
                     <dt>Токены (prompt)</dt>
-                    <dd>{formatTokens(telemetry.promptTokens)}</dd>
+                    <dd>{formatTokens(telemetry.promptTokens ?? 0)}</dd>
                   </div>
                   <div>
                     <dt>Токены (completion)</dt>
-                    <dd>{formatTokens(telemetry.completionTokens)}</dd>
+                    <dd>{formatTokens(telemetry.completionTokens ?? 0)}</dd>
                   </div>
                   <div>
                     <dt>Обновлено</dt>

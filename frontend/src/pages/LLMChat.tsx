@@ -698,7 +698,7 @@ const StructuredResponseCard = ({
   );
 };
 
-const LLMChat = () => {
+export default function LLMChat() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('stream');
   const [providerCatalog, setProviderCatalog] = useState<ChatProvidersResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
@@ -778,38 +778,6 @@ const LLMChat = () => {
       window.removeEventListener('flow-interactions-badge', handler as EventListener);
     };
   }, [updateActiveTabForModel]);
-
-    const currentSupported =
-      (activeTab === 'stream' && supportsStream) ||
-      (activeTab === 'sync' && supportsSync) ||
-      (activeTab === 'structured' && supportsStructured);
-
-    if (currentSupported) {
-      return;
-    }
-
-    if (supportsStream) {
-      setActiveTab('stream');
-      setInfo(null);
-      return;
-    }
-    if (supportsSync) {
-      setActiveTab('sync');
-      setInfo(
-          supportsStructured
-              ? 'Выбранная модель не поддерживает Streaming. Переключено в Sync режим.'
-              : 'Выбранная модель поддерживает только Sync режим.',
-      );
-      return;
-    }
-    if (supportsStructured) {
-      setActiveTab('structured');
-      setInfo('Выбранная модель поддерживает только Structured режим.');
-      return;
-    }
-
-    setInfo('Для выбранной модели не настроен поддерживаемый режим.');
-  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -2599,6 +2567,4 @@ const LLMChat = () => {
       </div>
     </div>
   );
-};
-
-export default LLMChat;
+}

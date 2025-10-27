@@ -501,8 +501,10 @@ const FlowLaunchPage = () => {
                     </div>
                     <div>
                       <strong>Провайдер:</strong>{' '}
-                      {step.agent.providerDisplayName ?? step.agent.providerId} (
-                      {step.agent.providerType.toLowerCase()})
+                      {step.agent.providerDisplayName ?? step.agent.providerId}
+                      {step.agent.providerType
+                        ? ` (${step.agent.providerType.toLowerCase()})`
+                        : ''}
                     </div>
                     <div>
                       <strong>Метрики:</strong>{' '}

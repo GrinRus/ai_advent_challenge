@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  AgentCapabilityPayload,
+  AgentCapability,
   AgentDefinitionDetails,
   AgentDefinitionPayload,
   AgentDefinitionSummary,
@@ -274,17 +274,19 @@ const FlowAgents = () => {
     }
   };
 
-  const buildCapabilitiesPayload = (drafts: CapabilityDraft[]): AgentCapabilityPayload[] => {
+  const buildCapabilitiesPayload = (drafts: CapabilityDraft[]): AgentCapability[] => {
     return drafts
       .filter((item) => item.capability.trim())
-      .map((item) => ({
-        capability: item.capability.trim(),
-        payload: parseJsonField(
+      .map((item) => {
+        const payload = parseJsonField(
           `Payload для ${item.capability}`,
           item.payloadText,
           AgentCapabilityPayloadSchema,
-        ),
-      }));
+        );
+        return payload !== undefined
+          ? { capability: item.capability.trim(), payload }
+          : { capability: item.capability.trim() };
+      });
   };
 
   const buildJsonRecord = (
@@ -298,11 +300,14 @@ const FlowAgents = () => {
       if (!key || !value) {
         return;
       }
-      record[key] = parseJsonField(
+      const parsed = parseJsonField(
         `${label} #${index + 1}`,
         value,
         JsonValueSchema,
       );
+      if (parsed !== undefined) {
+        record[key] = parsed;
+      }
     });
     return Object.keys(record).length ? record : undefined;
   };
