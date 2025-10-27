@@ -687,3 +687,21 @@
 ### Документация
 - [ ] Обновить `docs/infra.md`, `docs/architecture/flow-definition.md` и `docs/processes.md`: описать схему `flow_event`, словарь `reasonCode`, новый формат payload и рекомендации по аналитике.
 - [ ] Добавить раздел в ADR/CHANGELOG о выбранном подходе и стратегии миграции.
+
+## Wave 15 — Typed blueprint runtime polish
+### Backend
+- [ ] Заменить `JsonNode` в `FlowBlueprintStep` на типизированные value-объекты (`FlowStepOverrides`, `FlowInteractionDraft`, `FlowMemoryReadDraft`, `FlowMemoryWriteDraft`, `FlowStepTransitionsDraft`), обновить `FlowDefinitionParser`/`FlowBlueprintCompiler` под новую модель и покрыть round-trip тестами сериализации.
+- [ ] Применять memory-политику blueprint: при запуске сессии создавать каналы по `memory.sharedChannels`, прокидывать retention-настройки в `FlowMemoryService` и добавлять интеграционные проверки сохранения/очистки истории.
+- [ ] Добавить валидацию `schemaVersion` при сохранении флоу: проверять совместимость, отклонять неподлежащее схеме значение и логировать предупреждения в телеметрию.
+- [ ] Обновить `FlowBlueprintValidator` и `FlowBlueprintCompiler`, чтобы работать с новыми DTO без ручного JSON, и внедрить централизованный набор ошибок/предупреждений.
+
+### Frontend
+- [ ] Починить загрузку flow definition в UI: скорректировать zod-схемы/адаптеры, чтобы поддерживать пустые `memoryReads` и числовые `maxAttempts`, и добавить fallback для старого формата (`frontend/src/lib/types/flowDefinition.ts`, `frontend/src/lib/apiClient.ts`).
+- [ ] Расширить отображение формы так, чтобы некорректные данные подсвечивались inline, а ошибки сериализации детализировались в toast/логах (`frontend/src/pages/FlowDefinitions.tsx`).
+
+### Тесты и документация
+- [ ] Расширить unit/integration тесты (`FlowBlueprintValidator`, `FlowDefinitionController`, `FlowMemoryService`) под новые DTO и memory-политику.
+- [ ] Обновить `docs/architecture/flow-definition.md` и `docs/infra.md` описанием typed step-модели, ретеншена каналов и правил обновления `schemaVersion`.
+- [ ] Добавить отдельные unit-тесты `FlowBlueprintValidator` на ветки ошибок (неизвестные агенты, конфликт версий, невалидные переходы).
+- [ ] Реализовать интеграционный тест `FlowMemoryService` (retention/cleanup) и e2e сценарий публикации флоу с кастомными каналами памяти.
+- [ ] Дополнить frontend-vitest покрытие: проверить serialise/deserialize адаптеров на typed step DTO и memory retention.
