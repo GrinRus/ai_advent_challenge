@@ -22,6 +22,10 @@
   - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
   - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).
   - Contract/UI: JSON Schema валидация редактора, Playwright сценарии `create flow → publish → launch → monitor → export logs`, проверка telemetry snapshot (aggregate counters, shared context, progress bar) и экспорт событий.
+- Для конструктора и миграции blueprint:
+  - Unit: `FlowBlueprintValidator`, step validator и CLI (`FlowBlueprintMigrationService`), проверка dry-run/rollback.
+  - Contract: `FlowDefinitionControllerV2IntegrationTest`, `AgentDefinitionControllerIntegrationTest`, фронтовые Zod-схемы (`flowDefinition.test.ts`, `apiClient.types.test.ts`) — фиксируем `blueprint_schema_version`, launch preview и reference endpoints.
+  - При запуске миграций через CLI (`app.flow.migration.cli.*`) фиксируйте dry-run лог, подтверждение обновления и итоги (processed/updated/validationFailures).
 - Scheduler: для `FlowJobWorker` пишем unit-тесты (Mock `AgentOrchestratorService`, проверяем `processed|empty|error`) и smoke-интеграцию с включённым `@Scheduled` bean. Логи на INFO содержат `workerId`, результат и длительность; ошибки фиксируем на ERROR и проверяем Micrometer (`flow.job.poll.count/duration`).
 
 ## Runbook: саммаризация истории
@@ -34,6 +38,25 @@
 6. **SLO.** Среднее время ответа summarizer-а — <3 c, очередь <80% от `maxQueueSize`, не более 1% failure alerts за 15 минут. Если показатели выше, уведомляем on-call и при необходимости переключаем модель/провайдера или временно выключаем summarizer.
 7. **Документация.** Любые изменения конфигурации фиксируем в `docs/infra.md` и README, а для прод-окружения сохраняем overrides в секрет-хранилище.
 8. **Перезапуск воркера.** При зависании summarizer-а перезапускаем backend-под (воркер вшит в приложение) и убеждаемся, что после рестарта `flow_summary_queue_size` возвращается к 0. Параметры `app.chat.memory.summarization.maxConcurrentSummaries` и `...maxQueueSize` регулируют пропускную способность; при деградации модели временно переводим `app.chat.memory.summarization.enabled=false`.
+
+## Runbook: конструктор флоу и агентов (Wave 12)
+
+1. **Мониторинг.**  
+   - Основные графики: `constructor_flow_blueprint_saves_total{action}` и `constructor_agent_version_saves_total{action}` (stacked area) + heatmap `constructor_user_events_total{event}` для активности по ролям.  
+   - Алерты:  
+     - `rate(constructor_validation_errors_total[5m]) > 5` — всплеск ошибок;  
+     - `rate(constructor_validation_errors_total[5m]) / rate(constructor_user_events_total[5m]) > 0.2` при `rate(constructor_user_events_total[5m]) > 1` — массовое падение UX;  
+     - `rate(constructor_validation_errors_total{stage="publish"}[5m]) > 0` — проблемы публикаций.
+2. **Диагностика.**  
+   - Смотрим лог `ConstructorAudit` (фильтр по `definitionId`/`versionId`). Повторяющиеся `constructor_validation_error stage=...` показывают, какая операция ломается.  
+   - Проверяем свежие изменения: схемы `FlowBlueprint`, Zod-схемы frontend, настроенные фичи в `FlowDefinitionController`.
+3. **Реакция.**  
+   - `stage=create|update` — ошибки ввода или несовпадение DTO. Подтверждаем сценарий на UI, запускаем unit/contract тесты, при необходимости временно блокируем форму и сообщаем UX.  
+   - `stage=publish` — откатываем последнюю публикацию (`flow_definition.status=DRAFT`, `agent_version.status=DEPRECATED`), документируем workaround и готовим hotfix.  
+   - Массовые ошибки (>20% за 10 минут) — включаем read-only баннер, уведомляем Ops/Designer, фиксируем RCA.
+4. **Пост-мортем.**  
+   - Обновляем раздел «Телеметрия и аудит конструктора» в `docs/architecture/flow-definition.md` и `docs/infra.md` конкретными выводами.  
+   - Добавляем регрессионные тесты (`FlowDefinitionControllerV2IntegrationTest`, `AgentDefinitionControllerIntegrationTest`, frontend Zod-схемы) или дополнительную валидацию в `FlowBlueprintValidator`/`AgentCatalogService`.
 
 ## Документация оркестратора
 - При изменении схемы `flow_definition`/`flow_job`/`flow_memory_version` обновляйте раздел «Оркестрация» в `docs/infra.md` (архитектура, форматы JSON, политика памяти, worker-параметры).

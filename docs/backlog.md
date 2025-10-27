@@ -595,7 +595,7 @@
 Цель: объединить создание агентов и флоу в одну типизированную воронку и избавиться от ручного JSON в UI/БЭК. Сейчас редакторы опираются на сырые структуры (`frontend/src/pages/FlowAgents.tsx:234-302`, `frontend/src/pages/FlowDefinitions.tsx:700-755`, `frontend/src/lib/flowDefinitionForm.ts:15-138`), а backend хранит схему в `JsonNode` (`backend/src/main/java/com/aiadvent/backend/flow/domain/AgentVersion.java:55-168`, `backend/src/main/java/com/aiadvent/backend/flow/domain/FlowDefinition.java:41-117`) и парсит лишь минимальное подмножество (`backend/src/main/java/com/aiadvent/backend/flow/config/FlowDefinitionParser.java:24-194`). Wave 11 вводит строгие DTO; здесь строим UX и сервисы поверх них.
 
 ### Product & UX
-- [ ] Описать end-to-end journey «создать агента → собрать flow → запустить»: роли, happy path/ошибки, возвраты из Flow launch preview, зависимости от статусов версий.
+- [x] Описать end-to-end journey «создать агента → собрать flow → запустить»: роли, happy path/ошибки, возвраты из Flow launch preview, зависимости от статусов версий.
   - Зафиксировано в `docs/wave12-agent-flow-journey.md`: роли (Designer/Orchestrator/Ops), шаги от конструктора до запуска, happy path и матрица ошибок/зависимостей.
 - [x] Подготовить UI kit/wireframes для визуального конструктора агентов и flow builder (многошаговый wizard, панели памяти/переходов, inline preview затрат), опираясь на текущие экраны `FlowDefinitions.tsx` и `FlowLaunch.tsx`.
   - Черновик UI-kit и wireframes описан в `docs/wave12-agent-flow-ui-kit.md`: шаги wizard, компоненты (provider selector, prompt editor, tooling, cost), состояния (validate, warnings, RBAC), layout flow builder.
@@ -611,24 +611,24 @@
   - Каталог инструментов (Option C): `tool_definition` хранит `id`, `code`, `display_name`, `description`, `provider_hint`, `call_type`, `tags[]`, `capabilities[]`, `cost_hint`, `icon_url`, `default_timeout_ms`, ссылку на актуальную `tool_schema_version`; `tool_schema_version` содержит `id`, `tool_code`, `version`, `request_schema`, `response_schema`, `schema_checksum`, `examples[]`, `mcp_server`, `mcp_tool_name`, `transport`, `auth_scope`, `created_at`.
   - REST: новые DTO/эндпоинты `AgentConstructorService` работают только с `AgentInvocationOptions`; `POST /preview` (Option C) отдаёт `proposed` конфигурацию, diff по полям, рассчитанные cost/latency метрики и покрытие инструментов; валидация/превью выполняются по backend-шаблонам (создание/изменение/редактирование), без обращения к внешним копиям документации в рантайме.
   - Миграции: Liquibase — drop legacy колонки, create новые таблицы/колонку, truncate старые записи; после деплоя заливаем статичный seed (Option A) через SQL/JSON с примерным каталогом (`openai-gpt-4o`, `perplexity-research`), агентами (`demo-openai-chat`, `demo-researcher`) и flow `demo-lead-qualify`.
-- [ ] Выпустить API v2 для flow builder/агентного конструктора: `GET/PUT /api/flows/definitions/{id}` и `FlowLaunchPreviewResponse` возвращают `FlowBlueprint`, добавить эндпоинт валидации шага, справочники memory каналов/interaction-схем, новые команды в `AgentDefinitionController`; сохранить обратную совместимость через feature-flag.
+- [x] Выпустить API v2 для flow builder/агентного конструктора: `GET/PUT /api/flows/definitions/{id}` и `FlowLaunchPreviewResponse` возвращают `FlowBlueprint`, добавить эндпоинт валидации шага, справочники memory каналов/interaction-схем, новые команды в `AgentDefinitionController`; сохранить обратную совместимость через feature-flag.
 
 ### Frontend
-- [ ] Переписать `Flows / Agents` в режим конструктора: убрать JSON-текстовые поля (`frontend/src/pages/FlowAgents.tsx:234-302`), добавить формы для provider/model, temperature/topP/maxTokens, справочники tool binding и cost profile, превью capability payload’ов и проверки схем.
+- [x] Переписать `Flows / Agents` в режим конструктора: убрать JSON-текстовые поля (`frontend/src/pages/FlowAgents.tsx:234-302`), добавить формы для provider/model, temperature/topP/maxTokens, справочники tool binding и cost profile, превью capability payload’ов и проверки схем.
 - [ ] Перенести `Flows / Definitions` на typed blueprint: устранить `raw`/`memoryReadsText`/`transitionsText` из `flowDefinitionForm` (`frontend/src/lib/flowDefinitionForm.ts:15-138`) и редактора (`frontend/src/pages/FlowDefinitions.tsx:700-755`), добавить визуальные редакторы launch parameters, shared memory, transitions, HITL-конфигураций и связь с cost preview.
 - [ ] Добавить inline создание/публикацию агента прямо из редактора шага (modal поверх `Flows / Definitions`), синхронизировать список версий без перезагрузки и блокировать сохранение шага без валидированного `agentVersionId`.
-- [ ] Обновить `apiClient.ts` (`frontend/src/lib/apiClient.ts:42-200`) и стейт менеджмент Flow UI на новые типы: сгенерировать TS-модели из backend схемы (`FlowBlueprint`, `AgentVersionConfig`), добавить runtime-валидацию и удалить `unknown`/ручной JSON парсинг.
+- [x] Обновить `apiClient.ts` (`frontend/src/lib/apiClient.ts:42-200`) и стейт менеджмент Flow UI на новые типы: сгенерировать TS-модели из backend схемы (`FlowBlueprint`, `AgentVersionConfig`), добавить runtime-валидацию и удалить `unknown`/ручной JSON парсинг.
 
 ### Data & Migration
-- [ ] Liquibase: добавить новые структуры хранения (`blueprint_schema_version`, таблицы для agent config/tool binding), мигрировать существующие `flow_definition` и `agent_version` записи, пересчитать checksum и обновить ограничения.
-- [ ] Написать миграционный job/CLI, который конвертирует legacy JSON в blueprint/typed config, валидирует через `FlowBlueprintCompiler`, поддерживает dry-run/rollback и health-check, блокирующий сохранение старого формата.
+- [x] Liquibase: добавить новые структуры хранения (`blueprint_schema_version`, таблицы для agent config/tool binding), мигрировать существующие `flow_definition` и `agent_version` записи, пересчитать checksum и обновить ограничения.
+- [x] Написать миграционный job/CLI, который конвертирует legacy JSON в blueprint/typed config, валидирует через `FlowBlueprintCompiler`, поддерживает dry-run/rollback и health-check, блокирующий сохранение старого формата.
 
 ### QA & Observability
-- [ ] Расширить unit/integration тесты: контракты Flow builder API ↔ TS типов, интеграционные сценарии `FlowDefinitionController`/`AgentDefinitionController`, нагрузочные тесты сохранения blueprint и генерации `FlowLaunchPreview`.
-- [ ] Добавить телеметрию и аудит: метрики сохранений blueprint/агентов, ошибки валидации, пользовательские события конструктора; настроить алерты и дашборды.
+- [x] Расширить unit/integration тесты: контракты Flow builder API ↔ TS типов, интеграционные сценарии `FlowDefinitionController`/`AgentDefinitionController`, нагрузочные тесты сохранения blueprint и генерации `FlowLaunchPreview`.
+- [x] Добавить телеметрию и аудит: метрики сохранений blueprint/агентов, ошибки валидации, пользовательские события конструктора; настроить алерты и дашборды.
 
 ### Документация
-- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md` и `docs/processes.md`: описать новый blueprint, API v2, конструктор агентов, миграцию и чек-лист тестирования; добавить запись в CHANGELOG/runbook с планом отката.
+- [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md` и `docs/processes.md`: описать новый blueprint, API v2, конструктор агентов, миграцию и чек-лист тестирования; добавить запись в CHANGELOG/runbook с планом отката.
 
 ## Wave 13 — Perplexity MCP интеграция для живого ресёрча
 Цель: подключить Perplexity через Model Context Protocol, чтобы агенты и чат выполняли live-research шаги, возвращали цитаты и делились контекстом с downstream-логикой. Волна даёт новый провайдер Spring AI, сохранение результатов поиска и готовые сценарии использования в flow и чатах.
@@ -657,7 +657,7 @@
 ### Infrastructure & Docs
 - [ ] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить `PERPLEXITY_API_KEY`, `PERPLEXITY_MCP_URL`, `PERPLEXITY_WORKSPACE`, настройки глубины поиска.
 - [ ] Добавить сервис `perplexity-mcp` в `docker-compose.yml` или инструкцию по локальному запуску CLI, описать требования к ключам, лимиты запросов и безопасное хранение секретов.
-- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` и ADR: схема интеграции, поток данных, сценарии использования (flow research, chat research, summary enrichment), SLA и runbook.
+- [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` и ADR: схема интеграции, поток данных, сценарии использования (flow research, chat research, summary enrichment), SLA и runbook.
 
 ## Wave 14 — Расширенные event-логи оркестратора
 

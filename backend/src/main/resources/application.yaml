@@ -51,6 +51,7 @@ logging:
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
     org.springframework.ai.chat.client.advisor: DEBUG
+    ConstructorAudit: INFO
 
 app:
   chat:
@@ -135,7 +136,7 @@ app:
               output-per-1k-tokens: 0.0001
             usage:
               mode: fallback
-              fallback-tokenizer: cl100k_base
+        fallback-tokenizer: cl100k_base
       openai:
         type: OPENAI
         display-name: "OpenAI"
@@ -199,6 +200,14 @@ app:
             usage:
               mode: native
   flow:
+    api:
+      v2-enabled: ${FLOW_API_V2_ENABLED:false}
+    migration:
+      cli:
+        enabled: ${FLOW_MIGRATION_CLI_ENABLED:false}
+        dry-run: ${FLOW_MIGRATION_CLI_DRY_RUN:true}
+        include-history: ${FLOW_MIGRATION_CLI_INCLUDE_HISTORY:true}
+        fail-on-error: ${FLOW_MIGRATION_CLI_FAIL_ON_ERROR:false}
     worker:
       enabled: ${FLOW_WORKER_ENABLED:true}
       poll-delay: ${FLOW_WORKER_POLL_DELAY:PT0.5S}

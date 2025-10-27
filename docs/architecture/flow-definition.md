@@ -1,150 +1,136 @@
-# Flow Definition Schema (Wave 9.1)
+# Flow Definition Blueprint (Wave 12)
 
-Этот документ фиксирует актуальную структуру определения мультиагентного флоу, которую использует оркестратор (Wave 9.1). Конфигурации хранятся в PostgreSQL (`flow_definition.definition_jsonb`), редактируются через UI и валидируются на backend’е (`FlowDefinitionParser` + JSON-проверки).
+Wave 12 окончательно перевёл оркестратор на типизированный blueprint (`FlowBlueprint`) и избавил UI/БЭК от ручного JSON. Этот документ фиксирует актуальную схему, валидацию и API-контракты.
 
-## Общие правила
+## Хранение и версионирование
 
-- Схема хранится в JSON (опционально импорт/экспорт YAML с эквивалентной структурой).
-- Флоу исполняются только в синхронном режиме (`syncOnly=true`) — стриминговых шагов нет.
-- Версионирование управляется полями `status` (`DRAFT|PUBLISHED`), `is_active` и историей (`flow_definition_history`).
-- Идентификаторы `flowId`, `steps[].id`, `steps[].agentVersionId`, `transitions.*.next` — slug или UUID, уникальные внутри флоу.
-- Каждый шаг обязан ссылаться на опубликованную активную версию агента (`agent_version`) через `agentVersionId`.
-- Все пользовательские/агентские сообщения дублируются в канал `conversation`, чтобы FlowMemorySummarizerService мог автоматически строить summary без правок DSL; дополнительные shared-каналы используются только для специализированных контекстов.
+- Таблица `flow_definition` содержит поля:
+  - `definition JSONB` — сериализованный `FlowBlueprint`;
+  - `blueprint_schema_version INT` — актуальная версия схемы (>=1);
+  - статус (`DRAFT|PUBLISHED`), признак активности (`is_active`), историю изменений.
+- История `flow_definition_history` хранит неизменяемые снапшоты той же структуры, включая `blueprint_schema_version`.
+- CLI `app.flow.migration.cli.*` конвертирует легаси-записи в `FlowBlueprint`, поддерживает dry-run, выборочную миграцию и обновление истории.
 
-## Верхний уровень
-
-| Поле             | Тип / описание                                                                                   |
-|------------------|---------------------------------------------------------------------------------------------------|
-| `flowId`         | `string` (slug/UUID) — логический идентификатор шаблона.                                          |
-| `version`        | `integer` ≥ 1 — ручное или автоматическое инкрементирование.                                      |
-| `metadata`       | `title`, `description`, `tags[]` — служебные поля для UI/поиска.                                   |
-| `syncOnly`       | `boolean`, всегда `true`.                                                                           |
-| `memory.sharedChannels[]` | Настройки долговременных каналов (`id`, `retentionVersions`, `retentionDays`).            |
-| `triggers`       | Флаги включения запуска из UI/API.                                                                 |
-| `defaults`       | Общий контекст (`context`) и дефолтные оверрайды (`overrides.options`).                            |
-| `launchParameters[]` | Описание входных параметров при запуске (`name`, `type`, `required`, `description`).           |
-| `steps[]`        | Упорядоченный список шагов (см. ниже).                                                             |
-| `outputs`        | Настройки итогового payload’а (опционально).                                                       |
-
-## Структура шага
+## Структура `FlowBlueprint`
 
 ```jsonc
 {
-  "id": "gather_requirements",            // slug/UUID
-  "name": "Сбор требований",
-  "agentVersionId": "0f9d...-uuid",       // ссылка на agent_version.id
-  "prompt": "Ты бизнес-аналитик...",
-  "overrides": {
-    "temperature": 0.2,                   // опциональные числовые параметры
-    "topP": 0.9,
-    "maxTokens": 1024
-  },
-  "memoryReads": [
-    { "channel": "context", "limit": 5 }
-  ],
-  "memoryWrites": [
-    { "channel": "context", "mode": "AGENT_OUTPUT" },
-    { "channel": "decision-log", "mode": "STATIC", "payload": { "event": "bootstrap" } }
-  ],
-  "transitions": {
-    "onSuccess": { "next": "generate_solution", "complete": false },
-    "onFailure": { "next": "abort_flow", "fail": true }
-  },
-  "maxAttempts": 1
-}
-```
-
-Поля:
-
-- `agentVersionId` — обязательная строка UUID. Backend проверяет, что версия существует, опубликована и принадлежит активному агенту (`FlowDefinitionService.validateAgentVersions`).
-- `prompt` — системный промпт шага; при отсутствии используется `systemPrompt` из версии агента.
-- `overrides.temperature/topP/maxTokens` — переопределения опций вызова для конкретного шага.
-- `memoryReads[]` — список каналов памяти с лимитом сообщений (по умолчанию 10).
-- `memoryWrites[]` — запись в память. `mode`: `AGENT_OUTPUT` (сохраняется ответ агента) или `STATIC` (фиксированный payload).
-- Summary сохраняются в `flow_memory_summary` с `metadata.summary=true`, `metadata.schemaVersion`, `agent_version_id`, `language`, `attempt_start/end`. UI должен учитывать эти поля при отображении карточек памяти.
-- `transitions.onSuccess` / `transitions.onFailure` — определяют следующее состояние. Если `next` пустой и `complete`/`fail` не переопределены, применяются дефолты (`completeOnSuccess=true`, `failFlowOnFailure=true`).
-- `maxAttempts` — количество автоматических повторов шага (≥1).
-
-## Минимальный пример
-
-```json
-{
-  "flowId": "solution-workshop",
-  "version": 4,
+  "schemaVersion": 2,
   "metadata": {
-    "title": "Solution Design Workshop",
-    "description": "Флоу согласования требований и генерации решения"
+    "title": "Lead Qualification",
+    "description": "Gather context and run research",
+    "tags": ["sales", "research"]
   },
+  "startStepId": "gather_context",
   "syncOnly": true,
   "launchParameters": [
-    { "name": "problemStatement", "type": "string" },
-    { "name": "constraints", "type": "array", "required": false }
+    {
+      "name": "company",
+      "type": "string",
+      "required": true,
+      "description": "Target company name",
+      "schema": { "type": "string", "minLength": 1 },
+      "defaultValue": null
+    }
   ],
+  "memory": {
+    "sharedChannels": [
+      { "id": "shared", "retentionVersions": 5, "retentionDays": 7 }
+    ]
+  },
   "steps": [
     {
-      "id": "gather_requirements",
-      "name": "Сбор требований",
-      "agentVersionId": "aaaaaaaa-1111-2222-3333-444444444444",
-      "prompt": "Ты бизнес-аналитик. Собери контекст и требования.",
-      "memoryReads": [{ "channel": "context", "limit": 5 }],
-      "memoryWrites": [{ "channel": "context", "mode": "AGENT_OUTPUT" }],
-      "transitions": {
-        "onSuccess": { "next": "generate_solution" },
-        "onFailure": { "next": "abort_flow", "fail": true }
-      }
-    },
-    {
-      "id": "generate_solution",
-      "name": "Проектирование решения",
-      "agentVersionId": "bbbbbbbb-1111-2222-3333-444444444444",
+      "id": "gather_context",
+      "name": "Gather Context",
+      "agentVersionId": "1c9a...-uuid",
+      "prompt": "Collect lead profile using the provided parameters.",
+      "overrides": {
+        "temperature": 0.3,
+        "maxTokens": 600
+      },
+      "interaction": {
+        "type": "INPUT_FORM",
+        "title": "Missing context",
+        "payloadSchema": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object" },
+        "dueInMinutes": 15
+      },
       "memoryReads": [
-        { "channel": "context", "limit": 5 },
-        { "channel": "decision-log", "limit": 20 }
+        { "channel": "shared", "limit": 5 }
       ],
-      "memoryWrites": [{ "channel": "decision-log", "mode": "AGENT_OUTPUT" }],
-      "overrides": { "temperature": 0.2, "maxTokens": 1500 },
+      "memoryWrites": [
+        { "channel": "shared", "mode": "AGENT_OUTPUT" }
+      ],
       "transitions": {
-        "onSuccess": { "next": "review_solution" },
-        "onFailure": { "next": "refine_solution", "fail": false }
-      }
-    },
-    {
-      "id": "review_solution",
-      "name": "Ревью решения",
-      "agentVersionId": "cccccccc-1111-2222-3333-444444444444",
-      "transitions": { "onSuccess": { "complete": true }, "onFailure": { "next": "abort_flow" } }
-    },
-    {
-      "id": "abort_flow",
-      "name": "Прерывание",
-      "agentVersionId": "dddddddd-1111-2222-3333-444444444444",
-      "transitions": { "onSuccess": { "complete": true } }
+        "onSuccess": { "next": "perform_research" },
+        "onFailure": { "fail": true }
+      },
+      "maxAttempts": 2
     }
-  ],
-  "outputs": {
-    "summaryFields": ["steps.generate_solution.output.summary"],
-    "resultPayload": {
-      "solution": "$steps.generate_solution.output.draft",
-      "nextActions": "$steps.review_solution.output.recommendations"
-    }
-  }
+  ]
 }
 ```
 
-## Требования к валидации
+### Поля верхнего уровня
 
-1. **Агенты** — все `agentVersionId` должны ссылаться на существующие версии со статусом `PUBLISHED`, а их `agent_definition` обязан быть активным. Backend возвращает `422 Unprocessable Entity` при нарушении.
-2. **Последовательность шагов** — массив `steps` должен содержать минимум один элемент. `startStepId` должен ссылаться на существующий шаг (если не указан, UI/парсер используют первый шаг).
-3. **JSON-поля** — редактор UI предоставляет текстовые поля для JSON (memory/transition overrides) с предварительной валидацией; backend дополнительно проверяет типы.
-4. **Retry/maxAttempts** — в Wave 9.1 поддерживается только простая форма `maxAttempts`. Расширенные `retryPolicy`/`timeoutSec` из ранних ADR исключены.
+| Поле | Описание |
+|------|----------|
+| `schemaVersion` | Версия DSL. При отсутствии интерпретируется как `1`. |
+| `metadata` | `title`/`description`/`tags`. Используются UI и поиском. |
+| `startStepId` | Идентификатор первого шага. Если не задан, используется первый элемент `steps`. |
+| `syncOnly` | Синхронный режим (стриминг для флоу появится в последующих волнах). |
+| `launchParameters[]` | Типизированные параметры запуска (имя, описание, JSON Schema, дефолт). |
+| `memory.sharedChannels[]` | Каналы с ретеншеном по версиям/дням. Канал `shared` доступен всем шагам. |
+| `steps[]` | Упорядоченный список шагов (см. ниже). |
 
-## Интеграция с UI
+### Шаг (`FlowBlueprintStep`)
 
-- Страница `Flows / Definitions` строит форму на основе этих правил: шаги редактируются через выпадающий список опубликованных агентов, промпт и память редактируются inline.
-- При сохранении UI собирает JSON через helper `buildFlowDefinition`, повторно валидирующий числовые и JSON-поля.
-- Публикация флоу (`POST /api/flows/definitions/{id}/publish`) доступна только после успешного прохождения серверной проверки (активные агенты, валидные переходы).
+- `agentVersionId` — UUID опубликованной версии агента. `FlowBlueprintValidator` проверяет, что версия существует, имеет статус `PUBLISHED`, а соответствующий агент активен.
+- `prompt` — текстовый промпт шага. Если пуст, используется `systemPrompt` агента.
+- `overrides` — частичный `ChatRequestOverrides` (`temperature`, `topP`, `maxTokens`).
+- `interaction` — настройки HITL (`FlowInteractionConfig`): тип (`INPUT_FORM|APPROVAL|...`), JSON Schema формы, подсказки и SLAs.
+- `memoryReads` / `memoryWrites` — конфигурация чтения и записи памяти (канал, лимит, режим `AGENT_OUTPUT|USER_INPUT|STATIC`).
+- `transitions` — `onSuccess`/`onFailure` c указанием следующего шага и флагов `complete|fail`.
+- `maxAttempts` — целое ≥1; ретраи с шагом backoff реализуются на уровне оркестратора.
 
-## Связанные материалы
+## Валидация
 
-- [docs/infra.md](../infra.md) — архитектурный обзор оркестрации, API каталога агентов и UI разделов.  
-- [docs/processes.md](../processes.md) — рабочие процедуры по онбордингу новых агентов/флоу.
+- Сервис `FlowBlueprintValidator`:
+  - нормализует blueprint через `FlowBlueprintCompiler` (структурные проверки, ссылки на существующие шаги);
+  - проверяет, что все `agentVersionId` валидны и опубликованы;
+  - возвращает список `FlowValidationIssue` (errors/warnings) для UI.
+- CLI `app.flow.migration.cli.*` использует тот же валидатор, поддерживает параметры `dry-run`, `include-history` и остановку при ошибке.
+
+## API и Feature Flags
+
+- `GET /api/flows/definitions/{id}` — по умолчанию возвращает JSON (для обратной совместимости). При `app.flow.api.v2-enabled=true` отдаёт `FlowDefinitionResponseV2` с `FlowBlueprint`.
+- `PUT /api/flows/definitions/{id}` — принимает JSON/blueprint в зависимости от feature-flag. UI работает с V2.
+- `GET /api/flows/definitions/{id}/launch-preview` — V2 включает `FlowLaunchPreviewResponseV2` с blueprint и детальным расчётом (агенты, стоимость по шагам).
+- `GET /api/flows/definitions/reference/memory-channels` и `/reference/interaction-schemes` — справочники для конструктора.
+- `POST /api/flows/definitions/validation/step` — step validator; возвращает ошибки и предупреждения для конкретного шага.
+
+## Телеметрия и аудит конструктора
+
+- `FlowDefinitionService` и `AgentCatalogService` фиксируют все операции конструктора через `ConstructorTelemetryService`.
+- Основные счётчики (Micrometer):
+  - `constructor_flow_blueprint_saves_total{action=create|update|publish}` — успешные сохранения/публикации blueprint.
+  - `constructor_agent_definition_saves_total{action=create|update|status}` — изменения карточки агента.
+  - `constructor_agent_version_saves_total{action=create|update|publish|deprecate}` — операции с версиями агента.
+  - `constructor_validation_errors_total{domain=flow_blueprint|agent_definition|agent_version,stage=...}` — любые ошибки валидации или конфликтов (422/409/404) в сервисах конструктора.
+  - `constructor_user_events_total{event=flow_blueprint_create|agent_version_publish|...}` — агрегированный поток пользовательских действий для построения графиков активности.
+- Лёгкий аудит пишется в отдельный логгер `ConstructorAudit` (см. `application.yaml`). Формат: `event=... action=... actor=... id=...`, что позволяет отправлять поток в SIEM/ELK и строить расследования.
+- При добавлении новых операций достаточно вызвать один из методов `ConstructorTelemetryService` —计 etrics и аудит обновятся автоматически.
+
+## Инструменты разработчика
+
+- **Migration CLI:** `app.flow.migration.cli.enabled=true`. Основные параметры:
+  - `dry-run` — по умолчанию true, только логирует изменения;
+  - `definition-ids` — список UUID через запятую, иначе обрабатываются все флоу;
+  - `include-history` — обновлять `flow_definition_history`;
+  - `fail-on-error` — прерывать миграцию при первой ошибке.
+- **Контроль версий схемы:** изменение структуры blueprint сопровождаем bump `schemaVersion` и обновление мигратора.
+
+## Связанные документы
+
+- `docs/infra.md` — флаги CLI, общая инфраструктура, SLA по перезапуску CLI.
+- `docs/processes.md` — чек-лист тестирования конструктора и уведомления для миграций.
+- `docs/backlog.md` (Wave 12) — статус задач по typed-конструктору и миграции.

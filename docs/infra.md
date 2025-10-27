@@ -208,8 +208,8 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - Конкурентность регулируется отдельным `ExecutorService` (по умолчанию фиксированное число потоков). Параметры (`enabled`, `poll-delay`, `max-concurrency`, `worker-id-prefix`) настраиваются через `app.flow.worker.*`.
   - Для каждой итерации логируем `workerId`, результат (`processed|empty|error`) и длительность; в Micrometer попадают `flow.job.poll.count` и `flow.job.poll.duration` с тегом `result`. Эти метрики используются для алертов на рост ошибок или пустых выборок.
 
-### Модель данных
-- Каталог агентов (таблицы `agent_definition`, `agent_version`, `agent_capability`) хранит системные промпты, дефолтные опции Spring AI (`ChatProviderType`, `modelId`, `defaultOptions`), ограничения (`syncOnly`, `maxTokens`) и описания `toolBindings` (список методов `@Tool`). Начиная с Wave 9.1 фиксируем аудитные поля `created_by`/`updated_by` и список возможностей (`capability`, произвольный JSON payload). Флаг `is_active` на уровне `agent_definition` автоматически включается при публикации новой версии.
+-### Модель данных
+- Каталог агентов (таблицы `agent_definition`, `agent_version`, `agent_capability`) хранит системные промпты, ограничения (`syncOnly`, `maxTokens`), typed-конфигурацию `agent_invocation_options` (`provider`, `prompt`, `memoryPolicy`, `retryPolicy`, `advisorSettings`, `tooling`, `costProfile`) и список возможностей (`capability`, произвольный JSON payload). Флаг `is_active` на уровне `agent_definition` автоматически включается при публикации новой версии.
   - REST API каталога:  
     - `GET /api/agents/definitions` — список определений с последними версиями.  
     - `GET /api/agents/definitions/{id}` — детали + список версий.  
@@ -219,8 +219,8 @@ Frontend контейнер проксирует все запросы `/api/*` 
     - `POST /api/agents/versions/{versionId}/publish` — публикация с возможностью обновить capabilities; `POST /api/agents/versions/{versionId}/deprecate` — вывод из эксплуатации.  
   - UI (`Flows / Agents`) использует кэшированный запрос каталога, чтобы не перегружать API при навигации; кэш сбрасывается после любой мутации (`invalidateAgentCatalogCache()` в `apiClient.ts`).
 - Флоу:
-  - `flow_definition` — черновики и опубликованные версии. Поля: `id`, `name`, `version`, `status`, `definition_jsonb`, `is_active`, `updated_by`, `published_at`.
-  - `flow_definition_history` — снимки версий с `change_notes` и автором.
+  - `flow_definition` — черновики и опубликованные версии. Поля: `id`, `name`, `version`, `status`, `definition` (typed `FlowBlueprint`), `blueprint_schema_version`, `is_active`, `updated_by`, `published_at`.
+  - `flow_definition_history` — снимки версий с `change_notes`, автором и зафиксированным `blueprint_schema_version`.
   - `flow_session` — запуски (`PENDING`, `RUNNING`, `PAUSED`, `FAILED`, `COMPLETED`, `ABORTED`), `launch_parameters`, `shared_context`, `current_step_id`, `current_memory_version`.
   - `flow_step_execution` — состояние шага (attempt, prompt, input/output, usage/cost, timestamps).
   - `flow_event` — журнал (`event_type`, `status`, `payload_jsonb`, `usage/cost`, `trace_id`, `span_id`) для SSE и аудита.
@@ -230,11 +230,30 @@ Frontend контейнер проксирует все запросы `/api/*` 
 - `FlowMemorySummarizerService` отдаёт отдельные метрики с тегом `scope=flow`: `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failures_total`, `flow_summary_failure_alerts_total`. Экспортируйте Micrometer в Prometheus/OTLP и добавьте теги `providerId`/`channel`, если нужен более детальный анализ.
 - Рекомендуемые алерты: `flow_summary_queue_size` превышает настроенный `maxConcurrentSummaries` более 3 минут (застрявший воркер); рост `flow_summary_failure_alerts_total` (>0 за последние 5 минут) указывает на деградацию провайдера; отсутствие новых записей `flow_memory_summary`/`chat_session.summary_metadata.updatedAt` дольше допустимого окна (например, 15 минут) сигнализирует о зациклившихся сессиях. Последний сценарий удобно проверять SQL/Prometheus-правилом по `max(now() - summary.created_at)`.
 - Для ручных перезапусков держим `/api/admin/flows/sessions/{sessionId}/summary/rebuild` и CLI (`app.flow.summary.cli.*`). При активации CLI обязательно задавайте `session-id`, `provider-id`, `model-id` и убедитесь, что алерты выключены на время массового backfill, чтобы избежать ложных срабатываний.
+- Для миграции легаси-флоу на типизированные blueprints предусмотрен CLI (`app.flow.migration.cli.*`): по умолчанию он работает в `dry-run` режиме, умеет ограничиваться списком `definition-ids` и обновляет как текущие определения, так и историю версий. Запуски фиксируйте в журнале изменений.
 
 ### Формат flow definition
-- JSON содержит `startStepId`, массив `steps[]` (id, name, `agentVersionId`, `prompt`, `overrides`, `memoryReads`, `memoryWrites`, `transitions`, `maxAttempts`).
-- `memoryReads` описывают канал (`channel`, `limit`). `memoryWrites` — канал/режим (`AGENT_OUTPUT|STATIC`) и сериализованный payload (для STATIC).
-- `transitions` поддерживает `onSuccess.next`, `onSuccess.complete`, `onFailure.next`, `onFailure.fail`, а также дополнительные ветвления (`conditions[]`) в расширениях.
+- Blueprint описан value-объектом `FlowBlueprint` (см. `docs/architecture/flow-definition.md`): включает `schemaVersion`, `metadata`, `launchParameters`, `memory.sharedChannels`, массив `steps[]`.
+- `steps[]` — типизированные записи `FlowBlueprintStep` (id, name, `agentVersionId`, `prompt`, `overrides`, `interaction`, `memoryReads`, `memoryWrites`, `transitions`, `maxAttempts`).
+- API V2 (`app.flow.api.v2-enabled=true`) возвращает blueprint как есть (`FlowDefinitionResponseV2`, `FlowLaunchPreviewResponseV2`); V1 сохраняет обратную совместимость с JSON-структурами.
+
+## Мониторинг конструктора (Wave 12)
+- `ConstructorTelemetryService` в backend инкрементирует Micrometer-счётчики для всех операций конструктора:
+  - `constructor_flow_blueprint_saves_total{action=create|update|publish}` — успешные сохранения/публикации флоу.
+  - `constructor_agent_definition_saves_total{action=create|update|status}` и `constructor_agent_version_saves_total{action=create|update|publish|deprecate}` — активность каталога агентов.
+  - `constructor_validation_errors_total{domain,stage}` — ошибки валидации или конфликты (422/409/404). Домены: `flow_blueprint`, `agent_definition`, `agent_version`; stage соответствует операции (`create`, `update`, `publish`, `status`, `deprecate`).
+  - `constructor_user_events_total{event}` — агрегированные пользовательские действия (для heatmap активности).
+- Рекомендуемые Prometheus-алерты:
+  - `rate(constructor_validation_errors_total[5m]) > 5` — всплеск ошибок конструктора.
+  - `rate(constructor_validation_errors_total[5m]) / rate(constructor_user_events_total[5m]) > 0.2` при `rate(constructor_user_events_total[5m]) > 1` — деградация UX (каждый пятый запрос завершается ошибкой).
+  - Отдельный alert на `constructor_validation_errors_total{stage="publish"}` помогает ловить регрессии в продакшн-публикациях.
+- Дашборды:
+  - Stacked area по `constructor_flow_blueprint_saves_total` и `constructor_agent_version_saves_total` (tag `action`) — использование конструктора по типу операций.
+  - Таблица Top-K `constructor_validation_errors_total` по `domain/stage` для обнаружения горячих точек.
+  - Bar chart `constructor_user_events_total` c сравнением офисных/выходных дней — поддержка capacity planning.
+- Аудит:
+  - Логгер `ConstructorAudit` (включён в `application.yaml`) печатает события в формате `event=agent_version_save action=publish actor=ops@aiadvent.dev definitionId=... versionId=...`. Пробросьте поток в ELK/SIEM и настройте поиск по `actor`/`definitionId` при расследовании инцидентов.
+  - Для локальной отладки можно увеличить уровень (`logging.level.ConstructorAudit=DEBUG`) и наблюдать payload прямо в консоли.
 
 ### Политики памяти и конфигурации
 - Настройки памяти (`app.chat.memory.*`) определяют размер окна (`window-size`), TTL (`retention`) и интервал очистки (`cleanup-interval`). Shared/isolated каналы инжектируются через Spring AI `MessageChatMemoryAdvisor`.

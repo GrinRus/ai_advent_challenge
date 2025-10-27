@@ -3,18 +3,12 @@ package com.aiadvent.backend.flow.service;
 import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
-import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
-import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
-import com.aiadvent.backend.flow.config.FlowStepConfig;
-import com.aiadvent.backend.flow.domain.AgentDefinition;
-import com.aiadvent.backend.flow.domain.AgentVersion;
-import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
-import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionRepository;
+import com.aiadvent.backend.flow.telemetry.ConstructorTelemetryService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,21 +28,21 @@ public class FlowDefinitionService {
 
   private final FlowDefinitionRepository flowDefinitionRepository;
   private final FlowDefinitionHistoryRepository flowDefinitionHistoryRepository;
-  private final FlowBlueprintCompiler flowBlueprintCompiler;
-  private final AgentVersionRepository agentVersionRepository;
+  private final FlowBlueprintValidator flowBlueprintValidator;
   private final ObjectMapper objectMapper;
+  private final ConstructorTelemetryService constructorTelemetryService;
 
   public FlowDefinitionService(
       FlowDefinitionRepository flowDefinitionRepository,
       FlowDefinitionHistoryRepository flowDefinitionHistoryRepository,
-      FlowBlueprintCompiler flowBlueprintCompiler,
-      AgentVersionRepository agentVersionRepository,
-      ObjectMapper objectMapper) {
+      FlowBlueprintValidator flowBlueprintValidator,
+      ObjectMapper objectMapper,
+      ConstructorTelemetryService constructorTelemetryService) {
     this.flowDefinitionRepository = flowDefinitionRepository;
     this.flowDefinitionHistoryRepository = flowDefinitionHistoryRepository;
-    this.flowBlueprintCompiler = flowBlueprintCompiler;
-    this.agentVersionRepository = agentVersionRepository;
+    this.flowBlueprintValidator = flowBlueprintValidator;
     this.objectMapper = objectMapper;
+    this.constructorTelemetryService = constructorTelemetryService;
   }
 
   @Transactional(readOnly = true)
@@ -84,109 +78,133 @@ public class FlowDefinitionService {
 
   @Transactional
   public FlowDefinition createDefinition(FlowDefinitionRequest request) {
-    if (!StringUtils.hasText(request.name())) {
-      throw new IllegalArgumentException("Flow definition name must not be empty");
+    String actor = request != null ? request.updatedBy() : null;
+    try {
+      if (!StringUtils.hasText(request.name())) {
+        throw new IllegalArgumentException("Flow definition name must not be empty");
+      }
+
+      FlowBlueprint blueprint = blueprintFromRequest(request);
+
+      int nextVersion =
+          flowDefinitionRepository.findByNameOrderByVersionDesc(request.name()).stream()
+              .mapToInt(FlowDefinition::getVersion)
+              .findFirst()
+              .orElse(0)
+              + 1;
+
+      FlowDefinition definition =
+          new FlowDefinition(
+              request.name(), nextVersion, FlowDefinitionStatus.DRAFT, false, blueprint);
+      definition.setDescription(request.description());
+      definition.setUpdatedBy(request.updatedBy());
+
+      flowBlueprintValidator.validateBlueprintOrThrow(blueprint);
+
+      FlowDefinition saved = flowDefinitionRepository.save(definition);
+
+      if (StringUtils.hasText(request.changeNotes())) {
+        flowDefinitionHistoryRepository.save(
+            new FlowDefinitionHistory(
+                saved,
+                saved.getVersion(),
+                saved.getStatus(),
+                saved.getDefinition(),
+                saved.getBlueprintSchemaVersion(),
+                request.changeNotes(),
+                request.updatedBy()));
+      }
+
+      constructorTelemetryService.recordFlowBlueprintSave("create", saved, actor);
+      return saved;
+    } catch (IllegalArgumentException | IllegalStateException | ResponseStatusException ex) {
+      constructorTelemetryService.recordValidationError(
+          "flow_blueprint", "create", actor, ex);
+      throw ex;
     }
-
-    FlowBlueprint blueprint = blueprintFromRequest(request);
-
-    int nextVersion =
-        flowDefinitionRepository.findByNameOrderByVersionDesc(request.name()).stream()
-            .mapToInt(FlowDefinition::getVersion)
-            .findFirst()
-            .orElse(0)
-            + 1;
-
-    FlowDefinition definition =
-        new FlowDefinition(
-            request.name(), nextVersion, FlowDefinitionStatus.DRAFT, false, blueprint);
-    definition.setDescription(request.description());
-    definition.setUpdatedBy(request.updatedBy());
-
-    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
-    validateAgentVersions(document);
-
-    FlowDefinition saved = flowDefinitionRepository.save(definition);
-
-    if (StringUtils.hasText(request.changeNotes())) {
-      flowDefinitionHistoryRepository.save(
-          new FlowDefinitionHistory(
-              saved,
-              saved.getVersion(),
-              saved.getStatus(),
-              saved.getDefinition(),
-              request.changeNotes(),
-              request.updatedBy()));
-    }
-
-    return saved;
   }
 
   @Transactional
   public FlowDefinition updateDefinition(UUID id, FlowDefinitionRequest request) {
-    FlowDefinition definition = getDefinition(id);
-    if (definition.getStatus() != FlowDefinitionStatus.DRAFT) {
-      throw new IllegalStateException("Only DRAFT definitions can be updated");
+    String actor = request != null ? request.updatedBy() : null;
+    try {
+      FlowDefinition definition = getDefinition(id);
+      if (definition.getStatus() != FlowDefinitionStatus.DRAFT) {
+        throw new IllegalStateException("Only DRAFT definitions can be updated");
+      }
+
+      FlowBlueprint blueprint = blueprintFromRequest(request);
+      definition.setDefinition(blueprint);
+      definition.setDescription(request.description());
+      if (StringUtils.hasText(request.updatedBy())) {
+        definition.setUpdatedBy(request.updatedBy());
+      }
+
+      flowBlueprintValidator.validateBlueprintOrThrow(blueprint);
+
+      FlowDefinition saved = flowDefinitionRepository.save(definition);
+
+      if (StringUtils.hasText(request.changeNotes())) {
+        flowDefinitionHistoryRepository.save(
+            new FlowDefinitionHistory(
+                saved,
+                saved.getVersion(),
+                saved.getStatus(),
+                saved.getDefinition(),
+                saved.getBlueprintSchemaVersion(),
+                request.changeNotes(),
+                request.updatedBy()));
+      }
+
+      constructorTelemetryService.recordFlowBlueprintSave("update", saved, actor);
+      return saved;
+    } catch (IllegalArgumentException | IllegalStateException | ResponseStatusException ex) {
+      constructorTelemetryService.recordValidationError(
+          "flow_blueprint", "update", actor, ex);
+      throw ex;
     }
+  }
 
-    FlowBlueprint blueprint = blueprintFromRequest(request);
-    definition.setDefinition(blueprint);
-    definition.setDescription(request.description());
-    if (StringUtils.hasText(request.updatedBy())) {
-      definition.setUpdatedBy(request.updatedBy());
-    }
+  @Transactional
+  public FlowDefinition publishDefinition(UUID id, FlowDefinitionPublishRequest request) {
+    String actor = request != null ? request.updatedBy() : null;
+    try {
+      FlowDefinition definition = getDefinition(id);
+      if (definition.getStatus() == FlowDefinitionStatus.PUBLISHED && definition.isActive()) {
+        return definition;
+      }
 
-    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
-    validateAgentVersions(document);
+      flowBlueprintValidator.validateDefinitionOrThrow(definition);
 
-    FlowDefinition saved = flowDefinitionRepository.save(definition);
+      if (StringUtils.hasText(request.updatedBy())) {
+        definition.setUpdatedBy(request.updatedBy());
+      }
 
-    if (StringUtils.hasText(request.changeNotes())) {
+      definition.setStatus(FlowDefinitionStatus.PUBLISHED);
+      definition.setActive(true);
+      definition.setPublishedAt(Instant.now());
+
+      deactivateOtherVersions(definition);
+
+      FlowDefinition saved = flowDefinitionRepository.save(definition);
+
       flowDefinitionHistoryRepository.save(
           new FlowDefinitionHistory(
               saved,
               saved.getVersion(),
               saved.getStatus(),
               saved.getDefinition(),
+              saved.getBlueprintSchemaVersion(),
               request.changeNotes(),
               request.updatedBy()));
+
+      constructorTelemetryService.recordFlowBlueprintSave("publish", saved, actor);
+      return saved;
+    } catch (IllegalArgumentException | IllegalStateException | ResponseStatusException ex) {
+      constructorTelemetryService.recordValidationError(
+          "flow_blueprint", "publish", actor, ex);
+      throw ex;
     }
-
-    return saved;
-  }
-
-  @Transactional
-  public FlowDefinition publishDefinition(UUID id, FlowDefinitionPublishRequest request) {
-    FlowDefinition definition = getDefinition(id);
-    if (definition.getStatus() == FlowDefinitionStatus.PUBLISHED && definition.isActive()) {
-      return definition;
-    }
-
-    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
-    validateAgentVersions(document);
-
-    if (StringUtils.hasText(request.updatedBy())) {
-      definition.setUpdatedBy(request.updatedBy());
-    }
-
-    definition.setStatus(FlowDefinitionStatus.PUBLISHED);
-    definition.setActive(true);
-    definition.setPublishedAt(Instant.now());
-
-    deactivateOtherVersions(definition);
-
-    FlowDefinition saved = flowDefinitionRepository.save(definition);
-
-    flowDefinitionHistoryRepository.save(
-        new FlowDefinitionHistory(
-            saved,
-            saved.getVersion(),
-            saved.getStatus(),
-            saved.getDefinition(),
-            request.changeNotes(),
-            request.updatedBy()));
-
-    return saved;
   }
 
   private void deactivateOtherVersions(FlowDefinition definition) {
@@ -219,34 +237,4 @@ public class FlowDefinitionService {
     }
   }
 
-  private void validateAgentVersions(FlowDefinitionDocument document) {
-    for (FlowStepConfig step : document.steps()) {
-      UUID agentVersionId = step.agentVersionId();
-      AgentVersion agentVersion =
-          agentVersionRepository
-              .findById(agentVersionId)
-              .orElseThrow(
-                  () ->
-                      new ResponseStatusException(
-                          HttpStatus.UNPROCESSABLE_ENTITY,
-                          String.format(
-                              "Agent version not found for step '%s': %s",
-                              step.id(), agentVersionId)));
-
-      if (agentVersion.getStatus() != AgentVersionStatus.PUBLISHED) {
-        throw new ResponseStatusException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            String.format(
-                "Agent version for step '%s' must be published", step.id()));
-      }
-
-      AgentDefinition agentDefinition = agentVersion.getAgentDefinition();
-      if (agentDefinition == null || !agentDefinition.isActive()) {
-        throw new ResponseStatusException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            String.format(
-                "Agent definition used in step '%s' is not active", step.id()));
-      }
-    }
-  }
 }
