@@ -224,13 +224,13 @@ export type AgentVersionUpdatePayload = {
 export type ChatSyncResponse = {
   requestId?: string;
   content?: string;
-  provider?: StructuredSyncProvider;
+  provider?: StructuredSyncProvider | null;
   tools?: string[];
   structured?: StructuredSyncResponse | null;
-  usage?: StructuredSyncUsageStats;
-  cost?: UsageCostDetails;
-  latencyMs?: number;
-  timestamp?: string;
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
+  latencyMs?: number | null;
+  timestamp?: string | null;
 };
 
 export type ChatSyncRequest = {
@@ -247,45 +247,45 @@ export type ChatSyncRequest = {
 };
 
 export type StructuredSyncProvider = {
-  type?: string;
-  model?: string;
+  type?: string | null;
+  model?: string | null;
 };
 
 export type StructuredSyncItem = {
-  title?: string;
-  details?: string;
-  tags?: string[];
+  title?: string | null;
+  details?: string | null;
+  tags?: string[] | null;
 };
 
 export type StructuredSyncAnswer = {
-  summary?: string;
-  items?: StructuredSyncItem[];
-  confidence?: number;
+  summary?: string | null;
+  items?: StructuredSyncItem[] | null;
+  confidence?: number | null;
 };
 
 export type StructuredSyncUsageStats = {
-  promptTokens?: number;
-  completionTokens?: number;
-  totalTokens?: number;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
 };
 
 export type UsageCostDetails = {
-  input?: number;
-  output?: number;
-  total?: number;
-  currency?: string;
+  input?: number | null;
+  output?: number | null;
+  total?: number | null;
+  currency?: string | null;
 };
 
 export type StructuredSyncResponse = {
   requestId?: string;
   status?: string;
-  provider?: StructuredSyncProvider;
-  answer?: StructuredSyncAnswer;
-  tools?: string[];
-  usage?: StructuredSyncUsageStats;
-  cost?: UsageCostDetails;
-  latencyMs?: number;
-  timestamp?: string;
+  provider?: StructuredSyncProvider | null;
+  answer?: StructuredSyncAnswer | null;
+  tools?: string[] | null;
+  usage?: StructuredSyncUsageStats | null;
+  cost?: UsageCostDetails | null;
+  latencyMs?: number | null;
+  timestamp?: string | null;
 };
 
 const StructuredSyncProviderSchema = z.object({
@@ -347,12 +347,13 @@ const ChatSyncResponseSchema = z.object({
 });
 
 type ProviderSchemaInput = z.infer<typeof StructuredSyncProviderSchema>;
+type StructuredSyncResponseInput = z.infer<typeof StructuredSyncResponseSchema>;
 type UsageSchemaInput = z.infer<typeof StructuredSyncUsageStatsSchema> | null | undefined;
 type CostSchemaInput = z.infer<typeof UsageCostDetailsSchema> | null | undefined;
 type AnswerSchemaInput = z.infer<typeof StructuredSyncAnswerSchema> | null | undefined;
 
 function normalizeStructuredProvider(
-  provider?: ProviderSchemaInput,
+  provider?: ProviderSchemaInput | StructuredSyncProvider | null,
 ): StructuredSyncProvider | undefined {
   if (!provider) {
     return undefined;
@@ -405,7 +406,7 @@ function normalizeCost(cost?: CostSchemaInput): UsageCostDetails | undefined {
 }
 
 function normalizeStructuredResponse(
-  response?: StructuredSyncResponse | null,
+  response?: StructuredSyncResponseInput | StructuredSyncResponse | null,
 ): StructuredSyncResponse | undefined {
   if (!response) {
     return undefined;
@@ -446,7 +447,7 @@ function normalizeStructuredResponse(
 }
 
 function normalizeStructuredAnswer(
-  answer?: AnswerSchemaInput,
+  answer?: AnswerSchemaInput | StructuredSyncAnswer | null,
 ): StructuredSyncAnswer | undefined {
   if (!answer) {
     return undefined;

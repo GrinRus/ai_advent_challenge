@@ -209,7 +209,7 @@ const formatConfidence = (value?: number | null) => {
   return `${Math.round(value * 100)}%`;
 };
 
-const formatTimestamp = (iso?: string) => {
+const formatTimestamp = (iso?: string | null) => {
   if (!iso) {
     return '—';
   }
@@ -257,7 +257,7 @@ const formatPricePer1K = (value?: number | null, currency = 'USD') => {
   return `$${formatted}${currency && currency !== 'USD' ? ` ${currency}` : ''}`;
 };
 
-const formatProviderType = (type?: string) => {
+const formatProviderType = (type?: string | null) => {
   if (!type) {
     return '—';
   }
