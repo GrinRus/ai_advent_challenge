@@ -7,6 +7,7 @@ import com.aiadvent.backend.flow.api.AgentDefinitionStatusRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionSummaryResponse;
 import com.aiadvent.backend.flow.api.AgentVersionPublishRequest;
 import com.aiadvent.backend.flow.api.AgentVersionRequest;
+import com.aiadvent.backend.flow.api.AgentVersionUpdateRequest;
 import com.aiadvent.backend.flow.api.AgentVersionResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -79,11 +80,24 @@ public class AgentDefinitionController {
         .collect(Collectors.toList());
   }
 
+  @GetMapping("/versions/{id}")
+  public AgentVersionResponse getVersion(@PathVariable UUID id) {
+    AgentVersion version = agentCatalogService.getVersion(id);
+    return toVersionResponse(version);
+  }
+
   @PostMapping("/definitions/{id}/versions")
   @ResponseStatus(HttpStatus.CREATED)
   public AgentVersionResponse createVersion(
       @PathVariable UUID id, @RequestBody AgentVersionRequest request) {
     AgentVersion version = agentCatalogService.createVersion(id, request);
+    return toVersionResponse(version);
+  }
+
+  @PutMapping("/versions/{id}")
+  public AgentVersionResponse updateVersion(
+      @PathVariable UUID id, @RequestBody AgentVersionUpdateRequest request) {
+    AgentVersion version = agentCatalogService.updateVersion(id, request);
     return toVersionResponse(version);
   }
 

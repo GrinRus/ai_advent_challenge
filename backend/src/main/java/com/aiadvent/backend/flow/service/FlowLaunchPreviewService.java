@@ -1,8 +1,8 @@
 package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
-import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponse;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponse;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
@@ -44,7 +44,7 @@ public class FlowLaunchPreviewService {
   }
 
   @Transactional(readOnly = true)
-  public FlowLaunchPreviewResponse preview(UUID definitionId) {
+  public FlowLaunchPreviewPayload preview(UUID definitionId) {
     FlowDefinition definition = flowDefinitionService.getActivePublishedDefinition(definitionId);
     FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
 
@@ -73,11 +73,12 @@ public class FlowLaunchPreviewService {
       totalAccumulator.add(estimate);
     }
 
-    return new FlowLaunchPreviewResponse(
+    return new FlowLaunchPreviewPayload(
         definition.getId(),
         definition.getName(),
         definition.getVersion(),
         definition.getDescription(),
+        definition.getDefinition(),
         document.startStepId(),
         List.copyOf(steps),
         totalAccumulator.toEstimate());

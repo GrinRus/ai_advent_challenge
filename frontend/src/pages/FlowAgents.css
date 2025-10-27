@@ -365,6 +365,23 @@
   gap: 0.35rem;
 }
 
+.tool-binding-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.5rem;
+}
+
+.tool-binding-json {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.tool-binding-json textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
 .flow-agents__json-hint {
   color: #677185;
   font-size: 0.85rem;

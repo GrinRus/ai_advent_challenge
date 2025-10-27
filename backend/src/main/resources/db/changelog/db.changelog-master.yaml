@@ -1621,3 +1621,44 @@ databaseChangeLog:
                 now(),
                 'seed'
               FROM openai_agent, researcher_agent;
+  - changeSet:
+      id: 0095-add-blueprint-schema-version-columns
+      author: ai-advent
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: flow_definition
+            columns:
+              - column:
+                  name: blueprint_schema_version
+                  type: INT
+                  defaultValueNumeric: 1
+        - addColumn:
+            tableName: flow_definition_history
+            columns:
+              - column:
+                  name: blueprint_schema_version
+                  type: INT
+                  defaultValueNumeric: 1
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              UPDATE flow_definition
+              SET blueprint_schema_version =
+                COALESCE((definition ->> 'schemaVersion')::INT, 1);
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              UPDATE flow_definition_history
+              SET blueprint_schema_version =
+                COALESCE((definition ->> 'schemaVersion')::INT, 1);
+        - addNotNullConstraint:
+            tableName: flow_definition
+            columnName: blueprint_schema_version
+            columnDataType: INT
+        - addNotNullConstraint:
+            tableName: flow_definition_history
+            columnName: blueprint_schema_version
+            columnDataType: INT

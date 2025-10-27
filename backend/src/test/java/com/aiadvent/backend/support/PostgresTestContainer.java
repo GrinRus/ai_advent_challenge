@@ -25,6 +25,8 @@ public abstract class PostgresTestContainer {
     registry.add("spring.ai.openai.api-key", () -> "test-key");
     registry.add("spring.ai.openai.base-url", () -> "https://example.invalid");
     registry.add("spring.ai.openai.chat.options.model", () -> "gpt-4o-mini");
+    registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
+    registry.add("spring.datasource.hikari.minimum-idle", () -> "1");
     registry.add("app.flow.worker.enabled", () -> "false");
     registry.add("app.chat.token-usage.lightweight-mode", () -> "true");
   }

@@ -1,98 +1,281 @@
 import {
   FlowDefinitionDraftSchema,
   FlowDefinitionSchema,
-  parseMemoryReads,
-  parseMemoryWrites,
-  parseTransitions,
+  MemoryWriteModeSchema,
 } from './types/flowDefinition';
 import type {
   FlowDefinitionDraft,
   FlowDefinitionDocument,
   FlowStepDefinition,
   FlowStepOverrides,
+  MemoryWriteMode,
 } from './types/flowDefinition';
+
+export type FlowLaunchParameterForm = {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  description: string;
+  schemaText: string;
+  defaultValueText: string;
+};
+
+export type FlowSharedChannelForm = {
+  id: string;
+  retentionVersions: string;
+  retentionDays: string;
+};
+
+export type FlowMemoryReadForm = {
+  channel: string;
+  limit: string;
+};
+
+export type FlowMemoryWriteForm = {
+  channel: string;
+  mode: MemoryWriteMode;
+  payloadText: string;
+};
+
+export type FlowStepOverrideForm = {
+  temperature: string;
+  topP: string;
+  maxTokens: string;
+};
+
+export type FlowStepInteractionForm = {
+  type: string;
+  title: string;
+  description: string;
+  payloadSchemaText: string;
+  suggestedActionsText: string;
+  dueInMinutes: string;
+};
+
+export type FlowStepTransitionsForm = {
+  onSuccessNext: string;
+  onSuccessComplete: boolean;
+  onFailureNext: string;
+  onFailureFail: boolean;
+};
 
 export type FlowStepForm = {
   id: string;
   name: string;
   agentVersionId: string;
   prompt: string;
-  temperature?: number | null;
-  topP?: number | null;
-  maxTokensOverride?: number | null;
-  memoryReadsText: string;
-  memoryWritesText: string;
-  transitionsText: string;
-  maxAttempts: number;
+  overrides: FlowStepOverrideForm;
+  interaction: FlowStepInteractionForm;
+  memoryReads: FlowMemoryReadForm[];
+  memoryWrites: FlowMemoryWriteForm[];
+  transitions: FlowStepTransitionsForm;
+  maxAttempts: string;
 };
 
 export type FlowDefinitionFormState = {
   title: string;
+  description: string;
+  tags: string;
   startStepId: string;
   syncOnly: boolean;
+  launchParameters: FlowLaunchParameterForm[];
+  sharedChannels: FlowSharedChannelForm[];
   steps: FlowStepForm[];
   draft: FlowDefinitionDraft;
 };
 
 const cloneDraft = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? {}));
 
-const toPrettyJson = (value: unknown): string => {
-  if (value == null) {
-    return '';
-  }
-  return JSON.stringify(value, null, 2);
-};
-
 const emptyDraft: FlowDefinitionDraft = FlowDefinitionDraftSchema.parse({
   title: '',
   startStepId: '',
   syncOnly: true,
   steps: [],
+  metadata: {},
+});
+
+export const createEmptyLaunchParameterForm = (): FlowLaunchParameterForm => ({
+  name: '',
+  label: '',
+  type: 'string',
+  required: true,
+  description: '',
+  schemaText: '',
+  defaultValueText: '',
+});
+
+export const createEmptySharedChannelForm = (): FlowSharedChannelForm => ({
+  id: '',
+  retentionVersions: '',
+  retentionDays: '',
+});
+
+export const createEmptyStepForm = (): FlowStepForm => ({
+  id: '',
+  name: '',
+  agentVersionId: '',
+  prompt: '',
+  overrides: {
+    temperature: '',
+    topP: '',
+    maxTokens: '',
+  },
+  interaction: {
+    type: '',
+    title: '',
+    description: '',
+    payloadSchemaText: '',
+    suggestedActionsText: '',
+    dueInMinutes: '',
+  },
+  memoryReads: [],
+  memoryWrites: [],
+  transitions: {
+    onSuccessNext: '',
+    onSuccessComplete: false,
+    onFailureNext: '',
+    onFailureFail: false,
+  },
+  maxAttempts: '1',
 });
 
 export const createEmptyFlowDefinitionForm = (): FlowDefinitionFormState => ({
   title: '',
+  description: '',
+  tags: '',
   startStepId: '',
   syncOnly: true,
+  launchParameters: [],
+  sharedChannels: [],
   steps: [],
   draft: cloneDraft(emptyDraft),
 });
 
 export function parseFlowDefinition(definition: unknown): FlowDefinitionFormState {
-  let draft: FlowDefinitionDraft;
-  const parsed = FlowDefinitionDraftSchema.safeParse(definition);
-  if (parsed.success) {
-    draft = cloneDraft(parsed.data);
-  } else {
-    draft = cloneDraft(emptyDraft);
-  }
+  const parsedDraft = FlowDefinitionDraftSchema.safeParse(definition);
+  const draft: FlowDefinitionDraft = parsedDraft.success
+    ? cloneDraft(parsedDraft.data)
+    : cloneDraft(emptyDraft);
 
-  const steps: FlowStepForm[] = (draft.steps ?? []).map((step) => {
-    const overrides = step.overrides ?? {};
-    return {
-      id: typeof step.id === 'string' ? step.id : '',
-      name: typeof step.name === 'string' ? step.name : '',
-      agentVersionId: typeof step.agentVersionId === 'string' ? step.agentVersionId : '',
-      prompt: typeof step.prompt === 'string' ? step.prompt : '',
+  const metadata = (draft as any).metadata ?? {};
+  const launchParameters: FlowLaunchParameterForm[] =
+    Array.isArray((draft as any).launchParameters) &&
+    (draft as any).launchParameters.every((param: unknown) => typeof param === 'object')
+      ? (draft as any).launchParameters.map(
+          (param: any): FlowLaunchParameterForm => ({
+            name: param?.name ?? '',
+            label: param?.label ?? '',
+            type: param?.type ?? 'string',
+            required: Boolean(param?.required),
+            description: param?.description ?? '',
+            schemaText:
+              param?.schema !== undefined ? JSON.stringify(param.schema, null, 2) : '',
+            defaultValueText:
+              param?.defaultValue !== undefined
+                ? JSON.stringify(param.defaultValue, null, 2)
+                : '',
+          }),
+        )
+      : [];
+
+  const sharedChannels: FlowSharedChannelForm[] =
+    (draft as any)?.memory?.sharedChannels instanceof Array
+      ? (draft as any).memory.sharedChannels.map(
+          (channel: any): FlowSharedChannelForm => ({
+            id: channel?.id ?? '',
+            retentionVersions:
+              channel?.retentionVersions !== undefined
+                ? String(channel.retentionVersions)
+                : '',
+            retentionDays:
+              channel?.retentionDays !== undefined
+                ? String(channel.retentionDays)
+                : '',
+          }),
+        )
+      : [];
+
+  const steps: FlowStepForm[] = (draft.steps ?? []).map((step) => ({
+    id: typeof step.id === 'string' ? step.id : '',
+    name: typeof step.name === 'string' ? step.name : '',
+    agentVersionId: typeof step.agentVersionId === 'string' ? step.agentVersionId : '',
+    prompt: typeof step.prompt === 'string' ? step.prompt : '',
+    overrides: {
       temperature:
-        typeof overrides.temperature === 'number' ? overrides.temperature : undefined,
-      topP: typeof overrides.topP === 'number' ? overrides.topP : undefined,
-      maxTokensOverride:
-        typeof overrides.maxTokens === 'number' ? overrides.maxTokens : undefined,
-      memoryReadsText: toPrettyJson(step.memoryReads),
-      memoryWritesText: toPrettyJson(step.memoryWrites),
-      transitionsText: toPrettyJson(step.transitions),
-      maxAttempts:
-        typeof step.maxAttempts === 'number' && Number.isFinite(step.maxAttempts)
-          ? Math.max(1, Math.trunc(step.maxAttempts))
-          : 1,
-    };
-  });
+        step.overrides && typeof step.overrides.temperature === 'number'
+          ? String(step.overrides.temperature)
+          : '',
+      topP:
+        step.overrides && typeof step.overrides.topP === 'number'
+          ? String(step.overrides.topP)
+          : '',
+      maxTokens:
+        step.overrides && typeof step.overrides.maxTokens === 'number'
+          ? String(step.overrides.maxTokens)
+          : '',
+    },
+    interaction: {
+      type: step.interaction?.type ?? '',
+      title: step.interaction?.title ?? '',
+      description: step.interaction?.description ?? '',
+      payloadSchemaText:
+        step.interaction?.payloadSchema !== undefined
+          ? JSON.stringify(step.interaction.payloadSchema, null, 2)
+          : '',
+      suggestedActionsText:
+        step.interaction?.suggestedActions !== undefined
+          ? JSON.stringify(step.interaction.suggestedActions, null, 2)
+          : '',
+      dueInMinutes:
+        step.interaction?.dueInMinutes !== undefined
+          ? String(step.interaction.dueInMinutes)
+          : '',
+    },
+    memoryReads: Array.isArray(step.memoryReads)
+      ? step.memoryReads.map(
+          (read): FlowMemoryReadForm => ({
+            channel: read?.channel ?? '',
+            limit: read?.limit !== undefined ? String(read.limit) : '',
+          }),
+        )
+      : [],
+    memoryWrites: Array.isArray(step.memoryWrites)
+      ? step.memoryWrites.map(
+          (write): FlowMemoryWriteForm => ({
+            channel: write?.channel ?? '',
+            mode: (write?.mode as MemoryWriteMode | undefined) ?? 'AGENT_OUTPUT',
+            payloadText:
+              write?.payload !== undefined ? JSON.stringify(write.payload, null, 2) : '',
+          }),
+        )
+      : [],
+    transitions: {
+      onSuccessNext: step.transitions?.onSuccess?.next ?? '',
+      onSuccessComplete: Boolean(step.transitions?.onSuccess?.complete),
+      onFailureNext: step.transitions?.onFailure?.next ?? '',
+      onFailureFail: Boolean(step.transitions?.onFailure?.fail),
+    },
+    maxAttempts:
+      step.maxAttempts !== undefined ? String(step.maxAttempts) : '1',
+  }));
+
+  const tags =
+    Array.isArray(metadata.tags) && metadata.tags.length
+      ? metadata.tags.join(', ')
+      : metadata.tags ?? '';
 
   return {
-    title: typeof draft.title === 'string' ? draft.title : '',
-    startStepId: typeof draft.startStepId === 'string' ? draft.startStepId : '',
+    title: metadata.title ?? draft.title ?? '',
+    description: metadata.description ?? '',
+    tags,
+    startStepId:
+      typeof draft.startStepId === 'string' && draft.startStepId
+        ? draft.startStepId
+        : steps[0]?.id ?? '',
     syncOnly: draft.syncOnly !== false,
+    launchParameters,
+    sharedChannels,
     steps,
     draft,
   };
@@ -108,28 +291,202 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
   draft.startStepId = form.startStepId || form.steps[0]?.id || '';
   draft.syncOnly = form.syncOnly !== false;
 
-  draft.steps = form.steps.map<FlowStepDefinition>((step) => {
+  const metadata = {
+    ...(draft as any).metadata,
+    title: form.title || undefined,
+    description: form.description || undefined,
+    tags:
+      form.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean) || undefined,
+  };
+  (draft as any).metadata = metadata;
+
+  const normalizeNumber = (label: string, value: string, opts?: { integer?: boolean }) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const numberValue = Number(trimmed);
+    if (!Number.isFinite(numberValue)) {
+      throw new Error(`${label}: некорректное число`);
+    }
+    if (opts?.integer && !Number.isInteger(numberValue)) {
+      throw new Error(`${label}: значение должно быть целым`);
+    }
+    return numberValue;
+  };
+
+  const parseJsonField = (label: string, value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'некорректный JSON';
+      throw new Error(`${label}: ${message}`);
+    }
+  };
+
+  (draft as any).launchParameters = form.launchParameters.map((param, index) => ({
+    name: param.name.trim(),
+    label: param.label.trim() || undefined,
+    type: param.type.trim() || 'string',
+    required: Boolean(param.required),
+    description: param.description.trim() || undefined,
+    schema: parseJsonField(`Launch parameter #${index + 1} schema`, param.schemaText),
+    defaultValue: parseJsonField(
+      `Launch parameter #${index + 1} default value`,
+      param.defaultValueText,
+    ),
+  }));
+
+  (draft as any).memory =
+    form.sharedChannels.length > 0
+      ? {
+          sharedChannels: form.sharedChannels.map((channel, index) => ({
+            id: channel.id.trim(),
+            retentionVersions: normalizeNumber(
+              `Shared channel #${index + 1} retentionVersions`,
+              channel.retentionVersions,
+              { integer: true },
+            ),
+            retentionDays: normalizeNumber(
+              `Shared channel #${index + 1} retentionDays`,
+              channel.retentionDays,
+              { integer: true },
+            ),
+          })),
+        }
+      : undefined;
+
+  draft.steps = form.steps.map<FlowStepDefinition>((step, index) => {
     if (!step.id.trim()) {
-      throw new Error('У каждого шага должен быть заполнен идентификатор');
+      throw new Error(`Шаг #${index + 1}: укажите идентификатор`);
     }
     if (!step.agentVersionId.trim()) {
-      throw new Error(`Для шага "${step.id}" необходимо выбрать опубликованного агента`);
+      throw new Error(`Шаг "${step.id}": необходимо выбрать опубликованного агента`);
     }
 
     const overrides: FlowStepOverrides = {};
-    if (typeof step.temperature === 'number') {
-      overrides.temperature = step.temperature;
-    }
-    if (typeof step.topP === 'number') {
-      overrides.topP = step.topP;
-    }
-    if (typeof step.maxTokensOverride === 'number') {
-      overrides.maxTokens = step.maxTokensOverride;
+    const temperature = normalizeNumber(
+      `Шаг "${step.id}" temperature`,
+      step.overrides.temperature,
+    );
+    if (temperature !== undefined) {
+      overrides.temperature = temperature;
     }
 
-    const memoryReads = parseMemoryReads('Memory Reads', step.memoryReadsText);
-    const memoryWrites = parseMemoryWrites('Memory Writes', step.memoryWritesText);
-    const transitions = parseTransitions('Transitions', step.transitionsText);
+    const topP = normalizeNumber(`Шаг "${step.id}" topP`, step.overrides.topP);
+    if (topP !== undefined) {
+      overrides.topP = topP;
+    }
+
+    const maxTokens = normalizeNumber(
+      `Шаг "${step.id}" maxTokens`,
+      step.overrides.maxTokens,
+      { integer: true },
+    );
+    if (maxTokens !== undefined) {
+      overrides.maxTokens = maxTokens;
+    }
+
+    const memoryReads = step.memoryReads
+      .map((read, readIndex) => {
+        if (!read.channel.trim() && !read.limit.trim()) {
+          return undefined;
+        }
+        if (!read.channel.trim()) {
+          throw new Error(`Шаг "${step.id}" memory read #${readIndex + 1}: укажите канал`);
+        }
+        const limit = normalizeNumber(
+          `Шаг "${step.id}" memory read #${readIndex + 1} limit`,
+          read.limit,
+          { integer: true },
+        );
+        if (limit === undefined) {
+          throw new Error(
+            `Шаг "${step.id}" memory read #${readIndex + 1}: укажите целое положительное число`,
+          );
+        }
+        return {
+          channel: read.channel.trim(),
+          limit,
+        };
+      })
+      .filter(Boolean) as Array<{ channel: string; limit: number }>;
+
+    const memoryWrites = step.memoryWrites
+      .map((write, writeIndex) => {
+        if (!write.channel.trim() && !write.payloadText.trim()) {
+          return undefined;
+        }
+        if (!write.channel.trim()) {
+          throw new Error(`Шаг "${step.id}" memory write #${writeIndex + 1}: укажите канал`);
+        }
+        const mode = MemoryWriteModeSchema.parse(write.mode ?? 'AGENT_OUTPUT');
+        return {
+          channel: write.channel.trim(),
+          mode,
+          payload: parseJsonField(
+            `Шаг "${step.id}" memory write #${writeIndex + 1} payload`,
+            write.payloadText,
+          ),
+        };
+      })
+      .filter(Boolean) as Array<{ channel: string; mode: MemoryWriteMode; payload?: unknown }>;
+
+    const interaction =
+      step.interaction.type ||
+      step.interaction.title ||
+      step.interaction.description ||
+      step.interaction.payloadSchemaText ||
+      step.interaction.suggestedActionsText ||
+      step.interaction.dueInMinutes
+        ? {
+            type: step.interaction.type || undefined,
+            title: step.interaction.title || undefined,
+            description: step.interaction.description || undefined,
+            payloadSchema: parseJsonField(
+              `Шаг "${step.id}" interaction payloadSchema`,
+              step.interaction.payloadSchemaText,
+            ),
+            suggestedActions: parseJsonField(
+              `Шаг "${step.id}" interaction suggestedActions`,
+              step.interaction.suggestedActionsText,
+            ),
+            dueInMinutes: normalizeNumber(
+              `Шаг "${step.id}" interaction dueInMinutes`,
+              step.interaction.dueInMinutes,
+              { integer: true },
+            ),
+          }
+        : undefined;
+
+    const transitions = {
+      onSuccess:
+        step.transitions.onSuccessNext || step.transitions.onSuccessComplete
+          ? {
+              next: step.transitions.onSuccessNext || undefined,
+              complete: step.transitions.onSuccessComplete || undefined,
+            }
+          : undefined,
+      onFailure:
+        step.transitions.onFailureNext || step.transitions.onFailureFail
+          ? {
+              next: step.transitions.onFailureNext || undefined,
+              fail: step.transitions.onFailureFail || undefined,
+            }
+          : undefined,
+    };
+
+    const maxAttempts =
+      normalizeNumber(`Шаг "${step.id}" maxAttempts`, step.maxAttempts, {
+        integer: true,
+      }) ?? 1;
 
     const definition: FlowStepDefinition = {
       id: step.id.trim(),
@@ -137,11 +494,13 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
       agentVersionId: step.agentVersionId.trim(),
       prompt: step.prompt,
       overrides: Object.keys(overrides).length ? overrides : undefined,
-      memoryReads: memoryReads ?? [],
-      memoryWrites: memoryWrites ?? [],
-      transitions: transitions ?? {},
-      maxAttempts: Math.max(1, Math.trunc(step.maxAttempts)),
+      interaction,
+      memoryReads,
+      memoryWrites,
+      transitions,
+      maxAttempts,
     };
+
     return definition;
   });
 

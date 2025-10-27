@@ -40,6 +40,9 @@ public class FlowDefinitionHistory {
   @Column(name = "definition", nullable = false, columnDefinition = "jsonb")
   private FlowBlueprint definition;
 
+  @Column(name = "blueprint_schema_version", nullable = false)
+  private int blueprintSchemaVersion;
+
   @Column(name = "change_notes")
   private String changeNotes;
 
@@ -56,12 +59,14 @@ public class FlowDefinitionHistory {
       int version,
       FlowDefinitionStatus status,
       FlowBlueprint definition,
+      int blueprintSchemaVersion,
       String changeNotes,
       String createdBy) {
     this.flowDefinition = flowDefinition;
     this.version = version;
     this.status = status;
     this.definition = definition;
+    this.blueprintSchemaVersion = blueprintSchemaVersion;
     this.changeNotes = changeNotes;
     this.createdBy = createdBy;
   }
@@ -89,6 +94,20 @@ public class FlowDefinitionHistory {
 
   public FlowBlueprint getDefinition() {
     return definition;
+  }
+
+  public void setDefinition(FlowBlueprint definition) {
+    if (definition == null) {
+      throw new IllegalArgumentException("Flow blueprint must not be null");
+    }
+    this.definition = definition;
+    this.blueprintSchemaVersion = definition.schemaVersion() != null && definition.schemaVersion() > 0
+        ? definition.schemaVersion()
+        : 1;
+  }
+
+  public int getBlueprintSchemaVersion() {
+    return blueprintSchemaVersion;
   }
 
   public String getChangeNotes() {

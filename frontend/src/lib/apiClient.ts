@@ -15,7 +15,8 @@ import type {
   AgentCapability,
   AgentDefinitionDetails,
   AgentDefinitionSummary,
-  AgentDefaultOptions,
+  AgentInvocationOptionsPayload,
+  AgentInvocationOptionsType,
   AgentVersion,
 } from './types/agent';
 import {
@@ -56,7 +57,7 @@ export type {
   AgentCapabilityPayload,
   AgentDefinitionDetails,
   AgentDefinitionSummary,
-  AgentDefaultOptions,
+  AgentInvocationOptionsType,
   AgentVersion,
 } from './types/agent';
 export type {
@@ -199,9 +200,7 @@ export type AgentVersionPayload = {
   providerId: string;
   modelId: string;
   systemPrompt: string;
-  defaultOptions?: AgentDefaultOptions;
-  toolBindings?: JsonValue;
-  costProfile?: JsonValue;
+  invocationOptions: AgentInvocationOptionsPayload;
   syncOnly?: boolean;
   maxTokens?: number;
   createdBy: string;
@@ -209,6 +208,15 @@ export type AgentVersionPayload = {
 };
 
 export type AgentVersionPublishPayload = {
+  updatedBy: string;
+  capabilities?: AgentCapability[];
+};
+
+export type AgentVersionUpdatePayload = {
+  systemPrompt: string;
+  invocationOptions: AgentInvocationOptionsPayload;
+  syncOnly?: boolean;
+  maxTokens?: number;
   updatedBy: string;
   capabilities?: AgentCapability[];
 };
@@ -692,6 +700,27 @@ export async function createAgentVersion(
     response,
     AgentVersionSchema,
     'Не удалось создать версию агента',
+  );
+  invalidateAgentCatalogCache();
+  return data;
+}
+
+export async function updateAgentVersion(
+  versionId: string,
+  payload: AgentVersionUpdatePayload,
+): Promise<AgentVersionResponse> {
+  const response = await fetch(`${API_BASE_URL}/agents/versions/${versionId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseJsonResponse(
+    response,
+    AgentVersionSchema,
+    'Не удалось обновить версию агента',
   );
   invalidateAgentCatalogCache();
   return data;

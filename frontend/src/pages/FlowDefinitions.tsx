@@ -1,24 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
-  FlowDefinitionSummary,
   FlowDefinitionDetails,
   FlowDefinitionHistoryEntry,
+  FlowDefinitionSummary,
 } from '../lib/apiClient';
 import {
-  fetchFlowDefinitions,
+  createFlowDefinition,
+  fetchAgentCatalog,
   fetchFlowDefinition,
   fetchFlowDefinitionHistory,
-  createFlowDefinition,
-  updateFlowDefinition,
+  fetchFlowDefinitions,
   publishFlowDefinition,
-  fetchAgentCatalog,
+  updateFlowDefinition,
 } from '../lib/apiClient';
-import type { FlowDefinitionFormState, FlowStepForm } from '../lib/flowDefinitionForm';
+import type {
+  FlowDefinitionFormState,
+  FlowLaunchParameterForm,
+  FlowSharedChannelForm,
+  FlowStepForm,
+} from '../lib/flowDefinitionForm';
 import {
   buildFlowDefinition,
   createEmptyFlowDefinitionForm,
+  createEmptyLaunchParameterForm,
+  createEmptySharedChannelForm,
+  createEmptyStepForm,
   parseFlowDefinition,
 } from '../lib/flowDefinitionForm';
+import { MemoryWriteModeSchema } from '../lib/types/flowDefinition';
+import { FlowInteractionTypeSchema } from '../lib/types/flowInteraction';
 import './FlowDefinitions.css';
 
 type AgentOption = {
@@ -31,19 +41,10 @@ type AgentOption = {
   systemPrompt?: string;
 };
 
-const createEmptyStep = (): FlowStepForm => ({
-  id: '',
-  name: '',
-  agentVersionId: '',
-  prompt: '',
-  temperature: null,
-  topP: null,
-  maxTokensOverride: null,
-  memoryReadsText: '',
-  memoryWritesText: '',
-  transitionsText: '',
-  maxAttempts: 1,
-});
+type ApplyFormUpdate = (updater: (prev: FlowDefinitionFormState) => FlowDefinitionFormState) => void;
+
+const interactionOptions = ['', ...FlowInteractionTypeSchema.options];
+const memoryWriteModes = MemoryWriteModeSchema.options;
 
 const FlowDefinitions = () => {
   const [definitions, setDefinitions] = useState<FlowDefinitionSummary[]>([]);
@@ -51,6 +52,7 @@ const FlowDefinitions = () => {
   const [details, setDetails] = useState<FlowDefinitionDetails | null>(null);
   const [history, setHistory] = useState<FlowDefinitionHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isLoadingDefinition, setIsLoadingDefinition] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,10 +60,6 @@ const FlowDefinitions = () => {
 
   const [formState, setFormState] = useState<FlowDefinitionFormState | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [editedDescription, setEditedDescription] = useState('');
-  const [updatedBy, setUpdatedBy] = useState('');
-  const [changeNotes, setChangeNotes] = useState('');
 
   const [agentOptions, setAgentOptions] = useState<AgentOption[]>([]);
   const [agentLoading, setAgentLoading] = useState(false);
@@ -80,6 +78,17 @@ const FlowDefinitions = () => {
     () => new Map(agentOptions.map((option) => [option.versionId, option])),
     [agentOptions],
   );
+
+  const updateExistingForm: ApplyFormUpdate = useCallback(
+    (updater) => {
+      setFormState((prev) => (prev ? updater(prev) : prev));
+    },
+    [],
+  );
+
+  const updateNewForm: ApplyFormUpdate = (updater) => {
+    setNewDefinitionForm((prev) => updater(prev));
+  };
 
   const loadAgents = useCallback(async () => {
     setAgentLoading(true);
@@ -155,6 +164,7 @@ const FlowDefinitions = () => {
     } else {
       setDetails(null);
       setHistory([]);
+      setFormState(null);
     }
   }, [selectedDefinitionId, loadDefinition]);
 
@@ -162,50 +172,76 @@ const FlowDefinitions = () => {
     if (!details) {
       setFormState(null);
       setSelectedStepIndex(0);
-      setEditedDescription('');
-      setUpdatedBy('');
-      setChangeNotes('');
       return;
     }
-
     const parsed = parseFlowDefinition(details.definition);
     if (!parsed.startStepId && parsed.steps.length) {
       parsed.startStepId = parsed.steps[0].id;
     }
     setFormState(parsed);
     setSelectedStepIndex(0);
-    setEditedDescription(details.description ?? '');
-    setUpdatedBy(details.updatedBy ?? '');
-    setChangeNotes('');
   }, [details]);
 
-  const selectedStep = formState?.steps[selectedStepIndex];
+  const addLaunchParameter = (apply: ApplyFormUpdate) =>
+    apply((prev) => ({
+      ...prev,
+      launchParameters: [...prev.launchParameters, createEmptyLaunchParameterForm()],
+    }));
 
-  const updateStep = (index: number, updates: Partial<FlowStepForm>) => {
-    setFormState((prev) => {
-      if (!prev) {
-        return prev;
-      }
-      const steps = [...prev.steps];
-      const current = steps[index];
-      if (!current) {
-        return prev;
-      }
-      const nextStep = { ...current, ...updates };
-
-      if (updates.id && prev.startStepId === current.id) {
-        prev.startStepId = updates.id;
-      }
-      steps[index] = nextStep;
-      return { ...prev, steps: steps };
+  const updateLaunchParameter = (
+    apply: ApplyFormUpdate,
+    index: number,
+    patch: Partial<FlowLaunchParameterForm>,
+  ) =>
+    apply((prev) => {
+      const launchParameters = [...prev.launchParameters];
+      launchParameters[index] = { ...launchParameters[index], ...patch };
+      return { ...prev, launchParameters };
     });
+
+  const removeLaunchParameter = (apply: ApplyFormUpdate, index: number) =>
+    apply((prev) => ({
+      ...prev,
+      launchParameters: prev.launchParameters.filter((_, idx) => idx !== index),
+    }));
+
+  const addSharedChannel = (apply: ApplyFormUpdate) =>
+    apply((prev) => ({
+      ...prev,
+      sharedChannels: [...prev.sharedChannels, createEmptySharedChannelForm()],
+    }));
+
+  const updateSharedChannel = (
+    apply: ApplyFormUpdate,
+    index: number,
+    patch: Partial<FlowSharedChannelForm>,
+  ) =>
+    apply((prev) => {
+      const sharedChannels = [...prev.sharedChannels];
+      sharedChannels[index] = { ...sharedChannels[index], ...patch };
+      return { ...prev, sharedChannels };
+    });
+
+  const removeSharedChannel = (apply: ApplyFormUpdate, index: number) =>
+    apply((prev) => ({
+      ...prev,
+      sharedChannels: prev.sharedChannels.filter((_, idx) => idx !== index),
+    }));
+
+  const addStep = () => {
+    updateExistingForm((prev) => {
+      const steps = [...prev.steps, createEmptyStepForm()];
+      return {
+        ...prev,
+        steps,
+        startStepId: prev.startStepId || steps[0]?.id || '',
+      };
+    });
+    setSelectedStepIndex(formState?.steps.length ?? 0);
   };
 
   const removeStep = (index: number) => {
-    setFormState((prev) => {
-      if (!prev) {
-        return prev;
-      }
+    updateExistingForm((prev) => {
       const steps = prev.steps.filter((_, idx) => idx !== index);
       const nextStartId =
         steps.find((step) => step.id === prev.startStepId)?.id ?? steps[0]?.id ?? '';
@@ -218,24 +254,8 @@ const FlowDefinitions = () => {
     setSelectedStepIndex((prevIdx) => Math.max(0, prevIdx - 1));
   };
 
-  const addStep = () => {
-    setFormState((prev) => {
-      const base = prev ?? createEmptyFlowDefinitionForm();
-      const steps = [...base.steps, createEmptyStep()];
-      return {
-        ...base,
-        steps,
-        startStepId: base.startStepId || steps[0]?.id || '',
-      };
-    });
-    setSelectedStepIndex(formState?.steps.length ?? 0);
-  };
-
   const moveStep = (index: number, delta: number) => {
-    setFormState((prev) => {
-      if (!prev) {
-        return prev;
-      }
+    updateExistingForm((prev) => {
       const steps = [...prev.steps];
       const targetIndex = index + delta;
       if (targetIndex < 0 || targetIndex >= steps.length) {
@@ -247,22 +267,646 @@ const FlowDefinitions = () => {
     setSelectedStepIndex((prevIdx) => prevIdx + delta);
   };
 
+  const updateStepAt = (
+    apply: ApplyFormUpdate,
+    stepIndex: number,
+    updater: (prev: FlowStepForm) => FlowStepForm,
+  ) =>
+    apply((prev) => {
+      const steps = [...prev.steps];
+      const current = steps[stepIndex];
+      if (!current) {
+        return prev;
+      }
+      const nextStep = updater(current);
+      steps[stepIndex] = nextStep;
+      const startStepId = current.id === prev.startStepId ? nextStep.id || '' : prev.startStepId;
+      return { ...prev, steps, startStepId };
+    });
+
+  const renderLaunchParametersSection = (
+    form: FlowDefinitionFormState,
+    apply: ApplyFormUpdate,
+  ) => (
+    <section className="flow-definitions__block">
+      <div className="flow-definitions__block-header">
+        <h4>Launch parameters</h4>
+        <button type="button" className="ghost" onClick={() => addLaunchParameter(apply)}>
+          Добавить
+        </button>
+      </div>
+      {form.launchParameters.length === 0 ? (
+        <div className="flow-definitions__placeholder">Параметры запуска не заданы</div>
+      ) : (
+        <div className="flow-definitions__grid">
+          {form.launchParameters.map((parameter, index) => (
+            <div key={`launch-${index}`} className="flow-definitions__parameter-card">
+              <div className="flow-definitions__parameter-fields">
+                <label>
+                  Имя
+                  <input
+                    value={parameter.name}
+                    onChange={(event) =>
+                      updateLaunchParameter(apply, index, { name: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Label
+                  <input
+                    value={parameter.label}
+                    onChange={(event) =>
+                      updateLaunchParameter(apply, index, { label: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Тип
+                  <input
+                    value={parameter.type}
+                    onChange={(event) =>
+                      updateLaunchParameter(apply, index, { type: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="flow-definitions__checkbox">
+                  <input
+                    type="checkbox"
+                    checked={parameter.required}
+                    onChange={(event) =>
+                      updateLaunchParameter(apply, index, { required: event.target.checked })
+                    }
+                  />
+                  Обязательный
+                </label>
+              </div>
+              <label>
+                Описание
+                <textarea
+                  value={parameter.description}
+                  onChange={(event) =>
+                    updateLaunchParameter(apply, index, { description: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                JSON Schema
+                <textarea
+                  value={parameter.schemaText}
+                  onChange={(event) =>
+                    updateLaunchParameter(apply, index, { schemaText: event.target.value })
+                  }
+                  placeholder='{"type":"string"}'
+                />
+              </label>
+              <label>
+                Значение по умолчанию (JSON)
+                <textarea
+                  value={parameter.defaultValueText}
+                  onChange={(event) =>
+                    updateLaunchParameter(apply, index, { defaultValueText: event.target.value })
+                  }
+                  placeholder='"Acme"'
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => removeLaunchParameter(apply, index)}
+              >
+                Удалить
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderSharedChannelsSection = (
+    form: FlowDefinitionFormState,
+    apply: ApplyFormUpdate,
+  ) => (
+    <section className="flow-definitions__block">
+      <div className="flow-definitions__block-header">
+        <h4>Shared memory channels</h4>
+        <button type="button" className="ghost" onClick={() => addSharedChannel(apply)}>
+          Добавить
+        </button>
+      </div>
+      {form.sharedChannels.length === 0 ? (
+        <div className="flow-definitions__placeholder">Каналы не настроены</div>
+      ) : (
+        <div className="flow-definitions__grid">
+          {form.sharedChannels.map((channel, index) => (
+            <div key={`shared-${index}`} className="flow-definitions__parameter-card">
+              <label>
+                Канал
+                <input
+                  value={channel.id}
+                  onChange={(event) =>
+                    updateSharedChannel(apply, index, { id: event.target.value })
+                  }
+                  placeholder="shared"
+                />
+              </label>
+              <label>
+                Retention versions
+                <input
+                  type="number"
+                  min="1"
+                  value={channel.retentionVersions}
+                  onChange={(event) =>
+                    updateSharedChannel(apply, index, { retentionVersions: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Retention days
+                <input
+                  type="number"
+                  min="1"
+                  value={channel.retentionDays}
+                  onChange={(event) =>
+                    updateSharedChannel(apply, index, { retentionDays: event.target.value })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => removeSharedChannel(apply, index)}
+              >
+                Удалить
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderStepEditor = (
+    step: FlowStepForm,
+    updateStep: (updater: (prev: FlowStepForm) => FlowStepForm) => void,
+  ) => (
+    <div className="flow-definitions__step-editor">
+      <h5>Редактор шага</h5>
+      <div className="field-grid">
+        <label>
+          Step ID
+          <input
+            value={step.id}
+            onChange={(event) =>
+              updateStep((prev) => ({ ...prev, id: event.target.value }))
+            }
+          />
+        </label>
+        <label>
+          Название
+          <input
+            value={step.name}
+            onChange={(event) =>
+              updateStep((prev) => ({ ...prev, name: event.target.value }))
+            }
+          />
+        </label>
+        <label>
+          Агент
+          <select
+            value={step.agentVersionId}
+            onChange={(event) =>
+              updateStep((prev) => ({ ...prev, agentVersionId: event.target.value }))
+            }
+          >
+            <option value="">Выберите опубликованного агента</option>
+            {agentOptions.map((option) => (
+              <option key={option.versionId} value={option.versionId}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Попытки
+          <input
+            type="number"
+            min="1"
+            value={step.maxAttempts}
+            onChange={(event) =>
+              updateStep((prev) => ({ ...prev, maxAttempts: event.target.value }))
+            }
+          />
+        </label>
+      </div>
+      <label className="full-width">
+        Prompt
+        <textarea
+          value={step.prompt}
+          onChange={(event) =>
+            updateStep((prev) => ({ ...prev, prompt: event.target.value }))
+          }
+        />
+      </label>
+      <div className="field-grid">
+        <label>
+          Temperature
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="2"
+            value={step.overrides.temperature}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                overrides: { ...prev.overrides, temperature: event.target.value },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Top P
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            value={step.overrides.topP}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                overrides: { ...prev.overrides, topP: event.target.value },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Max tokens
+          <input
+            type="number"
+            min="1"
+            value={step.overrides.maxTokens}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                overrides: { ...prev.overrides, maxTokens: event.target.value },
+              }))
+            }
+          />
+        </label>
+      </div>
+      <section className="flow-definitions__sub-block">
+        <div className="flow-definitions__sub-header">
+          <h6>Memory reads</h6>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() =>
+              updateStep((prev) => ({
+                ...prev,
+                memoryReads: [...prev.memoryReads, { channel: '', limit: '' }],
+              }))
+            }
+          >
+            Добавить
+          </button>
+        </div>
+        {step.memoryReads.length === 0 ? (
+          <div className="flow-definitions__placeholder">Чтения не настроены</div>
+        ) : (
+          step.memoryReads.map((read, readIndex) => (
+            <div key={`read-${readIndex}`} className="field-grid">
+              <label>
+                Канал
+                <input
+                  value={read.channel}
+                  onChange={(event) =>
+                    updateStep((prev) => {
+                      const memoryReads = [...prev.memoryReads];
+                      memoryReads[readIndex] = {
+                        ...memoryReads[readIndex],
+                        channel: event.target.value,
+                      };
+                      return { ...prev, memoryReads };
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Limit
+                <input
+                  type="number"
+                  min="1"
+                  value={read.limit}
+                  onChange={(event) =>
+                    updateStep((prev) => {
+                      const memoryReads = [...prev.memoryReads];
+                      memoryReads[readIndex] = {
+                        ...memoryReads[readIndex],
+                        limit: event.target.value,
+                      };
+                      return { ...prev, memoryReads };
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() =>
+                  updateStep((prev) => ({
+                    ...prev,
+                    memoryReads: prev.memoryReads.filter((_, idx) => idx !== readIndex),
+                  }))
+                }
+              >
+                Удалить
+              </button>
+            </div>
+          ))
+        )}
+      </section>
+      <section className="flow-definitions__sub-block">
+        <div className="flow-definitions__sub-header">
+          <h6>Memory writes</h6>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() =>
+              updateStep((prev) => ({
+                ...prev,
+                memoryWrites: [
+                  ...prev.memoryWrites,
+                  { channel: '', mode: 'AGENT_OUTPUT', payloadText: '' },
+                ],
+              }))
+            }
+          >
+            Добавить
+          </button>
+        </div>
+        {step.memoryWrites.length === 0 ? (
+          <div className="flow-definitions__placeholder">Записи не настроены</div>
+        ) : (
+          step.memoryWrites.map((write, writeIndex) => (
+            <div key={`write-${writeIndex}`} className="field-grid">
+              <label>
+                Канал
+                <input
+                  value={write.channel}
+                  onChange={(event) =>
+                    updateStep((prev) => {
+                      const memoryWrites = [...prev.memoryWrites];
+                      memoryWrites[writeIndex] = {
+                        ...memoryWrites[writeIndex],
+                        channel: event.target.value,
+                      };
+                      return { ...prev, memoryWrites };
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Режим
+                <select
+                  value={write.mode}
+                  onChange={(event) =>
+                    updateStep((prev) => {
+                      const memoryWrites = [...prev.memoryWrites];
+                      memoryWrites[writeIndex] = {
+                        ...memoryWrites[writeIndex],
+                        mode: MemoryWriteModeSchema.parse(event.target.value),
+                      };
+                      return { ...prev, memoryWrites };
+                    })
+                  }
+                >
+                  {memoryWriteModes.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Payload (JSON)
+                <textarea
+                  value={write.payloadText}
+                  onChange={(event) =>
+                    updateStep((prev) => {
+                      const memoryWrites = [...prev.memoryWrites];
+                      memoryWrites[writeIndex] = {
+                        ...memoryWrites[writeIndex],
+                        payloadText: event.target.value,
+                      };
+                      return { ...prev, memoryWrites };
+                    })
+                  }
+                  placeholder='{"foo":"bar"}'
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() =>
+                  updateStep((prev) => ({
+                    ...prev,
+                    memoryWrites: prev.memoryWrites.filter((_, idx) => idx !== writeIndex),
+                  }))
+                }
+              >
+                Удалить
+              </button>
+            </div>
+          ))
+        )}
+      </section>
+      <section className="flow-definitions__sub-block">
+        <h6>Взаимодействие (HITL)</h6>
+        <div className="field-grid">
+          <label>
+            Тип
+            <select
+              value={step.interaction.type}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  interaction: { ...prev.interaction, type: event.target.value },
+                }))
+              }
+            >
+              {interactionOptions.map((type) => (
+                <option key={type || 'none'} value={type}>
+                  {type || '—'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Заголовок
+            <input
+              value={step.interaction.title}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  interaction: { ...prev.interaction, title: event.target.value },
+                }))
+              }
+            />
+          </label>
+          <label>
+            Due (мин)
+            <input
+              type="number"
+              min="1"
+              value={step.interaction.dueInMinutes}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  interaction: {
+                    ...prev.interaction,
+                    dueInMinutes: event.target.value,
+                  },
+                }))
+              }
+            />
+          </label>
+        </div>
+        <label>
+          Описание
+          <textarea
+            value={step.interaction.description}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                interaction: {
+                  ...prev.interaction,
+                  description: event.target.value,
+                },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Payload schema (JSON)
+          <textarea
+            value={step.interaction.payloadSchemaText}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                interaction: {
+                  ...prev.interaction,
+                  payloadSchemaText: event.target.value,
+                },
+              }))
+            }
+            placeholder='{"type":"object"}'
+          />
+        </label>
+        <label>
+          Suggested actions (JSON)
+          <textarea
+            value={step.interaction.suggestedActionsText}
+            onChange={(event) =>
+              updateStep((prev) => ({
+                ...prev,
+                interaction: {
+                  ...prev.interaction,
+                  suggestedActionsText: event.target.value,
+                },
+              }))
+            }
+            placeholder='[{"label":"Approve","value":"approve"}]'
+          />
+        </label>
+      </section>
+      <section className="flow-definitions__sub-block">
+        <h6>Переходы</h6>
+        <div className="field-grid">
+          <label>
+            On success → next step
+            <input
+              value={step.transitions.onSuccessNext}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  transitions: {
+                    ...prev.transitions,
+                    onSuccessNext: event.target.value,
+                  },
+                }))
+              }
+            />
+          </label>
+          <label className="flow-definitions__checkbox">
+            <input
+              type="checkbox"
+              checked={step.transitions.onSuccessComplete}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  transitions: {
+                    ...prev.transitions,
+                    onSuccessComplete: event.target.checked,
+                  },
+                }))
+              }
+            />
+            Завершить флоу на успехе
+          </label>
+        </div>
+        <div className="field-grid">
+          <label>
+            On failure → next step
+            <input
+              value={step.transitions.onFailureNext}
+              onChange={(event) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  transitions: {
+                    ...prev.transitions,
+                    onFailureNext: event.target.value,
+                  },
+                }))
+              }
+            />
+          </label>
+          <label className="flow-definitions__checkbox">
+            <input
+              type="checkbox"
+              checked={step.transitions.onFailureFail}
+              onChange={()=>updateStep((prev)=>({ ...prev, transitions:{ ...prev.transitions, onFailureFail: event.target.checked } }))}
+            />
+            Прервать флоу на ошибке
+          </label>
+        </div>
+      </section>
+    </div>
+  );
+
   const handleSave = async () => {
     if (!details || !formState) {
       return;
     }
-    if (!updatedBy.trim()) {
-      setFormError('Укажите, кто вносит изменения');
+    if (!formState.draft.updatedBy && !details.updatedBy) {
+      // in case parsed draft did not contain author
+    }
+    if (!formState.title.trim()) {
+      setFormError('Введите название флоу (metadata.title)');
       return;
+    }
+    if (!formState.syncOnly && formState.syncOnly !== false) {
+      // no-op for now
     }
     setFormError(null);
     setIsSaving(true);
     try {
       const definitionPayload = buildFlowDefinition(formState);
       await updateFlowDefinition(details.id, {
-        description: editedDescription,
-        updatedBy: updatedBy.trim(),
-        changeNotes: changeNotes.trim() || undefined,
+        description: formState.description || undefined,
+        updatedBy: details.updatedBy ?? undefined,
+        changeNotes: undefined,
         definition: definitionPayload,
       });
       await loadDefinition(details.id);
@@ -278,16 +922,12 @@ const FlowDefinitions = () => {
     if (!details) {
       return;
     }
-    if (!updatedBy.trim()) {
-      setFormError('Укажите, кто публикует определение');
-      return;
-    }
-    setIsPublishing(true);
     setFormError(null);
+    setIsPublishing(true);
     try {
       await publishFlowDefinition(details.id, {
-        updatedBy: updatedBy.trim(),
-        changeNotes: changeNotes.trim() || undefined,
+        updatedBy: formState?.draft.updatedBy ?? details.updatedBy ?? '',
+        changeNotes: undefined,
       });
       await loadDefinition(details.id);
       await loadDefinitions();
@@ -296,91 +936,6 @@ const FlowDefinitions = () => {
     } finally {
       setIsPublishing(false);
     }
-  };
-
-  const renderStepRow = (step: FlowStepForm, index: number) => {
-    const agent = agentOptionMap.get(step.agentVersionId);
-    const hasAgent = Boolean(agent);
-    return (
-      <tr
-        key={`${step.id || 'step'}-${index}`}
-        className={index === selectedStepIndex ? 'active' : undefined}
-        onClick={() => setSelectedStepIndex(index)}
-      >
-        <td>{step.id || <em>не задан</em>}</td>
-        <td>{step.name || '—'}</td>
-        <td className={!hasAgent ? 'warning' : undefined}>
-          {agent ? agent.label : 'Агент не найден'}
-        </td>
-        <td>{step.maxAttempts}</td>
-        <td className="flow-definitions__row-actions">
-          <button
-            type="button"
-            className="ghost"
-            onClick={(event) => {
-              event.stopPropagation();
-              moveStep(index, -1);
-            }}
-            disabled={index === 0}
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={(event) => {
-              event.stopPropagation();
-              moveStep(index, 1);
-            }}
-            disabled={formState?.steps.length ? index >= formState.steps.length - 1 : true}
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={(event) => {
-              event.stopPropagation();
-              removeStep(index);
-            }}
-          >
-            ×
-          </button>
-        </td>
-      </tr>
-    );
-  };
-
-  const handleNewDefinitionStepUpdate = (
-    index: number,
-    updates: Partial<FlowStepForm>,
-  ) => {
-    setNewDefinitionForm((prev) => {
-      const steps = [...prev.steps];
-      const current = steps[index];
-      if (!current) {
-        return prev;
-      }
-      const nextStep = { ...current, ...updates };
-      steps[index] = nextStep;
-      let startStepId = prev.startStepId;
-      if (updates.id && prev.startStepId === current.id) {
-        startStepId = updates.id;
-      }
-      return { ...prev, steps, startStepId };
-    });
-  };
-
-  const handleCreateStepAdd = () => {
-    setNewDefinitionForm((prev) => {
-      const steps = [...prev.steps, createEmptyStep()];
-      return {
-        ...prev,
-        steps,
-        startStepId: prev.startStepId || steps[0]?.id || '',
-      };
-    });
-    setNewSelectedStepIndex(newDefinitionForm.steps.length);
   };
 
   const handleCreateDefinition = async () => {
@@ -414,6 +969,7 @@ const FlowDefinitions = () => {
       setNewDefinitionDescription('');
       setNewDefinitionAuthor('');
       setNewDefinitionChangeNotes('');
+      setNewSelectedStepIndex(0);
     } catch (err) {
       setFormError((err as Error).message);
     } finally {
@@ -421,41 +977,107 @@ const FlowDefinitions = () => {
     }
   };
 
+  const renderStepRow = (
+    step: FlowStepForm,
+    index: number,
+    activeIndex: number,
+    onSelect: (index: number) => void,
+    onMove?: (index: number, delta: number) => void,
+    onRemove?: (index: number) => void,
+  ) => {
+    const agent = agentOptionMap.get(step.agentVersionId);
+    const hasAgent = Boolean(agent);
+    return (
+      <tr
+        key={`${step.id || 'step'}-${index}`}
+        className={index === activeIndex ? 'active' : undefined}
+        onClick={() => onSelect(index)}
+      >
+        <td>{step.id || <em>не задан</em>}</td>
+        <td>{step.name || '—'}</td>
+        <td className={!hasAgent ? 'warning' : undefined}>
+          {agent ? agent.label : 'Агент не найден'}
+        </td>
+        <td>{step.maxAttempts || '1'}</td>
+        <td className="flow-definitions__row-actions">
+          {onMove && (
+            <>
+              <button
+                type="button"
+                className="ghost"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMove(index, -1);
+                }}
+                disabled={index === 0}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMove(index, 1);
+                }}
+                disabled={index >= (formState?.steps.length ?? 0) - 1}
+              >
+                ↓
+              </button>
+            </>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove(index);
+              }}
+            >
+              ×
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div className="flow-definitions">
       <header className="flow-definitions__header">
         <div>
-          <h2>Определения флоу</h2>
+          <h2>Flow definitions</h2>
           <p className="flow-definitions__subtitle">
-            Управляйте шагами мультиагентных сценариев и публикуйте готовые шаблоны
+            Управляйте blueprint’ами флоу и тестируйте шаги до публикации
           </p>
         </div>
-        <div className="flow-definitions__header-actions">
-          <button
-            type="button"
-            className="ghost"
-            onClick={loadDefinitions}
-            disabled={isLoadingList}
-          >
-            Обновить список
-          </button>
-          <button
-            type="button"
-            className="ghost"
-            onClick={loadAgents}
-            disabled={agentLoading}
-          >
-            Обновить агентов
-          </button>
+        <div className="flow-definitions__actions">
+          {formState && (
+            <>
+              <button type="button" onClick={handleSave} disabled={isSaving}>
+                {isSaving ? 'Сохранение…' : 'Сохранить черновик'}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={handlePublish}
+                disabled={isPublishing}
+              >
+                {isPublishing ? 'Публикация…' : 'Опубликовать'}
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      {error && <div className="flow-definitions__error">{error}</div>}
-      {formError && <div className="flow-definitions__error">{formError}</div>}
+      {(error || formError) && (
+        <div className="flow-definitions__error">{error ?? formError}</div>
+      )}
 
       <div className="flow-definitions__layout">
         <aside className="flow-definitions__sidebar">
-          <h3>Черновики и публикации</h3>
+          <h3>Опубликованные определения</h3>
           {isLoadingList ? (
             <div className="flow-definitions__placeholder">Загрузка…</div>
           ) : (
@@ -464,13 +1086,12 @@ const FlowDefinitions = () => {
                 <li
                   key={definition.id}
                   className={
-                    definition.id === selectedDefinitionId ? 'active flow-definitions__item' : 'flow-definitions__item'
+                    definition.id === selectedDefinitionId
+                      ? 'active flow-definitions__item'
+                      : 'flow-definitions__item'
                   }
                 >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDefinitionId(definition.id)}
-                  >
+                  <button type="button" onClick={() => setSelectedDefinitionId(definition.id)}>
                     <span className="definition-name">{definition.name}</span>
                     <span className="definition-meta">
                       v{definition.version} • {definition.status}
@@ -498,19 +1119,19 @@ const FlowDefinitions = () => {
                 />
               </label>
               <label>
-                Автор (updatedBy)
-                <input
-                  value={newDefinitionAuthor}
-                  onChange={(event) => setNewDefinitionAuthor(event.target.value)}
-                  placeholder="user:email"
-                />
-              </label>
-              <label>
                 Description
                 <input
                   value={newDefinitionDescription}
                   onChange={(event) => setNewDefinitionDescription(event.target.value)}
                   placeholder="краткое описание"
+                />
+              </label>
+              <label>
+                Автор (updatedBy)
+                <input
+                  value={newDefinitionAuthor}
+                  onChange={(event) => setNewDefinitionAuthor(event.target.value)}
+                  placeholder="user:email"
                 />
               </label>
               <label>
@@ -523,10 +1144,23 @@ const FlowDefinitions = () => {
               </label>
             </div>
 
+            {renderLaunchParametersSection(newDefinitionForm, updateNewForm)}
+            {renderSharedChannelsSection(newDefinitionForm, updateNewForm)}
+
             <div className="flow-definitions__steps">
               <div className="flow-definitions__steps-header">
                 <h4>Шаги нового флоу</h4>
-                <button type="button" className="ghost" onClick={handleCreateStepAdd}>
+                <button type="button" className="ghost" onClick={() => {
+                  updateNewForm((prev) => {
+                    const steps = [...prev.steps, createEmptyStepForm()];
+                    return {
+                      ...prev,
+                      steps,
+                      startStepId: prev.startStepId || steps[0]?.id || '',
+                    };
+                  });
+                  setNewSelectedStepIndex(newDefinitionForm.steps.length);
+                }}>
                   Добавить шаг
                 </button>
               </div>
@@ -542,45 +1176,26 @@ const FlowDefinitions = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {newDefinitionForm.steps.map((step, index) => {
-                      const agent = agentOptionMap.get(step.agentVersionId);
-                      return (
-                        <tr
-                          key={`new-${index}`}
-                          className={index === newSelectedStepIndex ? 'active' : undefined}
-                          onClick={() => setNewSelectedStepIndex(index)}
-                        >
-                          <td>{step.id || <em>—</em>}</td>
-                          <td>{step.name || '—'}</td>
-                          <td className={!agent ? 'warning' : undefined}>
-                            {agent ? agent.label : 'Агент не выбран'}
-                          </td>
-                          <td>{step.maxAttempts}</td>
-                          <td className="flow-definitions__row-actions">
-                            <button
-                              type="button"
-                              className="ghost"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setNewDefinitionForm((prev) => {
-                                  const steps = prev.steps.filter((_, idx) => idx !== index);
-                                  const startStepId =
-                                    steps.find((step) => step.id === prev.startStepId)?.id ??
-                                    steps[0]?.id ??
-                                    '';
-                                  return { ...prev, steps, startStepId };
-                                });
-                                setNewSelectedStepIndex((prevIdx) =>
-                                  Math.max(0, prevIdx - 1),
-                                );
-                              }}
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {newDefinitionForm.steps.map((step, index) =>
+                      renderStepRow(
+                        step,
+                        index,
+                        newSelectedStepIndex,
+                        setNewSelectedStepIndex,
+                        undefined,
+                        (idx) => {
+                          updateNewForm((prev) => {
+                            const steps = prev.steps.filter((_, sidx) => sidx !== idx);
+                            const startStepId =
+                              steps.find((s) => s.id === prev.startStepId)?.id ??
+                              steps[0]?.id ??
+                              '';
+                            return { ...prev, steps, startStepId };
+                          });
+                          setNewSelectedStepIndex((prevIdx) => Math.max(0, prevIdx - 1));
+                        },
+                      ),
+                    )}
                     {!newDefinitionForm.steps.length && (
                       <tr>
                         <td colSpan={5}>
@@ -594,467 +1209,145 @@ const FlowDefinitions = () => {
                 </table>
               </div>
 
-              {newDefinitionForm.steps[newSelectedStepIndex] && (
-                <div className="flow-definitions__step-editor">
-                  <h5>Редактор шага</h5>
-                  <div className="field-grid">
-                    <label>
-                      Step ID
-                      <input
-                        value={newDefinitionForm.steps[newSelectedStepIndex].id}
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            id: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Название
-                      <input
-                        value={newDefinitionForm.steps[newSelectedStepIndex].name}
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            name: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Агент
-                      <select
-                        value={
-                          newDefinitionForm.steps[newSelectedStepIndex].agentVersionId || ''
-                        }
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            agentVersionId: event.target.value,
-                          })
-                        }
-                      >
-                        <option value="">Выберите опубликованного агента</option>
-                        {agentOptions.map((option) => (
-                          <option key={option.versionId} value={option.versionId}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Попытки
-                      <input
-                        type="number"
-                        min={1}
-                        value={newDefinitionForm.steps[newSelectedStepIndex].maxAttempts}
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            maxAttempts: Number(event.target.value),
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label className="full-width">
-                    Prompt
-                    <textarea
-                      value={newDefinitionForm.steps[newSelectedStepIndex].prompt}
-                      onChange={(event) =>
-                        handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                          prompt: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                  <div className="field-grid">
-                    <label>
-                      Temperature
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={2}
-                        value={newDefinitionForm.steps[newSelectedStepIndex].temperature ?? ''}
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            temperature: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Top P
-                      <input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        max={1}
-                        value={newDefinitionForm.steps[newSelectedStepIndex].topP ?? ''}
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            topP: event.target.value ? Number(event.target.value) : null,
-                          })
-                        }
-                      />
-                    </label>
-                    <label>
-                      Max tokens
-                      <input
-                        type="number"
-                        min={1}
-                        value={
-                          newDefinitionForm.steps[newSelectedStepIndex].maxTokensOverride ??
-                          ''
-                        }
-                        onChange={(event) =>
-                          handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                            maxTokensOverride: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <label className="full-width">
-                    Memory reads (JSON)
-                    <textarea
-                      value={newDefinitionForm.steps[newSelectedStepIndex].memoryReadsText}
-                      onChange={(event) =>
-                        handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                          memoryReadsText: event.target.value,
-                        })
-                      }
-                      placeholder='[{"channel":"context","limit":5}]'
-                    />
-                  </label>
-                  <label className="full-width">
-                    Memory writes (JSON)
-                    <textarea
-                      value={newDefinitionForm.steps[newSelectedStepIndex].memoryWritesText}
-                      onChange={(event) =>
-                        handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                          memoryWritesText: event.target.value,
-                        })
-                      }
-                      placeholder='[{"channel":"context","mode":"AGENT_OUTPUT"}]'
-                    />
-                  </label>
-                  <label className="full-width">
-                    Transitions (JSON)
-                    <textarea
-                      value={newDefinitionForm.steps[newSelectedStepIndex].transitionsText}
-                      onChange={(event) =>
-                        handleNewDefinitionStepUpdate(newSelectedStepIndex, {
-                          transitionsText: event.target.value,
-                        })
-                      }
-                      placeholder='{"onSuccess":{"next":"step-2"}}'
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
-            <button type="button" onClick={handleCreateDefinition} disabled={creatingDefinition}>
-              {creatingDefinition ? 'Создание…' : 'Создать черновик'}
-            </button>
-          </div>
-
-          <div className="flow-definitions__editor">
-            {isLoadingDefinition && (
-              <div className="flow-definitions__placeholder">Загрузка определения…</div>
-            )}
-            {!isLoadingDefinition && !formState && (
-              <div className="flow-definitions__placeholder">
-                Выберите определение из списка слева
-              </div>
-            )}
-            {!isLoadingDefinition && formState && details && (
-              <>
-                <div className="editor-header">
-                  <div>
-                    <h3>{details.name}</h3>
-                    <div className="definition-meta">
-                      v{details.version} •{' '}
-                      <span
-                        className={`status-badge status-${details.status.toLowerCase()}`}
-                      >
-                        {details.status}
-                      </span>{' '}
-                      • {details.active ? 'активно' : 'неактивно'}
-                    </div>
-                  </div>
-                  <div className="editor-header__actions">
-                    <label>
-                      Updated by
-                      <input
-                        value={updatedBy}
-                        onChange={(event) => setUpdatedBy(event.target.value)}
-                        placeholder="user:email"
-                      />
-                    </label>
-                    <label>
-                      Change notes
-                      <input
-                        value={changeNotes}
-                        onChange={(event) => setChangeNotes(event.target.value)}
-                        placeholder="Что изменилось?"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={handleSave}
-                      disabled={isSaving}
-                    >
-                      {isSaving ? 'Сохранение…' : 'Сохранить'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handlePublish}
-                      disabled={isPublishing}
-                    >
-                      {isPublishing ? 'Публикация…' : 'Опубликовать'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="field-grid">
-                  <label>
-                    Title
-                    <input
-                      value={formState.title}
-                      onChange={(event) =>
-                        setFormState((prev) =>
-                          prev ? { ...prev, title: event.target.value } : prev,
-                        )
-                      }
-                    />
-                  </label>
-                  <label>
-                    Start step
-                    <select
-                      value={formState.startStepId}
-                      onChange={(event) =>
-                        setFormState((prev) =>
-                          prev ? { ...prev, startStepId: event.target.value } : prev,
-                        )
-                      }
-                    >
-                      {formState.steps.map((step) => (
-                        <option key={step.id || step.name} value={step.id}>
-                          {step.id || step.name || '(без имени)'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Description
-                    <input
-                      value={editedDescription}
-                      onChange={(event) => setEditedDescription(event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="flow-definitions__steps">
-                  <div className="flow-definitions__steps-header">
-                    <h4>Шаги</h4>
-                    <button type="button" className="ghost" onClick={addStep}>
-                      Добавить шаг
-                    </button>
-                  </div>
-                  <div className="flow-definitions__steps-table">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>ID</th>
-                          <th>Название</th>
-                          <th>Агент</th>
-                          <th>Попытки</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {formState.steps.map((step, index) => renderStepRow(step, index))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {selectedStep && (
-                  <div className="flow-definitions__step-editor">
-                    <h4>Редактор шага</h4>
-                    <div className="field-grid">
-                      <label>
-                        Step ID
-                        <input
-                          value={selectedStep.id}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, { id: event.target.value })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Название
-                        <input
-                          value={selectedStep.name}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, { name: event.target.value })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Агент
-                        <select
-                          value={selectedStep.agentVersionId}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, {
-                              agentVersionId: event.target.value,
-                            })
-                          }
-                        >
-                          <option value="">Выберите опубликованного агента</option>
-                          {agentOptions.map((option) => (
-                            <option key={option.versionId} value={option.versionId}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Попытки
-                        <input
-                          type="number"
-                          min={1}
-                          value={selectedStep.maxAttempts}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, {
-                              maxAttempts: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                    <label className="full-width">
-                      Prompt
-                      <textarea
-                        value={selectedStep.prompt}
-                        onChange={(event) =>
-                          updateStep(selectedStepIndex, { prompt: event.target.value })
-                        }
-                      />
-                    </label>
-                    <div className="field-grid">
-                      <label>
-                        Temperature
-                        <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          max={2}
-                          value={selectedStep.temperature ?? ''}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, {
-                              temperature: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Top P
-                        <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          max={1}
-                          value={selectedStep.topP ?? ''}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, {
-                              topP: event.target.value ? Number(event.target.value) : null,
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Max tokens
-                        <input
-                          type="number"
-                          min={1}
-                          value={selectedStep.maxTokensOverride ?? ''}
-                          onChange={(event) =>
-                            updateStep(selectedStepIndex, {
-                              maxTokensOverride: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            })
-                          }
-                        />
-                      </label>
-                    </div>
-                    <label className="full-width">
-                      Memory reads (JSON)
-                      <textarea
-                        value={selectedStep.memoryReadsText}
-                        onChange={(event) =>
-                          updateStep(selectedStepIndex, {
-                            memoryReadsText: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="full-width">
-                      Memory writes (JSON)
-                      <textarea
-                        value={selectedStep.memoryWritesText}
-                        onChange={(event) =>
-                          updateStep(selectedStepIndex, {
-                            memoryWritesText: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                    <label className="full-width">
-                      Transitions (JSON)
-                      <textarea
-                        value={selectedStep.transitionsText}
-                        onChange={(event) =>
-                          updateStep(selectedStepIndex, {
-                            transitionsText: event.target.value,
-                          })
-                        }
-                      />
-                    </label>
-                  </div>
+              {newDefinitionForm.steps[newSelectedStepIndex] &&
+                renderStepEditor(newDefinitionForm.steps[newSelectedStepIndex], (updater) =>
+                  updateStepAt(updateNewForm, newSelectedStepIndex, updater),
                 )}
-              </>
-            )}
+
+              <div className="flow-definitions__actions">
+                <button
+                  type="button"
+                  onClick={handleCreateDefinition}
+                  disabled={creatingDefinition}
+                >
+                  {creatingDefinition ? 'Создание…' : 'Создать флоу'}
+                </button>
+              </div>
+            </div>
           </div>
 
-          {!!history.length && (
-            <div className="history-panel">
-              <h3>История изменений</h3>
-              <ul>
-                {history.map((entry) => (
-                  <li key={entry.id}>
-                    <div className="history-header">
-                      <span>v{entry.version} • {entry.status}</span>
-                      <span>{entry.createdAt}</span>
-                    </div>
-                    <div className="history-meta">
-                      <span>Автор: {entry.createdBy ?? '—'}</span>
-                      <span>Заметка: {entry.changeNotes ?? '—'}</span>
-                    </div>
-                    <details>
-                      <summary>Показать JSON</summary>
-                      <pre>{JSON.stringify(entry.definition, null, 2)}</pre>
-                    </details>
-                  </li>
-                ))}
-              </ul>
+          {formState && (
+            <div className="flow-definitions__editor">
+              <h3>Редактирование флоу</h3>
+              <div className="field-grid">
+                <label>
+                  Название
+                  <input
+                    value={formState.title}
+                    onChange={(event) =>
+                      updateExistingForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Описание
+                  <input
+                    value={formState.description}
+                    onChange={(event) =>
+                      updateExistingForm((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Теги (через запятую)
+                  <input
+                    value={formState.tags}
+                    onChange={(event) =>
+                      updateExistingForm((prev) => ({ ...prev, tags: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Стартовый шаг
+                  <select
+                    value={formState.startStepId}
+                    onChange={(event) =>
+                      updateExistingForm((prev) => ({
+                        ...prev,
+                        startStepId: event.target.value,
+                      }))
+                    }
+                  >
+                    {formState.steps.map((step) => (
+                      <option key={step.id || step.agentVersionId} value={step.id}>
+                        {step.id || step.agentVersionId || 'step'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {renderLaunchParametersSection(formState, updateExistingForm)}
+              {renderSharedChannelsSection(formState, updateExistingForm)}
+
+              <div className="flow-definitions__steps">
+                <div className="flow-definitions__steps-header">
+                  <h4>Шаги флоу</h4>
+                  <button type="button" className="ghost" onClick={addStep}>
+                    Добавить шаг
+                  </button>
+                </div>
+                <div className="flow-definitions__steps-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Название</th>
+                        <th>Агент</th>
+                        <th>Попытки</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {formState.steps.map((step, index) =>
+                        renderStepRow(
+                          step,
+                          index,
+                          selectedStepIndex,
+                          setSelectedStepIndex,
+                          moveStep,
+                          removeStep,
+                        ),
+                      )}
+                      {!formState.steps.length && (
+                        <tr>
+                          <td colSpan={5}>
+                            <span className="flow-definitions__placeholder">
+                              Шаги ещё не добавлены
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {formState.steps[selectedStepIndex] &&
+                  renderStepEditor(
+                    formState.steps[selectedStepIndex],
+                    (updater) => updateStepAt(updateExistingForm, selectedStepIndex, updater),
+                  )}
+              </div>
+
+              <div className="flow-definitions__history">
+                <h4>История версий</h4>
+                {history.length === 0 ? (
+                  <div className="flow-definitions__placeholder">История пуста</div>
+                ) : (
+                  <ul>
+                    {history.map((entry) => (
+                      <li key={entry.id}>
+                        v{entry.version} • {entry.status} • {entry.createdAt ?? '—'}{' '}
+                        {entry.blueprintSchemaVersion ? `schema=${entry.blueprintSchemaVersion}` : ''}
+                        {entry.changeNotes ? ` — ${entry.changeNotes}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
         </section>

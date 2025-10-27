@@ -110,6 +110,7 @@ export const FlowDefinitionHistoryEntrySchema = z.object({
   version: z.number().int(),
   status: z.string(),
   definition: FlowDefinitionSchema,
+  blueprintSchemaVersion: z.number().int().optional(),
   changeNotes: z.string().nullable().optional(),
   createdBy: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),

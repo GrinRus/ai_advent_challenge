@@ -641,13 +641,13 @@
 
 ### Flow Orchestration
 - [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный инструмент, лимиты токенов и cost-profile.
-- [ ] Обновить `FlowBlueprintCompiler`/`FlowPayloadMapper`, чтобы новый блок `researchContext` сохранял ответ MCP (краткий итог + массив источников) в канал `shared` и отдавал идентификаторы источников downstream шагам.
+- [ ] Обновить `FlowBlueprintCompiler`/`FlowPayloadMapper`: краткий итог Perplexity хранить в shared-контексте, полный MCP payload складывать в новый канал памяти `research`, прокидывать ссылки downstream шагам.
 - [ ] Расширить `AgentOrchestratorService` и `FlowInteractionService` поддержкой research-шагов: отображать ссылки/цитаты операторам, разрешать ручной перезапуск с выбором `search` или `deep_research`, логировать выбранный инструмент.
 
 ### Chat Experience
-- [ ] Добавить режим `mode=research` в `SyncChatService` и `ChatStreamController`: при его использовании переключать провайдера на `perplexity-mcp`, поддерживать streaming и structured ответы с цитатами.
-- [ ] Научить `StructuredSyncService` сериализовать MCP-результаты в DTO (`citations`, `evidence`, `searchPlan`), обновить `StructuredSyncProvider` и фронтовые отображения.
-- [ ] Интегрировать `ChatSummarizationPreflightManager`: при флагах `needs_web_context`/`knowledge_gap` запускать Perplexity для прогрева памяти и сохранять источники в `chat_memory`.
+- [ ] Добавить поддержку query-параметра `mode=research` в `SyncChatService` и `ChatStreamController`: при его использовании принудительно выбирать `perplexity-mcp`, валидировать overrides и обеспечивать streaming/structured ответы с цитатами.
+- [ ] Научить `StructuredSyncService` и фронт читать MCP-данные через `extensions["research"]` в `StructuredSyncResponse` (цитаты, evidence, search plan).
+- [ ] Интегрировать `ChatSummarizationPreflightManager`: принимать флаги `needs_web_context`/`knowledge_gap` из upstream (UI/flow), дергать Perplexity прогрев через `ResearchWarmupService` и сохранять контекст в канал `research`.
 
 ### Observability & Resilience
 - [ ] Реализовать `HealthIndicator` для MCP-подключения (handshake с tool list + тестовый вызов) и метрики `perplexity_mcp_latency`, `perplexity_mcp_errors_total`, budget токенов.

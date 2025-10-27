@@ -9,6 +9,7 @@ public record FlowDefinitionHistoryResponse(
     int version,
     FlowDefinitionStatus status,
     JsonNode definition,
+    int blueprintSchemaVersion,
     String changeNotes,
     String createdBy,
     Instant createdAt) {}

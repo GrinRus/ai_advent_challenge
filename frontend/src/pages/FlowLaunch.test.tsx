@@ -50,7 +50,7 @@ const previewMap = {
           modelMaxOutputTokens: 4096,
           syncOnly: false,
           maxTokens: null,
-          defaultOptions: null,
+          invocationOptions: null,
           costProfile: null,
           pricing: {
             inputPer1KTokens: 0.0025,
@@ -123,7 +123,7 @@ const previewMap = {
           modelMaxOutputTokens: 2048,
           syncOnly: true,
           maxTokens: 1024,
-          defaultOptions: null,
+          invocationOptions: null,
           costProfile: null,
           pricing: {
             inputPer1KTokens: 0.003,

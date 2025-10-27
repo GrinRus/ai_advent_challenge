@@ -1,22 +1,15 @@
 import { z } from 'zod';
 import { JsonObjectSchema } from './json';
+import {
+  AgentInvocationOptionsSchema,
+  AgentToolingSchema,
+  AgentCostProfileSchema,
+  AgentInvocationOptionsInput,
+  AgentInvocationOptions,
+  AgentToolBindingSchema,
+} from './agentInvocation';
 
 const JsonRecordSchema = JsonObjectSchema;
-
-export const AgentDefaultOptionsSchema = z
-  .object({
-    temperature: z.number().gte(0).lte(2).optional(),
-    topP: z.number().gt(0).lte(1).optional(),
-    maxTokens: z.number().int().positive().optional(),
-  })
-  .passthrough();
-export type AgentDefaultOptions = z.infer<typeof AgentDefaultOptionsSchema>;
-
-export const AgentToolBindingsSchema = JsonRecordSchema;
-export type AgentToolBindings = z.infer<typeof AgentToolBindingsSchema>;
-
-export const AgentCostProfileSchema = JsonRecordSchema;
-export type AgentCostProfile = z.infer<typeof AgentCostProfileSchema>;
 
 export const AgentCapabilityPayloadSchema = JsonRecordSchema;
 export type AgentCapabilityPayload = z.infer<typeof AgentCapabilityPayloadSchema>;
@@ -38,9 +31,7 @@ export const AgentVersionSchema = z.object({
   providerId: z.string(),
   modelId: z.string(),
   systemPrompt: z.string().optional().nullable(),
-  defaultOptions: AgentDefaultOptionsSchema.nullish(),
-  toolBindings: AgentToolBindingsSchema.nullish(),
-  costProfile: AgentCostProfileSchema.nullish(),
+  invocationOptions: AgentInvocationOptionsSchema,
   syncOnly: z.boolean(),
   maxTokens: z.number().int().positive().nullable().optional(),
   createdBy: z.string().optional().nullable(),
@@ -71,3 +62,11 @@ export const AgentDefinitionDetailsSchema = AgentDefinitionSummarySchema.extend(
   versions: z.array(AgentVersionSchema),
 });
 export type AgentDefinitionDetails = z.infer<typeof AgentDefinitionDetailsSchema>;
+
+export type AgentInvocationOptionsPayload = AgentInvocationOptionsInput;
+export type AgentTooling = z.infer<typeof AgentToolingSchema>;
+export type AgentToolBinding = z.infer<typeof AgentToolBindingSchema>;
+export type AgentCostProfile = z.infer<typeof AgentCostProfileSchema>;
+export type AgentInvocationOptionsType = AgentInvocationOptions;
+
+export { AgentCostProfileSchema, AgentInvocationOptionsSchema } from './agentInvocation';

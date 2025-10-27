@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import {
-  AgentCostProfileSchema,
-  AgentDefaultOptionsSchema,
-} from './agent';
+import { AgentCostProfileSchema } from './agent';
+import { AgentInvocationOptionsSchema } from './agentInvocation';
 import {
   ChatRequestOverridesSchema,
   MemoryReadSchema,
@@ -42,7 +40,7 @@ export const FlowLaunchAgentSchema = z.object({
   modelMaxOutputTokens: z.number().nullable().optional(),
   syncOnly: z.boolean(),
   maxTokens: z.number().nullable().optional(),
-  defaultOptions: AgentDefaultOptionsSchema.nullish(),
+  invocationOptions: AgentInvocationOptionsSchema.nullish(),
   costProfile: AgentCostProfileSchema.nullish(),
   pricing: FlowLaunchPricingSchema,
 });

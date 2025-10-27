@@ -27,7 +27,7 @@ const basePreviewPayload = {
         modelMaxOutputTokens: 4096,
         syncOnly: false,
         maxTokens: null,
-        defaultOptions: null,
+        invocationOptions: null,
         costProfile: null,
         pricing: {
           inputPer1KTokens: 0.0025,

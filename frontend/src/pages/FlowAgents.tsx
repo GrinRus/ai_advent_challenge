@@ -4,7 +4,7 @@ import type {
   AgentDefinitionDetails,
   AgentDefinitionPayload,
   AgentDefinitionSummary,
-  AgentDefaultOptions,
+  AgentInvocationOptionsPayload,
   AgentVersionPayload,
   AgentVersionResponse,
   AgentVersionPublishPayload,
@@ -12,11 +12,14 @@ import type {
 } from '../lib/apiClient';
 import {
   AgentCapabilityPayloadSchema,
-  AgentCostProfileSchema,
-  AgentDefaultOptionsSchema,
-  AgentToolBindingsSchema,
 } from '../lib/types/agent';
-import type { JsonValue } from '../lib/types/json';
+import {
+  AgentCostProfileSchema,
+  AgentInvocationOptionsInputSchema,
+  AgentToolBindingSchema,
+  AgentToolExecutionModeSchema,
+} from '../lib/types/agentInvocation';
+import type { AgentToolExecutionMode } from '../lib/types/agentInvocation';
 import { JsonValueSchema } from '../lib/types/json';
 import { parseJsonField } from '../lib/utils/json';
 import {
@@ -37,11 +40,6 @@ type CapabilityDraft = {
   payloadText: string;
 };
 
-type KeyValueDraft = {
-  key: string;
-  value: string;
-};
-
 type VersionFormState = {
   providerId: string;
   modelId: string;
@@ -50,9 +48,25 @@ type VersionFormState = {
   topP: string;
   maxTokens: string;
   syncOnly: boolean;
-  toolBindings: KeyValueDraft[];
-  costProfile: KeyValueDraft[];
+  toolBindings: ToolBindingForm[];
+  costProfile: CostProfileForm;
   capabilities: CapabilityDraft[];
+};
+
+type ToolBindingForm = {
+  toolCode: string;
+  schemaVersion: string;
+  executionMode: AgentToolExecutionMode;
+  requestOverrides: string;
+  responseExpectations: string;
+};
+
+type CostProfileForm = {
+  inputPer1KTokens: string;
+  outputPer1KTokens: string;
+  latencyFee: string;
+  fixedFee: string;
+  currency: string;
 };
 
 const defaultVersionForm = (): VersionFormState => ({
@@ -63,8 +77,22 @@ const defaultVersionForm = (): VersionFormState => ({
   topP: '',
   maxTokens: '',
   syncOnly: true,
-  toolBindings: [{ key: '', value: '' }],
-  costProfile: [{ key: '', value: '' }],
+  toolBindings: [
+    {
+      toolCode: '',
+      schemaVersion: '',
+      executionMode: 'AUTO' as AgentToolExecutionMode,
+      requestOverrides: '',
+      responseExpectations: '',
+    },
+  ],
+  costProfile: {
+    inputPer1KTokens: '',
+    outputPer1KTokens: '',
+    latencyFee: '',
+    fixedFee: '',
+    currency: 'USD',
+  },
   capabilities: [],
 });
 
@@ -97,33 +125,6 @@ const FlowAgents = () => {
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
   const [deprecatingVersionId, setDeprecatingVersionId] = useState<string | null>(null);
-
-  type KeyValueField = 'toolBindings' | 'costProfile';
-
-  const ensureRows = (rows: KeyValueDraft[]): KeyValueDraft[] =>
-    rows.length ? rows : [{ key: '', value: '' }];
-
-  const addKeyValueRow = (field: KeyValueField) => {
-    setVersionForm((prev) => ({
-      ...prev,
-      [field]: [...prev[field], { key: '', value: '' }],
-    }));
-  };
-
-  const updateKeyValueRow = (field: KeyValueField, index: number, patch: Partial<KeyValueDraft>) => {
-    setVersionForm((prev) => {
-      const rows = [...prev[field]];
-      rows[index] = { ...rows[index], ...patch };
-      return { ...prev, [field]: rows };
-    });
-  };
-
-  const removeKeyValueRow = (field: KeyValueField, index: number) => {
-    setVersionForm((prev) => {
-      const rows = prev[field].filter((_, idx) => idx !== index);
-      return { ...prev, [field]: ensureRows(rows) };
-    });
-  };
 
   const loadDefinitions = useCallback(async () => {
     setLoadingList(true);
@@ -289,27 +290,131 @@ const FlowAgents = () => {
       });
   };
 
-  const buildJsonRecord = (
-    entries: KeyValueDraft[],
-    label: string,
-  ): Record<string, JsonValue> | undefined => {
-    const record: Record<string, JsonValue> = {};
+  const addToolBindingRow = () => {
+    setVersionForm((prev) => ({
+      ...prev,
+      toolBindings: [
+        ...prev.toolBindings,
+        {
+          toolCode: '',
+          schemaVersion: '',
+          executionMode: 'AUTO' as AgentToolExecutionMode,
+          requestOverrides: '',
+          responseExpectations: '',
+        },
+      ],
+    }));
+  };
+
+  const updateToolBindingRow = (index: number, patch: Partial<ToolBindingForm>) => {
+    setVersionForm((prev) => {
+      const rows = [...prev.toolBindings];
+      rows[index] = { ...rows[index], ...patch };
+      return { ...prev, toolBindings: rows };
+    });
+  };
+
+  const removeToolBindingRow = (index: number) => {
+    setVersionForm((prev) => {
+      const rows = prev.toolBindings.filter((_, idx) => idx !== index);
+      return {
+        ...prev,
+        toolBindings: rows.length
+          ? rows
+          : [
+              {
+                toolCode: '',
+                schemaVersion: '',
+                executionMode: 'AUTO' as AgentToolExecutionMode,
+                requestOverrides: '',
+                responseExpectations: '',
+              },
+            ],
+      };
+    });
+  };
+
+  const buildToolBindings = (
+    entries: ToolBindingForm[],
+  ): AgentInvocationOptionsPayload['tooling'] | undefined => {
+    const bindings: NonNullable<AgentInvocationOptionsPayload['tooling']>['bindings'] = [];
+
     entries.forEach((entry, index) => {
-      const key = entry.key.trim();
-      const value = entry.value.trim();
-      if (!key || !value) {
+      const toolCode = entry.toolCode.trim();
+      const schemaVersionRaw = entry.schemaVersion.trim();
+      const requestOverridesRaw = entry.requestOverrides.trim();
+      const responseExpectationsRaw = entry.responseExpectations.trim();
+
+      if (!toolCode && !schemaVersionRaw && !requestOverridesRaw && !responseExpectationsRaw) {
         return;
       }
-      const parsed = parseJsonField(
-        `${label} #${index + 1}`,
-        value,
-        JsonValueSchema,
-      );
-      if (parsed !== undefined) {
-        record[key] = parsed;
+
+      if (!toolCode) {
+        throw new Error(`Tool binding #${index + 1}: необходимо указать код инструмента`);
       }
+
+      const candidate: Record<string, unknown> = {
+        toolCode,
+        executionMode: entry.executionMode,
+      };
+
+      if (schemaVersionRaw) {
+        const parsedVersion = Number(schemaVersionRaw);
+        if (!Number.isInteger(parsedVersion) || parsedVersion <= 0) {
+          throw new Error(`Tool binding #${index + 1}: схема должна быть целым положительным числом`);
+        }
+        candidate.schemaVersion = parsedVersion;
+      }
+
+      if (requestOverridesRaw) {
+        candidate.requestOverrides = parseJsonField(
+          `Tool binding #${index + 1} (requestOverrides)`,
+          requestOverridesRaw,
+          JsonValueSchema,
+        );
+      }
+
+      if (responseExpectationsRaw) {
+        candidate.responseExpectations = parseJsonField(
+          `Tool binding #${index + 1} (responseExpectations)`,
+          responseExpectationsRaw,
+          JsonValueSchema,
+        );
+      }
+
+      const binding = AgentToolBindingSchema.parse(candidate);
+      bindings.push(binding);
     });
-    return Object.keys(record).length ? record : undefined;
+
+    return bindings.length ? { bindings } : undefined;
+  };
+
+  const buildCostProfile = (
+    form: CostProfileForm,
+  ): AgentInvocationOptionsPayload['costProfile'] | undefined => {
+    const record: Record<string, number | string | undefined> = {
+      inputPer1KTokens: parseNumberInput(form.inputPer1KTokens),
+      outputPer1KTokens: parseNumberInput(form.outputPer1KTokens),
+      latencyFee: parseNumberInput(form.latencyFee),
+      fixedFee: parseNumberInput(form.fixedFee),
+      currency: form.currency.trim() || undefined,
+    };
+
+    const sanitized = Object.fromEntries(
+      Object.entries(record).filter(([, value]) => value !== undefined && value !== ''),
+    );
+
+    return Object.keys(sanitized).length
+      ? AgentCostProfileSchema.parse(sanitized)
+      : undefined;
+  };
+
+  const parseNumberInput = (value: string): number | undefined => {
+    if (!value.trim()) {
+      return undefined;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
   };
 
   type JsonValidationResult =
@@ -346,74 +451,204 @@ const FlowAgents = () => {
     return <span className="flow-agents__json-hint">Опционально</span>;
   };
 
-  const renderKeyValueSection = (
-    field: KeyValueField,
-    title: string,
-    description: string,
-    placeholder?: string,
-  ) => {
-    const entries = versionForm[field];
-    return (
-      <section className="flow-agents__kv">
-        <div className="flow-agents__kv-header">
-          <div>
-            <h5>{title}</h5>
-            <p>{description}</p>
+  const renderToolBindingsSection = () => (
+    <section className="flow-agents__kv">
+      <div className="flow-agents__kv-header">
+        <div>
+          <h5>Tool bindings</h5>
+          <p>
+            Укажите инструменты, которые доступны агенту. Можно дополнительно передать
+            `requestOverrides` и ожидания ответа (JSON).
+          </p>
+        </div>
+        <button type="button" className="flow-agents__ghost" onClick={addToolBindingRow}>
+          Добавить
+        </button>
+      </div>
+      {versionForm.toolBindings.map((binding, index) => (
+        <div key={`tool-${index}`} className="flow-agents__kv-item">
+          <div className="flow-agents__kv-fields tool-binding-fields">
+            <label>
+              Tool code
+              <input
+                value={binding.toolCode}
+                onChange={(event) =>
+                  updateToolBindingRow(index, { toolCode: event.target.value })
+                }
+                placeholder="perplexity-research"
+              />
+            </label>
+            <label>
+              Schema version
+              <input
+                type="number"
+                min="1"
+                value={binding.schemaVersion}
+                onChange={(event) =>
+                  updateToolBindingRow(index, { schemaVersion: event.target.value })
+                }
+              />
+            </label>
+            <label>
+              Execution mode
+              <select
+                value={binding.executionMode}
+                onChange={(event) =>
+                  updateToolBindingRow(index, {
+                    executionMode: AgentToolExecutionModeSchema.parse(event.target.value),
+                  })
+                }
+              >
+                {AgentToolExecutionModeSchema.options.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-          <button type="button" className="flow-agents__ghost" onClick={() => addKeyValueRow(field)}>
-            Добавить
+          <div className="tool-binding-json">
+            <label>
+              Request overrides (JSON)
+              <textarea
+                value={binding.requestOverrides}
+                onChange={(event) =>
+                  updateToolBindingRow(index, { requestOverrides: event.target.value })
+                }
+                placeholder='{"maxResults":3}'
+              />
+            </label>
+            <div className="flow-agents__json-feedback">
+              {renderJsonFeedback(binding.requestOverrides)}
+            </div>
+          </div>
+          <div className="tool-binding-json">
+            <label>
+              Response expectations (JSON)
+              <textarea
+                value={binding.responseExpectations}
+                onChange={(event) =>
+                  updateToolBindingRow(index, { responseExpectations: event.target.value })
+                }
+                placeholder='{"fields":["title","url"]}'
+              />
+            </label>
+            <div className="flow-agents__json-feedback">
+              {renderJsonFeedback(binding.responseExpectations)}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="flow-agents__ghost flow-agents__kv-remove"
+            onClick={() => removeToolBindingRow(index)}
+          >
+            Удалить
           </button>
         </div>
-        {entries.map((entry, index) => {
-          const validation = getJsonValidation(entry.value);
-          return (
-            <div key={`${field}-${index}`} className="flow-agents__kv-item">
-              <div className="flow-agents__kv-fields">
-                <label>
-                  Ключ
-                  <input
-                    value={entry.key}
-                    onChange={(event) =>
-                      updateKeyValueRow(field, index, { key: event.target.value })
-                    }
-                    placeholder="bindingName"
-                  />
-                </label>
-                <label>
-                  Значение (JSON)
-                  <textarea
-                    value={entry.value}
-                    onChange={(event) =>
-                      updateKeyValueRow(field, index, { value: event.target.value })
-                    }
-                    placeholder={placeholder}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="flow-agents__ghost flow-agents__kv-remove"
-                  onClick={() => removeKeyValueRow(field, index)}
-                >
-                  Удалить
-                </button>
-              </div>
-              <div className="flow-agents__kv-feedback">
-                {validation.state === 'empty' && (
-                  <span className="flow-agents__json-hint">Будет пропущено, если пусто</span>
-                )}
-                {validation.state === 'error' && (
-                  <span className="flow-agents__field-error">{validation.message}</span>
-                )}
-                {validation.state === 'ok' && (
-                  <pre className="flow-agents__json-preview">{validation.preview}</pre>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-    );
-  };
+      ))}
+    </section>
+  );
+
+  const renderCostProfileSection = () => (
+    <section className="flow-agents__kv">
+      <div className="flow-agents__kv-header">
+        <div>
+          <h5>Cost profile</h5>
+          <p>Задайте индивидуальные ставки за 1K токенов и дополнительные сборы.</p>
+        </div>
+      </div>
+      <div className="flow-agents__grid">
+        <label>
+          Input / 1K tokens
+          <input
+            type="number"
+            step="0.0001"
+            min="0"
+            value={versionForm.costProfile.inputPer1KTokens}
+            onChange={(event) =>
+              setVersionForm((prev) => ({
+                ...prev,
+                costProfile: {
+                  ...prev.costProfile,
+                  inputPer1KTokens: event.target.value,
+                },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Output / 1K tokens
+          <input
+            type="number"
+            step="0.0001"
+            min="0"
+            value={versionForm.costProfile.outputPer1KTokens}
+            onChange={(event) =>
+              setVersionForm((prev) => ({
+                ...prev,
+                costProfile: {
+                  ...prev.costProfile,
+                  outputPer1KTokens: event.target.value,
+                },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Latency fee
+          <input
+            type="number"
+            step="0.0001"
+            min="0"
+            value={versionForm.costProfile.latencyFee}
+            onChange={(event) =>
+              setVersionForm((prev) => ({
+                ...prev,
+                costProfile: {
+                  ...prev.costProfile,
+                  latencyFee: event.target.value,
+                },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Fixed fee
+          <input
+            type="number"
+            step="0.0001"
+            min="0"
+            value={versionForm.costProfile.fixedFee}
+            onChange={(event) =>
+              setVersionForm((prev) => ({
+                ...prev,
+                costProfile: {
+                  ...prev.costProfile,
+                  fixedFee: event.target.value,
+                },
+              }))
+            }
+          />
+        </label>
+        <label>
+          Currency
+          <input
+            value={versionForm.costProfile.currency}
+            onChange={(event) =>
+              setVersionForm((prev) => ({
+                ...prev,
+                costProfile: {
+                  ...prev.costProfile,
+                  currency: event.target.value,
+                },
+              }))
+            }
+            placeholder="USD"
+          />
+        </label>
+      </div>
+    </section>
+  );
 
   const handleCreateVersion = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -431,44 +666,49 @@ const FlowAgents = () => {
     setCreatingVersion(true);
     setError(null);
     try {
+      const versionMaxTokens = parseNumberInput(versionForm.maxTokens);
+
       const payload: AgentVersionPayload = {
         providerId: versionForm.providerId,
         modelId: versionForm.modelId,
         systemPrompt: versionForm.systemPrompt,
         createdBy: operatorId.trim(),
         syncOnly: versionForm.syncOnly,
-        maxTokens: versionForm.maxTokens ? Number(versionForm.maxTokens) : undefined,
+        maxTokens: versionMaxTokens,
         capabilities: buildCapabilitiesPayload(versionForm.capabilities),
       };
 
-      const defaultOptions: AgentDefaultOptions = {};
-      const temperatureValue = versionForm.temperature.trim();
-      if (temperatureValue) {
-        defaultOptions.temperature = Number(temperatureValue);
-      }
-      const topPValue = versionForm.topP.trim();
-      if (topPValue) {
-        defaultOptions.topP = Number(topPValue);
-      }
-      if (Object.keys(defaultOptions).length > 0) {
-        payload.defaultOptions = AgentDefaultOptionsSchema.parse(defaultOptions);
-      }
+      const temperatureValue = parseNumberInput(versionForm.temperature);
+      const topPValue = parseNumberInput(versionForm.topP);
+      const maxOutputTokens = versionMaxTokens;
 
-      const toolBindingsRecord = buildJsonRecord(
-        versionForm.toolBindings,
-        'Tool binding',
-      );
-      if (toolBindingsRecord) {
-        payload.toolBindings = AgentToolBindingsSchema.parse(toolBindingsRecord);
-      }
+      const invocationOptions = AgentInvocationOptionsInputSchema.parse({
+        provider: {
+          type: currentProvider?.type,
+          id: versionForm.providerId,
+          modelId: versionForm.modelId,
+          mode: 'SYNC',
+        },
+        prompt: {
+          system: versionForm.systemPrompt || undefined,
+          generation:
+            temperatureValue != null ||
+            topPValue != null ||
+            maxOutputTokens != null
+              ? {
+                  temperature: temperatureValue ?? undefined,
+                  topP: topPValue ?? undefined,
+                  maxOutputTokens: maxOutputTokens ?? undefined,
+                }
+              : undefined,
+        },
+        tooling: buildToolBindings(versionForm.toolBindings),
+        costProfile: buildCostProfile(versionForm.costProfile),
+      });
 
-      const costProfileRecord = buildJsonRecord(
-        versionForm.costProfile,
-        'Cost profile',
-      );
-      if (costProfileRecord) {
-        payload.costProfile = AgentCostProfileSchema.parse(costProfileRecord);
-      }
+      payload.providerType = currentProvider?.type;
+      payload.invocationOptions = invocationOptions;
+
       await createAgentVersion(selectedDefinition.id, payload);
       invalidateAgentCatalogCache();
       await loadDefinition(selectedDefinition.id);
@@ -880,19 +1120,9 @@ const FlowAgents = () => {
                       }
                     />
                   </label>
-                  {renderKeyValueSection(
-                    'toolBindings',
-                    'Tool bindings',
-                    'Свяжите методы @Tool с агентом и передайте параметры вызова.',
-                    '{"tools":["calculateBudget"]}',
-                  )}
+                  {renderToolBindingsSection()}
 
-                  {renderKeyValueSection(
-                    'costProfile',
-                    'Cost profile',
-                    'Задайте индивидуальные ставки (input/output/total) для биллинга.',
-                    '{"inputPer1KTokens":0.001}',
-                  )}
+                  {renderCostProfileSection()}
                   <label className="flow-agents__checkbox">
                     <input
                       type="checkbox"

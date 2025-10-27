@@ -12,6 +12,21 @@ const agentVersionPayload = {
   status: 'PUBLISHED',
   providerId: 'openai',
   modelId: 'gpt-4o-mini',
+  systemPrompt: 'You are supportive',
+  invocationOptions: {
+    provider: {
+      id: 'openai',
+      modelId: 'gpt-4o-mini',
+      mode: 'SYNC',
+    },
+    prompt: {
+      system: 'You are supportive',
+      generation: {
+        temperature: 0.6,
+        topP: 0.9,
+      },
+    },
+  },
   syncOnly: false,
   capabilities: [
     { capability: 'SEARCH', payload: { allow: true } },
@@ -91,7 +106,7 @@ describe('apiClient type guards', () => {
               outputPer1KTokens: 0.002,
               currency: 'USD',
             },
-            defaultOptions: null,
+            invocationOptions: null,
             costProfile: null,
           },
           memoryReads: [],

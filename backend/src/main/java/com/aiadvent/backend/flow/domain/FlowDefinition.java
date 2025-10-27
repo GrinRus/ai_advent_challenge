@@ -42,6 +42,9 @@ public class FlowDefinition {
   @Column(name = "definition", nullable = false, columnDefinition = "jsonb")
   private FlowBlueprint definition;
 
+  @Column(name = "blueprint_schema_version", nullable = false)
+  private int blueprintSchemaVersion = 1;
+
   @Column(name = "description")
   private String description;
 
@@ -65,7 +68,7 @@ public class FlowDefinition {
     this.version = version;
     this.status = status;
     this.active = active;
-    this.definition = definition;
+    setDefinition(definition);
   }
 
   @PrePersist
@@ -113,7 +116,20 @@ public class FlowDefinition {
   }
 
   public void setDefinition(FlowBlueprint definition) {
+    if (definition == null) {
+      throw new IllegalArgumentException("Flow blueprint must not be null");
+    }
     this.definition = definition;
+    this.blueprintSchemaVersion = resolveSchemaVersion(definition);
+  }
+
+  private int resolveSchemaVersion(FlowBlueprint blueprint) {
+    Integer schemaVersion = blueprint.schemaVersion();
+    return schemaVersion != null && schemaVersion > 0 ? schemaVersion : 1;
+  }
+
+  public int getBlueprintSchemaVersion() {
+    return blueprintSchemaVersion;
   }
 
   public String getDescription() {

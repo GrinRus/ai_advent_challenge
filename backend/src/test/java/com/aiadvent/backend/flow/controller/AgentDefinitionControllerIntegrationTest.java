@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
+import com.aiadvent.backend.flow.api.AgentCapabilityResponse;
 import com.aiadvent.backend.flow.api.AgentDefinitionResponse;
 import com.aiadvent.backend.flow.api.AgentDefinitionSummaryResponse;
 import com.aiadvent.backend.flow.api.AgentVersionResponse;
@@ -168,6 +169,55 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
     assertThat(draftVersion.updatedBy()).isEqualTo("dave");
     assertThat(draftVersion.capabilities()).hasSize(2);
 
+    MvcResult fetchVersionResult =
+        mockMvc
+            .perform(get("/api/agents/versions/" + versionId))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    AgentVersionResponse fetchedDraft =
+        objectMapper.readValue(
+            fetchVersionResult.getResponse().getContentAsString(), AgentVersionResponse.class);
+
+    assertThat(fetchedDraft.id()).isEqualTo(versionId);
+    assertThat(fetchedDraft.systemPrompt()).isEqualTo("You are a helpful solution architect.");
+
+    ObjectNode updatePayload = objectMapper.createObjectNode();
+    updatePayload.put("systemPrompt", "You are a refined solution architect.");
+    updatePayload.set(
+        "invocationOptions",
+        TestAgentInvocationOptionsFactory.minimalJson(
+            objectMapper, ChatProviderType.OPENAI, "openai", "gpt-4o-mini"));
+    updatePayload.put("syncOnly", false);
+    updatePayload.put("maxTokens", 2048);
+    updatePayload.put("updatedBy", "frank");
+    ArrayNode updatedCapabilities = updatePayload.putArray("capabilities");
+    updatedCapabilities
+        .addObject()
+        .put("capability", "analysis")
+        .set("payload", objectMapper.createObjectNode().put("tier", "principal"));
+
+    MvcResult updateVersionResult =
+        mockMvc
+            .perform(
+                put("/api/agents/versions/" + versionId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(updatePayload.toString()))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    AgentVersionResponse updatedVersion =
+        objectMapper.readValue(
+            updateVersionResult.getResponse().getContentAsString(), AgentVersionResponse.class);
+
+    assertThat(updatedVersion.systemPrompt()).isEqualTo("You are a refined solution architect.");
+    assertThat(updatedVersion.syncOnly()).isFalse();
+    assertThat(updatedVersion.maxTokens()).isEqualTo(2048);
+    assertThat(updatedVersion.updatedBy()).isEqualTo("frank");
+    assertThat(updatedVersion.capabilities())
+        .extracting(AgentCapabilityResponse::capability)
+        .containsExactly("analysis");
+
     MvcResult versionsList =
         mockMvc
             .perform(get("/api/agents/definitions/" + definitionId + "/versions"))
@@ -210,6 +260,13 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
     assertThat(published.updatedBy()).isEqualTo("eve");
     assertThat(published.capabilities()).hasSize(1);
     assertThat(published.capabilities().get(0).capability()).isEqualTo("planning");
+
+    mockMvc
+        .perform(
+            put("/api/agents/versions/" + versionId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(updatePayload.toString()))
+        .andExpect(status().isConflict());
 
     MvcResult refreshedSummaryResult =
         mockMvc.perform(get("/api/agents/definitions")).andExpect(status().isOk()).andReturn();

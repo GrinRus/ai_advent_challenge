@@ -90,6 +90,7 @@
 #### 4. Flow Publication
 
 1. Orchestrator runs **Launch Preview** (existing `FlowLaunchPreviewService`) to check cost & step coverage.
+   - Preview response (`FlowLaunchPreviewResponse`) surfaces per-step cost/tokens, manual interaction checkpoints, and validation warnings so the builder can address blocking items before publishing.
 2. Draft is promoted via `POST /api/flows/definitions/{id}/publish`.
 3. Snapshots stored in history for rollback.
 
@@ -133,4 +134,3 @@
 | Flow Assembly | Broken transitions | Compiler throws, UI surfaces error |
 | Flow Launch | Unpublished agent | Flow start API returns 422, user must re-publish agent |
 | Operations | Manual request timeout | FlowInteractionService auto-expire + job enqueue, alert via telemetry |
-
