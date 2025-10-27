@@ -15,11 +15,10 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 
 # Install Node.js + npm and make sure MCP server is available without network on startup
-RUN apk add --no-cache nodejs npm \
-    && npm install -g @perplexity-ai/mcp-server npx \
-    # sanity checks (won't fail the build if help exits non-zero)
-    && mcp-server --help >/dev/null 2>&1 || true \
-    && node -v && npm -v && npx --version
+RUN apt-get update && apt-get install -y curl ca-certificates \
+ && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y nodejs \
+ && node -v && npm -v
 
 ENV PATH="/usr/local/bin:${PATH}" \
     SPRING_PROFILES_ACTIVE=prod \
