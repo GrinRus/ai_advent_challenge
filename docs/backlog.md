@@ -635,17 +635,18 @@
 
 ### Backend
 - [ ] Подключить Spring AI MCP: добавить зависимость `org.springframework.ai:spring-ai-starter-mcp-client` в `backend/build.gradle`, зафиксировать конфигурацию `spring.ai.mcp.client.*` (STDIO transport через `npx -y @perplexity-ai/mcp-server`, таймаут 120s, переменные окружения) и обновить документацию по секретам.
+- [ ] Развести каталог MCP-инструментов: создать отдельные записи `perplexity_search` и `perplexity_deep_research` с нужными `mcp_tool_name`, схемами запросов/ответов и подсказками по тарифам.
 - [ ] Реализовать мягкое подключение MCP-инструментов к любому `ChatProviderAdapter`: расширить `ChatProviderConfiguration`/адаптеры OpenAI и ZhiPu логикой регистрации инструментов через `ToolCallbackProvider` без новых значений `ChatProviderType`.
-- [ ] Обновить `ChatProviderService` и `AgentInvocationService`: при наличии `AgentInvocationOptions.ToolBinding` с MCP-инструментом запускать STDIO-процесс, регистрировать указанный tool и прокидывать выбор в вызовы sync/stream/structured, сохраняя текущую модель подсчёта usage/cost.
+- [ ] Обновить `ChatProviderService` и `AgentInvocationService`: при наличии `AgentInvocationOptions.ToolBinding` с MCP-инструментом поднимать (и переиспользовать) долгоживущий STDIO-клиент, регистрировать выбранный tool и формировать payload с пользовательским запросом в поле `query` (без локали), сохраняя текущую модель подсчёта usage/cost.
 
 ### Flow Orchestration
-- [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный `toolBinding` на MCP и базовые лимиты, чтобы flow-конструктор мог выбрать исследовательский шаг без ручного JSON.
+- [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный `toolBinding` на `perplexity_search` и базовые лимиты, плюс опция переключения на `perplexity_deep_research`, чтобы flow-конструктор мог выбрать исследовательский шаг без ручного JSON.
 - [ ] Обновить `AgentOrchestratorService` и `FlowInteractionService`: поддержать шаги с MCP-инструментами (выбор `perplexity_search`/`perplexity_deep_research` при ручном рестарте, логирование выбранного tool), не меняя структуру shared/memory каналов.
 
 ### Chat Experience
-- [ ] Добавить поддержку query-параметра `mode=research` в `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при его наличии подключать MCP-инструмент к выбранному провайдеру/модели, не переопределяя overrides клиента.
-- [ ] Обновить frontend-клиента (`frontend/src/lib/apiClient.ts`, `LLMChat`) и UI: дать пользователю переключатель research-режима и прокидывать `mode=research` в запросы stream/sync/structured.
-- [ ] Обновить structured/sync UI и обработчики: корректно отображать свободный текст от Perplexity и подсветку источников, если они присутствуют, без жёсткой зависимости от `extensions["research"]`.
+- [ ] Добавить поддержку поля `mode` в теле запросов `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при значении `research` подключать MCP-инструмент к выбранному провайдеру/модели и оставлять пространство для других режимов.
+- [ ] Обновить frontend-клиента (`frontend/src/lib/apiClient.ts`, `LLMChat`) и UI: дать пользователю переключатель research-режима, прокидывать `mode` в тело запросов stream/sync/structured и обрабатывать новые значения.
+- [ ] Обновить structured/sync UI и обработчики: рендерить строгий JSON-ответ Perplexity (summary/items/sources) и подсветку источников без жёсткой зависимости от `extensions["research"]`.
 
 ### Observability & Resilience
 - [ ] Реализовать `HealthIndicator` MCP-подключения: проверка запуска STDIO-процесса, handshake с tool list, метрики `perplexity_mcp_latency`/`perplexity_mcp_errors_total`.
