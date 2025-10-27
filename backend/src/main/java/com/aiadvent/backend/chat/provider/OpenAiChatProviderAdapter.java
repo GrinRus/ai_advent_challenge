@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
@@ -20,6 +21,7 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -31,13 +33,15 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
   private final ChatProvidersProperties.Provider providerConfig;
   private final ChatClient chatClient;
   private final ChatClient statelessChatClient;
+  private final ToolCallbackProvider toolCallbackProvider;
 
   public OpenAiChatProviderAdapter(
       String providerId,
       ChatProvidersProperties.Provider providerConfig,
       OpenAiApi baseOpenAiApi,
       SimpleLoggerAdvisor simpleLoggerAdvisor,
-      MessageChatMemoryAdvisor chatMemoryAdvisor) {
+      MessageChatMemoryAdvisor chatMemoryAdvisor,
+      ToolCallbackProvider toolCallbackProvider) {
     Assert.notNull(providerConfig, "providerConfig must not be null");
     Assert.state(
         providerConfig.getType() == ChatProviderType.OPENAI,
@@ -45,13 +49,32 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
 
     this.providerId = providerId;
     this.providerConfig = providerConfig;
+    this.toolCallbackProvider = toolCallbackProvider;
     OpenAiApi providerApi = mutateApi(baseOpenAiApi, providerConfig);
     OpenAiChatOptions defaultOptions = defaultOptions(providerConfig);
     OpenAiChatModel chatModel =
         OpenAiChatModel.builder().openAiApi(providerApi).defaultOptions(defaultOptions).build();
     this.chatClient =
-        ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor).build();
-    this.statelessChatClient = ChatClient.builder(chatModel).defaultAdvisors(simpleLoggerAdvisor).build();
+        buildChatClient(chatModel, simpleLoggerAdvisor, chatMemoryAdvisor, toolCallbackProvider);
+    this.statelessChatClient =
+        buildChatClient(chatModel, simpleLoggerAdvisor, null, toolCallbackProvider);
+  }
+
+  private ChatClient buildChatClient(
+      OpenAiChatModel chatModel,
+      SimpleLoggerAdvisor simpleLoggerAdvisor,
+      MessageChatMemoryAdvisor chatMemoryAdvisor,
+      ToolCallbackProvider toolCallbackProvider) {
+    ChatClient.Builder builder = ChatClient.builder(chatModel);
+    if (chatMemoryAdvisor != null) {
+      builder.defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor);
+    } else {
+      builder.defaultAdvisors(simpleLoggerAdvisor);
+    }
+    if (toolCallbackProvider != null) {
+      builder.defaultToolCallbacks(toolCallbackProvider);
+    }
+    return builder.build();
   }
 
   private OpenAiApi mutateApi(OpenAiApi baseOpenAiApi, ChatProvidersProperties.Provider provider) {
@@ -212,5 +235,10 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
     } else if (node.isArray()) {
       node.forEach(this::ensureRequiredRecursively);
     }
+  }
+
+  @Override
+  public Optional<ToolCallbackProvider> toolCallbackProvider() {
+    return Optional.ofNullable(toolCallbackProvider);
   }
 }

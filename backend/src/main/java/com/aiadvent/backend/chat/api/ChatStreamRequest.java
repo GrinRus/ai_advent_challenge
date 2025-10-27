@@ -32,4 +32,6 @@ public record ChatStreamRequest(
         String message,
     @Schema(description = "Explicit provider identifier; defaults to the configured provider.") String provider,
     @Schema(description = "Explicit model identifier; defaults to the provider's default model.") String model,
+    @Schema(description = "Optional interaction mode: set to 'research' to enable Perplexity tooling.")
+        String mode,
     @Schema(description = "Optional overrides for sampling parameters.") @Valid ChatStreamRequestOptions options) {}

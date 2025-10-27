@@ -100,7 +100,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of(structuredJson));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Provide a structured summary", null, null, null);
+        new ChatSyncRequest(null, "Provide a structured summary", null, null, null, null);
 
     MvcResult result =
         mockMvc
@@ -150,6 +150,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
             "Tune sampling for structured call",
             null,
             null,
+            null,
             new ChatStreamRequestOptions(0.3, 0.85, 640));
 
     mockMvc
@@ -174,7 +175,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
         List.of("{\"answer\":{\"summary\":\"Default sampling\",\"items\":[]}}"));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Use provider defaults", null, null, null);
+        new ChatSyncRequest(null, "Use provider defaults", null, null, null, null);
 
     mockMvc
         .perform(
@@ -210,7 +211,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of(tooManyRequests, structuredJson));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Provide resilient summary", null, null, null);
+        new ChatSyncRequest(null, "Provide resilient summary", null, null, null, null);
 
     MvcResult result =
         mockMvc
@@ -237,7 +238,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of("{\"unexpected\": true}"));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Return invalid structure", null, null, null);
+        new ChatSyncRequest(null, "Return invalid structure", null, null, null, null);
 
     mockMvc
         .perform(
@@ -263,7 +264,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of(badGateway, badGateway, badGateway));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Simulate upstream failure", null, null, null);
+        new ChatSyncRequest(null, "Simulate upstream failure", null, null, null, null);
 
     mockMvc
         .perform(

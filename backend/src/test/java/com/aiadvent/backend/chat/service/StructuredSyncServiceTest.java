@@ -2,6 +2,8 @@ package com.aiadvent.backend.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.api.StructuredSyncAnswer;
 import com.aiadvent.backend.chat.api.StructuredSyncItem;
@@ -42,6 +44,8 @@ class StructuredSyncServiceTest {
 
   @Mock private ChatSummarizationPreflightManager preflightManager;
 
+  @Mock private ChatResearchToolBindingService researchToolBindingService;
+
   private StructuredSyncService structuredSyncService;
 
   @BeforeEach
@@ -52,7 +56,11 @@ class StructuredSyncServiceTest {
             chatService,
             outputConverter,
             new ObjectMapper(),
-            preflightManager);
+            preflightManager,
+            researchToolBindingService);
+    lenient()
+        .when(researchToolBindingService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(ChatResearchToolBindingService.ResearchContext.empty());
   }
 
   @Test
@@ -132,6 +140,7 @@ class StructuredSyncServiceTest {
             StructuredSyncStatus.SUCCESS,
             provider,
             answer,
+            List.of(),
             null,
             null,
             150L,

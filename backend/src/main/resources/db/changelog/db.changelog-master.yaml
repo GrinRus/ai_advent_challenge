@@ -1662,3 +1662,76 @@ databaseChangeLog:
             tableName: flow_definition_history
             columnName: blueprint_schema_version
             columnDataType: INT
+  - changeSet:
+      id: 0096-update-perplexity-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              DELETE FROM tool_definition WHERE code = 'perplexity-research';
+              DELETE FROM tool_schema_version WHERE tool_code = 'perplexity-research';
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('perplexity_search', 1,
+                 '{"type":"object","properties":{"query":{"type":"string","description":"Search query string"},"max_results":{"type":"integer","minimum":1,"maximum":20},"max_tokens_per_page":{"type":"integer","minimum":256,"maximum":2048},"country":{"type":"string","description":"ISO 3166-1 alpha-2 country code"}},"required":["query"]}'::jsonb,
+                 '{"type":"object","properties":{"summary":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"snippet":{"type":"string"},"url":{"type":"string","format":"uri"},"score":{"type":"number"},"publishedAt":{"type":"string","format":"date-time"}}}},"sources":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"url":{"type":"string","format":"uri"}}}}}}'::jsonb,
+                 'checksum-perplexity-search-v1', '[]'::jsonb, 'perplexity', 'perplexity_search', 'stdio', 'perplexity'),
+                ('perplexity_deep_research', 1,
+                 '{"type":"object","properties":{"query":{"type":"string","description":"Primary research question"},"focus":{"type":"string","description":"Optional focus area to steer the research"},"max_iterations":{"type":"integer","minimum":1,"maximum":5}},"required":["query"]}'::jsonb,
+                 '{"type":"object","properties":{"summary":{"type":"string"},"sections":{"type":"array","items":{"type":"object","properties":{"heading":{"type":"string"},"content":{"type":"string"},"sources":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"url":{"type":"string","format":"uri"}}}}}}},"sources":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"url":{"type":"string","format":"uri"}}}}}}'::jsonb,
+                 'checksum-perplexity-deep-research-v1', '[]'::jsonb, 'perplexity', 'perplexity_research', 'stdio', 'perplexity');
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('perplexity_search', 'Perplexity Search', 'Real-time web search powered by Perplexity. Returns ranked results with snippet summaries.', 'perplexity', 'AUTO', '["research","search"]'::jsonb, '["web-search"]'::jsonb, 'Billed per search via Perplexity Search API', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'perplexity_search' AND version = 1)),
+                ('perplexity_deep_research', 'Perplexity Deep Research', 'Long-running deep research reports using Perplexity sonar-deep-research.', 'perplexity', 'AUTO', '["research","analysis"]'::jsonb, '["deep-research"]'::jsonb, 'Billed per session via Perplexity API (Sonar Deep Research)', NULL, 300000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'perplexity_deep_research' AND version = 1));
+
+              UPDATE agent_definition
+              SET identifier = 'perplexity-research',
+                  display_name = 'Perplexity Research',
+                  description = 'Perplexity-powered research agent template',
+                  updated_at = now()
+              WHERE identifier = 'demo-researcher';
+
+              UPDATE agent_version
+              SET system_prompt = 'You are a meticulous research analyst. Use the Perplexity MCP tools to gather up-to-date insights and always cite the numbered sources returned by the tool.',
+                  agent_invocation_options = '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"system":"You are a meticulous research analyst. Leverage the Perplexity MCP tooling to collect current information, then provide a concise brief that references numbered sources.","variables":[],"generation":{"temperature":0.1,"topP":0.85,"maxOutputTokens":1200}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":30,"maxEntries":200,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":4,"initialDelayMs":300,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[{"toolCode":"perplexity_search","schemaVersion":1,"executionMode":"AUTO","requestOverrides":{"max_results":8}},{"toolCode":"perplexity_deep_research","schemaVersion":1,"executionMode":"AUTO","requestOverrides":{"max_iterations":3}}]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD","latencyFee":0.001}}'::jsonb,
+                  provider_id = 'openai',
+                  model_id = 'gpt-4o-mini',
+                  max_tokens = 1400
+              WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'perplexity-research')
+                AND version = 1;
+
+              DELETE FROM agent_capability
+              WHERE agent_version_id = (
+                SELECT id FROM agent_version
+                WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'perplexity-research')
+                  AND version = 1);
+
+              INSERT INTO agent_capability (agent_version_id, capability, payload)
+              VALUES (
+                (SELECT id FROM agent_version WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'perplexity-research') AND version = 1),
+                'perplexity.tools',
+                jsonb_build_object('default', 'perplexity_search', 'options', jsonb_build_array('perplexity_search', 'perplexity_deep_research')));
+
+              UPDATE agent_version
+              SET agent_invocation_options = jsonb_set(
+                agent_invocation_options,
+                '{tooling,bindings}',
+                (
+                  SELECT jsonb_agg(
+                    CASE
+                      WHEN binding ->> 'toolCode' ILIKE 'perplexity-research'
+                      THEN binding || jsonb_build_object('toolCode', 'perplexity_search')
+                      ELSE binding
+                    END)
+                  FROM jsonb_array_elements(agent_invocation_options #> '{tooling,bindings}') AS binding
+                )
+              )
+              WHERE agent_invocation_options::text ILIKE '%perplexity-research%';

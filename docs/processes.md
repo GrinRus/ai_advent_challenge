@@ -18,6 +18,7 @@
   - интеграционные проверки сохранения `chat_message.structured_payload`, поведения при 422/429/5xx и лимита попыток.
 - В e2e сценариях (Playwright/Cypress) проверяйте переключение вкладок чата, отображение структурированного ответа (summary/items/usage) и корректную обработку ошибок сервера.
 - При работе с fallback-токенизацией добавляйте модульные тесты на `TokenUsageEstimator` и проверяйте кэш Redis (TTL, graceful degradation). В потоковых тестах фиксируйте значение `usageSource` (`native|fallback`), чтобы исключить регрессии в UI.
+- Для режима `mode=research` (Perplexity MCP) используйте мок-сервер или `SyncMcpToolCallbackProvider` stub: проверяйте, что `toolCallbacks` регистрируются, в ответ приходят `tools[]`, structured payload парсится, а health-indicator `perplexityMcp` переходит в `UP`. В e2e сценариях важно убедиться, что UI отображает индикатор инструментов и хранит structured ответ в истории.
 - Для оркестратора флоу:
   - Unit: state machine (`flow_session` статусы, ветвления `transitions`), обработка overrides, работа Memory adapters (`flow_memory_version`).
   - Integration: Testcontainers (Postgres + Redis) для очереди `flow_job` и событий `flow_event`, сценарии `start/pause/resume/cancel/retry`. Проверяйте SSE `/api/flows/{sessionId}/events/stream` и long-poll fallback (timeout, `sinceEventId`/`stateVersion`).

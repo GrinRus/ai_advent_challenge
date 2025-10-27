@@ -6,6 +6,7 @@ import com.aiadvent.backend.chat.provider.model.ChatAdvisorContext;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
@@ -13,6 +14,7 @@ import com.aiadvent.backend.flow.memory.FlowMemoryMetadata;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
+import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -22,8 +24,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +40,7 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.retry.support.RetryTemplateBuilder;
@@ -52,6 +58,7 @@ public class AgentInvocationService {
   private final FlowSessionRepository flowSessionRepository;
   private final FlowMemoryService flowMemoryService;
   private final FlowMemorySummarizerService flowMemorySummarizerService;
+  private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
   private final ConcurrentMap<String, RetryTemplate> retryTemplates = new ConcurrentHashMap<>();
 
@@ -60,11 +67,13 @@ public class AgentInvocationService {
       FlowSessionRepository flowSessionRepository,
       FlowMemoryService flowMemoryService,
       FlowMemorySummarizerService flowMemorySummarizerService,
+      McpToolBindingService mcpToolBindingService,
       ObjectMapper objectMapper) {
     this.chatProviderService = chatProviderService;
     this.flowSessionRepository = flowSessionRepository;
     this.flowMemoryService = flowMemoryService;
     this.flowMemorySummarizerService = flowMemorySummarizerService;
+    this.mcpToolBindingService = mcpToolBindingService;
     this.objectMapper = objectMapper;
   }
 
@@ -109,8 +118,33 @@ public class AgentInvocationService {
     Instant started = Instant.now();
     ChatRequestOverrides effectiveOverrides =
         computeOverrides(agentVersion, request.stepOverrides(), request.sessionOverrides());
+    String sanitizedUserPrompt = sanitizeUserPrompt(request.userPrompt());
     String userMessage =
-        buildUserMessage(request.userPrompt(), request.launchParameters(), request.inputContext());
+        buildUserMessageFromSanitized(
+            sanitizedUserPrompt, request.launchParameters(), request.inputContext());
+
+    ToolSelection toolSelection = resolveToolSelection(request.inputContext());
+    List<McpToolBindingService.ResolvedTool> resolvedTools =
+        resolveToolCallbacks(agentVersion.getInvocationOptions(), sanitizedUserPrompt, toolSelection);
+    List<ToolCallback> toolCallbacks =
+        resolvedTools.stream().map(McpToolBindingService.ResolvedTool::callback).toList();
+    List<String> resolvedToolCodes =
+        resolvedTools.stream().map(McpToolBindingService.ResolvedTool::toolCode).toList();
+
+    if (toolSelection.hasExplicitSelection() && resolvedToolCodes.isEmpty()) {
+      log.warn(
+          "Requested MCP tool override {} for session {} step {} could not be resolved",
+          toolSelection.toolCodes(),
+          request.flowSessionId(),
+          request.stepId());
+    }
+    if (!resolvedToolCodes.isEmpty()) {
+      log.debug(
+          "Using MCP tools {} for session {} step {}",
+          resolvedToolCodes,
+          request.flowSessionId(),
+          request.stepId());
+    }
 
     triggerFlowSummaries(flowSession.getId(), request, selection, userMessage);
 
@@ -129,7 +163,8 @@ public class AgentInvocationService {
               memoryMessages,
               advisorContext,
               userMessage,
-              effectiveOverrides);
+              effectiveOverrides,
+              toolCallbacks);
 
       String content = extractContent(chatResponse);
       if (!StringUtils.hasText(content)) {
@@ -139,7 +174,7 @@ public class AgentInvocationService {
       Usage usage = extractUsage(chatResponse.getMetadata());
       UsageCostEstimate usageCost =
           chatProviderService.estimateUsageCost(
-              selection, usage, request.userPrompt(), content);
+              selection, usage, sanitizedUserPrompt, content);
 
       List<com.aiadvent.backend.flow.domain.FlowMemoryVersion> memoryUpdates =
           applyMemoryWrites(flowSession.getId(), request.memoryWrites(), request.stepId());
@@ -163,7 +198,8 @@ public class AgentInvocationService {
           effectiveOverrides,
           agentVersion.getSystemPrompt(),
           memoryMessages,
-          userMessage);
+          userMessage,
+          resolvedToolCodes);
 
     } catch (RuntimeException ex) {
       logAttemptFailure(retryContext, flowSession.getId(), selection.providerId(), ex);
@@ -217,12 +253,22 @@ public class AgentInvocationService {
     return overrideValue != null ? overrideValue : current;
   }
 
-  private String buildUserMessage(
-      String userPrompt, JsonNode launchParameters, JsonNode inputContext) {
+  private String sanitizeUserPrompt(String userPrompt) {
     String sanitizedPrompt = userPrompt != null ? userPrompt.trim() : "";
     if (!StringUtils.hasText(sanitizedPrompt)) {
       throw new IllegalArgumentException("userPrompt must not be blank");
     }
+    return sanitizedPrompt;
+  }
+
+  private String buildUserMessage(
+      String userPrompt, JsonNode launchParameters, JsonNode inputContext) {
+    String sanitizedPrompt = sanitizeUserPrompt(userPrompt);
+    return buildUserMessageFromSanitized(sanitizedPrompt, launchParameters, inputContext);
+  }
+
+  private String buildUserMessageFromSanitized(
+      String sanitizedPrompt, JsonNode launchParameters, JsonNode inputContext) {
     try {
       StringBuilder builder = new StringBuilder(sanitizedPrompt);
       if (hasContent(launchParameters)) {
@@ -239,6 +285,122 @@ public class AgentInvocationService {
       return builder.toString();
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Failed to serialize input context", exception);
+    }
+  }
+
+  private ToolSelection resolveToolSelection(JsonNode inputContext) {
+    if (inputContext == null || inputContext.isNull() || inputContext.isMissingNode()) {
+      return ToolSelection.empty();
+    }
+    JsonNode interaction = inputContext.get("interaction");
+    if (interaction == null || !interaction.isObject()) {
+      return ToolSelection.empty();
+    }
+    JsonNode payload = interaction.get("payload");
+    if (payload == null || !payload.isObject()) {
+      return ToolSelection.empty();
+    }
+
+    LinkedHashSet<String> codes = new LinkedHashSet<>();
+    Map<String, JsonNode> overrides = new LinkedHashMap<>();
+
+    JsonNode toolNode = payload.get("tool");
+    if (toolNode != null && toolNode.isObject()) {
+      String code = toolNode.path("code").asText(null);
+      String normalized = normalizeToolCode(code);
+      if (normalized != null) {
+        codes.add(normalized);
+        JsonNode perToolOverrides = toolNode.get("requestOverrides");
+        if (perToolOverrides != null && perToolOverrides.isObject()) {
+          overrides.put(normalized, cloneNode(perToolOverrides));
+        }
+      }
+    }
+
+    JsonNode toolCodeNode = payload.get("toolCode");
+    if (toolCodeNode != null && toolCodeNode.isTextual()) {
+      String normalized = normalizeToolCode(toolCodeNode.asText());
+      if (normalized != null) {
+        codes.add(normalized);
+      }
+    }
+
+    JsonNode toolCodesNode = payload.get("toolCodes");
+    if (toolCodesNode != null && toolCodesNode.isArray()) {
+      for (JsonNode element : toolCodesNode) {
+        if (element.isTextual()) {
+          String normalized = normalizeToolCode(element.asText());
+          if (normalized != null) {
+            codes.add(normalized);
+          }
+        }
+      }
+    }
+
+    JsonNode overridesByToolNode = payload.get("requestOverridesByTool");
+    if (overridesByToolNode != null && overridesByToolNode.isObject()) {
+      overridesByToolNode.fields()
+          .forEachRemaining(
+              entry -> {
+                String normalized = normalizeToolCode(entry.getKey());
+                if (normalized != null) {
+                  overrides.put(normalized, cloneNode(entry.getValue()));
+                  codes.add(normalized);
+                }
+              });
+    }
+
+    JsonNode requestOverridesNode = payload.get("requestOverrides");
+    if (requestOverridesNode != null && requestOverridesNode.isObject() && !codes.isEmpty()) {
+      for (String code : codes) {
+        overrides.putIfAbsent(code, cloneNode(requestOverridesNode));
+      }
+    }
+
+    if (codes.isEmpty()) {
+      return ToolSelection.empty();
+    }
+    return new ToolSelection(List.copyOf(codes), Collections.unmodifiableMap(overrides));
+  }
+
+  private List<McpToolBindingService.ResolvedTool> resolveToolCallbacks(
+      AgentInvocationOptions invocationOptions,
+      String sanitizedUserPrompt,
+      ToolSelection toolSelection) {
+    if (invocationOptions == null
+        || invocationOptions.tooling() == null
+        || invocationOptions.tooling().bindings() == null
+        || invocationOptions.tooling().bindings().isEmpty()) {
+      return List.of();
+    }
+    return mcpToolBindingService.resolveCallbacks(
+        invocationOptions.tooling().bindings(),
+        sanitizedUserPrompt,
+        toolSelection.toolCodes(),
+        toolSelection.requestOverrides());
+  }
+
+  private String normalizeToolCode(String toolCode) {
+    if (!StringUtils.hasText(toolCode)) {
+      return null;
+    }
+    String trimmed = toolCode.trim();
+    return StringUtils.hasText(trimmed) ? trimmed.toLowerCase(Locale.ROOT) : null;
+  }
+
+  private JsonNode cloneNode(JsonNode node) {
+    return node != null ? node.deepCopy() : objectMapper.nullNode();
+  }
+
+  private record ToolSelection(List<String> toolCodes, Map<String, JsonNode> requestOverrides) {
+    private static final ToolSelection EMPTY = new ToolSelection(List.of(), Collections.emptyMap());
+
+    static ToolSelection empty() {
+      return EMPTY;
+    }
+
+    boolean hasExplicitSelection() {
+      return toolCodes != null && !toolCodes.isEmpty();
     }
   }
 

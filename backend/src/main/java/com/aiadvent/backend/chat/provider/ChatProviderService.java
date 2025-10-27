@@ -21,6 +21,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 public class ChatProviderService {
@@ -104,11 +106,15 @@ public class ChatProviderService {
       List<String> additionalSystemMessages,
       ChatAdvisorContext advisorContext,
       String userMessage,
-      ChatRequestOverrides overrides) {
+      ChatRequestOverrides overrides,
+      List<ToolCallback> toolCallbacks) {
     ChatOptions options = buildOptions(selection, overrides != null ? overrides : ChatRequestOverrides.empty());
     var promptSpec = chatClient(selection.providerId()).prompt();
     if (StringUtils.hasText(systemPrompt)) {
       promptSpec.system(systemPrompt);
+    }
+    if (!CollectionUtils.isEmpty(toolCallbacks)) {
+      promptSpec = promptSpec.toolCallbacks(toolCallbacks);
     }
     if (additionalSystemMessages != null) {
       additionalSystemMessages.stream()

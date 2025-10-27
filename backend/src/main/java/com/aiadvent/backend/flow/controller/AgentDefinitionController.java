@@ -9,6 +9,7 @@ import com.aiadvent.backend.flow.api.AgentVersionPublishRequest;
 import com.aiadvent.backend.flow.api.AgentVersionRequest;
 import com.aiadvent.backend.flow.api.AgentVersionUpdateRequest;
 import com.aiadvent.backend.flow.api.AgentVersionResponse;
+import com.aiadvent.backend.flow.api.AgentTemplateResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.service.AgentCatalogService;
@@ -48,6 +49,11 @@ public class AgentDefinitionController {
     AgentDefinition definition = agentCatalogService.getDefinition(id);
     List<AgentVersion> versions = agentCatalogService.listVersions(id);
     return toResponse(definition, versions);
+  }
+
+  @GetMapping("/templates")
+  public AgentTemplateResponse listTemplates() {
+    return agentCatalogService.listTemplates();
   }
 
   @PostMapping("/definitions")

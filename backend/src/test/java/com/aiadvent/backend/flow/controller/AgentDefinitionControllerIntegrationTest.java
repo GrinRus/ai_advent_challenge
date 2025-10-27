@@ -9,10 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.api.AgentCapabilityResponse;
 import com.aiadvent.backend.flow.api.AgentDefinitionResponse;
 import com.aiadvent.backend.flow.api.AgentDefinitionSummaryResponse;
 import com.aiadvent.backend.flow.api.AgentVersionResponse;
+import com.aiadvent.backend.flow.api.AgentTemplateResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -21,6 +23,7 @@ import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.support.PostgresTestContainer;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -52,6 +55,46 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
   @BeforeEach
   void clean() {
     jdbcTemplate.execute("TRUNCATE TABLE agent_capability, agent_version, agent_definition RESTART IDENTITY CASCADE");
+  }
+
+  @Test
+  void listTemplatesIncludesPerplexityResearch() throws Exception {
+    MvcResult result =
+        mockMvc.perform(get("/api/agents/templates")).andExpect(status().isOk()).andReturn();
+
+    AgentTemplateResponse response =
+        objectMapper.readValue(
+            result.getResponse().getContentAsString(), AgentTemplateResponse.class);
+
+    assertThat(response.templates()).isNotEmpty();
+    AgentTemplateResponse.AgentTemplate template =
+        response.templates().stream()
+            .filter(t -> t.identifier().equals("perplexity-research"))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(template.displayName()).isEqualTo("Perplexity Research");
+    assertThat(template.syncOnly()).isTrue();
+    assertThat(template.maxTokens()).isEqualTo(1_400);
+
+    AgentInvocationOptions options = template.invocationOptions();
+    assertThat(options.provider().id()).isEqualTo("openai");
+    assertThat(options.provider().modelId()).isEqualTo("gpt-4o-mini");
+    assertThat(options.tooling().bindings())
+        .extracting(AgentInvocationOptions.ToolBinding::toolCode)
+        .containsExactly("perplexity_search", "perplexity_deep_research");
+
+    AgentTemplateResponse.AgentTemplateCapability capability =
+        template.capabilities().stream()
+            .filter(cap -> cap.capability().equals("perplexity.tools"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(capability.payload().path("default").asText()).isEqualTo("perplexity_search");
+    JsonNode optionsNode = capability.payload().path("options");
+    assertThat(optionsNode.isArray()).isTrue();
+    java.util.Set<String> optionCodes = new java.util.HashSet<>();
+    optionsNode.forEach(node -> optionCodes.add(node.asText()));
+    assertThat(optionCodes).contains("perplexity_search", "perplexity_deep_research");
   }
 
   @Test

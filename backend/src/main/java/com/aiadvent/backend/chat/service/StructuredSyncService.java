@@ -1,9 +1,9 @@
 package com.aiadvent.backend.chat.service;
 
+import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.StructuredSyncAnswer;
-import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.api.StructuredSyncProvider;
 import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncStatus;
@@ -11,16 +11,21 @@ import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
-import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.util.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -52,17 +57,20 @@ public class StructuredSyncService extends AbstractSyncService {
   private final BeanOutputConverter<StructuredSyncResponse> outputConverter;
   private final ObjectMapper objectMapper;
   private final ChatSummarizationPreflightManager preflightManager;
+  private final ChatResearchToolBindingService researchToolBindingService;
 
   public StructuredSyncService(
       ChatProviderService chatProviderService,
       ChatService chatService,
       BeanOutputConverter<StructuredSyncResponse> outputConverter,
       ObjectMapper objectMapper,
-      ChatSummarizationPreflightManager preflightManager) {
+      ChatSummarizationPreflightManager preflightManager,
+      ChatResearchToolBindingService researchToolBindingService) {
     super(chatProviderService, chatService);
     this.outputConverter = outputConverter;
     this.objectMapper = objectMapper;
     this.preflightManager = preflightManager;
+    this.researchToolBindingService = researchToolBindingService;
   }
 
   public StructuredSyncResult sync(ChatSyncRequest request) {
@@ -73,6 +81,7 @@ public class StructuredSyncService extends AbstractSyncService {
           HttpStatus.BAD_REQUEST,
           "Model '" + selection.modelId() + "' does not support structured responses.");
     }
+    ChatInteractionMode mode = ChatInteractionMode.from(request.mode());
     ChatProvidersProperties.Provider provider = provider(selection.providerId());
     ChatRequestOverrides overrides = resolveOverrides(request.options());
     ConversationContext context = registerUserMessage(request, selection);
@@ -86,6 +95,7 @@ public class StructuredSyncService extends AbstractSyncService {
               retryContext ->
                   executeAttempt(
                       request,
+                      mode,
                       context,
                       selection,
                       provider,
@@ -102,12 +112,13 @@ public class StructuredSyncService extends AbstractSyncService {
 
   private StructuredSyncResponse executeAttempt(
       ChatSyncRequest request,
-    ConversationContext conversation,
-    ChatProviderSelection selection,
-    ChatProvidersProperties.Provider provider,
-    ChatRequestOverrides overrides,
-    UUID requestId,
-    RetryContext retryContext)
+      ChatInteractionMode mode,
+      ConversationContext conversation,
+      ChatProviderSelection selection,
+      ChatProvidersProperties.Provider provider,
+      ChatRequestOverrides overrides,
+      UUID requestId,
+      RetryContext retryContext)
       throws ResponseStatusException {
     if (retryContext != null) {
       retryContext.setAttribute("sessionId", conversation.sessionId());
@@ -118,14 +129,22 @@ public class StructuredSyncService extends AbstractSyncService {
     ChatOptions options =
         chatProviderService.buildStructuredOptions(selection, overrides, outputConverter);
 
+    String sanitizedPrompt = sanitizeUserPrompt(request.message());
+    ResearchContext researchContext = researchToolBindingService.resolve(mode, sanitizedPrompt);
+
     String systemInstruction =
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());
-    String userPrompt = enrichUserPrompt(request.message(), provider.getType());
+    if (mode.isResearch() && researchContext.hasSystemPrompt()) {
+      systemInstruction = researchContext.systemPrompt() + "\n\n" + systemInstruction;
+    }
+
+    String userPrompt =
+        enrichUserPrompt(sanitizedPrompt, provider.getType(), mode, researchContext);
 
     preflightManager.run(conversation.sessionId(), selection, userPrompt, "structured-sync");
 
     try {
-      ChatResponse response =
+      var prompt =
           chatProviderService
               .chatClient(selection.providerId())
               .prompt()
@@ -134,10 +153,13 @@ public class StructuredSyncService extends AbstractSyncService {
               .advisors(
                   advisors ->
                       advisors.param(
-                          ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()))
-              .options(options)
-              .call()
-              .chatResponse();
+                          ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()));
+
+      if (researchContext.hasCallbacks()) {
+        prompt = prompt.toolCallbacks(researchContext.callbacks());
+      }
+
+      ChatResponse response = prompt.options(options).call().chatResponse();
 
       String content = extractContent(response);
       if (!StringUtils.hasText(content)) {
@@ -150,6 +172,11 @@ public class StructuredSyncService extends AbstractSyncService {
       StructuredSyncUsageStats usageStats = toUsageStats(usageCost);
       UsageCostDetails costDetails = toCostDetails(usageCost);
       long latencyMs = Duration.between(attemptStart, Instant.now()).toMillis();
+
+      List<String> toolCodes =
+          researchContext.hasCallbacks() && !CollectionUtils.isEmpty(researchContext.toolCodes())
+              ? List.copyOf(researchContext.toolCodes())
+              : null;
 
       StructuredSyncStatus status =
           payload.status() != null ? payload.status() : StructuredSyncStatus.SUCCESS;
@@ -165,6 +192,7 @@ public class StructuredSyncService extends AbstractSyncService {
               status,
               new StructuredSyncProvider(provider.getType().name(), selection.modelId()),
               answer,
+              toolCodes,
               usageStats,
               costDetails,
               latencyMs,
@@ -235,16 +263,32 @@ public class StructuredSyncService extends AbstractSyncService {
         HttpStatus.BAD_GATEWAY, "Failed to obtain structured sync response", lastThrowable);
   }
 
-  private String enrichUserPrompt(String message, ChatProviderType providerType) {
+  private String enrichUserPrompt(
+      String sanitizedMessage,
+      ChatProviderType providerType,
+      ChatInteractionMode mode,
+      ResearchContext researchContext) {
+    if (!StringUtils.hasText(sanitizedMessage)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be empty");
+    }
+    StringBuilder builder = new StringBuilder(sanitizedMessage);
+    if (mode.isResearch() && researchContext.hasStructuredAdvice()) {
+      builder.append("\n\n").append(researchContext.structuredAdvice().trim());
+    }
+    String directive = "Ответь исключительно JSON-объектом без Markdown и комментариев.";
+    builder.append("\n\n").append(directive);
+    if (providerType != ChatProviderType.OPENAI) {
+      builder.append("\n").append(outputConverter.getFormat());
+    }
+    return builder.toString();
+  }
+
+  private String sanitizeUserPrompt(String message) {
     String trimmed = message != null ? message.trim() : "";
     if (!StringUtils.hasText(trimmed)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be empty");
     }
-    String directive = "Ответь исключительно JSON-объектом без Markdown и комментариев.";
-    if (providerType == ChatProviderType.OPENAI) {
-      return trimmed + "\n\n" + directive;
-    }
-    return trimmed + "\n\n" + directive + "\n" + outputConverter.getFormat();
+    return trimmed;
   }
 
   private StructuredSyncResponse convert(String content) {

@@ -98,43 +98,76 @@ class AgentConstructorServiceTest {
 
   @Test
   void listToolsMapsCatalogEntries() {
-    ToolSchemaVersion schemaVersion =
+    ToolSchemaVersion searchSchema =
         new ToolSchemaVersion(
-            "perplexity-research",
+            "perplexity_search",
             1,
             objectMapper.createObjectNode(),
             objectMapper.createObjectNode(),
-            "checksum",
+            "search-checksum",
             objectMapper.createArrayNode(),
             "perplexity",
-            "perplexity_research",
+            "perplexity_search",
             "stdio",
             "perplexity");
 
-    ToolDefinition toolDefinition =
+    ToolDefinition searchDefinition =
         new ToolDefinition(
-            "perplexity-research",
-            "Perplexity Research",
-            "Research tool",
+            "perplexity_search",
+            "Perplexity Search",
+            "Search tool",
             "perplexity",
             ToolCallType.AUTO,
             List.of("research"),
             List.of("web-search"),
             "Usage billed separately",
             null,
-            60_000L);
-    toolDefinition.setSchemaVersion(schemaVersion);
+            120_000L);
+    searchDefinition.setSchemaVersion(searchSchema);
+
+    ToolSchemaVersion deepSchema =
+        new ToolSchemaVersion(
+            "perplexity_deep_research",
+            1,
+            objectMapper.createObjectNode(),
+            objectMapper.createObjectNode(),
+            "deep-checksum",
+            objectMapper.createArrayNode(),
+            "perplexity",
+            "perplexity_research",
+            "stdio",
+            "perplexity");
+
+    ToolDefinition deepDefinition =
+        new ToolDefinition(
+            "perplexity_deep_research",
+            "Perplexity Deep Research",
+            "Deep research tool",
+            "perplexity",
+            ToolCallType.AUTO,
+            List.of("research"),
+            List.of("analysis"),
+            "Usage billed separately",
+            null,
+            300_000L);
+    deepDefinition.setSchemaVersion(deepSchema);
 
     when(toolDefinitionRepository.findAllByOrderByDisplayNameAsc())
-        .thenReturn(List.of(toolDefinition));
+        .thenReturn(List.of(searchDefinition, deepDefinition));
 
     AgentConstructorToolsResponse response = service.listTools();
 
     assertThat(response.tools())
-        .hasSize(1)
-        .extracting(AgentConstructorToolsResponse.Tool::code, AgentConstructorToolsResponse.Tool::callType)
-        .containsExactly(tuple("perplexity-research", ToolCallType.AUTO));
-    assertThat(response.tools().get(0).schemaVersion().version()).isEqualTo(1);
+        .hasSize(2)
+        .extracting(AgentConstructorToolsResponse.Tool::code)
+        .containsExactlyInAnyOrder("perplexity_search", "perplexity_deep_research");
+    assertThat(response.tools())
+        .filteredOn(tool -> tool.code().equals("perplexity_deep_research"))
+        .singleElement()
+        .satisfies(tool -> {
+          assertThat(tool.callType()).isEqualTo(ToolCallType.AUTO);
+          assertThat(tool.schemaVersion().mcpToolName()).isEqualTo("perplexity_research");
+        });
   }
 
   @Test
@@ -153,8 +186,8 @@ class AgentConstructorServiceTest {
   void previewProducesDiffCostEstimateAndCoverage() throws Exception {
     ToolDefinition toolDefinition =
         new ToolDefinition(
-            "perplexity-research",
-            "Perplexity Research",
+            "perplexity_search",
+            "Perplexity Search",
             "Research tool",
             "perplexity",
             ToolCallType.AUTO,
@@ -174,7 +207,7 @@ class AgentConstructorServiceTest {
     proposedJson
         .with("tooling")
         .withArray("bindings")
-        .add(objectMapper.createObjectNode().put("toolCode", "perplexity-research"));
+        .add(objectMapper.createObjectNode().put("toolCode", "perplexity_search"));
     AgentInvocationOptions proposed =
         objectMapper.treeToValue(proposedJson, AgentInvocationOptions.class);
 
@@ -189,7 +222,7 @@ class AgentConstructorServiceTest {
         .extracting(
             AgentConstructorPreviewResponse.ToolCoverage::toolCode,
             AgentConstructorPreviewResponse.ToolCoverage::available)
-        .containsExactly(tuple("perplexity-research", true));
+        .containsExactly(tuple("perplexity_search", true));
   }
 
   @Test

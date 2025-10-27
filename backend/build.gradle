@@ -30,6 +30,7 @@ dependencies {
 	implementation "org.springframework.ai:spring-ai-model"
 	implementation "org.springframework.ai:spring-ai-starter-model-openai"
 	implementation "org.springframework.ai:spring-ai-starter-model-zhipuai"
+	implementation "org.springframework.ai:spring-ai-starter-mcp-client"
 
 	// остальное как было
 	implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.6")

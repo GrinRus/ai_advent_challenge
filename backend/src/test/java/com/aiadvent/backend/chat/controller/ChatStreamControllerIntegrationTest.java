@@ -95,7 +95,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setTokens(List.of("partial ", "answer"));
     StubChatClientState.setUsage(12, 18, 30);
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Hello model", null, null, null);
+    ChatStreamRequest request = new ChatStreamRequest(null, "Hello model", null, null, null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
@@ -163,7 +163,8 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setTokens(List.of("first ", "second"));
     StubChatClientState.setUsage(10, 14, 24, true);
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Usage please", null, null, null);
+    ChatStreamRequest request =
+        new ChatStreamRequest(null, "Usage please", null, null, null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
@@ -193,7 +194,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   @Test
   void streamRejectsModelsWithoutStreamingSupport() throws Exception {
     ChatStreamRequest request =
-        new ChatStreamRequest(null, "No streaming", "alternate", "alt-model-sync-only", null);
+        new ChatStreamRequest(null, "No streaming", "alternate", "alt-model-sync-only", null, null);
 
     mockMvc
         .perform(
@@ -207,14 +208,15 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   void streamUsesChatMemoryWindowAcrossRequests() throws Exception {
     StubChatClientState.setTokens(List.of("Previous answer"));
     List<ChatStreamEvent> initialEvents =
-        performChatStream(new ChatStreamRequest(null, "Previous question", null, null, null));
+        performChatStream(new ChatStreamRequest(null, "Previous question", null, null, null, null));
 
     UUID sessionId = initialEvents.getFirst().sessionId();
     ChatSession persistedSession = chatSessionRepository.findById(sessionId).orElseThrow();
 
     StubChatClientState.setTokens(List.of("follow-up"));
 
-    performChatStream(new ChatStreamRequest(sessionId, "Next question from user", null, null, null));
+    performChatStream(
+        new ChatStreamRequest(sessionId, "Next question from user", null, null, null, null));
 
     Prompt prompt = StubChatClientState.lastPrompt();
     assertThat(prompt).isNotNull();
@@ -267,7 +269,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
 
     ChatStreamRequest request =
         new ChatStreamRequest(
-            null, "Switch provider please", "alternate", "alt-model-pro", null);
+            null, "Switch provider please", "alternate", "alt-model-pro", null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
@@ -301,7 +303,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setUsage(null, null, null);
 
     ChatStreamRequest request =
-        new ChatStreamRequest(null, "Trigger fallback", null, "stub-model-fast", null);
+        new ChatStreamRequest(null, "Trigger fallback", null, "stub-model-fast", null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
@@ -321,6 +323,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
             "Tune sampling",
             null,
             null,
+            null,
             new ChatStreamRequestOptions(0.25, 0.8, 256));
 
     performChatStream(request);
@@ -338,7 +341,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   void streamFallsBackToProviderDefaultsWhenOverridesMissing() throws Exception {
     StubChatClientState.setTokens(List.of("default response"));
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Use defaults", null, null, null);
+    ChatStreamRequest request = new ChatStreamRequest(null, "Use defaults", null, null, null, null);
 
     performChatStream(request);
 

@@ -86,7 +86,7 @@ class AgentConstructorControllerIntegrationTest extends PostgresTestContainer {
     proposed
         .with("tooling")
         .withArray("bindings")
-        .add(objectMapper.createObjectNode().put("toolCode", "perplexity-research"));
+        .add(objectMapper.createObjectNode().put("toolCode", "perplexity_search"));
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.set("proposed", proposed);
@@ -111,6 +111,6 @@ class AgentConstructorControllerIntegrationTest extends PostgresTestContainer {
         .extracting(
             AgentConstructorPreviewResponse.ToolCoverage::toolCode,
             AgentConstructorPreviewResponse.ToolCoverage::available)
-        .containsExactlyInAnyOrder(tuple("perplexity-research", true));
+        .containsExactlyInAnyOrder(tuple("perplexity_search", true));
   }
 }

@@ -79,7 +79,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             .uri("/api/llm/chat/stream")
             .contentType(MediaType.APPLICATION_JSON)
             .accept(MediaType.TEXT_EVENT_STREAM)
-            .bodyValue(new ChatStreamRequest(null, "Hello over HTTP", null, null, null))
+            .bodyValue(new ChatStreamRequest(null, "Hello over HTTP", null, null, null, null))
             .exchange()
             .expectStatus()
             .isOk()
@@ -158,7 +158,7 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             .accept(MediaType.TEXT_EVENT_STREAM)
             .bodyValue(
                 new ChatStreamRequest(
-                    null, "Invoke alternate provider", "alternate", "alt-model-pro", null))
+                    null, "Invoke alternate provider", "alternate", "alt-model-pro", null, null))
             .exchange()
             .expectStatus()
             .isOk()

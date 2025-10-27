@@ -18,6 +18,8 @@ public record StructuredSyncResponse(
         StructuredSyncProvider provider,
     @Schema(description = "Domain-specific structured answer produced by the provider.")
         StructuredSyncAnswer answer,
+    @Schema(description = "Codes of MCP tools invoked during the response.")
+        java.util.List<String> tools,
     @Schema(description = "Token usage reported by the provider.") StructuredSyncUsageStats usage,
     @Schema(description = "Cost breakdown calculated by the backend based on usage and pricing.")
         UsageCostDetails cost,

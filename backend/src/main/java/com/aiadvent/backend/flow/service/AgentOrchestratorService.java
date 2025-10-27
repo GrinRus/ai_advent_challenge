@@ -219,9 +219,11 @@ public class AgentOrchestratorService {
     }
 
     stepExecution.setStatus(FlowStepStatus.RUNNING);
-    stepExecution.setStartedAt(Instant.now());
-    stepExecution.setAgentVersion(agentVersion);
-    FlowStepInputPayload inputPayload = flowPayloadMapper.buildStepInputPayload(session);
+   stepExecution.setStartedAt(Instant.now());
+   stepExecution.setAgentVersion(agentVersion);
+    FlowStepInputPayload baseInputPayload = flowPayloadMapper.buildStepInputPayload(session);
+    FlowStepInputPayload inputPayload =
+        flowPayloadMapper.mergeInteractionPayload(baseInputPayload, stepExecution.getInputPayload());
     JsonNode inputContext = inputPayload.asJson();
     stepExecution.setPrompt(stepConfig.prompt());
     stepExecution.setInputPayload(inputPayload);
@@ -699,6 +701,11 @@ public class AgentOrchestratorService {
     if (result.memorySnapshots() != null && !result.memorySnapshots().isEmpty()) {
       ArrayNode memoryArray = requestNode.putArray("memorySnapshots");
       result.memorySnapshots().forEach(memoryArray::add);
+      hasRequestData = true;
+    }
+    if (result.selectedToolCodes() != null && !result.selectedToolCodes().isEmpty()) {
+      ArrayNode toolArray = requestNode.putArray("selectedTools");
+      result.selectedToolCodes().forEach(toolArray::add);
       hasRequestData = true;
     }
     if (StringUtils.hasText(result.userMessage())) {

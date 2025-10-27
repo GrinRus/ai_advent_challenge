@@ -77,6 +77,27 @@ public class FlowPayloadMapper {
     return FlowStepInputPayload.from(input);
   }
 
+  public FlowStepInputPayload mergeInteractionPayload(
+      FlowStepInputPayload base, FlowStepInputPayload existing) {
+    if (existing == null || existing.isEmpty()) {
+      return base;
+    }
+    JsonNode existingNode = existing.asJson();
+    if (existingNode == null || !existingNode.has("interaction")) {
+      return base;
+    }
+    ObjectNode merged = base.asObjectNode(objectMapper);
+    JsonNode interactionNode = existingNode.get("interaction");
+    if (interactionNode != null && !interactionNode.isMissingNode()) {
+      merged.set("interaction", cloneNode(interactionNode));
+    }
+    JsonNode overrideNode = existingNode.get("overrides");
+    if (overrideNode != null && !overrideNode.isMissingNode()) {
+      merged.set("overrides", cloneNode(overrideNode));
+    }
+    return FlowStepInputPayload.from(merged);
+  }
+
   public FlowSharedContext applyStepOutput(
       FlowSession session, FlowStepExecution stepExecution, JsonNode stepOutput) {
     ObjectNode context = session.getSharedContext().asObjectNode(objectMapper);

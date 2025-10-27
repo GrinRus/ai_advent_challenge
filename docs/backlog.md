@@ -610,7 +610,7 @@
   - `AgentInvocationOptions` (Option B): блоки `Provider` (type/id/model/mode), `Prompt` (system/templateId/variables[]), `MemoryPolicy` (channels[], retentionDays, maxEntries, summarizationStrategy, overflowAction), `RetryPolicy` (maxAttempts, initialDelayMs, multiplier, retryableStatuses[], timeoutMs, overallDeadlineMs, jitterMs), `AdvisorSettings` (telemetry/audit/routing параметрами), `Tooling` (binding DTO), `CostProfile` (input/output per 1K tokens, currency, optional latencyFee/fixedFee).
   - Каталог инструментов (Option C): `tool_definition` хранит `id`, `code`, `display_name`, `description`, `provider_hint`, `call_type`, `tags[]`, `capabilities[]`, `cost_hint`, `icon_url`, `default_timeout_ms`, ссылку на актуальную `tool_schema_version`; `tool_schema_version` содержит `id`, `tool_code`, `version`, `request_schema`, `response_schema`, `schema_checksum`, `examples[]`, `mcp_server`, `mcp_tool_name`, `transport`, `auth_scope`, `created_at`.
   - REST: новые DTO/эндпоинты `AgentConstructorService` работают только с `AgentInvocationOptions`; `POST /preview` (Option C) отдаёт `proposed` конфигурацию, diff по полям, рассчитанные cost/latency метрики и покрытие инструментов; валидация/превью выполняются по backend-шаблонам (создание/изменение/редактирование), без обращения к внешним копиям документации в рантайме.
-  - Миграции: Liquibase — drop legacy колонки, create новые таблицы/колонку, truncate старые записи; после деплоя заливаем статичный seed (Option A) через SQL/JSON с примерным каталогом (`openai-gpt-4o`, `perplexity-research`), агентами (`demo-openai-chat`, `demo-researcher`) и flow `demo-lead-qualify`.
+  - Миграции: Liquibase — drop legacy колонки, create новые таблицы/колонку, truncate старые записи; после деплоя заливаем статичный seed (Option A) через SQL/JSON с примерным каталогом (`openai-gpt-4o`, `perplexity_search`, `perplexity_deep_research`), агентами (`demo-openai-chat`, `perplexity-research`) и flow `demo-lead-qualify`.
 - [x] Выпустить API v2 для flow builder/агентного конструктора: `GET/PUT /api/flows/definitions/{id}` и `FlowLaunchPreviewResponse` возвращают `FlowBlueprint`, добавить эндпоинт валидации шага, справочники memory каналов/interaction-схем, новые команды в `AgentDefinitionController`; сохранить обратную совместимость через feature-flag.
 
 ### Frontend
@@ -634,59 +634,30 @@
 Цель: подключить Perplexity через Model Context Protocol, чтобы агенты и чат выполняли live-research шаги, возвращали цитаты и делились контекстом с downstream-логикой. Волна добавляет поддержку MCP-инструментов поверх существующих LLM провайдеров и даёт готовые сценарии использования в flow и чатах.
 
 ### Backend
-- [ ] Подключить Spring AI MCP: добавить зависимость `org.springframework.ai:spring-ai-starter-mcp-client` в `backend/build.gradle`, зафиксировать конфигурацию `spring.ai.mcp.client.*` (STDIO transport через `npx -y @perplexity-ai/mcp-server`, таймаут 120s, переменные окружения) и обновить документацию по секретам.
-- [ ] Развести каталог MCP-инструментов: создать отдельные записи `perplexity_search` и `perplexity_deep_research` с нужными `mcp_tool_name`, схемами запросов/ответов и подсказками по тарифам.
-- [ ] Реализовать мягкое подключение MCP-инструментов к любому `ChatProviderAdapter`: расширить `ChatProviderConfiguration`/адаптеры OpenAI и ZhiPu логикой регистрации инструментов через `ToolCallbackProvider` без новых значений `ChatProviderType`.
-- [ ] Обновить `ChatProviderService` и `AgentInvocationService`: при наличии `AgentInvocationOptions.ToolBinding` с MCP-инструментом поднимать (и переиспользовать) долгоживущий STDIO-клиент, регистрировать выбранный tool и формировать payload с пользовательским запросом в поле `query` (без локали), сохраняя текущую модель подсчёта usage/cost.
+- [x] Подключить Spring AI MCP: добавить зависимость `org.springframework.ai:spring-ai-starter-mcp-client` в `backend/build.gradle`, зафиксировать конфигурацию `spring.ai.mcp.client.*` (STDIO transport через `npx -y @perplexity-ai/mcp-server`, таймаут 120s, переменные окружения) и обновить документацию по секретам.
+- [x] Развести каталог MCP-инструментов: создать отдельные записи `perplexity_search` и `perplexity_deep_research` с нужными `mcp_tool_name`, схемами запросов/ответов и подсказками по тарифам.
+- [x] Реализовать мягкое подключение MCP-инструментов к любому `ChatProviderAdapter`: расширить `ChatProviderConfiguration`/адаптеры OpenAI и ZhiPu логикой регистрации инструментов через `ToolCallbackProvider` без новых значений `ChatProviderType`.
+- [x] Обновить `ChatProviderService` и `AgentInvocationService`: при наличии `AgentInvocationOptions.ToolBinding` с MCP-инструментом поднимать (и переиспользовать) долгоживущий STDIO-клиент, регистрировать выбранный tool и формировать payload с пользовательским запросом в поле `query` (без локали), сохраняя текущую модель подсчёта usage/cost.
 
 ### Flow Orchestration
-- [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный `toolBinding` на `perplexity_search` и базовые лимиты, плюс опция переключения на `perplexity_deep_research`, чтобы flow-конструктор мог выбрать исследовательский шаг без ручного JSON.
-- [ ] Обновить `AgentOrchestratorService` и `FlowInteractionService`: поддержать шаги с MCP-инструментами (выбор `perplexity_search`/`perplexity_deep_research` при ручном рестарте, логирование выбранного tool), не меняя структуру shared/memory каналов.
+- [x] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный `toolBinding` на `perplexity_search` и базовые лимиты, плюс опция переключения на `perplexity_deep_research`, чтобы flow-конструктор мог выбрать исследовательский шаг без ручного JSON.
+- [x] Обновить `AgentOrchestratorService` и `FlowInteractionService`: поддержать шаги с MCP-инструментами (выбор `perplexity_search`/`perplexity_deep_research` при ручном рестарте, логирование выбранного tool), не меняя структуру shared/memory каналов.
 
 ### Chat Experience
-- [ ] Добавить поддержку поля `mode` в теле запросов `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при значении `research` подключать MCP-инструмент к выбранному провайдеру/модели и оставлять пространство для других режимов.
-- [ ] Обновить frontend-клиента (`frontend/src/lib/apiClient.ts`, `LLMChat`) и UI: дать пользователю переключатель research-режима, прокидывать `mode` в тело запросов stream/sync/structured и обрабатывать новые значения.
-- [ ] Обновить structured/sync UI и обработчики: рендерить строгий JSON-ответ Perplexity (summary/items/sources) и подсветку источников без жёсткой зависимости от `extensions["research"]`.
+- [x] Добавить поддержку поля `mode` в теле запросов `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при значении `research` подключать MCP-инструмент к выбранному провайдеру/модели и оставлять пространство для других режимов.
+- [x] Обновить frontend-клиента (`frontend/src/lib/apiClient.ts`, `LLMChat`) и UI: дать пользователю переключатель research-режима, прокидывать `mode` в тело запросов stream/sync/structured и обрабатывать новые значения.
+- [x] Обновить structured/sync UI и обработчики: рендерить строгий JSON-ответ Perplexity (summary/items/sources) и подсветку источников без жёсткой зависимости от `extensions["research"]`.
 
 ### Observability & Resilience
-- [ ] Реализовать `HealthIndicator` MCP-подключения: проверка запуска STDIO-процесса, handshake с tool list, метрики `perplexity_mcp_latency`/`perplexity_mcp_errors_total`.
+- [x] Реализовать `HealthIndicator` MCP-подключения: проверка запуска STDIO-процесса, handshake с tool list, метрики `perplexity_mcp_latency`/`perplexity_mcp_errors_total`.
 - [ ] Добавить интеграционные тесты с mock MCP-сервером (WireMock/Testcontainers) для сценариев `AgentInvocationService`, `ChatProviderService` и research-шагов оркестратора.
 
 ### Infrastructure & Docs
-- [ ] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить переменные для STDIO-команды (`PERPLEXITY_MCP_CMD`, `PERPLEXITY_API_KEY`, `PERPLEXITY_TIMEOUT_MS`), описать требования к Node/npm.
-- [ ] Обновить `docs/infra.md`/`docs/processes.md`: инструкция по запуску встроенного MCP-сервера (`npx @perplexity-ai/mcp-server`), ограничения по ресурсам и безопасности, чек-лист для ops.
+- [x] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить переменные для STDIO-команды (`PERPLEXITY_MCP_CMD`, `PERPLEXITY_API_KEY`, `PERPLEXITY_TIMEOUT_MS`), описать требования к Node/npm.
+- [x] Обновить `docs/infra.md`/`docs/processes.md`: инструкция по запуску встроенного MCP-сервера (`npx @perplexity-ai/mcp-server`), ограничения по ресурсам и безопасности, чек-лист для ops.
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` и ADR: схема интеграции, поток данных, сценарии использования (flow research, chat research, summary enrichment), SLA и runbook.
 
-## Wave 14 — Расширенные event-логи оркестратора
-
-Выбран подход **расширения схемы БД** для `flow_event`: ключевые атрибуты шага и управляющих операций храним в отдельных колонках, а JSON оставляем для детализированного содержимого. Это упростит аналитические запросы, трассировку и построение отчетов без сложной версификации payload.
-
-### Data
-- [ ] Liquibase: добавить в `flow_event` колонки `step_id`, `step_attempt`, `agent_version_id`, `actor`, `reason_code`, `reason_details JSONB`, `payload_schema_version`, а также индексы по `flow_session_id, step_id, created_at`.
-- [ ] Бэкфилл: для существующих записей подтянуть `step_id`/`step_attempt`/`agent_version_id` из `flow_step_execution`, для управляющих событий зафиксировать `actor = system` и нормализовать причины.
-- [ ] Обновить `FlowEvent` маппинг и Liquibase checksums, зафиксировать nullable/length ограничения и default значения.
-
-### Backend
-- [ ] Вынести сервис `FlowEventFactory`, который принимает `FlowSession`, опциональный `FlowStepExecution`, тип события и собирает доменный объект (колонки + JSON payload) по новым правилам.
-- [ ] Дополнить `AgentOrchestratorService` и `FlowControlService`: передавать `stepId`, `attempt`, `agentVersionId`, `actor`, `reasonCode`, `reasonDetails` в фабрику; в payload оставлять только результат шага (`data`) и контекст (`context`).
-- [ ] Обновить DTO (`FlowEventDto`, `FlowStatusService`, `FlowQueryService`) и REST-ответы, чтобы отдавать новые поля и версию схемы наружу.
-- [ ] Добавить нормализованный словарь причин (`reasonCode`) для операционных событий (pause/resume/cancel/skip/approve) и логировать инициатора.
-
-### Frontend
-- [ ] Обновить Flow workspace/таймлайн: визуализировать `reasonCode`, `actor`, usage/cost и source, группировать события по `stepId` и `attempt`, подсвечивать статусы шага.
-- [ ] Добавить фильтрацию/поиск в UI логов: по `stepId`, типу события, инициатору, диапазону стоимости и range по времени.
-- [ ] Расширить карточку шага и деталку события: показывать полный JSON payload (context/data) с fallback на прежний формат и пометкой версии схемы.
-
-### Observability & Tests
-- [ ] Переписать интеграционные тесты оркестратора, проверяющие запись событий: убедиться, что новые колонки и payload соответствуют ожиданиям.
-- [ ] Добавить unit-тесты `FlowEventFactory` и регрессионные проверки миграции (Liquibase) на Testcontainers.
-- [ ] Обновить телеметрию: расширить метрики и логирование, опираясь на `reasonCode`, `actor` и новую структуру контекста.
-
-### Документация
-- [ ] Обновить `docs/infra.md`, `docs/architecture/flow-definition.md` и `docs/processes.md`: описать схему `flow_event`, словарь `reasonCode`, новый формат payload и рекомендации по аналитике.
-- [ ] Добавить раздел в ADR/CHANGELOG о выбранном подходе и стратегии миграции.
-
-## Wave 15 — Typed blueprint runtime polish
+## Wave 14 — Typed blueprint runtime polish
 ### Backend
 - [ ] Заменить `JsonNode` в `FlowBlueprintStep` на типизированные value-объекты (`FlowStepOverrides`, `FlowInteractionDraft`, `FlowMemoryReadDraft`, `FlowMemoryWriteDraft`, `FlowStepTransitionsDraft`), обновить `FlowDefinitionParser`/`FlowBlueprintCompiler` под новую модель и покрыть round-trip тестами сериализации.
 - [ ] Применять memory-политику blueprint: при запуске сессии создавать каналы по `memory.sharedChannels`, прокидывать retention-настройки в `FlowMemoryService` и добавлять интеграционные проверки сохранения/очистки истории.
@@ -703,3 +674,20 @@
 - [ ] Добавить отдельные unit-тесты `FlowBlueprintValidator` на ветки ошибок (неизвестные агенты, конфликт версий, невалидные переходы).
 - [ ] Реализовать интеграционный тест `FlowMemoryService` (retention/cleanup) и e2e сценарий публикации флоу с кастомными каналами памяти.
 - [ ] Дополнить frontend-vitest покрытие: проверить serialise/deserialize адаптеров на typed step DTO и memory retention.
+
+## Wave 16 — MCP Research Testing & Stability
+### Backend
+- [ ] Обновить unit-тесты (`AgentInvocationServiceTest` и др.) с поддержкой `McpToolBindingService`, покрыть передачу tool callbacks и tool codes.
+- [ ] Добавить stub-конфигурацию (`SyncMcpToolCallbackProvider`) для интеграционных тестов без запуска STDIO.
+- [ ] Интеграционные тесты `SyncChatService`/`StructuredSyncService` в режиме `research` (инструменты, structured payload, сохранение сообщений).
+- [ ] Интеграционный сценарий оркестратора (AgentInvocationService / flow) с research-режимом и валидацией `selectedTools`.
+- [ ] Smoke-тест health-indicator `perplexityMcp`.
+
+### Test Infrastructure
+- [ ] Вспомогательные утилиты для сборки `ToolCallback`/`ToolDefinition`, настройка Gradle-профиля под stub MCP.
+
+### Observability
+- [ ] Проверки метрик `perplexity_mcp_latency`/`perplexity_mcp_errors_total` в тестовом окружении (SimpleMeterRegistry).
+
+### Документация
+- [ ] Обновить `docs/processes.md` с требованиями к тестированию research-режима и stub MCP.

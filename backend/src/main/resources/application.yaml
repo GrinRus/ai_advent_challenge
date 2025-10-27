@@ -12,6 +12,23 @@ spring:
     chat:
       client:
         enabled: false
+    mcp:
+      client:
+        enabled: ${PERPLEXITY_MCP_ENABLED:true}
+        name: perplexity-mcp-client
+        request-timeout: ${PERPLEXITY_TIMEOUT_MS:120s}
+        type: SYNC
+        toolcallback:
+          enabled: true
+        stdio:
+          connections:
+            perplexity:
+              command: ${PERPLEXITY_MCP_CMD:npx}
+              args:
+                - -y
+                - "@perplexity-ai/mcp-server"
+              env:
+                PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:demo-perplexity-key}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

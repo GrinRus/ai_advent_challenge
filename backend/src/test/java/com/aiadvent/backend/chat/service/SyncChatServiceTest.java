@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.retry.support.RetryTemplate;
@@ -29,11 +30,22 @@ class SyncChatServiceTest {
 
   @Mock private ChatSummarizationPreflightManager preflightManager;
 
+  @Mock private ChatResearchToolBindingService researchToolBindingService;
+
+  @Mock private BeanOutputConverter<com.aiadvent.backend.chat.api.StructuredSyncResponse>
+      structuredOutputConverter;
+
   private SyncChatService syncChatService;
 
   @BeforeEach
   void setUp() {
-    syncChatService = new SyncChatService(chatProviderService, chatService, preflightManager);
+    syncChatService =
+        new SyncChatService(
+            chatProviderService,
+            chatService,
+            preflightManager,
+            researchToolBindingService,
+            structuredOutputConverter);
   }
 
   @Test

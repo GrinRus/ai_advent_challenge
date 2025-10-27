@@ -83,7 +83,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setUsage(12, 24, 36);
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Provide a quick answer", null, null, null);
+        new ChatSyncRequest(null, "Provide a quick answer", null, null, null, null);
 
     MvcResult result =
         mockMvc
@@ -132,6 +132,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
             "Tune sampling for sync call",
             null,
             null,
+            null,
             new ChatStreamRequestOptions(0.3, 0.85, 640));
 
     mockMvc
@@ -155,7 +156,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of("Default sampling"));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Use provider defaults", null, null, null);
+        new ChatSyncRequest(null, "Use provider defaults", null, null, null, null);
 
     mockMvc
         .perform(
@@ -186,7 +187,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of(tooManyRequests, "Recovered response"));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Provide resilient summary", null, null, null);
+        new ChatSyncRequest(null, "Provide resilient summary", null, null, null, null);
 
     MvcResult result =
         mockMvc
@@ -210,7 +211,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
 
   @Test
   void syncRejectsEmptyMessage() throws Exception {
-    ChatSyncRequest request = new ChatSyncRequest(null, "   ", null, null, null);
+    ChatSyncRequest request = new ChatSyncRequest(null, "   ", null, null, null, null);
 
     mockMvc
         .perform(
@@ -233,7 +234,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setSyncResponses(List.of(badGateway, badGateway, badGateway));
 
     ChatSyncRequest request =
-        new ChatSyncRequest(null, "Simulate upstream failure", null, null, null);
+        new ChatSyncRequest(null, "Simulate upstream failure", null, null, null, null);
 
     mockMvc
         .perform(

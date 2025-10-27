@@ -114,7 +114,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 null,
                 null,
                 List.of(),
-                null));
+                null,
+                List.of()));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -174,7 +175,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 null,
                 null,
                 List.of(),
-                null));
+                null,
+                List.of()));
 
     ObjectNode body = objectMapper.createObjectNode();
     ObjectNode parameters = body.putObject("parameters");
@@ -301,7 +303,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 null,
                 null,
                 List.of(),
-                null));
+                null,
+                List.of()));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -342,7 +345,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 null,
                 null,
                 List.of(),
-                null));
+                null,
+                List.of()));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 
@@ -397,7 +401,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
                 null,
                 null,
                 List.of(),
-                null));
+                null,
+                List.of()));
 
     FlowStartResponse startResponse = startFlow(definition.getId(), null);
 

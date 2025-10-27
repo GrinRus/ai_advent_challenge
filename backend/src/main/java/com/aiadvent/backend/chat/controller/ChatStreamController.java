@@ -1,28 +1,31 @@
 package com.aiadvent.backend.chat.controller;
 
+import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.api.ChatStreamEvent;
 import com.aiadvent.backend.chat.api.ChatStreamRequest;
-import com.aiadvent.backend.chat.provider.ChatProviderService;
-import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
-import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
-import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
+import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
-import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
-import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
@@ -46,14 +49,17 @@ public class ChatStreamController {
   private final ChatService chatService;
   private final ChatProviderService chatProviderService;
   private final ChatSummarizationPreflightManager preflightManager;
+  private final ChatResearchToolBindingService researchToolBindingService;
 
   public ChatStreamController(
       ChatService chatService,
       ChatProviderService chatProviderService,
-      ChatSummarizationPreflightManager preflightManager) {
+      ChatSummarizationPreflightManager preflightManager,
+      ChatResearchToolBindingService researchToolBindingService) {
     this.chatService = chatService;
     this.chatProviderService = chatProviderService;
     this.preflightManager = preflightManager;
+    this.researchToolBindingService = researchToolBindingService;
   }
 
   @PostMapping(
@@ -70,11 +76,16 @@ public class ChatStreamController {
           "Model '" + selection.modelId() + "' does not support streaming responses.");
     }
 
+    ChatInteractionMode mode = ChatInteractionMode.from(request.mode());
+    String sanitizedMessage = sanitizeMessage(request.message());
+    ResearchContext researchContext =
+        researchToolBindingService.resolve(mode, sanitizedMessage);
+
     ConversationContext context =
         chatService.registerUserMessage(
-            request.sessionId(), request.message(), selection.providerId(), selection.modelId());
+            request.sessionId(), sanitizedMessage, selection.providerId(), selection.modelId());
 
-    preflightManager.run(context.sessionId(), selection, request.message(), "stream-chat");
+    preflightManager.run(context.sessionId(), selection, sanitizedMessage, "stream-chat");
 
     SseEmitter emitter = new SseEmitter(0L);
     AtomicReference<Usage> usageRef = new AtomicReference<>();
@@ -89,19 +100,23 @@ public class ChatStreamController {
     ChatOptions chatOptions =
         chatProviderService.buildStreamingOptions(selection, resolveOverrides(request.options()));
 
-    String promptText = request.message();
+    var promptSpec = chatProviderService.chatClient(selection.providerId()).prompt();
+    if (researchContext.hasSystemPrompt()) {
+      promptSpec = promptSpec.system(researchContext.systemPrompt());
+    }
 
-    Flux<ChatResponse> responseFlux =
-        chatProviderService
-            .chatClient(selection.providerId())
-            .prompt()
-            .user(request.message())
+    promptSpec =
+        promptSpec
+            .user(sanitizedMessage)
             .advisors(
                 advisors ->
-                    advisors.param(ChatMemory.CONVERSATION_ID, context.sessionId().toString()))
-            .options(chatOptions)
-            .stream()
-            .chatResponse();
+                    advisors.param(ChatMemory.CONVERSATION_ID, context.sessionId().toString()));
+
+    if (researchContext.hasCallbacks()) {
+      promptSpec = promptSpec.toolCallbacks(researchContext.callbacks());
+    }
+
+    Flux<ChatResponse> responseFlux = promptSpec.options(chatOptions).stream().chatResponse();
 
     AtomicReference<Disposable> subscriptionRef = new AtomicReference<>();
 
@@ -120,10 +135,11 @@ public class ChatStreamController {
                 handleCompletion(
                     context.sessionId(),
                     selection,
-                    promptText,
+                    sanitizedMessage,
                     assistantResponse,
                     usageRef,
-                    emitter));
+                    emitter,
+                    researchContext));
 
     subscriptionRef.set(subscription);
 
@@ -186,7 +202,8 @@ public class ChatStreamController {
       String promptText,
       StringBuilder assistantResponse,
       AtomicReference<Usage> usageRef,
-      SseEmitter emitter) {
+      SseEmitter emitter,
+      ResearchContext researchContext) {
     String content = assistantResponse.toString();
     Usage usage = usageRef.get();
     UsageCostEstimate usageCost =
@@ -214,9 +231,12 @@ public class ChatStreamController {
             content,
             selection.providerId(),
             selection.modelId(),
+            researchContext.toolCodes(),
             toUsageStats(usageCost),
             toCostDetails(usageCost),
-            usageCost != null ? usageCost.source().name().toLowerCase() : null));
+            usageCost != null && usageCost.source() != null
+                ? usageCost.source().name().toLowerCase()
+                : null));
     emitter.complete();
   }
 
@@ -318,4 +338,11 @@ public class ChatStreamController {
     return new ChatRequestOverrides(options.temperature(), options.topP(), options.maxTokens());
   }
 
+  private String sanitizeMessage(String message) {
+    String trimmed = message != null ? message.trim() : "";
+    if (!StringUtils.hasText(trimmed)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be empty");
+    }
+    return trimmed;
+  }
 }

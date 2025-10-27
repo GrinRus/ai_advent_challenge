@@ -15,6 +15,7 @@ export type BuildChatPayloadParams = {
   model?: string | null;
   overrides?: SamplingOverrides | null;
   defaults?: SamplingDefaults | null;
+  mode?: 'default' | 'research';
 };
 
 export type BuildChatPayloadResult = {
@@ -35,6 +36,7 @@ export function buildChatPayload({
   model,
   overrides,
   defaults,
+  mode,
 }: BuildChatPayloadParams): BuildChatPayloadResult {
   const basePayload: ChatSyncRequest = { message };
 
@@ -46,6 +48,9 @@ export function buildChatPayload({
   }
   if (model) {
     basePayload.model = model;
+  }
+  if (mode && mode !== 'default') {
+    basePayload.mode = mode;
   }
 
   const resolvedOverrides: Record<string, number> = {};
@@ -118,4 +123,3 @@ export const SAMPLING_RANGE: Record<
   topP: { min: 0, max: 1, step: 0.01 },
   maxTokens: { min: 1, max: 4096, step: 1 },
 };
-

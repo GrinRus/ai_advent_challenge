@@ -15,6 +15,8 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.zhipuai.api.ZhiPuAiApi;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -38,8 +40,10 @@ public class ChatProviderConfiguration {
       ObjectProvider<OpenAiApi> openAiApiProvider,
       ObjectProvider<ZhiPuAiApi> zhiPuAiApiProvider,
       SimpleLoggerAdvisor simpleLoggerAdvisor,
-      MessageChatMemoryAdvisor chatMemoryAdvisor) {
+      MessageChatMemoryAdvisor chatMemoryAdvisor,
+      ObjectProvider<SyncMcpToolCallbackProvider> mcpToolCallbackProvider) {
 
+    ToolCallbackProvider toolCallbackProvider = mcpToolCallbackProvider.getIfAvailable();
     Map<String, ChatProvidersProperties.Provider> providers = properties.getProviders();
     List<ChatProviderAdapter> adapters = new ArrayList<>(providers.size());
 
@@ -69,7 +73,8 @@ public class ChatProviderConfiguration {
                     providerConfig,
                     openAiApi,
                     simpleLoggerAdvisor,
-                    chatMemoryAdvisor));
+                    chatMemoryAdvisor,
+                    toolCallbackProvider));
           } else if (providerConfig.getType() == ChatProviderType.ZHIPUAI) {
             ZhiPuAiApi zhiPuAiApi = zhiPuAiApiProvider.getIfAvailable();
             if (zhiPuAiApi == null) {
@@ -90,7 +95,12 @@ public class ChatProviderConfiguration {
             }
             adapters.add(
                 new ZhiPuAiChatProviderAdapter(
-                    providerId, providerConfig, zhiPuAiApi, simpleLoggerAdvisor, chatMemoryAdvisor));
+                    providerId,
+                    providerConfig,
+                    zhiPuAiApi,
+                    simpleLoggerAdvisor,
+                    chatMemoryAdvisor,
+                    toolCallbackProvider));
           } else {
             throw new IllegalStateException(
                 "Unsupported provider type for '" + providerId + "': " + providerConfig.getType());

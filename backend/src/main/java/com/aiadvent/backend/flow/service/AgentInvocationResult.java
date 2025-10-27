@@ -14,4 +14,5 @@ public record AgentInvocationResult(
     ChatRequestOverrides appliedOverrides,
     String systemPrompt,
     List<String> memorySnapshots,
-    String userMessage) {}
+    String userMessage,
+    List<String> selectedToolCodes) {}

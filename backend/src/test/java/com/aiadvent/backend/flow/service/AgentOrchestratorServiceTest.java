@@ -207,7 +207,8 @@ class AgentOrchestratorServiceTest {
                 new com.aiadvent.backend.chat.provider.model.ChatRequestOverrides(0.2, 0.9, 512),
                 "validator-system",
                 List.of("snapshot-1"),
-                "user message body"));
+                "user message body",
+                List.of()));
 
     FlowSession persistedSession =
         new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);

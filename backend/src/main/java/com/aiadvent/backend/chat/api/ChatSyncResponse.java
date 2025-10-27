@@ -18,6 +18,10 @@ public record ChatSyncResponse(
         String content,
     @Schema(description = "Technical metadata about the provider and model used.")
         StructuredSyncProvider provider,
+    @Schema(description = "Codes of MCP tools invoked during the response.")
+        java.util.List<String> tools,
+    @Schema(description = "Structured payload extracted from the response when available.")
+        StructuredSyncResponse structured,
     @Schema(description = "Token usage reported by the provider.") StructuredSyncUsageStats usage,
     @Schema(description = "Cost breakdown calculated by the backend based on usage and pricing.")
         UsageCostDetails cost,

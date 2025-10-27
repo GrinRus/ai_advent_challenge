@@ -8,6 +8,9 @@ import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.api.AgentCapabilityRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionStatusRequest;
+import com.aiadvent.backend.flow.api.AgentTemplateResponse;
+import com.aiadvent.backend.flow.api.AgentTemplateResponse.AgentTemplate;
+import com.aiadvent.backend.flow.api.AgentTemplateResponse.AgentTemplateCapability;
 import com.aiadvent.backend.flow.api.AgentVersionPublishRequest;
 import com.aiadvent.backend.flow.api.AgentVersionRequest;
 import com.aiadvent.backend.flow.api.AgentVersionUpdateRequest;
@@ -19,6 +22,10 @@ import com.aiadvent.backend.flow.persistence.AgentCapabilityRepository;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.telemetry.ConstructorTelemetryService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -38,23 +45,40 @@ public class AgentCatalogService {
   private final AgentCapabilityRepository agentCapabilityRepository;
   private final ChatProviderRegistry chatProviderRegistry;
   private final ConstructorTelemetryService constructorTelemetryService;
+  private final ObjectMapper objectMapper;
+
+  private static final String PERPLEXITY_TEMPLATE_IDENTIFIER = "perplexity-research";
+  private static final String PERPLEXITY_TEMPLATE_DISPLAY_NAME = "Perplexity Research";
+  private static final String PERPLEXITY_TEMPLATE_DESCRIPTION =
+      "Perplexity-powered research agent template";
+  private static final String PERPLEXITY_PROVIDER_ID = "openai";
+  private static final String PERPLEXITY_MODEL_ID = "gpt-4o-mini";
+  private static final String PERPLEXITY_SEARCH_TOOL = "perplexity_search";
+  private static final String PERPLEXITY_DEEP_RESEARCH_TOOL = "perplexity_deep_research";
 
   public AgentCatalogService(
       AgentDefinitionRepository agentDefinitionRepository,
       AgentVersionRepository agentVersionRepository,
       AgentCapabilityRepository agentCapabilityRepository,
       ChatProviderRegistry chatProviderRegistry,
-      ConstructorTelemetryService constructorTelemetryService) {
+      ConstructorTelemetryService constructorTelemetryService,
+      ObjectMapper objectMapper) {
     this.agentDefinitionRepository = agentDefinitionRepository;
     this.agentVersionRepository = agentVersionRepository;
     this.agentCapabilityRepository = agentCapabilityRepository;
     this.chatProviderRegistry = chatProviderRegistry;
     this.constructorTelemetryService = constructorTelemetryService;
+    this.objectMapper = objectMapper;
   }
 
   @Transactional(readOnly = true)
   public List<AgentDefinition> listDefinitions() {
     return agentDefinitionRepository.findAllByOrderByUpdatedAtDesc();
+  }
+
+  @Transactional(readOnly = true)
+  public AgentTemplateResponse listTemplates() {
+    return new AgentTemplateResponse(List.of(buildPerplexityResearchTemplate()));
   }
 
   @Transactional(readOnly = true)
@@ -458,5 +482,95 @@ public class AgentCatalogService {
               capabilityRequest.capability().trim(),
               AgentCapabilityPayload.from(capabilityRequest.payload())));
     }
+  }
+
+  private AgentTemplate buildPerplexityResearchTemplate() {
+    ChatProvidersProperties.Provider providerConfig =
+        chatProviderRegistry.requireProvider(PERPLEXITY_PROVIDER_ID);
+    ChatProviderType providerType =
+        providerConfig != null && providerConfig.getType() != null
+            ? providerConfig.getType()
+            : ChatProviderType.OPENAI;
+
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                providerType,
+                PERPLEXITY_PROVIDER_ID,
+                PERPLEXITY_MODEL_ID,
+                AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                "You are a meticulous research analyst. Leverage the Perplexity MCP tooling to collect current information, then provide a concise brief that references numbered sources.",
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.1, 0.85, 1_200)),
+            new AgentInvocationOptions.MemoryPolicy(
+                List.of("shared", "conversation"),
+                30,
+                200,
+                AgentInvocationOptions.SummarizationStrategy.TAIL_WITH_SUMMARY,
+                AgentInvocationOptions.OverflowAction.TRIM_OLDEST),
+            new AgentInvocationOptions.RetryPolicy(
+                4,
+                300L,
+                2.0,
+                List.of(429, 500, 502, 503, 504),
+                45_000L,
+                120_000L,
+                150L),
+            new AgentInvocationOptions.AdvisorSettings(
+                new AgentInvocationOptions.AdvisorSettings.AdvisorToggle(true),
+                new AgentInvocationOptions.AdvisorSettings.AuditSettings(true, true),
+                AgentInvocationOptions.AdvisorSettings.RoutingSettings.disabled()),
+            new AgentInvocationOptions.Tooling(
+                List.of(
+                    new AgentInvocationOptions.ToolBinding(
+                        PERPLEXITY_SEARCH_TOOL,
+                        1,
+                        AgentInvocationOptions.ExecutionMode.AUTO,
+                        buildPerplexitySearchOverrides(),
+                        null),
+                    new AgentInvocationOptions.ToolBinding(
+                        PERPLEXITY_DEEP_RESEARCH_TOOL,
+                        1,
+                        AgentInvocationOptions.ExecutionMode.MANUAL,
+                        buildPerplexityDeepResearchOverrides(),
+                        null))),
+            new AgentInvocationOptions.CostProfile(
+                new BigDecimal("0.008"),
+                new BigDecimal("0.028"),
+                new BigDecimal("0.001"),
+                null,
+                "USD"));
+
+    return new AgentTemplate(
+        PERPLEXITY_TEMPLATE_IDENTIFIER,
+        PERPLEXITY_TEMPLATE_DISPLAY_NAME,
+        PERPLEXITY_TEMPLATE_DESCRIPTION,
+        invocationOptions,
+        true,
+        1_400,
+        List.of(new AgentTemplateCapability("perplexity.tools", buildPerplexityToolCapabilityPayload())));
+  }
+
+  private ObjectNode buildPerplexitySearchOverrides() {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put("max_results", 8);
+    return node;
+  }
+
+  private ObjectNode buildPerplexityDeepResearchOverrides() {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put("max_iterations", 3);
+    return node;
+  }
+
+  private ObjectNode buildPerplexityToolCapabilityPayload() {
+    ObjectNode payload = objectMapper.createObjectNode();
+    payload.put("default", PERPLEXITY_SEARCH_TOOL);
+    ArrayNode options = payload.putArray("options");
+    options.add(PERPLEXITY_SEARCH_TOOL);
+    options.add(PERPLEXITY_DEEP_RESEARCH_TOOL);
+    return payload;
   }
 }

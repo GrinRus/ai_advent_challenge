@@ -196,6 +196,27 @@ Frontend контейнер проксирует все запросы `/api/*` 
 }
 ```
 
+### Perplexity MCP (live research)
+- Провайдер Perplexity подключается через Model Context Protocol (STDIO). Backend использует стартер `org.springframework.ai:spring-ai-starter-mcp-client`, который по умолчанию запускает `npx -y @perplexity-ai/mcp-server`.
+- Требования:
+  - Node.js ≥ 20 (рекомендуется LTS 22) и доступ к `npx`/npm registry. На production-хостах убедитесь, что Node установлен и не блокируется политики безопасности.
+  - Ключ API Perplexity (`PERPLEXITY_API_KEY`). Значение берётся из `.env`/секрет-хранилища и прокидывается в `application.yaml` (см. секцию `spring.ai.mcp.client.stdio.connections.perplexity.env`).
+  - Таймаут клиента настраивается переменной `PERPLEXITY_TIMEOUT_MS` (duration, дефолт `120s`). Команда запуска MCP задаётся `PERPLEXITY_MCP_CMD` и может быть переопределена (например, на `node server.js` или запуск Docker-образа).
+- При старте backend создаёт STDIO-подключение и кеширует список инструментов (`perplexity_search`, `perplexity_deep_research`). Метрики выводятся в Micrometer:
+  - `perplexity_mcp_latency` — длительность health check.
+  - `perplexity_mcp_errors_total` — количество ошибок при опросе провайдера.
+- Actuator предоставляет `perplexityMcp` health-indicator (`GET /actuator/health/perplexityMcp`). Возможные статусы:
+  - `UP` — инструменты доступны; в деталях возвращаются `toolCount`, `tools`, `latencyMs`.
+  - `UNKNOWN` — MCP отключён (`PERPLEXITY_MCP_ENABLED=false`) или провайдер не поднят.
+  - `DOWN` — ошибка запуска/handshake (в ответе будет поле `error`).
+- Для локальной проверки:
+  ```bash
+  export PERPLEXITY_API_KEY=... # ваш ключ
+  npx -y @perplexity-ai/mcp-server --api-key "$PERPLEXITY_API_KEY"
+  ```
+  После старта backend отправьте запрос с `mode: "research"` на `/api/llm/chat/sync` или `/api/llm/chat/stream`, чтобы задействовать инструменты Perplexity.
+- В Docker-образе backend необходимо, чтобы Node.js и `npx` были доступны внутри контейнера. При необходимости добавьте слой установки Node или используйте внешний wrapper (`PERPLEXITY_MCP_CMD="node /opt/mcp/server.js"`).
+
 ## Оркестрация мультиагентных флоу
 
 ### Архитектура и исполнение

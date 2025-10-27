@@ -225,6 +225,8 @@ export type ChatSyncResponse = {
   requestId?: string;
   content?: string;
   provider?: StructuredSyncProvider;
+  tools?: string[];
+  structured?: StructuredSyncResponse | null;
   usage?: StructuredSyncUsageStats;
   cost?: UsageCostDetails;
   latencyMs?: number;
@@ -236,6 +238,7 @@ export type ChatSyncRequest = {
   message: string;
   provider?: string;
   model?: string;
+  mode?: string;
   options?: {
     temperature?: number;
     topP?: number;
@@ -278,6 +281,7 @@ export type StructuredSyncResponse = {
   status?: string;
   provider?: StructuredSyncProvider;
   answer?: StructuredSyncAnswer;
+  tools?: string[];
   usage?: StructuredSyncUsageStats;
   cost?: UsageCostDetails;
   latencyMs?: number;
@@ -318,21 +322,24 @@ const StructuredSyncAnswerSchema = z.object({
   confidence: z.number().nullable().optional(),
 });
 
-const ChatSyncResponseSchema = z.object({
+const StructuredSyncResponseSchema = z.object({
   requestId: z.string().optional(),
-  content: z.string().optional(),
+  status: z.string().optional(),
   provider: StructuredSyncProviderSchema.optional(),
+  answer: StructuredSyncAnswerSchema.optional(),
+  tools: z.array(z.string()).optional(),
   usage: StructuredSyncUsageStatsSchema.nullish(),
   cost: UsageCostDetailsSchema.nullish(),
   latencyMs: z.number().nullable().optional(),
   timestamp: z.string().optional(),
 });
 
-const StructuredSyncResponseSchema = z.object({
+const ChatSyncResponseSchema = z.object({
   requestId: z.string().optional(),
-  status: z.string().optional(),
+  content: z.string().optional(),
   provider: StructuredSyncProviderSchema.optional(),
-  answer: StructuredSyncAnswerSchema.optional(),
+  tools: z.array(z.string()).optional(),
+  structured: StructuredSyncResponseSchema.nullish(),
   usage: StructuredSyncUsageStatsSchema.nullish(),
   cost: UsageCostDetailsSchema.nullish(),
   latencyMs: z.number().nullable().optional(),
@@ -395,6 +402,47 @@ function normalizeCost(cost?: CostSchemaInput): UsageCostDetails | undefined {
     normalized.currency = cost.currency;
   }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeStructuredResponse(
+  response?: StructuredSyncResponse | null,
+): StructuredSyncResponse | undefined {
+  if (!response) {
+    return undefined;
+  }
+  const normalized: StructuredSyncResponse = {};
+  if (response.requestId != null) {
+    normalized.requestId = response.requestId;
+  }
+  if (response.status != null) {
+    normalized.status = response.status;
+  }
+  const provider = normalizeStructuredProvider(response.provider);
+  if (provider) {
+    normalized.provider = provider;
+  }
+  const answer = normalizeStructuredAnswer(response.answer);
+  if (answer) {
+    normalized.answer = answer;
+  }
+  if (response.tools && response.tools.length > 0) {
+    normalized.tools = [...response.tools];
+  }
+  const usage = normalizeUsage(response.usage ?? null);
+  if (usage) {
+    normalized.usage = usage;
+  }
+  const cost = normalizeCost(response.cost ?? null);
+  if (cost) {
+    normalized.cost = cost;
+  }
+  if (response.latencyMs != null) {
+    normalized.latencyMs = response.latencyMs;
+  }
+  if (response.timestamp != null) {
+    normalized.timestamp = response.timestamp;
+  }
+  return normalized;
 }
 
 function normalizeStructuredAnswer(
@@ -805,6 +853,8 @@ export async function requestSync(
   const sanitizedBody: ChatSyncResponse = {
     ...body,
     provider: normalizeStructuredProvider(body.provider),
+    tools: body.tools && body.tools.length > 0 ? [...body.tools] : undefined,
+    structured: normalizeStructuredResponse(body.structured ?? null) ?? null,
     usage: normalizeUsage(body.usage),
     cost: normalizeCost(body.cost),
     latencyMs: body.latencyMs ?? undefined,
@@ -857,6 +907,7 @@ export async function requestStructuredSync(
   const sanitizedBody: StructuredSyncResponse = {
     ...body,
     provider: normalizeStructuredProvider(body.provider),
+    tools: body.tools && body.tools.length > 0 ? [...body.tools] : undefined,
     usage: normalizeUsage(body.usage),
     cost: normalizeCost(body.cost),
     answer: normalizeStructuredAnswer(body.answer),

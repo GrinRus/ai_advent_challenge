@@ -1,6 +1,7 @@
 package com.aiadvent.backend.flow.agent.options;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -13,15 +14,29 @@ import java.util.List;
 import java.util.Objects;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public final class AgentInvocationOptions {
 
+  @JsonProperty("provider")
   private final Provider provider;
+
+  @JsonProperty("prompt")
   private final Prompt prompt;
+
+  @JsonProperty("memoryPolicy")
   private final MemoryPolicy memoryPolicy;
+
+  @JsonProperty("retryPolicy")
   private final RetryPolicy retryPolicy;
+
+  @JsonProperty("advisorSettings")
   private final AdvisorSettings advisorSettings;
+
+  @JsonProperty("tooling")
   private final Tooling tooling;
+
+  @JsonProperty("costProfile")
   private final CostProfile costProfile;
 
   private static final AgentInvocationOptions EMPTY =
@@ -87,6 +102,7 @@ public final class AgentInvocationOptions {
 
   // Provider
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record Provider(
       ChatProviderType type,
@@ -121,6 +137,7 @@ public final class AgentInvocationOptions {
 
   // Prompt
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class Prompt {
     private final String templateId;
@@ -173,6 +190,7 @@ public final class AgentInvocationOptions {
       String name, boolean required, String description, JsonNode schema) {}
 
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class GenerationDefaults {
     private final Double temperature;
@@ -214,6 +232,7 @@ public final class AgentInvocationOptions {
 
   // MemoryPolicy
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class MemoryPolicy {
     private final List<String> channels;
@@ -281,6 +300,7 @@ public final class AgentInvocationOptions {
 
   // RetryPolicy
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class RetryPolicy {
     private final Integer maxAttempts;
@@ -350,6 +370,7 @@ public final class AgentInvocationOptions {
 
   // AdvisorSettings
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class AdvisorSettings {
     private final AdvisorToggle telemetry;
@@ -415,6 +436,7 @@ public final class AgentInvocationOptions {
 
   // Tooling
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class Tooling {
     private final List<ToolBinding> bindings;
@@ -439,6 +461,7 @@ public final class AgentInvocationOptions {
   }
 
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class ToolBinding {
     private final String toolCode;
@@ -490,6 +513,7 @@ public final class AgentInvocationOptions {
 
   // CostProfile
   @JsonInclude(JsonInclude.Include.NON_NULL)
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class CostProfile {
     private final BigDecimal inputPer1KTokens;
@@ -575,4 +599,3 @@ public final class AgentInvocationOptions {
         && Objects.equals(costProfile, other.costProfile);
   }
 }
-

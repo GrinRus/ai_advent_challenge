@@ -118,6 +118,7 @@ type ChatMessage = {
   provider?: string;
   model?: string;
   mode?: 'stream' | 'sync' | 'structured';
+  tools?: string[] | null;
   structured?: StructuredSyncResponse | null;
   sync?: ChatSyncResponse | null;
   relatedMessageId?: string;
@@ -136,6 +137,7 @@ type StreamPayload = {
   newSession?: boolean;
   provider?: string | null;
   model?: string | null;
+   tools?: string[] | null;
   usage?: StructuredSyncUsageStats | null;
   cost?: UsageCostDetails | null;
   usageSource?: string | null;
@@ -608,6 +610,11 @@ const StructuredResponseCard = ({
             {optionsLabel}
           </span>
         )}
+        {response.tools && response.tools.length > 0 && (
+          <span className="structured-tools">
+            🔧 {response.tools.join(', ')}
+          </span>
+        )}
         {response.answer?.confidence !== undefined && (
           <span className="structured-confidence">
             Уверенность: {formatConfidence(response.answer?.confidence)}
@@ -703,6 +710,9 @@ export default function LLMChat() {
   const [providerCatalog, setProviderCatalog] = useState<ChatProvidersResponse | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [interactionMode, setInteractionMode] = useState<'default' | 'research'>(
+    'default',
+  );
   const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [lastProvider, setLastProvider] = useState<string | null>(null);
@@ -1322,6 +1332,7 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
+      mode: interactionMode,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -1367,6 +1378,7 @@ export default function LLMChat() {
         options: optionsSnapshot,
         usage: body.usage ?? null,
         cost: body.cost ?? null,
+        tools: body.tools ?? null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setActiveStructuredMessageId(assistantMessage.id);
@@ -1432,6 +1444,7 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
+      mode: interactionMode,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -1477,8 +1490,14 @@ export default function LLMChat() {
         cost: body.cost ?? null,
         latencyMs: body.latencyMs ?? null,
         timestamp: body.timestamp ?? null,
+        tools: body.tools ?? null,
+        structured: body.structured ?? null,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      if (interactionMode === 'research' && assistantMessage.structured) {
+        setActiveStructuredMessageId(assistantMessage.id);
+      }
 
       const providerLabel = resolveProviderName(selectedProvider);
       const modelLabel = resolveModelName(selectedProvider, messageModel);
@@ -1541,6 +1560,7 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
+      mode: interactionMode,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -1570,6 +1590,7 @@ export default function LLMChat() {
             model: model ?? undefined,
             options: optionsSnapshot,
             mode: 'stream',
+            tools: null,
           },
         ]);
         return;
@@ -1610,6 +1631,7 @@ export default function LLMChat() {
       usage?: StructuredSyncUsageStats | null,
       cost?: UsageCostDetails | null,
       usageSource?: string | null,
+      tools?: string[] | null,
     ) => {
       const normalizedSource = usageSource === undefined ? undefined : usageSource ?? null;
       if (!assistantMessageId) {
@@ -1628,6 +1650,7 @@ export default function LLMChat() {
             cost: cost ?? null,
             mode: 'stream',
             usageSource: normalizedSource ?? null,
+            tools: tools ?? null,
           },
         ]);
         return;
@@ -1667,6 +1690,7 @@ export default function LLMChat() {
             normalizedSource !== undefined
               ? normalizedSource
               : current.usageSource ?? null,
+          tools: tools ?? current.tools ?? null,
         };
         return next;
       });
@@ -1731,6 +1755,7 @@ export default function LLMChat() {
             event.usage ?? null,
             event.cost ?? null,
             event.usageSource,
+            event.tools ?? null,
           );
           const targetSessionId = streamSessionId ?? sessionId ?? null;
           if (targetSessionId) {
@@ -1746,6 +1771,7 @@ export default function LLMChat() {
             event.usage ?? null,
             event.cost ?? null,
             event.usageSource,
+            event.tools ?? null,
           );
           if (event.provider) {
             setLastProvider(event.provider);
@@ -1983,6 +2009,23 @@ export default function LLMChat() {
               )}
             </select>
           </div>
+          <div className="llm-chat-field">
+            <label className="llm-chat-label" htmlFor="llm-chat-mode">
+              Режим
+            </label>
+            <select
+              id="llm-chat-mode"
+              className="llm-chat-select"
+              value={interactionMode}
+              onChange={(event) =>
+                setInteractionMode(event.target.value as 'default' | 'research')
+              }
+              disabled={isStreaming}
+            >
+              <option value="default">Стандартный</option>
+              <option value="research">Research (Perplexity)</option>
+            </select>
+          </div>
         </div>
 
         {selectedModelConfig && (
@@ -2175,16 +2218,24 @@ export default function LLMChat() {
                     >
                       {hasMeta && (
                         <div className="llm-chat-message-meta">
-                          {providerLabel && (
-                            <span className="llm-chat-meta-chip">
-                              {providerLabel}
-                            </span>
-                          )}
-                          {modelLabel && (
-                            <span className="llm-chat-meta-chip secondary">
-                              {modelLabel}
-                            </span>
-                          )}
+                      {providerLabel && (
+                        <span className="llm-chat-meta-chip">
+                          {providerLabel}
+                        </span>
+                      )}
+                      {modelLabel && (
+                        <span className="llm-chat-meta-chip secondary">
+                          {modelLabel}
+                        </span>
+                      )}
+                      {message.tools && message.tools.length > 0 && (
+                        <span
+                          className="llm-chat-meta-chip secondary"
+                          title="Инструменты MCP"
+                        >
+                          🔧 {message.tools.join(', ')}
+                        </span>
+                      )}
                           {hasSamplingMeta && (
                             <span
                               className="llm-chat-meta-chip options"

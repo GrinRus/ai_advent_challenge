@@ -58,7 +58,7 @@
   "tooling": {
     "bindings": [
       {
-        "toolCode": "perplexity-research",
+        "toolCode": "perplexity_search",
         "schemaVersion": 1,
         "executionMode": "AUTO",
         "requestOverrides": {},
@@ -80,10 +80,10 @@
 
 - Tools:
   - `openai-gpt-4o`
-  - `perplexity-research`
+  - `perplexity_search`
 - Agents:
   - `demo-openai-chat` (OpenAI sync chat, default prompt)
-  - `demo-researcher` (Perplexity-assisted agent with research tool binding)
+  - `perplexity-research` (Perplexity-assisted agent with research tool binding)
 - Flow:
   - `demo-lead-qualify` (two-step orchestration using the demo agents)
 
@@ -115,7 +115,7 @@ Seed delivered via Liquibase `loadData`/`sqlFile` after schema migration.
     "latencyMs": 1800
   },
   "toolCoverage": [
-    { "toolCode": "perplexity-research", "available": true }
+    { "toolCode": "perplexity_search", "available": true }
   ],
   "warnings": [
     { "path": "/retryPolicy", "message": "Overall deadline < timeout * attempts" }
@@ -132,4 +132,3 @@ Seed delivered via Liquibase `loadData`/`sqlFile` after schema migration.
 5. **AgentConstructorService & Controller**: Implement wizard endpoints; include validation, diff, and preview logic.
 6. **Testing**: Update integration/unit tests; add seed verification tests.
 7. **Docs**: Update wave backlog, architecture notes, and seed documentation.
-

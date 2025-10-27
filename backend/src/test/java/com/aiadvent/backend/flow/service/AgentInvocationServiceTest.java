@@ -26,6 +26,7 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
+import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -38,6 +39,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 
 class AgentInvocationServiceTest {
 
@@ -45,6 +48,7 @@ class AgentInvocationServiceTest {
   private FlowSessionRepository flowSessionRepository;
   private FlowMemoryService flowMemoryService;
   private FlowMemorySummarizerService flowMemorySummarizerService;
+  private McpToolBindingService mcpToolBindingService;
   private ObjectMapper objectMapper;
 
   private AgentInvocationService agentInvocationService;
@@ -55,6 +59,7 @@ class AgentInvocationServiceTest {
     flowSessionRepository = mock(FlowSessionRepository.class);
     flowMemoryService = mock(FlowMemoryService.class);
     flowMemorySummarizerService = mock(FlowMemorySummarizerService.class);
+    mcpToolBindingService = mock(McpToolBindingService.class);
     objectMapper = new ObjectMapper();
 
     agentInvocationService =
@@ -63,7 +68,107 @@ class AgentInvocationServiceTest {
             flowSessionRepository,
             flowMemoryService,
             flowMemorySummarizerService,
+            mcpToolBindingService,
             objectMapper);
+  }
+
+  @Test
+  void invokeAttachesResolvedMcpTools() {
+    UUID sessionId = UUID.randomUUID();
+    FlowSession flowSession = mock(FlowSession.class);
+    when(flowSession.getId()).thenReturn(sessionId);
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(flowSession));
+
+    AgentInvocationOptions.ToolBinding binding =
+        new AgentInvocationOptions.ToolBinding(
+            "perplexity_search",
+            1,
+            AgentInvocationOptions.ExecutionMode.AUTO,
+            null,
+            null);
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                ChatProviderType.OPENAI, "openai", "gpt-4o-mini", AgentInvocationOptions.InvocationMode.SYNC),
+            AgentInvocationOptions.Prompt.empty(),
+            AgentInvocationOptions.MemoryPolicy.empty(),
+            AgentInvocationOptions.RetryPolicy.empty(),
+            AgentInvocationOptions.AdvisorSettings.empty(),
+            new AgentInvocationOptions.Tooling(List.of(binding)),
+            AgentInvocationOptions.CostProfile.empty());
+
+    AgentVersion agentVersion =
+        new AgentVersion(
+            new AgentDefinition("research-agent", "Research Agent", null, true),
+            1,
+            AgentVersionStatus.PUBLISHED,
+            ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    agentVersion.setInvocationOptions(invocationOptions);
+    agentVersion.setSystemPrompt("Research system prompt");
+
+    ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
+    when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
+        .thenReturn(selection);
+    ChatProvidersProperties.Provider providerConfig = new ChatProvidersProperties.Provider();
+    when(chatProviderService.provider(selection.providerId())).thenReturn(providerConfig);
+
+    Generation generation =
+        new Generation(AssistantMessage.builder().content("analysis").build());
+    ChatResponse chatResponse = new ChatResponse(List.of(generation));
+    ArgumentCaptor<List> toolCallbackCaptor = ArgumentCaptor.forClass(List.class);
+    when(chatProviderService.chatSyncWithOverrides(
+            eq(selection),
+            eq(agentVersion.getSystemPrompt()),
+            anyList(),
+            any(ChatAdvisorContext.class),
+            anyString(),
+            any(),
+            toolCallbackCaptor.capture()))
+        .thenReturn(chatResponse);
+
+    UsageCostEstimate usageCost =
+        new UsageCostEstimate(
+            10,
+            20,
+            30,
+            BigDecimal.valueOf(0.001),
+            BigDecimal.valueOf(0.003),
+            BigDecimal.valueOf(0.004),
+            "USD",
+            UsageSource.NATIVE);
+    when(chatProviderService.estimateUsageCost(eq(selection), any(), anyString(), anyString()))
+        .thenReturn(usageCost);
+
+    ToolDefinition toolDefinition = mock(ToolDefinition.class);
+    when(toolDefinition.name()).thenReturn("perplexity_search");
+    ToolCallback toolCallback = mock(ToolCallback.class);
+    when(toolCallback.getToolDefinition()).thenReturn(toolDefinition);
+    when(mcpToolBindingService.resolveCallbacks(
+            eq(invocationOptions.tooling().bindings()),
+            anyString(),
+            any(),
+            any()))
+        .thenReturn(List.of(new McpToolBindingService.ResolvedTool("perplexity_search", toolCallback)));
+
+    AgentInvocationRequest request =
+        new AgentInvocationRequest(
+            sessionId,
+            UUID.randomUUID(),
+            agentVersion,
+            "  Research topic   ",
+            null,
+            objectMapper.createObjectNode(),
+            ChatRequestOverrides.empty(),
+            ChatRequestOverrides.empty(),
+            List.of(),
+            List.of());
+
+    AgentInvocationResult result = agentInvocationService.invoke(request);
+
+    assertThat(result.selectedToolCodes()).containsExactly("perplexity_search");
+    assertThat(toolCallbackCaptor.getValue()).containsExactly(toolCallback);
   }
 
   @Test
@@ -114,7 +219,8 @@ class AgentInvocationServiceTest {
             anyList(),
             any(ChatAdvisorContext.class),
             anyString(),
-            any()))
+            any(),
+            anyList()))
         .thenReturn(chatResponse);
 
     UsageCostEstimate usageCost =
@@ -192,7 +298,8 @@ class AgentInvocationServiceTest {
             memoryCaptor.capture(),
             advisorCaptor.capture(),
             userMessageCaptor.capture(),
-            overridesCaptor.capture());
+            overridesCaptor.capture(),
+            anyList());
 
     @SuppressWarnings("unchecked")
     List<String> capturedMemory = memoryCaptor.getValue();
@@ -251,7 +358,8 @@ class AgentInvocationServiceTest {
             anyList(),
             any(ChatAdvisorContext.class),
             anyString(),
-            any()))
+            any(),
+            anyList()))
         .thenReturn(chatResponse);
 
     UsageCostEstimate usageCost =

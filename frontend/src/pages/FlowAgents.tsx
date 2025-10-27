@@ -475,7 +475,7 @@ const FlowAgents = () => {
                 onChange={(event) =>
                   updateToolBindingRow(index, { toolCode: event.target.value })
                 }
-                placeholder="perplexity-research"
+                placeholder="perplexity_search"
               />
             </label>
             <label>

@@ -1,30 +1,38 @@
 package com.aiadvent.backend.chat.service;
 
+import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.ChatSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncProvider;
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
-import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
+import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
-import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
-import org.springframework.ai.chat.memory.ChatMemory;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.http.HttpStatus;
 import org.springframework.retry.RetryContext;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,13 +43,19 @@ public class SyncChatService extends AbstractSyncService {
   private static final Logger log = LoggerFactory.getLogger(SyncChatService.class);
 
   private final ChatSummarizationPreflightManager preflightManager;
+  private final ChatResearchToolBindingService researchToolBindingService;
+  private final BeanOutputConverter<StructuredSyncResponse> structuredOutputConverter;
 
   public SyncChatService(
       ChatProviderService chatProviderService,
       ChatService chatService,
-      ChatSummarizationPreflightManager preflightManager) {
+      ChatSummarizationPreflightManager preflightManager,
+      ChatResearchToolBindingService researchToolBindingService,
+      BeanOutputConverter<StructuredSyncResponse> structuredOutputConverter) {
     super(chatProviderService, chatService);
     this.preflightManager = preflightManager;
+    this.researchToolBindingService = researchToolBindingService;
+    this.structuredOutputConverter = structuredOutputConverter;
   }
 
   public SyncChatResult sync(ChatSyncRequest request) {
@@ -51,6 +65,8 @@ public class SyncChatService extends AbstractSyncService {
           HttpStatus.BAD_REQUEST,
           "Model '" + selection.modelId() + "' does not support synchronous responses.");
     }
+
+    ChatInteractionMode mode = ChatInteractionMode.from(request.mode());
     ChatProvidersProperties.Provider provider = provider(selection.providerId());
     ChatRequestOverrides overrides = resolveOverrides(request.options());
     ConversationContext context = registerUserMessage(request, selection);
@@ -64,6 +80,7 @@ public class SyncChatService extends AbstractSyncService {
               retryContext ->
                   executeAttempt(
                       request,
+                      mode,
                       context,
                       selection,
                       provider,
@@ -80,6 +97,7 @@ public class SyncChatService extends AbstractSyncService {
 
   private ChatSyncResponse executeAttempt(
       ChatSyncRequest request,
+      ChatInteractionMode mode,
       ConversationContext conversation,
       ChatProviderSelection selection,
       ChatProvidersProperties.Provider provider,
@@ -91,25 +109,40 @@ public class SyncChatService extends AbstractSyncService {
       retryContext.setAttribute("providerId", selection.providerId());
     }
 
+    String userPrompt = sanitizeMessage(request.message());
+    ResearchContext researchContext = researchToolBindingService.resolve(mode, userPrompt);
+
+    if (log.isDebugEnabled() && researchContext.hasCallbacks()) {
+      log.debug(
+          "Sync chat using MCP tools {} for session {}",
+          researchContext.toolCodes(),
+          conversation.sessionId());
+    }
+
     Instant attemptStart = now();
     ChatOptions options = chatProviderService.buildOptions(selection, overrides);
-    String userPrompt = sanitizeMessage(request.message());
 
     preflightManager.run(conversation.sessionId(), selection, userPrompt, "sync-chat");
 
     try {
-      var response =
-          chatProviderService
-              .chatClient(selection.providerId())
-              .prompt()
+      var promptSpec = chatProviderService.chatClient(selection.providerId()).prompt();
+      if (researchContext.hasSystemPrompt()) {
+        promptSpec = promptSpec.system(researchContext.systemPrompt());
+      }
+
+      promptSpec =
+          promptSpec
               .user(userPrompt)
               .advisors(
                   advisors ->
                       advisors.param(
-                          ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()))
-              .options(options)
-              .call()
-              .chatResponse();
+                          ChatMemory.CONVERSATION_ID, conversation.sessionId().toString()));
+
+      if (researchContext.hasCallbacks()) {
+        promptSpec = promptSpec.toolCallbacks(researchContext.callbacks());
+      }
+
+      var response = promptSpec.options(options).call().chatResponse();
 
       String content = extractContent(response);
       if (!StringUtils.hasText(content)) {
@@ -123,14 +156,36 @@ public class SyncChatService extends AbstractSyncService {
       StructuredSyncUsageStats usageStats = toUsageStats(usageCost);
       UsageCostDetails costDetails = toCostDetails(usageCost);
 
+      StructuredSyncResponse structuredPayload = null;
+      ChatStructuredPayload persistedPayload = ChatStructuredPayload.empty();
+      if (mode.isResearch()) {
+        Optional<JsonNode> node =
+            researchToolBindingService.tryParseStructuredPayload(mode, content);
+        if (node.isPresent()) {
+          try {
+            structuredPayload = structuredOutputConverter.convert(node.get().toString());
+            persistedPayload = ChatStructuredPayload.from(node.get());
+          } catch (Exception parseError) {
+            log.debug("Failed to parse structured research payload: {}", parseError.getMessage());
+          }
+        }
+      }
+
       Instant completedAt = now();
       long latencyMs = Duration.between(attemptStart, completedAt).toMillis();
+
+      List<String> toolCodes =
+          CollectionUtils.isEmpty(researchContext.toolCodes())
+              ? null
+              : List.copyOf(researchContext.toolCodes());
 
       ChatSyncResponse finalResponse =
           new ChatSyncResponse(
               requestId,
               content,
               new StructuredSyncProvider(provider.getType().name(), selection.modelId()),
+              toolCodes,
+              structuredPayload,
               usageStats,
               costDetails,
               latencyMs,
@@ -141,7 +196,7 @@ public class SyncChatService extends AbstractSyncService {
           content,
           selection.providerId(),
           selection.modelId(),
-          ChatStructuredPayload.empty(),
+          persistedPayload,
           usageCost);
       logAttemptSuccess(retryContext, conversation.sessionId(), selection.providerId());
       return finalResponse;
@@ -207,7 +262,6 @@ public class SyncChatService extends AbstractSyncService {
   protected Logger logger() {
     return log;
   }
-
 
   public record SyncChatResult(ConversationContext context, ChatSyncResponse response) {}
 }
