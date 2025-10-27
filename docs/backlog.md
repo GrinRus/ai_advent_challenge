@@ -631,32 +631,28 @@
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md` и `docs/processes.md`: описать новый blueprint, API v2, конструктор агентов, миграцию и чек-лист тестирования; добавить запись в CHANGELOG/runbook с планом отката.
 
 ## Wave 13 — Perplexity MCP интеграция для живого ресёрча
-Цель: подключить Perplexity через Model Context Protocol, чтобы агенты и чат выполняли live-research шаги, возвращали цитаты и делились контекстом с downstream-логикой. Волна даёт новый провайдер Spring AI, сохранение результатов поиска и готовые сценарии использования в flow и чатах.
+Цель: подключить Perplexity через Model Context Protocol, чтобы агенты и чат выполняли live-research шаги, возвращали цитаты и делились контекстом с downstream-логикой. Волна добавляет поддержку MCP-инструментов поверх существующих LLM провайдеров и даёт готовые сценарии использования в flow и чатах.
 
 ### Backend
-- [ ] Подключить Spring AI MCP: добавить зависимость `org.springframework.ai:spring-ai-starter-mcp-client` в `backend/build.gradle`, зафиксировать конфигурацию `spring.ai.mcp.client.*` (STDIO transport с `npx -y @perplexity-ai/mcp-server`, `PERPLEXITY_TIMEOUT_MS`, таймаут 120s) и обновить документацию по секретам.
-- [ ] Расширить `ChatProviderType` значением `PERPLEXITY_MCP`, настроить `ChatProvidersProperties`/`ChatProviderConfiguration` для нового провайдера (baseUrl, apiKey, workspaceId, retry-параметры).
-- [ ] Реализовать `PerplexityMcpChatProviderAdapter`, который создаёт `ChatClient` с MCP-транспортом, регистрирует инструменты `perplexity_search`/`perplexity_deep_research` через `ToolCallbackProvider` и поддерживает sync, streaming и structured-вызовы.
-- [ ] Актуализировать `ChatProviderService` и `AgentInvocationService`: прокидывать выбор MCP-инструмента из `AgentToolBindings`, обогащать `UsageCostEstimate` данными о токенах, времени и источниках Perplexity.
+- [ ] Подключить Spring AI MCP: добавить зависимость `org.springframework.ai:spring-ai-starter-mcp-client` в `backend/build.gradle`, зафиксировать конфигурацию `spring.ai.mcp.client.*` (STDIO transport через `npx -y @perplexity-ai/mcp-server`, таймаут 120s, переменные окружения) и обновить документацию по секретам.
+- [ ] Реализовать мягкое подключение MCP-инструментов к любому `ChatProviderAdapter`: расширить `ChatProviderConfiguration`/адаптеры OpenAI и ZhiPu логикой регистрации инструментов через `ToolCallbackProvider` без новых значений `ChatProviderType`.
+- [ ] Обновить `ChatProviderService` и `AgentInvocationService`: при наличии `AgentInvocationOptions.ToolBinding` с MCP-инструментом запускать STDIO-процесс, регистрировать указанный tool и прокидывать выбор в вызовы sync/stream/structured, сохраняя текущую модель подсчёта usage/cost.
 
 ### Flow Orchestration
-- [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный инструмент, лимиты токенов и cost-profile.
-- [ ] Обновить `FlowBlueprintCompiler`/`FlowPayloadMapper`: краткий итог Perplexity хранить в shared-контексте, полный MCP payload складывать в новый канал памяти `research`, прокидывать ссылки downstream шагам.
-- [ ] Расширить `AgentOrchestratorService` и `FlowInteractionService` поддержкой research-шагов: отображать ссылки/цитаты операторам, разрешать ручной перезапуск с выбором `search` или `deep_research`, логировать выбранный инструмент.
+- [ ] Добавить шаблон агента `perplexity-research` в `AgentCatalogService`: системная подсказка, дефолтный `toolBinding` на MCP и базовые лимиты, чтобы flow-конструктор мог выбрать исследовательский шаг без ручного JSON.
+- [ ] Обновить `AgentOrchestratorService` и `FlowInteractionService`: поддержать шаги с MCP-инструментами (выбор `perplexity_search`/`perplexity_deep_research` при ручном рестарте, логирование выбранного tool), не меняя структуру shared/memory каналов.
 
 ### Chat Experience
-- [ ] Добавить поддержку query-параметра `mode=research` в `SyncChatService` и `ChatStreamController`: при его использовании принудительно выбирать `perplexity-mcp`, валидировать overrides и обеспечивать streaming/structured ответы с цитатами.
-- [ ] Научить `StructuredSyncService` и фронт читать MCP-данные через `extensions["research"]` в `StructuredSyncResponse` (цитаты, evidence, search plan).
-- [ ] Интегрировать `ChatSummarizationPreflightManager`: принимать флаги `needs_web_context`/`knowledge_gap` из upstream (UI/flow), дергать Perplexity прогрев через `ResearchWarmupService` и сохранять контекст в канал `research`.
+- [ ] Добавить поддержку query-параметра `mode=research` в `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при его наличии подключать MCP-инструмент к выбранному провайдеру/модели, не переопределяя overrides клиента.
+- [ ] Обновить structured/sync UI и обработчики: корректно отображать свободный текст от Perplexity и подсветку источников, если они присутствуют, без жёсткой зависимости от `extensions["research"]`.
 
 ### Observability & Resilience
-- [ ] Реализовать `HealthIndicator` для MCP-подключения (handshake с tool list + тестовый вызов) и метрики `perplexity_mcp_latency`, `perplexity_mcp_errors_total`, budget токенов.
-- [ ] Расширить retry/timeout политику: отдельный `RetryTemplate` для Perplexity, graceful деградация на 4xx/5xx, fallback на базового провайдера, логирование tool-call payload.
-- [ ] Добавить интеграционные тесты с mock MCP-сервером (WireMock/Testcontainers) для `PerplexityMcpChatProviderAdapter`, `AgentInvocationService` и нового research-шагa флоу.
+- [ ] Реализовать `HealthIndicator` MCP-подключения: проверка запуска STDIO-процесса, handshake с tool list, метрики `perplexity_mcp_latency`/`perplexity_mcp_errors_total`.
+- [ ] Добавить интеграционные тесты с mock MCP-сервером (WireMock/Testcontainers) для сценариев `AgentInvocationService`, `ChatProviderService` и research-шагов оркестратора.
 
 ### Infrastructure & Docs
-- [ ] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить `PERPLEXITY_API_KEY`, `PERPLEXITY_MCP_URL`, `PERPLEXITY_WORKSPACE`, настройки глубины поиска.
-- [ ] Добавить сервис `perplexity-mcp` в `docker-compose.yml` или инструкцию по локальному запуску CLI, описать требования к ключам, лимиты запросов и безопасное хранение секретов.
+- [ ] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить переменные для STDIO-команды (`PERPLEXITY_MCP_CMD`, `PERPLEXITY_API_KEY`, `PERPLEXITY_TIMEOUT_MS`), описать требования к Node/npm.
+- [ ] Обновить `docs/infra.md`/`docs/processes.md`: инструкция по запуску встроенного MCP-сервера (`npx @perplexity-ai/mcp-server`), ограничения по ресурсам и безопасности, чек-лист для ops.
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` и ADR: схема интеграции, поток данных, сценарии использования (flow research, chat research, summary enrichment), SLA и runbook.
 
 ## Wave 14 — Расширенные event-логи оркестратора
