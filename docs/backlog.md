@@ -644,6 +644,7 @@
 
 ### Chat Experience
 - [ ] Добавить поддержку query-параметра `mode=research` в `SyncChatService`, `StructuredSyncService` и `ChatStreamController`: при его наличии подключать MCP-инструмент к выбранному провайдеру/модели, не переопределяя overrides клиента.
+- [ ] Обновить frontend-клиента (`frontend/src/lib/apiClient.ts`, `LLMChat`) и UI: дать пользователю переключатель research-режима и прокидывать `mode=research` в запросы stream/sync/structured.
 - [ ] Обновить structured/sync UI и обработчики: корректно отображать свободный текст от Perplexity и подсветку источников, если они присутствуют, без жёсткой зависимости от `extensions["research"]`.
 
 ### Observability & Resilience
