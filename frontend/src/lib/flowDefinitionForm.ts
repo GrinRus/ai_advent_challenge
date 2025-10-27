@@ -3,13 +3,18 @@ import {
   FlowDefinitionSchema,
   MemoryWriteModeSchema,
 } from './types/flowDefinition';
+import { FlowInteractionTypeSchema } from './types/flowInteraction';
+import { JsonValueSchema } from './types/json';
 import type {
   FlowDefinitionDraft,
   FlowDefinitionDocument,
+  FlowInteractionConfig,
   FlowStepDefinition,
   FlowStepOverrides,
+  MemoryWriteConfig,
   MemoryWriteMode,
 } from './types/flowDefinition';
+import type { JsonValue } from './types/json';
 
 export type FlowLaunchParameterForm = {
   name: string;
@@ -318,13 +323,21 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
     return numberValue;
   };
 
-  const parseJsonField = (label: string, value: string) => {
+  const parseJsonField = (label: string, value: string): JsonValue | undefined => {
     const trimmed = value.trim();
     if (!trimmed) {
       return undefined;
     }
     try {
-      return JSON.parse(trimmed);
+      const parsed = JSON.parse(trimmed);
+      const validation = JsonValueSchema.safeParse(parsed);
+      if (!validation.success) {
+        const issueMessage =
+          validation.error.issues.map((issue) => issue.message).join('; ') ||
+          'значение должно быть корректным JSON';
+        throw new Error(issueMessage);
+      }
+      return validation.data;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'некорректный JSON';
       throw new Error(`${label}: ${message}`);
@@ -420,51 +433,80 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
       .filter(Boolean) as Array<{ channel: string; limit: number }>;
 
     const memoryWrites = step.memoryWrites
-      .map((write, writeIndex) => {
-        if (!write.channel.trim() && !write.payloadText.trim()) {
+      .map<MemoryWriteConfig | undefined>((write, writeIndex) => {
+        const channel = write.channel.trim();
+        const payloadText = write.payloadText.trim();
+        if (!channel && !payloadText) {
           return undefined;
         }
-        if (!write.channel.trim()) {
+        if (!channel) {
           throw new Error(`Шаг "${step.id}" memory write #${writeIndex + 1}: укажите канал`);
         }
         const mode = MemoryWriteModeSchema.parse(write.mode ?? 'AGENT_OUTPUT');
-        return {
-          channel: write.channel.trim(),
-          mode,
-          payload: parseJsonField(
-            `Шаг "${step.id}" memory write #${writeIndex + 1} payload`,
-            write.payloadText,
-          ),
-        };
+        const payload = parseJsonField(
+          `Шаг "${step.id}" memory write #${writeIndex + 1} payload`,
+          write.payloadText,
+        );
+        return payload !== undefined
+          ? {
+              channel,
+              mode,
+              payload,
+            }
+          : {
+              channel,
+              mode,
+            };
       })
-      .filter(Boolean) as Array<{ channel: string; mode: MemoryWriteMode; payload?: unknown }>;
+      .filter((write): write is MemoryWriteConfig => Boolean(write));
 
-    const interaction =
-      step.interaction.type ||
-      step.interaction.title ||
-      step.interaction.description ||
-      step.interaction.payloadSchemaText ||
-      step.interaction.suggestedActionsText ||
-      step.interaction.dueInMinutes
-        ? {
-            type: step.interaction.type || undefined,
-            title: step.interaction.title || undefined,
-            description: step.interaction.description || undefined,
-            payloadSchema: parseJsonField(
-              `Шаг "${step.id}" interaction payloadSchema`,
-              step.interaction.payloadSchemaText,
-            ),
-            suggestedActions: parseJsonField(
-              `Шаг "${step.id}" interaction suggestedActions`,
-              step.interaction.suggestedActionsText,
-            ),
-            dueInMinutes: normalizeNumber(
-              `Шаг "${step.id}" interaction dueInMinutes`,
-              step.interaction.dueInMinutes,
-              { integer: true },
-            ),
-          }
-        : undefined;
+    const interactionTypeInput = step.interaction.type.trim();
+    let interactionType: FlowInteractionConfig['type'] | undefined;
+    if (interactionTypeInput) {
+      const parsedType = FlowInteractionTypeSchema.safeParse(interactionTypeInput);
+      if (!parsedType.success) {
+        const allowed = FlowInteractionTypeSchema.options.join(', ');
+        throw new Error(
+          `Шаг "${step.id}" interaction type: допускаются значения ${allowed}`,
+        );
+      }
+      interactionType = parsedType.data;
+    }
+
+    const interactionTitle = step.interaction.title.trim();
+    const interactionDescription = step.interaction.description.trim();
+    const interactionPayloadSchema = parseJsonField(
+      `Шаг "${step.id}" interaction payloadSchema`,
+      step.interaction.payloadSchemaText,
+    );
+    const interactionSuggestedActions = parseJsonField(
+      `Шаг "${step.id}" interaction suggestedActions`,
+      step.interaction.suggestedActionsText,
+    );
+    const interactionDueInMinutes = normalizeNumber(
+      `Шаг "${step.id}" interaction dueInMinutes`,
+      step.interaction.dueInMinutes,
+      { integer: true },
+    );
+
+    const hasInteraction =
+      Boolean(interactionTypeInput) ||
+      Boolean(interactionTitle) ||
+      Boolean(interactionDescription) ||
+      Boolean(step.interaction.payloadSchemaText.trim()) ||
+      Boolean(step.interaction.suggestedActionsText.trim()) ||
+      Boolean(step.interaction.dueInMinutes.trim());
+
+    const interaction: FlowInteractionConfig | undefined = hasInteraction
+      ? {
+          type: interactionType,
+          title: interactionTitle || undefined,
+          description: interactionDescription || undefined,
+          payloadSchema: interactionPayloadSchema,
+          suggestedActions: interactionSuggestedActions,
+          dueInMinutes: interactionDueInMinutes,
+        }
+      : undefined;
 
     const transitions = {
       onSuccess:

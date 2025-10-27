@@ -668,16 +668,6 @@ const FlowAgents = () => {
     try {
       const versionMaxTokens = parseNumberInput(versionForm.maxTokens);
 
-      const payload: AgentVersionPayload = {
-        providerId: versionForm.providerId,
-        modelId: versionForm.modelId,
-        systemPrompt: versionForm.systemPrompt,
-        createdBy: operatorId.trim(),
-        syncOnly: versionForm.syncOnly,
-        maxTokens: versionMaxTokens,
-        capabilities: buildCapabilitiesPayload(versionForm.capabilities),
-      };
-
       const temperatureValue = parseNumberInput(versionForm.temperature);
       const topPValue = parseNumberInput(versionForm.topP);
       const maxOutputTokens = versionMaxTokens;
@@ -706,8 +696,17 @@ const FlowAgents = () => {
         costProfile: buildCostProfile(versionForm.costProfile),
       });
 
-      payload.providerType = currentProvider?.type;
-      payload.invocationOptions = invocationOptions;
+      const payload: AgentVersionPayload = {
+        providerType: currentProvider?.type,
+        providerId: versionForm.providerId,
+        modelId: versionForm.modelId,
+        systemPrompt: versionForm.systemPrompt,
+        invocationOptions,
+        createdBy: operatorId.trim(),
+        syncOnly: versionForm.syncOnly,
+        maxTokens: versionMaxTokens,
+        capabilities: buildCapabilitiesPayload(versionForm.capabilities),
+      };
 
       await createAgentVersion(selectedDefinition.id, payload);
       invalidateAgentCatalogCache();

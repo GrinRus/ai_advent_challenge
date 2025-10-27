@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import type {
   FlowDefinitionDetails,
   FlowDefinitionHistoryEntry,
@@ -54,7 +55,7 @@ const FlowDefinitions = () => {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isLoadingList, setIsLoadingList] = useState(false);
-  const [isLoadingDefinition, setIsLoadingDefinition] = useState(false);
+  const [, setIsLoadingDefinition] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
 
@@ -62,7 +63,7 @@ const FlowDefinitions = () => {
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
 
   const [agentOptions, setAgentOptions] = useState<AgentOption[]>([]);
-  const [agentLoading, setAgentLoading] = useState(false);
+  const [, setAgentLoading] = useState(false);
 
   const [newDefinitionName, setNewDefinitionName] = useState('');
   const [newDefinitionDescription, setNewDefinitionDescription] = useState('');
@@ -828,7 +829,7 @@ const FlowDefinitions = () => {
             On success → next step
             <input
               value={step.transitions.onSuccessNext}
-              onChange={(event) =>
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 updateStep((prev) => ({
                   ...prev,
                   transitions: {
@@ -843,7 +844,7 @@ const FlowDefinitions = () => {
             <input
               type="checkbox"
               checked={step.transitions.onSuccessComplete}
-              onChange={(event) =>
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 updateStep((prev) => ({
                   ...prev,
                   transitions: {
@@ -861,7 +862,7 @@ const FlowDefinitions = () => {
             On failure → next step
             <input
               value={step.transitions.onFailureNext}
-              onChange={(event) =>
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 updateStep((prev) => ({
                   ...prev,
                   transitions: {
@@ -876,7 +877,15 @@ const FlowDefinitions = () => {
             <input
               type="checkbox"
               checked={step.transitions.onFailureFail}
-              onChange={()=>updateStep((prev)=>({ ...prev, transitions:{ ...prev.transitions, onFailureFail: event.target.checked } }))}
+              onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                updateStep((prev) => ({
+                  ...prev,
+                  transitions: {
+                    ...prev.transitions,
+                    onFailureFail: event.target.checked,
+                  },
+                }))
+              }
             />
             Прервать флоу на ошибке
           </label>
@@ -922,11 +931,21 @@ const FlowDefinitions = () => {
     if (!details) {
       return;
     }
+    const draftMeta = formState?.draft as Record<string, unknown> | undefined;
+    const draftUpdatedBy =
+      typeof draftMeta?.updatedBy === 'string' && draftMeta.updatedBy.trim()
+        ? draftMeta.updatedBy.trim()
+        : undefined;
+    const detailUpdatedBy =
+      typeof details.updatedBy === 'string' && details.updatedBy.trim()
+        ? details.updatedBy.trim()
+        : undefined;
+    const updatedBy = draftUpdatedBy ?? detailUpdatedBy ?? '';
     setFormError(null);
     setIsPublishing(true);
     try {
       await publishFlowDefinition(details.id, {
-        updatedBy: formState?.draft.updatedBy ?? details.updatedBy ?? '',
+        updatedBy,
         changeNotes: undefined,
       });
       await loadDefinition(details.id);

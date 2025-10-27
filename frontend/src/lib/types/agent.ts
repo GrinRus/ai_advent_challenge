@@ -4,9 +4,11 @@ import {
   AgentInvocationOptionsSchema,
   AgentToolingSchema,
   AgentCostProfileSchema,
+  AgentToolBindingSchema,
+} from './agentInvocation';
+import type {
   AgentInvocationOptionsInput,
   AgentInvocationOptions,
-  AgentToolBindingSchema,
 } from './agentInvocation';
 
 const JsonRecordSchema = JsonObjectSchema;

@@ -16,7 +16,6 @@ import type {
   AgentDefinitionDetails,
   AgentDefinitionSummary,
   AgentInvocationOptionsPayload,
-  AgentInvocationOptionsType,
   AgentVersion,
 } from './types/agent';
 import {
@@ -57,6 +56,7 @@ export type {
   AgentCapabilityPayload,
   AgentDefinitionDetails,
   AgentDefinitionSummary,
+  AgentInvocationOptionsPayload,
   AgentInvocationOptionsType,
   AgentVersion,
 } from './types/agent';
