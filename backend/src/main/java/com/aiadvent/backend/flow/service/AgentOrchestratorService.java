@@ -10,6 +10,11 @@ import com.aiadvent.backend.flow.config.MemoryReadConfig;
 import com.aiadvent.backend.flow.config.MemoryWriteConfig;
 import com.aiadvent.backend.flow.config.MemoryWriteMode;
 import com.aiadvent.backend.flow.config.FlowInteractionConfig;
+import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepOutputPayload;
+import com.aiadvent.backend.flow.execution.model.FlowUsagePayload;
+import com.aiadvent.backend.flow.execution.model.FlowCostPayload;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowEvent;
@@ -34,6 +39,11 @@ import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
+import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
+import com.aiadvent.backend.flow.session.model.FlowOverrides;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
+import com.aiadvent.backend.flow.telemetry.FlowTraceFormatter;
+import com.aiadvent.backend.flow.service.payload.FlowPayloadMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -67,6 +77,7 @@ public class AgentOrchestratorService {
   private final JobQueuePort jobQueuePort;
   private final ObjectMapper objectMapper;
   private final FlowTelemetryService telemetry;
+  private final FlowPayloadMapper flowPayloadMapper;
 
   public AgentOrchestratorService(
       FlowDefinitionService flowDefinitionService,
@@ -80,7 +91,8 @@ public class AgentOrchestratorService {
       FlowInteractionService flowInteractionService,
       JobQueuePort jobQueuePort,
       ObjectMapper objectMapper,
-      FlowTelemetryService telemetry) {
+      FlowTelemetryService telemetry,
+      FlowPayloadMapper flowPayloadMapper) {
     this.flowDefinitionService = flowDefinitionService;
     this.flowDefinitionParser = flowDefinitionParser;
     this.flowSessionRepository = flowSessionRepository;
@@ -93,6 +105,7 @@ public class AgentOrchestratorService {
     this.jobQueuePort = jobQueuePort;
     this.objectMapper = objectMapper;
     this.telemetry = telemetry;
+    this.flowPayloadMapper = flowPayloadMapper;
   }
 
   @Transactional
@@ -122,9 +135,9 @@ public class AgentOrchestratorService {
             FlowSessionStatus.RUNNING,
             0L,
             0L);
-    session.setLaunchParameters(launchParameters);
-    session.setSharedContext(initializeSharedContext(sharedContext));
-    session.setLaunchOverrides(toLaunchOverridesNode(launchOverrides));
+    session.setLaunchParameters(FlowLaunchParameters.from(launchParameters));
+    session.setSharedContext(flowPayloadMapper.initializeSharedContext(sharedContext));
+    session.setLaunchOverrides(FlowOverrides.from(toLaunchOverridesNode(launchOverrides)));
     session.setStartedAt(Instant.now());
     session.setCurrentStepId(startStep.id());
     session.setChatSessionId(chatSessionId);
@@ -134,8 +147,9 @@ public class AgentOrchestratorService {
 
     recordEvent(session, null, FlowEventType.FLOW_STARTED, "running", null, null);
 
+    FlowStepInputPayload initialInput = flowPayloadMapper.buildStepInputPayload(session);
     FlowStepExecution stepExecution =
-        createStepExecution(session, startStep, agentVersion, 1, buildStepInputContext(session));
+        createStepExecution(session, startStep, agentVersion, 1, initialInput);
     flowStepExecutionRepository.save(stepExecution);
 
     enqueueStepJob(session, stepExecution, 1, Instant.now());
@@ -197,12 +211,24 @@ public class AgentOrchestratorService {
     stepExecution.setStatus(FlowStepStatus.RUNNING);
     stepExecution.setStartedAt(Instant.now());
     stepExecution.setAgentVersion(agentVersion);
-    JsonNode inputContext = buildStepInputContext(session);
+    FlowStepInputPayload inputPayload = flowPayloadMapper.buildStepInputPayload(session);
+    JsonNode inputContext = inputPayload.asJson();
     stepExecution.setPrompt(stepConfig.prompt());
-    stepExecution.setInputPayload(inputContext);
+    stepExecution.setInputPayload(inputPayload);
     flowStepExecutionRepository.save(stepExecution);
 
     telemetry.stepStarted(session.getId(), stepExecution.getId(), stepExecution.getStepId(), stepExecution.getAttempt());
+
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "{}",
+          FlowTraceFormatter.stepDispatch(
+              session,
+              stepExecution,
+              agentVersion,
+              stepConfig,
+              session.getLaunchOverrides()));
+    }
 
     try {
       ChatRequestOverrides sessionOverrides = toLaunchOverrides(session.getLaunchOverrides());
@@ -219,7 +245,7 @@ public class AgentOrchestratorService {
               agentVersion,
               userPrompt,
               inputContext,
-              session.getLaunchParameters(),
+              session.getLaunchParameters().asJson(),
               stepConfig.overrides(),
               sessionOverrides,
               toReadInstructions(stepConfig.memoryReads()),
@@ -278,10 +304,10 @@ public class AgentOrchestratorService {
     stepExecution.setCompletedAt(Instant.now());
 
     JsonNode stepOutput = resultPayload(result);
-    stepExecution.setOutputPayload(cloneNode(stepOutput));
+    stepExecution.setOutputPayload(FlowStepOutputPayload.from(stepOutput));
 
-    stepExecution.setUsage(toUsageNode(result.usageCost()));
-    stepExecution.setCost(toCostNode(result.usageCost()));
+    stepExecution.setUsage(flowPayloadMapper.usagePayload(result.usageCost()));
+    stepExecution.setCost(flowPayloadMapper.costPayload(result.usageCost()));
     flowStepExecutionRepository.save(stepExecution);
 
     List<FlowMemoryVersion> updates = new ArrayList<>();
@@ -327,9 +353,12 @@ public class AgentOrchestratorService {
       session.setCurrentMemoryVersion(updates.get(0).getVersion());
     }
 
-    updateSharedContext(session, stepExecution, stepOutput);
+    session.setSharedContext(flowPayloadMapper.applyStepOutput(session, stepExecution, stepOutput));
     session.setStateVersion(session.getStateVersion() + 1);
     flowSessionRepository.save(session);
+
+    List<FlowMemoryVersion> traceUpdates =
+        result.memoryUpdates() != null && !result.memoryUpdates().isEmpty() ? result.memoryUpdates() : updates;
 
     Duration duration = calculateDuration(stepExecution.getStartedAt(), stepExecution.getCompletedAt());
     telemetry.stepCompleted(
@@ -339,6 +368,19 @@ public class AgentOrchestratorService {
         stepExecution.getAttempt(),
         duration,
         result.usageCost());
+
+    if (log.isInfoEnabled()) {
+      log.info(
+          "{}",
+          FlowTraceFormatter.stepCompletion(
+              session,
+              stepExecution,
+              agentVersion,
+              result.usageCost(),
+              traceUpdates,
+              stepOutput,
+              duration));
+    }
 
     return stepOutput;
   }
@@ -350,13 +392,6 @@ public class AgentOrchestratorService {
       FlowDefinitionDocument document,
       FlowStepConfig config,
       RuntimeException exception) {
-    log.warn(
-        "Step {} failed for session {}: {}",
-        stepExecution.getStepId(),
-        session.getId(),
-        exception.getMessage(),
-        exception);
-
     stepExecution.setStatus(FlowStepStatus.FAILED);
     stepExecution.setErrorMessage(exception.getMessage());
     stepExecution.setCompletedAt(Instant.now());
@@ -378,6 +413,14 @@ public class AgentOrchestratorService {
         stepExecution.getAttempt(),
         failureDuration,
         exception);
+
+    if (log.isWarnEnabled()) {
+      log.warn(
+          "{}",
+          FlowTraceFormatter.stepFailure(
+              session, stepExecution, stepExecution.getAgentVersion(), exception, failureDuration),
+          exception);
+    }
 
     boolean retryScheduled = false;
     if (stepExecution.getAttempt() < config.maxAttempts()) {
@@ -459,7 +502,7 @@ public class AgentOrchestratorService {
       FlowSession session,
       String nextStepId,
       FlowDefinitionDocument document,
-      JsonNode launchContext) {
+      FlowStepInputPayload launchContext) {
     FlowStepConfig nextConfig = document.step(nextStepId);
     AgentVersion nextAgent =
         agentVersionRepository
@@ -482,12 +525,12 @@ public class AgentOrchestratorService {
       FlowStepConfig stepConfig,
       AgentVersion agentVersion,
       int attempt,
-      JsonNode inputPayload) {
+      FlowStepInputPayload inputPayload) {
     FlowStepExecution execution =
         new FlowStepExecution(session, stepConfig.id(), FlowStepStatus.PENDING, attempt);
     execution.setStepName(stepConfig.name());
     execution.setAgentVersion(agentVersion);
-    execution.setInputPayload(inputPayload);
+    execution.setInputPayload(inputPayload != null ? inputPayload : FlowStepInputPayload.empty());
     return execution;
   }
 
@@ -562,59 +605,8 @@ public class AgentOrchestratorService {
     return stepConfig.name() != null ? stepConfig.name() : "Provide response";
   }
 
-  private JsonNode launchContextForNext(FlowSession session) {
-    return buildStepInputContext(session);
-  }
-
-  private JsonNode initializeSharedContext(JsonNode sharedContext) {
-    ObjectNode context = objectMapper.createObjectNode();
-    context.set("initial", cloneNode(sharedContext));
-    context.set("current", cloneNode(sharedContext));
-    context.set("steps", objectMapper.createObjectNode());
-    context.set("lastOutput", objectMapper.nullNode());
-    context.putNull("lastStepId");
-    context.put("version", 0);
-    return context;
-  }
-
-  private JsonNode buildStepInputContext(FlowSession session) {
-    ObjectNode input = objectMapper.createObjectNode();
-    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
-      input.set("launchParameters", cloneNode(session.getLaunchParameters()));
-    }
-
-    JsonNode shared = session.getSharedContext();
-    if (shared != null && !shared.isNull()) {
-      input.set("sharedContext", cloneNode(shared));
-      JsonNode initial = shared.get("initial");
-      if (initial != null) {
-        input.set("initialContext", cloneNode(initial));
-      }
-      JsonNode lastOutput = shared.get("lastOutput");
-      if (lastOutput != null && !lastOutput.isNull()) {
-        input.set("lastOutput", cloneNode(lastOutput));
-      }
-      JsonNode current = shared.get("current");
-      if (current != null && !current.isNull()) {
-        input.set("currentContext", cloneNode(current));
-      }
-    }
-    return input;
-  }
-
-  private void updateSharedContext(
-      FlowSession session, FlowStepExecution stepExecution, JsonNode stepOutput) {
-    JsonNode shared = session.getSharedContext();
-    ObjectNode context =
-        shared != null && shared.isObject() ? (ObjectNode) shared : objectMapper.createObjectNode();
-
-    ObjectNode stepsNode = context.with("steps");
-    stepsNode.set(stepExecution.getStepId(), cloneNode(stepOutput));
-    context.put("lastStepId", stepExecution.getStepId());
-    context.set("lastOutput", cloneNode(stepOutput));
-    context.set("current", cloneNode(stepOutput));
-    context.put("version", context.path("version").asInt(0) + 1);
-    session.setSharedContext(context);
+  private FlowStepInputPayload launchContextForNext(FlowSession session) {
+    return flowPayloadMapper.buildStepInputPayload(session);
   }
 
   private void recordEvent(
@@ -624,9 +616,11 @@ public class AgentOrchestratorService {
       String status,
       JsonNode payload,
       UsageCostEstimate usageCost) {
-    JsonNode payloadWithMetadata = attachStepMetadata(stepExecution, payload);
-    JsonNode payloadWithContext = enrichPayloadWithContext(session, payloadWithMetadata);
-    FlowEvent event = new FlowEvent(session, eventType, status, payloadWithContext);
+    FlowEventPayload mappedPayload =
+        stepExecution != null
+            ? flowPayloadMapper.eventPayload(session, stepExecution, payload)
+            : flowPayloadMapper.eventPayload(session, payload);
+    FlowEvent event = new FlowEvent(session, eventType, status, mappedPayload);
     if (stepExecution != null) {
       event.setFlowStepExecution(stepExecution);
     }
@@ -750,70 +744,6 @@ public class AgentOrchestratorService {
     return node;
   }
 
-  private JsonNode enrichPayloadWithContext(FlowSession session, JsonNode payload) {
-    ObjectNode contextNode = buildContextNode(session);
-    boolean hasContext = contextNode != null && contextNode.size() > 0;
-
-    if (!hasContext) {
-      return payload;
-    }
-
-    if (payload instanceof ObjectNode objectNode) {
-      objectNode.set("context", contextNode);
-      return objectNode;
-    }
-
-    if (payload == null || payload.isNull()) {
-      return contextNode;
-    }
-
-    ObjectNode wrapper = objectMapper.createObjectNode();
-    wrapper.set("data", cloneNode(payload));
-    wrapper.set("context", contextNode);
-    return wrapper;
-  }
-
-  private JsonNode attachStepMetadata(FlowStepExecution stepExecution, JsonNode payload) {
-    if (stepExecution == null) {
-      return payload;
-    }
-    ObjectNode metadata = objectMapper.createObjectNode();
-    if (stepExecution.getId() != null) {
-      metadata.put("stepExecutionId", stepExecution.getId().toString());
-    }
-    metadata.put("stepId", stepExecution.getStepId());
-    if (StringUtils.hasText(stepExecution.getStepName())) {
-      metadata.put("stepName", stepExecution.getStepName());
-    }
-    metadata.put("attempt", stepExecution.getAttempt());
-    if (stepExecution.getStatus() != null) {
-      metadata.put("status", stepExecution.getStatus().name());
-    }
-    if (StringUtils.hasText(stepExecution.getPrompt())) {
-      metadata.put("prompt", stepExecution.getPrompt());
-    }
-    AgentVersion agentVersion = stepExecution.getAgentVersion();
-    if (agentVersion != null) {
-      metadata.set("agentVersion", buildAgentVersionNode(agentVersion));
-    }
-    if (metadata.size() == 0) {
-      return payload;
-    }
-    if (payload instanceof ObjectNode objectNode) {
-      if (!objectNode.has("step")) {
-        objectNode.set("step", metadata);
-      }
-      return objectNode;
-    }
-    if (payload == null || payload.isNull()) {
-      return metadata;
-    }
-    ObjectNode wrapper = objectMapper.createObjectNode();
-    wrapper.set("data", cloneNode(payload));
-    wrapper.set("step", metadata);
-    return wrapper;
-  }
-
   private ObjectNode buildStepStartedPayload(
       FlowStepExecution stepExecution,
       AgentVersion agentVersion,
@@ -865,21 +795,10 @@ public class AgentOrchestratorService {
     if (StringUtils.hasText(agentVersion.getSystemPrompt())) {
       agentNode.put("systemPrompt", agentVersion.getSystemPrompt());
     }
-    if (agentVersion.getDefaultOptions() != null && !agentVersion.getDefaultOptions().isNull()) {
-      agentNode.set("defaultOptions", cloneNode(agentVersion.getDefaultOptions()));
+    if (!agentVersion.getDefaultOptions().isEmpty()) {
+      agentNode.set("defaultOptions", agentVersion.getDefaultOptions().asJson());
     }
     return agentNode;
-  }
-
-  private ObjectNode buildContextNode(FlowSession session) {
-    ObjectNode node = objectMapper.createObjectNode();
-    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
-      node.set("launchParameters", cloneNode(session.getLaunchParameters()));
-    }
-    if (session.getLaunchOverrides() != null && !session.getLaunchOverrides().isNull()) {
-      node.set("launchOverrides", cloneNode(session.getLaunchOverrides()));
-    }
-    return node.size() > 0 ? node : null;
   }
 
   private void recordUserPrompt(
@@ -927,14 +846,14 @@ public class AgentOrchestratorService {
     return objectMapper.valueToTree(overrides);
   }
 
-  private ChatRequestOverrides toLaunchOverrides(JsonNode overridesNode) {
-    if (overridesNode == null || overridesNode.isNull()) {
+  private ChatRequestOverrides toLaunchOverrides(FlowOverrides overrides) {
+    if (overrides == null || overrides.isEmpty()) {
       return null;
     }
     try {
-      return objectMapper.treeToValue(overridesNode, ChatRequestOverrides.class);
+      return objectMapper.treeToValue(overrides.asJson(), ChatRequestOverrides.class);
     } catch (Exception exception) {
-      log.warn("Failed to deserialize launch overrides for session {}", overridesNode, exception);
+      log.warn("Failed to deserialize launch overrides", exception);
       return null;
     }
   }

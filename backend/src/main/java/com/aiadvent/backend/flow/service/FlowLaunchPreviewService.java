@@ -143,8 +143,8 @@ public class FlowLaunchPreviewService {
         modelConfig != null ? modelConfig.getMaxOutputTokens() : null,
         agentVersion.isSyncOnly(),
         agentVersion.getMaxTokens(),
-        agentVersion.getDefaultOptions(),
-        agentVersion.getCostProfile(),
+        agentVersion.getDefaultOptions().asJson(),
+        agentVersion.getCostProfile().asJson(),
         pricing);
   }
 

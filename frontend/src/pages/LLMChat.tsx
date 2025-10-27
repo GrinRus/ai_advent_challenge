@@ -735,6 +735,39 @@ const LLMChat = () => {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
+  const updateActiveTabForModel = useCallback((model: ProviderModel | null) => {
+    if (!model) {
+      return;
+    }
+    const supportsStream = model.streamingEnabled !== false;
+    const supportsSync = model.syncEnabled !== false;
+    const supportsStructured = model.structuredEnabled !== false;
+
+    const currentSupported =
+      (activeTab === 'stream' && supportsStream) ||
+      (activeTab === 'sync' && supportsSync) ||
+      (activeTab === 'structured' && supportsStructured);
+
+    if (currentSupported) {
+      return;
+    }
+
+    if (supportsStream) {
+      setActiveTab('stream');
+      setInfo(null);
+      return;
+    }
+    if (supportsSync) {
+      setActiveTab('sync');
+      setInfo(null);
+      return;
+    }
+    if (supportsStructured) {
+      setActiveTab('structured');
+      setInfo(null);
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ count?: number }>).detail;
@@ -744,15 +777,7 @@ const LLMChat = () => {
     return () => {
       window.removeEventListener('flow-interactions-badge', handler as EventListener);
     };
-  }, []);
-
-  function updateActiveTabForModel(model: ProviderModel | null) {
-    if (!model) {
-      return;
-    }
-    const supportsStream = model.streamingEnabled !== false;
-    const supportsSync = model.syncEnabled !== false;
-    const supportsStructured = model.structuredEnabled !== false;
+  }, [updateActiveTabForModel]);
 
     const currentSupported =
       (activeTab === 'stream' && supportsStream) ||

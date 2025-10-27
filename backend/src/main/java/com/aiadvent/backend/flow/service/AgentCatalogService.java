@@ -3,6 +3,10 @@ package com.aiadvent.backend.flow.service;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
+import com.aiadvent.backend.flow.agent.model.AgentCapabilityPayload;
+import com.aiadvent.backend.flow.agent.model.AgentCostProfile;
+import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
+import com.aiadvent.backend.flow.agent.model.AgentToolBindings;
 import com.aiadvent.backend.flow.api.AgentCapabilityRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionStatusRequest;
@@ -203,9 +207,12 @@ public class AgentCatalogService {
             definition, nextVersion, AgentVersionStatus.DRAFT, providerType, providerId, modelId);
 
     version.setSystemPrompt(request.systemPrompt().trim());
-    version.setDefaultOptions(validateJsonObject("defaultOptions", request.defaultOptions()));
-    version.setToolBindings(validateJsonObject("toolBindings", request.toolBindings()));
-    version.setCostProfile(validateJsonObject("costProfile", request.costProfile()));
+    version.setDefaultOptions(
+        AgentDefaultOptions.from(validateJsonObject("defaultOptions", request.defaultOptions())));
+    version.setToolBindings(
+        AgentToolBindings.from(validateJsonObject("toolBindings", request.toolBindings())));
+    version.setCostProfile(
+        AgentCostProfile.from(validateJsonObject("costProfile", request.costProfile())));
     version.setSyncOnly(request.syncOnly() == null || request.syncOnly());
     version.setMaxTokens(request.maxTokens());
     version.setCreatedBy(request.createdBy().trim());
@@ -315,7 +322,9 @@ public class AgentCatalogService {
       }
       agentCapabilityRepository.save(
           new AgentCapability(
-              version, capabilityRequest.capability().trim(), capabilityRequest.payload()));
+              version,
+              capabilityRequest.capability().trim(),
+              AgentCapabilityPayload.from(capabilityRequest.payload())));
     }
   }
 }

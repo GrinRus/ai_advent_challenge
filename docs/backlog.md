@@ -562,35 +562,35 @@
 
 ## Wave 11 — Strict typing rollout
 ### Backend
-- [ ] Заменить `Map<String, Object>` в `ChatProviderService.chatSyncWithOverrides` и `AgentInvocationService` на явный DTO для advisor параметров, обеспечить валидацию содержимого.
-- [ ] В `DatabaseChatMemoryRepository` отказаться от десериализации в `Map.class`: определить типизированную модель metadata и централизованный маппер.
-- [ ] Для `FlowSession` и связанных сущностей заменить поля `JsonNode` (`launchParameters`, `sharedContext`, `launchOverrides`, `telemetry`) на value-объекты с описанной схемой и конверторами.
-- [ ] Типизировать JSON-поля домена (`AgentVersion.defaultOptions/toolBindings/costProfile`, `FlowDefinition.definition`, `FlowDefinitionHistory.definition`, `FlowStepExecution.*Payload/usage/cost`, `FlowEvent.payload`, `AgentCapability.payload`, `ChatMessage.structuredPayload`) через отдельные value-объекты и конвертеры, исключив «сырые» `JsonNode`.
-- [ ] Обновить трассировку/логирование после типизации, чтобы не полагаться на произвольные JSON-структуры.
-- [ ] FlowSession value objects: определить модели (`FlowLaunchParameters`, `FlowSharedContext`, `FlowOverrides`, `FlowTelemetrySnapshot`), реализовать `AttributeConverter`/`JsonColumn<T>` и мигрировать `FlowSession`, `FlowStartResponse`, `FlowStatusService`.
-- [ ] Agent payloads: создать DTO (`AgentDefaultOptions`, `AgentToolBinding`, `AgentCostProfile`, `AgentCapabilityPayload`) + конвертеры, внедрить в `AgentVersion`, `AgentCapability` и сервисы чтения/записи.
-- [ ] Flow execution payloads: добавить `FlowStepInputPayload`, `FlowStepOutputPayload`, `UsageCostPayload` и `FlowEventPayload` + mapper-сервис (`FlowPayloadMapper`), переписать `AgentOrchestratorService`/`FlowStatusService`/`FlowEventRepository`.
-- [ ] Тесты конвертеров/mapper'ов: покрыть round-trip сериализацию и схемы дефолтов (JUnit).
+- [x] Заменить `Map<String, Object>` в `ChatProviderService.chatSyncWithOverrides` и `AgentInvocationService` на явный DTO для advisor параметров, обеспечить валидацию содержимого.
+- [x] В `DatabaseChatMemoryRepository` отказаться от десериализации в `Map.class`: определить типизированную модель metadata и централизованный маппер.
+- [x] Для `FlowSession` и связанных сущностей заменить поля `JsonNode` (`launchParameters`, `sharedContext`, `launchOverrides`, `telemetry`) на value-объекты с описанной схемой и конверторами.
+- [x] Типизировать JSON-поля домена (`AgentVersion.defaultOptions/toolBindings/costProfile`, `FlowDefinition.definition`, `FlowDefinitionHistory.definition`, `FlowStepExecution.*Payload/usage/cost`, `FlowEvent.payload`, `AgentCapability.payload`, `ChatMessage.structuredPayload`) через отдельные value-объекты и конвертеры, исключив «сырые» `JsonNode`.
+- [x] Обновить трассировку/логирование после типизации, чтобы не полагаться на произвольные JSON-структуры.
+- [x] FlowSession value objects: определить модели (`FlowLaunchParameters`, `FlowSharedContext`, `FlowOverrides`, `FlowTelemetrySnapshot`), реализовать `AttributeConverter`/`JsonColumn<T>` и мигрировать `FlowSession`, `FlowStartResponse`, `FlowStatusService`.
+- [x] Agent payloads: создать DTO (`AgentDefaultOptions`, `AgentToolBinding`, `AgentCostProfile`, `AgentCapabilityPayload`) + конвертеры, внедрить в `AgentVersion`, `AgentCapability` и сервисы чтения/записи.
+- [x] Flow execution payloads: добавить `FlowStepInputPayload`, `FlowStepOutputPayload`, `UsageCostPayload` и `FlowEventPayload` + mapper-сервис (`FlowPayloadMapper`), переписать `AgentOrchestratorService`/`FlowStatusService`/`FlowEventRepository`.
+- [x] Тесты конвертеров/mapper'ов: покрыть round-trip сериализацию и схемы дефолтов (JUnit).
 
 **Финальный подход Backend:** берём *Value Object + Converter* как базовый слой типизации и сразу выносим сериализацию в mapper-сервисы (`FlowPayloadMapper`, `AgentOptionsMapper`). Генерацию DTO из схем планируем после стабилизации моделей, но текущий rollout от неё не зависит.
 ### Frontend
-- [ ] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
-- [ ] Переписать `FlowAgents` и другие потребители API так, чтобы парсинг JSON (например, `parseOptionalJson`) возвращал строго типизированные объекты с проверкой схемы.
+- [x] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
+- [x] Переписать `FlowAgents` и другие потребители API так, чтобы парсинг JSON (например, `parseOptionalJson`) возвращал строго типизированные объекты с проверкой схемы.
 - [ ] Перестроить `FlowDefinitionForm`/`FlowLaunch` стейт: вместо `Record<string, unknown>` и массовых `JSON.parse` использовать строгие интерфейсы (`FlowDefinitionDraft`, `FlowLaunchPayload`) + валидаторы.
-- [ ] Обновить обработку ответов `requestSync`/`requestStructuredSync`: валидировать JSON (type guards/zod) перед приведениями `as`, чтобы поймать несовместимые схемы.
-- [ ] Добавить unit-тесты/типовые проверки для новых типов, чтобы предотвратить регрессии строгой типизации.
-- [ ] Создать модуль `frontend/src/lib/types/flow.ts` c доменными интерфейсами (`FlowDefinitionDraft`, `AgentOptions`, `FlowEventPayload` и т. д.) и `zod`-схемами/type guards.
-- [ ] Переписать `apiClient.ts` на новые типы и guards: распарсивать ответы через `safeParse`, выбрасывать ошибки при несовпадении схемы.
-- [ ] FlowAgents: заменить `parseOptionalJson` на typed builder + `zod`-валидацию, хранить `VersionFormState` в терминах новых DTO и адаптеров.
-- [ ] FlowDefinitionForm/FlowLaunch: ввести `deserialize/serialize` адаптеры для форм-стейта, убрать прямой `JSON.parse`.
-- [ ] Тесты: добавить unit-тесты на guards и адаптеры (например, `flowDefinitionForm.adapters.test.ts`, `apiClient.types.test.ts`).
+- [x] Обновить обработку ответов `requestSync`/`requestStructuredSync`: валидировать JSON (type guards/zod) перед приведениями `as`, чтобы поймать несовместимые схемы.
+- [x] Добавить unit-тесты/типовые проверки для новых типов, чтобы предотвратить регрессии строгой типизации.
+- [x] Создать модуль `frontend/src/lib/types/flow.ts` c доменными интерфейсами (`FlowDefinitionDraft`, `AgentOptions`, `FlowEventPayload` и т. д.) и `zod`-схемами/type guards.
+- [x] Переписать `apiClient.ts` на новые типы и guards: распарсивать ответы через `safeParse`, выбрасывать ошибки при несовпадении схемы.
+- [x] FlowAgents: заменить `parseOptionalJson` на typed builder + `zod`-валидацию, хранить `VersionFormState` в терминах новых DTO и адаптеров.
+- [x] FlowDefinitionForm/FlowLaunch: ввести `deserialize/serialize` адаптеры для форм-стейта, убрать прямой `JSON.parse`.
+- [x] Тесты: добавить unit-тесты на guards и адаптеры (например, `flowDefinitionForm.adapters.test.ts`, `apiClient.types.test.ts`).
 
 **Финальный подход Frontend:** реализуем ручные доменные модели + `zod` type guards и state-adapters для форм. Когда backend предоставит стабильные схемы, подключим генерацию типов поверх уже существующих guards.
 ### Инженерные требования
-- [ ] Внедрить правило строгой типизации во всех сервисах: на backend использовать явные DTO/валидаторы и исключать неявные маппинги, на frontend включить строгий режим TypeScript и типизацию API.
+- [x] Внедрить правило строгой типизации во всех сервисах: на backend использовать явные DTO/валидаторы и исключать неявные маппинги, на frontend включить строгий режим TypeScript и типизацию API.
 - [ ] Настроить линтеры и проверки CI, блокирующие появление нестрого типизированных конструкций (`any`, `Map<String,Object>` и т. п.).
 
-## Wave 12 — Typed flow builder и конструктор агентов
+## Wave 13 — Typed flow builder и конструктор агентов
 Цель: объединить создание агентов и флоу в одну типизированную воронку и избавиться от ручного JSON в UI/БЭК. Сейчас редакторы опираются на сырые структуры (`frontend/src/pages/FlowAgents.tsx:234-302`, `frontend/src/pages/FlowDefinitions.tsx:700-755`, `frontend/src/lib/flowDefinitionForm.ts:15-138`), а backend хранит схему в `JsonNode` (`backend/src/main/java/com/aiadvent/backend/flow/domain/AgentVersion.java:55-168`, `backend/src/main/java/com/aiadvent/backend/flow/domain/FlowDefinition.java:41-117`) и парсит лишь минимальное подмножество (`backend/src/main/java/com/aiadvent/backend/flow/config/FlowDefinitionParser.java:24-194`). Wave 11 вводит строгие DTO; здесь строим UX и сервисы поверх них.
 
 ### Product & UX
@@ -621,7 +621,7 @@
 ### Документация
 - [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md` и `docs/processes.md`: описать новый blueprint, API v2, конструктор агентов, миграцию и чек-лист тестирования; добавить запись в CHANGELOG/runbook с планом отката.
 
-## Wave 13 — Расширенные event-логи оркестратора
+## Wave 14 — Расширенные event-логи оркестратора
 
 Выбран подход **расширения схемы БД** для `flow_event`: ключевые атрибуты шага и управляющих операций храним в отдельных колонках, а JSON оставляем для детализированного содержимого. Это упростит аналитические запросы, трассировку и построение отчетов без сложной версификации payload.
 

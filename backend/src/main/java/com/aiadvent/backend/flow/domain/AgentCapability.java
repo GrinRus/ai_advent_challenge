@@ -1,7 +1,9 @@
 package com.aiadvent.backend.flow.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.agent.converter.AgentCapabilityPayloadConverter;
+import com.aiadvent.backend.flow.agent.model.AgentCapabilityPayload;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -31,18 +33,20 @@ public class AgentCapability {
   private String capability;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "payload")
-  private JsonNode payload;
+  @Column(name = "payload", columnDefinition = "jsonb")
+  @Convert(converter = AgentCapabilityPayloadConverter.class)
+  private AgentCapabilityPayload payload = AgentCapabilityPayload.empty();
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
   protected AgentCapability() {}
 
-  public AgentCapability(AgentVersion agentVersion, String capability, JsonNode payload) {
+  public AgentCapability(
+      AgentVersion agentVersion, String capability, AgentCapabilityPayload payload) {
     this.agentVersion = agentVersion;
     this.capability = capability;
-    this.payload = payload;
+    this.payload = payload != null ? payload : AgentCapabilityPayload.empty();
   }
 
   @PrePersist
@@ -62,8 +66,8 @@ public class AgentCapability {
     return capability;
   }
 
-  public JsonNode getPayload() {
-    return payload;
+  public AgentCapabilityPayload getPayload() {
+    return payload != null ? payload : AgentCapabilityPayload.empty();
   }
 
   public Instant getCreatedAt() {

@@ -4,6 +4,8 @@ import com.aiadvent.backend.flow.config.FlowInteractionConfig;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowEvent;
 import com.aiadvent.backend.flow.domain.FlowEventType;
+import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
 import com.aiadvent.backend.flow.domain.FlowInteractionRequest;
 import com.aiadvent.backend.flow.domain.FlowInteractionResponse;
 import com.aiadvent.backend.flow.domain.FlowInteractionResponseSource;
@@ -328,7 +330,11 @@ public class FlowInteractionService {
     telemetry.interactionCreated(request.getId());
 
     FlowEvent event =
-        new FlowEvent(session, FlowEventType.HUMAN_INTERACTION_REQUIRED, "waiting", eventPayload(request));
+        new FlowEvent(
+            session,
+            FlowEventType.HUMAN_INTERACTION_REQUIRED,
+            "waiting",
+            FlowEventPayload.from(eventPayload(request)));
     event.setFlowStepExecution(stepExecution);
     event.setTraceId(session.getId().toString());
     event.setSpanId(stepExecution.getId().toString());
@@ -417,7 +423,7 @@ public class FlowInteractionService {
             session,
             eventType,
             finalStatus.name().toLowerCase(),
-            eventPayloadWithResponse(request, response, finalStatus));
+            FlowEventPayload.from(eventPayloadWithResponse(request, response, finalStatus)));
     event.setFlowStepExecution(stepExecution);
     event.setTraceId(session.getId().toString());
     event.setSpanId(stepExecution.getId().toString());
@@ -443,16 +449,14 @@ public class FlowInteractionService {
     return response;
   }
 
-  private JsonNode mergeInteractionResponse(
-      JsonNode existing,
+  private FlowStepInputPayload mergeInteractionResponse(
+      FlowStepInputPayload existing,
       FlowInteractionRequest request,
       JsonNode payload,
       FlowInteractionResponseSource source,
       FlowInteractionStatus finalStatus) {
     ObjectNode input =
-        existing != null && existing.isObject()
-            ? ((ObjectNode) existing).deepCopy()
-            : objectMapper.createObjectNode();
+        existing != null ? existing.asObjectNode(objectMapper) : objectMapper.createObjectNode();
 
     ObjectNode interactionNode = input.with("interaction");
     interactionNode.put("requestId", request.getId().toString());
@@ -468,7 +472,7 @@ public class FlowInteractionService {
     if (payload != null && !payload.isMissingNode()) {
       interactionNode.set("payload", cloneNode(payload));
     }
-    return input;
+    return FlowStepInputPayload.from(input);
   }
 
   private JsonNode eventPayload(FlowInteractionRequest request) {

@@ -8,6 +8,12 @@ import {
   type FlowLaunchPreview,
   type FlowLaunchStep,
 } from '../lib/apiClient';
+import type { FlowLaunchParameters, FlowSharedContext } from '../lib/types/flow';
+import {
+  FlowLaunchParametersSchema,
+  FlowSharedContextSchema,
+} from '../lib/types/flow';
+import { parseJsonField } from '../lib/utils/json';
 import './FlowLaunch.css';
 
 type FormErrors = {
@@ -173,12 +179,20 @@ const FlowLaunchPage = () => {
     [searchParams, setSearchParams],
   );
 
-  const parseJsonInput = useCallback((value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return undefined;
+  const parseStructuredInput = useCallback(<T,>(
+    label: string,
+    raw: string,
+    schema: Parameters<typeof parseJsonField<T>>[2],
+  ): { value: T | undefined; error: string | null } => {
+    try {
+      const value = parseJsonField(label, raw, schema);
+      return { value, error: null };
+    } catch (error) {
+      return {
+        value: undefined,
+        error: error instanceof Error ? error.message : 'Некорректный JSON.',
+      };
     }
-    return JSON.parse(trimmed);
   }, []);
 
   const handleStart = useCallback(async () => {
@@ -188,26 +202,30 @@ const FlowLaunchPage = () => {
     }
 
     const nextErrors: FormErrors = {};
-    let parsedParameters: unknown | undefined;
-    let parsedSharedContext: unknown | undefined;
     const overrides: {
       temperature?: number;
       topP?: number;
       maxTokens?: number;
     } = {};
 
-    try {
-      parsedParameters = parseJsonInput(parameters);
-    } catch (error) {
-      nextErrors.parameters =
-        error instanceof Error ? error.message : 'Некорректный JSON.';
+    const parametersResult = parseStructuredInput(
+      'Параметры запуска',
+      parameters,
+      FlowLaunchParametersSchema,
+    );
+    const parsedParameters = parametersResult.value;
+    if (parametersResult.error) {
+      nextErrors.parameters = parametersResult.error;
     }
 
-    try {
-      parsedSharedContext = parseJsonInput(sharedContext);
-    } catch (error) {
-      nextErrors.sharedContext =
-        error instanceof Error ? error.message : 'Некорректный JSON.';
+    const sharedContextResult = parseStructuredInput(
+      'Shared context',
+      sharedContext,
+      FlowSharedContextSchema,
+    );
+    const parsedSharedContext = sharedContextResult.value;
+    if (sharedContextResult.error) {
+      nextErrors.sharedContext = sharedContextResult.error;
     }
 
     const temperatureTrimmed = temperature.trim();
@@ -271,39 +289,29 @@ const FlowLaunchPage = () => {
     } finally {
       setIsStarting(false);
     }
-  }, [navigate, parameters, parseJsonInput, selectedDefinitionId, sharedContext, temperature, topP, maxTokens]);
+  }, [navigate, parameters, parseStructuredInput, selectedDefinitionId, sharedContext, temperature, topP, maxTokens]);
 
   const totalEstimate = preview?.totalEstimate;
 
-  const parametersPreview = useMemo(() => {
-    const trimmed = parameters.trim();
-    if (!trimmed) {
-      return { value: undefined, error: null as string | null };
-    }
-    try {
-      return { value: JSON.parse(trimmed), error: null as string | null };
-    } catch (error) {
-      return {
-        value: undefined,
-        error: error instanceof Error ? error.message : 'Некорректный JSON.',
-      };
-    }
-  }, [parameters]);
+  const parametersPreview = useMemo(
+    () =>
+      parseStructuredInput<FlowLaunchParameters>(
+        'Параметры запуска',
+        parameters,
+        FlowLaunchParametersSchema,
+      ),
+    [parameters, parseStructuredInput],
+  );
 
-  const sharedContextPreview = useMemo(() => {
-    const trimmed = sharedContext.trim();
-    if (!trimmed) {
-      return { value: undefined, error: null as string | null };
-    }
-    try {
-      return { value: JSON.parse(trimmed), error: null as string | null };
-    } catch (error) {
-      return {
-        value: undefined,
-        error: error instanceof Error ? error.message : 'Некорректный JSON.',
-      };
-    }
-  }, [sharedContext]);
+  const sharedContextPreview = useMemo(
+    () =>
+      parseStructuredInput<FlowSharedContext>(
+        'Shared context',
+        sharedContext,
+        FlowSharedContextSchema,
+      ),
+    [parseStructuredInput, sharedContext],
+  );
 
   const overridesPreview = useMemo(() => {
     const warnings: string[] = [];

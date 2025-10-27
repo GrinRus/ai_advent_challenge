@@ -2,9 +2,11 @@ package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.provider.model.ChatAdvisorContext;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
@@ -114,10 +116,11 @@ public class AgentInvocationService {
     triggerFlowSummaries(flowSession.getId(), request, selection, userMessage);
 
     List<String> memoryMessages = buildMemorySnapshots(flowSession, request.memoryReads());
-    Map<String, Object> advisorParams = new java.util.HashMap<>();
-    if (request.stepId() != null) {
-      advisorParams.put("flowStepId", request.stepId().toString());
-    }
+    ChatAdvisorContext advisorContext =
+        ChatAdvisorContext.builder()
+            .flowSessionId(flowSession.getId())
+            .flowStepExecutionId(request.stepId())
+            .build();
 
     try {
       ChatResponse chatResponse =
@@ -125,7 +128,7 @@ public class AgentInvocationService {
               selection,
               agentVersion.getSystemPrompt(),
               memoryMessages,
-              advisorParams,
+              advisorContext,
               userMessage,
               effectiveOverrides);
 
@@ -177,16 +180,16 @@ public class AgentInvocationService {
     Double topP = null;
     Integer maxTokens = agentVersion.getMaxTokens();
 
-    JsonNode defaultOptions = agentVersion.getDefaultOptions();
-    if (defaultOptions != null) {
-      if (defaultOptions.hasNonNull("temperature")) {
-        temperature = defaultOptions.get("temperature").asDouble();
+    AgentDefaultOptions defaultOptions = agentVersion.getDefaultOptions();
+    if (defaultOptions != null && !defaultOptions.isEmpty()) {
+      if (defaultOptions.temperature() != null) {
+        temperature = defaultOptions.temperature();
       }
-      if (defaultOptions.hasNonNull("topP")) {
-        topP = defaultOptions.get("topP").asDouble();
+      if (defaultOptions.topP() != null) {
+        topP = defaultOptions.topP();
       }
-      if (defaultOptions.hasNonNull("maxTokens")) {
-        maxTokens = defaultOptions.get("maxTokens").asInt();
+      if (defaultOptions.maxTokens() != null) {
+        maxTokens = defaultOptions.maxTokens();
       }
     }
 

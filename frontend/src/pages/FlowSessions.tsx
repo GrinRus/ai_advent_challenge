@@ -739,7 +739,7 @@ const FlowSessionsPage = () => {
     }
     try {
       return JSON.stringify(status.sharedContext, null, 2);
-    } catch (error) {
+    } catch {
       return 'Не удалось сериализовать shared context';
     }
   }, [status?.sharedContext]);

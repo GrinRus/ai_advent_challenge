@@ -58,10 +58,10 @@ public class FlowQueryService {
         stepExecution.getAttempt(),
         stepExecution.getAgentVersion() != null ? stepExecution.getAgentVersion().getId() : null,
         stepExecution.getPrompt(),
-        stepExecution.getInputPayload(),
-        stepExecution.getOutputPayload(),
-        stepExecution.getUsage(),
-        stepExecution.getCost(),
+        stepExecution.getInputPayload().asJson(),
+        stepExecution.getOutputPayload().asJson(),
+        stepExecution.getUsage().asJson(),
+        stepExecution.getCost().asJson(),
         stepExecution.getStartedAt(),
         stepExecution.getCompletedAt(),
         events);
@@ -78,6 +78,6 @@ public class FlowQueryService {
         event.getTokensPrompt(),
         event.getTokensCompletion(),
         event.getCreatedAt(),
-        event.getPayload());
+        event.getPayload().asJson());
   }
 }

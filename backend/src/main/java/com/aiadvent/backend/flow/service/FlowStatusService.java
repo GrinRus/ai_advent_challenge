@@ -112,11 +112,11 @@ public class FlowStatusService {
             session.getCurrentStepId(),
             session.getStateVersion(),
             session.getCurrentMemoryVersion(),
-            session.getStartedAt(),
-            session.getCompletedAt(),
-            session.getFlowDefinition().getId(),
-            session.getFlowDefinitionVersion(),
-            session.getSharedContext() != null ? session.getSharedContext().deepCopy() : null);
+        session.getStartedAt(),
+        session.getCompletedAt(),
+        session.getFlowDefinition().getId(),
+        session.getFlowDefinitionVersion(),
+        session.getSharedContext().isEmpty() ? null : session.getSharedContext().asJson());
 
     return new FlowStatusResponse(state, events, nextSinceEventId, telemetrySnapshot);
   }
@@ -132,7 +132,7 @@ public class FlowStatusService {
         event.getTokensPrompt(),
         event.getTokensCompletion(),
         event.getCreatedAt(),
-        event.getPayload());
+        event.getPayload().asJson());
   }
 
   private void sleep(Duration duration) {

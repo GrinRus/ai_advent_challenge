@@ -4,6 +4,7 @@ import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.flow.api.FlowStartRequest;
 import com.aiadvent.backend.flow.api.FlowStartResponse;
 import com.aiadvent.backend.flow.service.AgentOrchestratorService;
+import com.aiadvent.backend.flow.session.model.FlowOverrides;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.UUID;
@@ -46,8 +47,8 @@ public class FlowLaunchController {
         session.getId(),
         session.getStatus(),
         session.getStartedAt(),
-        session.getLaunchParameters(),
-        session.getSharedContext(),
+        session.getLaunchParameters().asJson(),
+        session.getSharedContext().asJson(),
         sessionOverrides,
         session.getChatSessionId());
   }
@@ -56,12 +57,12 @@ public class FlowLaunchController {
     return node != null ? node : objectMapper.nullNode();
   }
 
-  private ChatRequestOverrides extractOverrides(JsonNode node) {
-    if (node == null || node.isNull()) {
+  private ChatRequestOverrides extractOverrides(FlowOverrides overrides) {
+    if (overrides == null || overrides.isEmpty()) {
       return null;
     }
     try {
-      return objectMapper.treeToValue(node, ChatRequestOverrides.class);
+      return objectMapper.treeToValue(overrides.asJson(), ChatRequestOverrides.class);
     } catch (Exception exception) {
       log.warn("Failed to deserialize launch overrides from session payload", exception);
       return null;

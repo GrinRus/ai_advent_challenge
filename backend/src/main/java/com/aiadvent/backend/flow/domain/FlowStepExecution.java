@@ -1,7 +1,15 @@
 package com.aiadvent.backend.flow.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.execution.converter.FlowCostPayloadConverter;
+import com.aiadvent.backend.flow.execution.converter.FlowStepInputPayloadConverter;
+import com.aiadvent.backend.flow.execution.converter.FlowStepOutputPayloadConverter;
+import com.aiadvent.backend.flow.execution.converter.FlowUsagePayloadConverter;
+import com.aiadvent.backend.flow.execution.model.FlowCostPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepOutputPayload;
+import com.aiadvent.backend.flow.execution.model.FlowUsagePayload;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -57,20 +65,24 @@ public class FlowStepExecution {
   private String prompt;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "input_payload")
-  private JsonNode inputPayload;
+  @Column(name = "input_payload", columnDefinition = "jsonb")
+  @Convert(converter = FlowStepInputPayloadConverter.class)
+  private FlowStepInputPayload inputPayload = FlowStepInputPayload.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "output_payload")
-  private JsonNode outputPayload;
+  @Column(name = "output_payload", columnDefinition = "jsonb")
+  @Convert(converter = FlowStepOutputPayloadConverter.class)
+  private FlowStepOutputPayload outputPayload = FlowStepOutputPayload.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "usage")
-  private JsonNode usage;
+  @Column(name = "usage", columnDefinition = "jsonb")
+  @Convert(converter = FlowUsagePayloadConverter.class)
+  private FlowUsagePayload usage = FlowUsagePayload.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "cost")
-  private JsonNode cost;
+  @Column(name = "cost", columnDefinition = "jsonb")
+  @Convert(converter = FlowCostPayloadConverter.class)
+  private FlowCostPayload cost = FlowCostPayload.empty();
 
   @Column(name = "error_code", length = 64)
   private String errorCode;
@@ -162,36 +174,36 @@ public class FlowStepExecution {
     this.prompt = prompt;
   }
 
-  public JsonNode getInputPayload() {
-    return inputPayload;
+  public FlowStepInputPayload getInputPayload() {
+    return inputPayload != null ? inputPayload : FlowStepInputPayload.empty();
   }
 
-  public void setInputPayload(JsonNode inputPayload) {
-    this.inputPayload = inputPayload;
+  public void setInputPayload(FlowStepInputPayload inputPayload) {
+    this.inputPayload = inputPayload != null ? inputPayload : FlowStepInputPayload.empty();
   }
 
-  public JsonNode getOutputPayload() {
-    return outputPayload;
+  public FlowStepOutputPayload getOutputPayload() {
+    return outputPayload != null ? outputPayload : FlowStepOutputPayload.empty();
   }
 
-  public void setOutputPayload(JsonNode outputPayload) {
-    this.outputPayload = outputPayload;
+  public void setOutputPayload(FlowStepOutputPayload outputPayload) {
+    this.outputPayload = outputPayload != null ? outputPayload : FlowStepOutputPayload.empty();
   }
 
-  public JsonNode getUsage() {
-    return usage;
+  public FlowUsagePayload getUsage() {
+    return usage != null ? usage : FlowUsagePayload.empty();
   }
 
-  public void setUsage(JsonNode usage) {
-    this.usage = usage;
+  public void setUsage(FlowUsagePayload usage) {
+    this.usage = usage != null ? usage : FlowUsagePayload.empty();
   }
 
-  public JsonNode getCost() {
-    return cost;
+  public FlowCostPayload getCost() {
+    return cost != null ? cost : FlowCostPayload.empty();
   }
 
-  public void setCost(JsonNode cost) {
-    this.cost = cost;
+  public void setCost(FlowCostPayload cost) {
+    this.cost = cost != null ? cost : FlowCostPayload.empty();
   }
 
   public String getErrorCode() {

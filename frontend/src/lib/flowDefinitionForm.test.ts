@@ -23,7 +23,7 @@ describe('flowDefinitionForm helpers', () => {
         {
           id: 'step-1',
           name: 'First',
-          agentVersionId: 'agent-1',
+          agentVersionId: 'aaaaaaaa-1111-4111-8aaa-222222222222',
           prompt: 'Do work',
           overrides: { temperature: 0.3 },
           memoryReads: [{ channel: 'context', limit: 5 }],
@@ -41,11 +41,11 @@ describe('flowDefinitionForm helpers', () => {
     expect(form.steps).toHaveLength(1);
     expect(form.steps[0]).toMatchObject({
       id: 'step-1',
-      agentVersionId: 'agent-1',
+      agentVersionId: 'aaaaaaaa-1111-4111-8aaa-222222222222',
       temperature: 0.3,
       maxAttempts: 2,
     });
-    expect(form.raw.meta).toEqual({ foo: 'bar' });
+    expect(form.draft.meta).toEqual({ foo: 'bar' });
   });
 
   it('builds definition back from form state', () => {
@@ -53,12 +53,17 @@ describe('flowDefinitionForm helpers', () => {
       title: 'Flow',
       startStepId: 'step-1',
       syncOnly: true,
-      raw: { title: 'Flow', syncOnly: true },
+      draft: {
+        title: 'Flow',
+        startStepId: 'step-1',
+        syncOnly: true,
+        steps: [],
+      },
       steps: [
         {
           id: 'step-1',
           name: 'First',
-          agentVersionId: 'agent-1',
+          agentVersionId: 'aaaaaaaa-1111-4111-8aaa-333333333333',
           prompt: 'Prompt',
           temperature: 0.5,
           topP: 0.8,

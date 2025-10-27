@@ -25,7 +25,6 @@ import com.aiadvent.backend.flow.domain.FlowJob;
 import com.aiadvent.backend.flow.domain.FlowJobStatus;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
-import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
 import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.job.FlowJobPayload;
@@ -36,6 +35,7 @@ import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
+import com.aiadvent.backend.flow.service.payload.FlowPayloadMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -69,6 +69,7 @@ class AgentOrchestratorServiceTest {
 
   private AgentOrchestratorService orchestratorService;
   private ObjectMapper objectMapper;
+  private FlowPayloadMapper flowPayloadMapper;
 
   private FlowDefinition definition;
   private FlowDefinitionDocument document;
@@ -78,6 +79,7 @@ class AgentOrchestratorServiceTest {
   void setUp() {
     MockitoAnnotations.openMocks(this);
     objectMapper = new ObjectMapper();
+    flowPayloadMapper = new FlowPayloadMapper(objectMapper);
 
     orchestratorService =
         new AgentOrchestratorService(
@@ -92,7 +94,8 @@ class AgentOrchestratorServiceTest {
             flowInteractionService,
             jobQueuePort,
             objectMapper,
-            telemetry);
+            telemetry,
+            flowPayloadMapper);
 
     definition =
         new FlowDefinition(
@@ -219,7 +222,7 @@ class AgentOrchestratorServiceTest {
             .filter(event -> event.getEventType() == FlowEventType.STEP_STARTED)
             .findFirst()
             .orElseThrow();
-    JsonNode stepStartedPayload = stepStartedEvent.getPayload();
+    JsonNode stepStartedPayload = stepStartedEvent.getPayload().asJson();
     assertThat(stepStartedPayload.path("stepId").asText()).isEqualTo(STEP_ID);
     assertThat(stepStartedPayload.path("stepName").asText()).isEqualTo("First step");
     assertThat(stepStartedPayload.path("agentVersion").path("modelId").asText()).isEqualTo("gpt-4o-mini");
@@ -233,7 +236,7 @@ class AgentOrchestratorServiceTest {
             .filter(event -> event.getEventType() == FlowEventType.STEP_COMPLETED)
             .findFirst()
             .orElseThrow();
-    JsonNode stepCompletedPayload = stepCompletedEvent.getPayload();
+    JsonNode stepCompletedPayload = stepCompletedEvent.getPayload().asJson();
     assertThat(stepCompletedPayload.path("content").asText()).isEqualTo("answer");
 
     JsonNode requestNode = stepCompletedPayload.path("request");

@@ -1,6 +1,6 @@
 package com.aiadvent.backend.chat.memory;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.aiadvent.backend.chat.memory.model.ChatMemoryMessageMetadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -8,8 +8,6 @@ import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -158,16 +156,14 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
   private Message mapMessage(ResultSet resultSet) throws SQLException {
     String role = resultSet.getString("role");
     String content = resultSet.getString("content");
-    String metadataJson = resultSet.getString("metadata");
-
-    Map<String, Object> metadata = deserializeMetadata(metadataJson);
+    ChatMemoryMessageMetadata metadata = deserializeMetadata(resultSet.getString("metadata"));
 
     MessageType messageType = MessageType.valueOf(role);
     return switch (messageType) {
-      case USER -> UserMessage.builder().text(content).metadata(metadata).build();
+      case USER -> UserMessage.builder().text(content).metadata(metadata.asMap()).build();
       case ASSISTANT ->
-          AssistantMessage.builder().content(content).properties(metadata).build();
-      case SYSTEM -> SystemMessage.builder().text(content).metadata(metadata).build();
+          AssistantMessage.builder().content(content).properties(metadata.asMap()).build();
+      case SYSTEM -> SystemMessage.builder().text(content).metadata(metadata.asMap()).build();
       default -> {
         log.warn("Unsupported message type {} encountered in chat memory window", messageType);
         yield new SystemMessage(content);
@@ -182,30 +178,25 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
     params.addValue("messageOrder", order);
     params.addValue("role", message.getMessageType().name());
     params.addValue("content", message.getText(), Types.VARCHAR);
-    params.addValue("metadata", serializeMetadata(message.getMetadata()), Types.VARCHAR);
+    params.addValue(
+        "metadata", serializeMetadata(ChatMemoryMessageMetadata.fromMap(message.getMetadata())), Types.VARCHAR);
     params.addValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE);
     return params;
   }
 
-  private Map<String, Object> deserializeMetadata(@Nullable String metadataJson) {
-    if (!StringUtils.hasText(metadataJson)) {
-      return Collections.emptyMap();
-    }
+  private ChatMemoryMessageMetadata deserializeMetadata(@Nullable String metadataJson) {
     try {
-      return objectMapper.readValue(metadataJson, Map.class);
-    } catch (JsonProcessingException exception) {
+      return ChatMemoryMessageMetadata.fromJson(objectMapper, metadataJson);
+    } catch (IllegalArgumentException exception) {
       log.warn("Failed to deserialize chat memory metadata", exception);
-      return Collections.emptyMap();
+      return ChatMemoryMessageMetadata.empty();
     }
   }
 
-  private String serializeMetadata(Map<String, Object> metadata) {
-    if (metadata == null || metadata.isEmpty()) {
-      return "{}";
-    }
+  private String serializeMetadata(ChatMemoryMessageMetadata metadata) {
     try {
-      return objectMapper.writeValueAsString(metadata);
-    } catch (JsonProcessingException exception) {
+      return metadata.toJson(objectMapper);
+    } catch (IllegalStateException exception) {
       log.warn("Failed to serialize chat memory metadata", exception);
       return "{}";
     }
@@ -247,7 +238,7 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
     private final String summaryText;
     private final Long tokenCount;
     private final String language;
-    private final Map<String, Object> metadata;
+    private final ChatMemoryMessageMetadata metadata;
 
     SummaryRow(
         int sourceStartOrder,
@@ -255,13 +246,13 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
         String summaryText,
         Long tokenCount,
         String language,
-        Map<String, Object> metadata) {
+        ChatMemoryMessageMetadata metadata) {
       this.sourceStartOrder = sourceStartOrder;
       this.sourceEndOrder = sourceEndOrder;
       this.summaryText = summaryText;
       this.tokenCount = tokenCount;
       this.language = language;
-      this.metadata = metadata != null ? metadata : Collections.emptyMap();
+      this.metadata = metadata != null ? metadata : ChatMemoryMessageMetadata.empty();
     }
 
     int sourceEndOrder() {
@@ -269,17 +260,16 @@ public class DatabaseChatMemoryRepository implements ChatMemoryRepository {
     }
 
     Message asMessage() {
-      Map<String, Object> summaryMetadata = new LinkedHashMap<>(metadata);
-      summaryMetadata.put("summary", true);
-      summaryMetadata.put("sourceStartOrder", sourceStartOrder);
-      summaryMetadata.put("sourceEndOrder", sourceEndOrder);
-      if (tokenCount != null) {
-        summaryMetadata.put("tokenCount", tokenCount);
-      }
-      if (StringUtils.hasText(language)) {
-        summaryMetadata.put("language", language);
-      }
-      return SystemMessage.builder().text(summaryText).metadata(summaryMetadata).build();
+      ChatMemoryMessageMetadata summaryMetadata =
+          metadata
+              .toBuilder()
+              .put("summary", true)
+              .put("sourceStartOrder", sourceStartOrder)
+              .put("sourceEndOrder", sourceEndOrder)
+              .put("tokenCount", tokenCount)
+              .put("language", language)
+              .build();
+      return SystemMessage.builder().text(summaryText).metadata(summaryMetadata.asMap()).build();
     }
   }
 }

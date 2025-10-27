@@ -4,11 +4,21 @@ import type {
   AgentDefinitionDetails,
   AgentDefinitionPayload,
   AgentDefinitionSummary,
+  AgentDefaultOptions,
   AgentVersionPayload,
   AgentVersionResponse,
   AgentVersionPublishPayload,
   ChatProvidersResponse,
 } from '../lib/apiClient';
+import {
+  AgentCapabilityPayloadSchema,
+  AgentCostProfileSchema,
+  AgentDefaultOptionsSchema,
+  AgentToolBindingsSchema,
+} from '../lib/types/agent';
+import type { JsonValue } from '../lib/types/json';
+import { JsonValueSchema } from '../lib/types/json';
+import { parseJsonField } from '../lib/utils/json';
 import {
   createAgentDefinition,
   createAgentVersion,
@@ -27,6 +37,11 @@ type CapabilityDraft = {
   payloadText: string;
 };
 
+type KeyValueDraft = {
+  key: string;
+  value: string;
+};
+
 type VersionFormState = {
   providerId: string;
   modelId: string;
@@ -35,9 +50,8 @@ type VersionFormState = {
   topP: string;
   maxTokens: string;
   syncOnly: boolean;
-  defaultOptions: string;
-  toolBindings: string;
-  costProfile: string;
+  toolBindings: KeyValueDraft[];
+  costProfile: KeyValueDraft[];
   capabilities: CapabilityDraft[];
 };
 
@@ -49,9 +63,8 @@ const defaultVersionForm = (): VersionFormState => ({
   topP: '',
   maxTokens: '',
   syncOnly: true,
-  defaultOptions: '',
-  toolBindings: '',
-  costProfile: '',
+  toolBindings: [{ key: '', value: '' }],
+  costProfile: [{ key: '', value: '' }],
   capabilities: [],
 });
 
@@ -84,6 +97,33 @@ const FlowAgents = () => {
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [publishingVersionId, setPublishingVersionId] = useState<string | null>(null);
   const [deprecatingVersionId, setDeprecatingVersionId] = useState<string | null>(null);
+
+  type KeyValueField = 'toolBindings' | 'costProfile';
+
+  const ensureRows = (rows: KeyValueDraft[]): KeyValueDraft[] =>
+    rows.length ? rows : [{ key: '', value: '' }];
+
+  const addKeyValueRow = (field: KeyValueField) => {
+    setVersionForm((prev) => ({
+      ...prev,
+      [field]: [...prev[field], { key: '', value: '' }],
+    }));
+  };
+
+  const updateKeyValueRow = (field: KeyValueField, index: number, patch: Partial<KeyValueDraft>) => {
+    setVersionForm((prev) => {
+      const rows = [...prev[field]];
+      rows[index] = { ...rows[index], ...patch };
+      return { ...prev, [field]: rows };
+    });
+  };
+
+  const removeKeyValueRow = (field: KeyValueField, index: number) => {
+    setVersionForm((prev) => {
+      const rows = prev[field].filter((_, idx) => idx !== index);
+      return { ...prev, [field]: ensureRows(rows) };
+    });
+  };
 
   const loadDefinitions = useCallback(async () => {
     setLoadingList(true);
@@ -152,7 +192,10 @@ const FlowAgents = () => {
   const currentProvider = providerOptions.find(
     (provider) => provider.id === versionForm.providerId,
   );
-  const modelOptions = currentProvider?.models ?? [];
+  const modelOptions = useMemo(
+    () => currentProvider?.models ?? [],
+    [currentProvider],
+  );
 
   useEffect(() => {
     if (currentProvider && modelOptions.length) {
@@ -231,24 +274,140 @@ const FlowAgents = () => {
     }
   };
 
-  const parseOptionalJson = (label: string, value: string): unknown => {
-    if (!value.trim()) {
-      return undefined;
-    }
-    try {
-      return JSON.parse(value);
-    } catch (error) {
-      throw new Error(`Поле "${label}" содержит некорректный JSON: ${(error as Error).message}`);
-    }
-  };
-
   const buildCapabilitiesPayload = (drafts: CapabilityDraft[]): AgentCapabilityPayload[] => {
     return drafts
       .filter((item) => item.capability.trim())
       .map((item) => ({
         capability: item.capability.trim(),
-        payload: parseOptionalJson(`Payload для ${item.capability}`, item.payloadText),
+        payload: parseJsonField(
+          `Payload для ${item.capability}`,
+          item.payloadText,
+          AgentCapabilityPayloadSchema,
+        ),
       }));
+  };
+
+  const buildJsonRecord = (
+    entries: KeyValueDraft[],
+    label: string,
+  ): Record<string, JsonValue> | undefined => {
+    const record: Record<string, JsonValue> = {};
+    entries.forEach((entry, index) => {
+      const key = entry.key.trim();
+      const value = entry.value.trim();
+      if (!key || !value) {
+        return;
+      }
+      record[key] = parseJsonField(
+        `${label} #${index + 1}`,
+        value,
+        JsonValueSchema,
+      );
+    });
+    return Object.keys(record).length ? record : undefined;
+  };
+
+  type JsonValidationResult =
+    | { state: 'empty' }
+    | { state: 'ok'; preview: string }
+    | { state: 'error'; message: string };
+
+  const getJsonValidation = (value: string): JsonValidationResult => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return { state: 'empty' };
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      return { state: 'ok', preview: JSON.stringify(parsed, null, 2) };
+    } catch (error) {
+      return {
+        state: 'error',
+        message: error instanceof Error ? error.message : 'Некорректный JSON',
+      };
+    }
+  };
+
+  const renderJsonFeedback = (value: string) => {
+    const validation = getJsonValidation(value);
+    if (validation.state === 'error') {
+      return <span className="flow-agents__field-error">{validation.message}</span>;
+    }
+    if (validation.state === 'ok') {
+      return (
+        <pre className="flow-agents__json-preview">{validation.preview}</pre>
+      );
+    }
+    return <span className="flow-agents__json-hint">Опционально</span>;
+  };
+
+  const renderKeyValueSection = (
+    field: KeyValueField,
+    title: string,
+    description: string,
+    placeholder?: string,
+  ) => {
+    const entries = versionForm[field];
+    return (
+      <section className="flow-agents__kv">
+        <div className="flow-agents__kv-header">
+          <div>
+            <h5>{title}</h5>
+            <p>{description}</p>
+          </div>
+          <button type="button" className="flow-agents__ghost" onClick={() => addKeyValueRow(field)}>
+            Добавить
+          </button>
+        </div>
+        {entries.map((entry, index) => {
+          const validation = getJsonValidation(entry.value);
+          return (
+            <div key={`${field}-${index}`} className="flow-agents__kv-item">
+              <div className="flow-agents__kv-fields">
+                <label>
+                  Ключ
+                  <input
+                    value={entry.key}
+                    onChange={(event) =>
+                      updateKeyValueRow(field, index, { key: event.target.value })
+                    }
+                    placeholder="bindingName"
+                  />
+                </label>
+                <label>
+                  Значение (JSON)
+                  <textarea
+                    value={entry.value}
+                    onChange={(event) =>
+                      updateKeyValueRow(field, index, { value: event.target.value })
+                    }
+                    placeholder={placeholder}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="flow-agents__ghost flow-agents__kv-remove"
+                  onClick={() => removeKeyValueRow(field, index)}
+                >
+                  Удалить
+                </button>
+              </div>
+              <div className="flow-agents__kv-feedback">
+                {validation.state === 'empty' && (
+                  <span className="flow-agents__json-hint">Будет пропущено, если пусто</span>
+                )}
+                {validation.state === 'error' && (
+                  <span className="flow-agents__field-error">{validation.message}</span>
+                )}
+                {validation.state === 'ok' && (
+                  <pre className="flow-agents__json-preview">{validation.preview}</pre>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+    );
   };
 
   const handleCreateVersion = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -275,21 +434,35 @@ const FlowAgents = () => {
         syncOnly: versionForm.syncOnly,
         maxTokens: versionForm.maxTokens ? Number(versionForm.maxTokens) : undefined,
         capabilities: buildCapabilitiesPayload(versionForm.capabilities),
-        defaultOptions: parseOptionalJson('Default options', versionForm.defaultOptions),
-        toolBindings: parseOptionalJson('Tool bindings', versionForm.toolBindings),
-        costProfile: parseOptionalJson('Cost profile', versionForm.costProfile),
       };
-      if (versionForm.temperature) {
-        payload.defaultOptions = {
-          ...(payload.defaultOptions as Record<string, unknown> | undefined),
-          temperature: Number(versionForm.temperature),
-        };
+
+      const defaultOptions: AgentDefaultOptions = {};
+      const temperatureValue = versionForm.temperature.trim();
+      if (temperatureValue) {
+        defaultOptions.temperature = Number(temperatureValue);
       }
-      if (versionForm.topP) {
-        payload.defaultOptions = {
-          ...(payload.defaultOptions as Record<string, unknown> | undefined),
-          topP: Number(versionForm.topP),
-        };
+      const topPValue = versionForm.topP.trim();
+      if (topPValue) {
+        defaultOptions.topP = Number(topPValue);
+      }
+      if (Object.keys(defaultOptions).length > 0) {
+        payload.defaultOptions = AgentDefaultOptionsSchema.parse(defaultOptions);
+      }
+
+      const toolBindingsRecord = buildJsonRecord(
+        versionForm.toolBindings,
+        'Tool binding',
+      );
+      if (toolBindingsRecord) {
+        payload.toolBindings = AgentToolBindingsSchema.parse(toolBindingsRecord);
+      }
+
+      const costProfileRecord = buildJsonRecord(
+        versionForm.costProfile,
+        'Cost profile',
+      );
+      if (costProfileRecord) {
+        payload.costProfile = AgentCostProfileSchema.parse(costProfileRecord);
       }
       await createAgentVersion(selectedDefinition.id, payload);
       invalidateAgentCatalogCache();
@@ -367,7 +540,7 @@ const FlowAgents = () => {
           </label>
           <button
             type="button"
-            className="ghost"
+            className="flow-agents__ghost"
             onClick={loadDefinitions}
             disabled={loadingList}
           >
@@ -573,7 +746,7 @@ const FlowAgents = () => {
                             {version.status !== 'DEPRECATED' && (
                               <button
                                 type="button"
-                                className="ghost"
+                                className="flow-agents__ghost"
                                 onClick={() => handleDeprecateVersion(version)}
                                 disabled={deprecatingVersionId === version.id}
                               >
@@ -702,47 +875,19 @@ const FlowAgents = () => {
                       }
                     />
                   </label>
-                  <div className="flow-agents__grid">
-                    <label>
-                      Default options (JSON)
-                      <textarea
-                        value={versionForm.defaultOptions}
-                        onChange={(event) =>
-                          setVersionForm((prev) => ({
-                            ...prev,
-                            defaultOptions: event.target.value,
-                          }))
-                        }
-                        placeholder={'{"temperature":0.2}'}
-                      />
-                    </label>
-                    <label>
-                      Tool bindings (JSON)
-                      <textarea
-                        value={versionForm.toolBindings}
-                        onChange={(event) =>
-                          setVersionForm((prev) => ({
-                            ...prev,
-                            toolBindings: event.target.value,
-                          }))
-                        }
-                        placeholder={'{"tools":[]}'}
-                      />
-                    </label>
-                    <label>
-                      Cost profile (JSON)
-                      <textarea
-                        value={versionForm.costProfile}
-                        onChange={(event) =>
-                          setVersionForm((prev) => ({
-                            ...prev,
-                            costProfile: event.target.value,
-                          }))
-                        }
-                        placeholder={'{"inputPer1K":0.001}'}
-                      />
-                    </label>
-                  </div>
+                  {renderKeyValueSection(
+                    'toolBindings',
+                    'Tool bindings',
+                    'Свяжите методы @Tool с агентом и передайте параметры вызова.',
+                    '{"tools":["calculateBudget"]}',
+                  )}
+
+                  {renderKeyValueSection(
+                    'costProfile',
+                    'Cost profile',
+                    'Задайте индивидуальные ставки (input/output/total) для биллинга.',
+                    '{"inputPer1KTokens":0.001}',
+                  )}
                   <label className="flow-agents__checkbox">
                     <input
                       type="checkbox"
@@ -762,7 +907,7 @@ const FlowAgents = () => {
                       <h5>Возможности</h5>
                       <button
                         type="button"
-                        className="ghost"
+                        className="flow-agents__ghost"
                         onClick={() =>
                           setVersionForm((prev) => ({
                             ...prev,
@@ -807,12 +952,15 @@ const FlowAgents = () => {
                                 return { ...prev, capabilities };
                               });
                             }}
-                            placeholder={'{"foo":"bar"}'}
+                            placeholder={'{"foo":"bar"'}
                           />
                         </label>
+                        <div className="flow-agents__json-feedback">
+                          {renderJsonFeedback(item.payloadText)}
+                        </div>
                         <button
                           type="button"
-                          className="ghost"
+                          className="flow-agents__ghost"
                           onClick={() =>
                             setVersionForm((prev) => ({
                               ...prev,

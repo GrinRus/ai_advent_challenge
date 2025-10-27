@@ -1,7 +1,15 @@
 package com.aiadvent.backend.flow.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.session.converter.FlowLaunchParametersConverter;
+import com.aiadvent.backend.flow.session.converter.FlowOverridesConverter;
+import com.aiadvent.backend.flow.session.converter.FlowSharedContextConverter;
+import com.aiadvent.backend.flow.session.converter.FlowTelemetrySnapshotConverter;
+import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
+import com.aiadvent.backend.flow.session.model.FlowOverrides;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
+import com.aiadvent.backend.flow.session.model.FlowTelemetrySnapshot;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -15,8 +23,8 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
@@ -52,20 +60,24 @@ public class FlowSession {
   private UUID chatSessionId;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "launch_parameters")
-  private JsonNode launchParameters;
+  @Column(name = "launch_parameters", columnDefinition = "jsonb")
+  @Convert(converter = FlowLaunchParametersConverter.class)
+  private FlowLaunchParameters launchParameters = FlowLaunchParameters.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "shared_context")
-  private JsonNode sharedContext;
+  @Column(name = "shared_context", columnDefinition = "jsonb")
+  @Convert(converter = FlowSharedContextConverter.class)
+  private FlowSharedContext sharedContext = FlowSharedContext.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "launch_overrides")
-  private JsonNode launchOverrides;
+  @Column(name = "launch_overrides", columnDefinition = "jsonb")
+  @Convert(converter = FlowOverridesConverter.class)
+  private FlowOverrides launchOverrides = FlowOverrides.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "telemetry")
-  private JsonNode telemetry;
+  @Column(name = "telemetry", columnDefinition = "jsonb")
+  @Convert(converter = FlowTelemetrySnapshotConverter.class)
+  private FlowTelemetrySnapshot telemetry = FlowTelemetrySnapshot.empty();
 
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
@@ -158,36 +170,36 @@ public class FlowSession {
     this.chatSessionId = chatSessionId;
   }
 
-  public JsonNode getLaunchParameters() {
-    return launchParameters;
+  public FlowLaunchParameters getLaunchParameters() {
+    return launchParameters != null ? launchParameters : FlowLaunchParameters.empty();
   }
 
-  public void setLaunchParameters(JsonNode launchParameters) {
-    this.launchParameters = launchParameters;
+  public void setLaunchParameters(FlowLaunchParameters launchParameters) {
+    this.launchParameters = launchParameters != null ? launchParameters : FlowLaunchParameters.empty();
   }
 
-  public JsonNode getSharedContext() {
-    return sharedContext;
+  public FlowSharedContext getSharedContext() {
+    return sharedContext != null ? sharedContext : FlowSharedContext.empty();
   }
 
-  public void setSharedContext(JsonNode sharedContext) {
-    this.sharedContext = sharedContext;
+  public void setSharedContext(FlowSharedContext sharedContext) {
+    this.sharedContext = sharedContext != null ? sharedContext : FlowSharedContext.empty();
   }
 
-  public JsonNode getLaunchOverrides() {
-    return launchOverrides;
+  public FlowOverrides getLaunchOverrides() {
+    return launchOverrides != null ? launchOverrides : FlowOverrides.empty();
   }
 
-  public void setLaunchOverrides(JsonNode launchOverrides) {
-    this.launchOverrides = launchOverrides;
+  public void setLaunchOverrides(FlowOverrides launchOverrides) {
+    this.launchOverrides = launchOverrides != null ? launchOverrides : FlowOverrides.empty();
   }
 
-  public JsonNode getTelemetry() {
-    return telemetry;
+  public FlowTelemetrySnapshot getTelemetry() {
+    return telemetry != null ? telemetry : FlowTelemetrySnapshot.empty();
   }
 
-  public void setTelemetry(JsonNode telemetry) {
-    this.telemetry = telemetry;
+  public void setTelemetry(FlowTelemetrySnapshot telemetry) {
+    this.telemetry = telemetry != null ? telemetry : FlowTelemetrySnapshot.empty();
   }
 
   public Instant getCreatedAt() {

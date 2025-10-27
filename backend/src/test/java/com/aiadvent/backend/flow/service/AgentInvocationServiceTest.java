@@ -3,7 +3,6 @@ package com.aiadvent.backend.flow.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -13,10 +12,12 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.provider.model.ChatAdvisorContext;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.provider.model.UsageSource;
+import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -86,7 +87,7 @@ class AgentInvocationServiceTest {
     defaultOptions.put("temperature", 0.2);
     defaultOptions.put("topP", 0.4);
     defaultOptions.put("maxTokens", 1000);
-    agentVersion.setDefaultOptions(defaultOptions);
+    agentVersion.setDefaultOptions(AgentDefaultOptions.from(defaultOptions));
 
     ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
     when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
@@ -98,7 +99,12 @@ class AgentInvocationServiceTest {
         new Generation(AssistantMessage.builder().content("model response").build());
     ChatResponse chatResponse = new ChatResponse(List.of(generation));
     when(chatProviderService.chatSyncWithOverrides(
-            eq(selection), eq(agentVersion.getSystemPrompt()), anyList(), anyMap(), anyString(), any()))
+            eq(selection),
+            eq(agentVersion.getSystemPrompt()),
+            anyList(),
+            any(ChatAdvisorContext.class),
+            anyString(),
+            any()))
         .thenReturn(chatResponse);
 
     UsageCostEstimate usageCost =
@@ -166,6 +172,7 @@ class AgentInvocationServiceTest {
     assertThat(result.userMessage()).contains("\"value\" : \"prev\"");
 
     ArgumentCaptor<List> memoryCaptor = ArgumentCaptor.forClass(List.class);
+    ArgumentCaptor<ChatAdvisorContext> advisorCaptor = ArgumentCaptor.forClass(ChatAdvisorContext.class);
     ArgumentCaptor<String> userMessageCaptor = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<ChatRequestOverrides> overridesCaptor = ArgumentCaptor.forClass(ChatRequestOverrides.class);
     verify(chatProviderService)
@@ -173,7 +180,7 @@ class AgentInvocationServiceTest {
             eq(selection),
             eq(agentVersion.getSystemPrompt()),
             memoryCaptor.capture(),
-            anyMap(),
+            advisorCaptor.capture(),
             userMessageCaptor.capture(),
             overridesCaptor.capture());
 
@@ -184,6 +191,9 @@ class AgentInvocationServiceTest {
     assertThat(result.appliedOverrides().temperature()).isEqualTo(overridesCaptor.getValue().temperature());
     assertThat(result.appliedOverrides().topP()).isEqualTo(overridesCaptor.getValue().topP());
     assertThat(result.appliedOverrides().maxTokens()).isEqualTo(overridesCaptor.getValue().maxTokens());
+    ChatAdvisorContext capturedContext = advisorCaptor.getValue();
+    assertThat(capturedContext.flowSessionId()).isEqualTo(sessionId);
+    assertThat(capturedContext.flowStepExecutionId()).isEqualTo(request.stepId());
   }
 
   @Test
@@ -212,7 +222,12 @@ class AgentInvocationServiceTest {
     ChatResponse chatResponse =
         new ChatResponse(List.of(new Generation(AssistantMessage.builder().content("ok").build())));
     when(chatProviderService.chatSyncWithOverrides(
-            eq(selection), eq(agentVersion.getSystemPrompt()), anyList(), anyMap(), anyString(), any()))
+            eq(selection),
+            eq(agentVersion.getSystemPrompt()),
+            anyList(),
+            any(ChatAdvisorContext.class),
+            anyString(),
+            any()))
         .thenReturn(chatResponse);
 
     UsageCostEstimate usageCost =

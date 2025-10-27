@@ -1,8 +1,10 @@
 package com.aiadvent.backend.flow.domain;
 
 import com.aiadvent.backend.chat.provider.model.UsageSource;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.execution.converter.FlowEventPayloadConverter;
+import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -44,7 +46,8 @@ public class FlowEvent {
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "payload", columnDefinition = "jsonb")
-  private JsonNode payload;
+  @Convert(converter = FlowEventPayloadConverter.class)
+  private FlowEventPayload payload = FlowEventPayload.empty();
 
   @Column(name = "cost", precision = 19, scale = 8)
   private BigDecimal cost;
@@ -71,11 +74,11 @@ public class FlowEvent {
   protected FlowEvent() {}
 
   public FlowEvent(
-      FlowSession flowSession, FlowEventType eventType, String status, JsonNode payload) {
+      FlowSession flowSession, FlowEventType eventType, String status, FlowEventPayload payload) {
     this.flowSession = flowSession;
     this.eventType = eventType;
     this.status = status;
-    this.payload = payload;
+    this.payload = payload != null ? payload : FlowEventPayload.empty();
   }
 
   @PrePersist
@@ -111,12 +114,12 @@ public class FlowEvent {
     this.status = status;
   }
 
-  public JsonNode getPayload() {
-    return payload;
+  public FlowEventPayload getPayload() {
+    return payload != null ? payload : FlowEventPayload.empty();
   }
 
-  public void setPayload(JsonNode payload) {
-    this.payload = payload;
+  public void setPayload(FlowEventPayload payload) {
+    this.payload = payload != null ? payload : FlowEventPayload.empty();
   }
 
   public BigDecimal getCost() {

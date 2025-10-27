@@ -30,6 +30,7 @@ import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
+import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
@@ -142,7 +143,7 @@ class FlowControlServiceTest {
     FlowStepExecution execution =
         new FlowStepExecution(session, "step-approve", FlowStepStatus.WAITING_APPROVAL, 1);
     setField(execution, "id", UUID.randomUUID());
-    execution.setInputPayload(new ObjectMapper().createObjectNode());
+    execution.setInputPayload(FlowStepInputPayload.from(new ObjectMapper().createObjectNode()));
 
     FlowStepConfig config =
         new FlowStepConfig(

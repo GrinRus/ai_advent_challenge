@@ -172,9 +172,9 @@ vi.mock('../lib/apiClient', async () => {
     fetchFlowDefinitions: vi.fn(async () => definitions),
     fetchFlowLaunchPreview: vi.fn(async (definitionId: string) => previewMap[definitionId as keyof typeof previewMap]),
     startFlow: vi.fn(async () => ({
-      sessionId: '99999999-9999-9999-9999-999999999999',
-      status: 'RUNNING',
-      startedAt: '2025-01-01T10:00:00Z',
+        sessionId: '99999999-9999-9999-9999-999999999999',
+        status: 'RUNNING',
+        startedAt: '2025-01-01T10:00:00Z',
     })),
   };
 });

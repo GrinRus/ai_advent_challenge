@@ -141,7 +141,7 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
     assertThat(responseRepository.count()).isOne();
 
-    JsonNode interactionNode = stepExecution.getInputPayload().get("interaction");
+    JsonNode interactionNode = stepExecution.getInputPayload().asJson().get("interaction");
     assertThat(interactionNode.get("status").asText()).isEqualTo("ANSWERED");
     assertThat(interactionNode.get("payload").get("comment").asText()).isEqualTo("Ready to proceed");
 

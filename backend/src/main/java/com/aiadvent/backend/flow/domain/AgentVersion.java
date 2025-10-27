@@ -1,8 +1,14 @@
 package com.aiadvent.backend.flow.domain;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.agent.converter.AgentCostProfileConverter;
+import com.aiadvent.backend.flow.agent.converter.AgentDefaultOptionsConverter;
+import com.aiadvent.backend.flow.agent.converter.AgentToolBindingsConverter;
+import com.aiadvent.backend.flow.agent.model.AgentCostProfile;
+import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
+import com.aiadvent.backend.flow.agent.model.AgentToolBindings;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -53,16 +59,19 @@ public class AgentVersion {
   private String systemPrompt;
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "default_options")
-  private JsonNode defaultOptions;
+  @Column(name = "default_options", columnDefinition = "jsonb")
+  @Convert(converter = AgentDefaultOptionsConverter.class)
+  private AgentDefaultOptions defaultOptions = AgentDefaultOptions.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "tool_bindings")
-  private JsonNode toolBindings;
+  @Column(name = "tool_bindings", columnDefinition = "jsonb")
+  @Convert(converter = AgentToolBindingsConverter.class)
+  private AgentToolBindings toolBindings = AgentToolBindings.empty();
 
   @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "cost_profile")
-  private JsonNode costProfile;
+  @Column(name = "cost_profile", columnDefinition = "jsonb")
+  @Convert(converter = AgentCostProfileConverter.class)
+  private AgentCostProfile costProfile = AgentCostProfile.empty();
 
   @Column(name = "sync_only", nullable = false)
   private boolean syncOnly = true;
@@ -144,28 +153,28 @@ public class AgentVersion {
     this.systemPrompt = systemPrompt;
   }
 
-  public JsonNode getDefaultOptions() {
-    return defaultOptions;
+  public AgentDefaultOptions getDefaultOptions() {
+    return defaultOptions != null ? defaultOptions : AgentDefaultOptions.empty();
   }
 
-  public void setDefaultOptions(JsonNode defaultOptions) {
-    this.defaultOptions = defaultOptions;
+  public void setDefaultOptions(AgentDefaultOptions defaultOptions) {
+    this.defaultOptions = defaultOptions != null ? defaultOptions : AgentDefaultOptions.empty();
   }
 
-  public JsonNode getToolBindings() {
-    return toolBindings;
+  public AgentToolBindings getToolBindings() {
+    return toolBindings != null ? toolBindings : AgentToolBindings.empty();
   }
 
-  public void setToolBindings(JsonNode toolBindings) {
-    this.toolBindings = toolBindings;
+  public void setToolBindings(AgentToolBindings toolBindings) {
+    this.toolBindings = toolBindings != null ? toolBindings : AgentToolBindings.empty();
   }
 
-  public JsonNode getCostProfile() {
-    return costProfile;
+  public AgentCostProfile getCostProfile() {
+    return costProfile != null ? costProfile : AgentCostProfile.empty();
   }
 
-  public void setCostProfile(JsonNode costProfile) {
-    this.costProfile = costProfile;
+  public void setCostProfile(AgentCostProfile costProfile) {
+    this.costProfile = costProfile != null ? costProfile : AgentCostProfile.empty();
   }
 
   public boolean isSyncOnly() {

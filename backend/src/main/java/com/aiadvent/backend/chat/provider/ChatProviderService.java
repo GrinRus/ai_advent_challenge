@@ -1,6 +1,7 @@
 package com.aiadvent.backend.chat.provider;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
+import com.aiadvent.backend.chat.provider.model.ChatAdvisorContext;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
@@ -101,7 +102,7 @@ public class ChatProviderService {
       ChatProviderSelection selection,
       String systemPrompt,
       List<String> additionalSystemMessages,
-      Map<String, Object> advisorParams,
+      ChatAdvisorContext advisorContext,
       String userMessage,
       ChatRequestOverrides overrides) {
     ChatOptions options = buildOptions(selection, overrides != null ? overrides : ChatRequestOverrides.empty());
@@ -115,8 +116,8 @@ public class ChatProviderService {
           .map(message -> SystemMessage.builder().text(message).build())
           .forEach(promptSpec::messages);
     }
-    if (advisorParams != null && !advisorParams.isEmpty()) {
-      promptSpec.advisors(advisors -> advisorParams.forEach(advisors::param));
+    if (advisorContext != null) {
+      promptSpec.advisors(advisors -> advisorContext.asParameters().forEach(advisors::param));
     }
     if (!StringUtils.hasText(userMessage)) {
       throw new IllegalArgumentException("userMessage must not be blank");

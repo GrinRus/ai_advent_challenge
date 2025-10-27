@@ -6,6 +6,8 @@ import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowEvent;
 import com.aiadvent.backend.flow.domain.FlowEventType;
+import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
+import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
 import com.aiadvent.backend.flow.domain.FlowInteractionResponseSource;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
@@ -17,6 +19,8 @@ import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
+import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -230,7 +234,7 @@ public class FlowControlService {
           new FlowStepExecution(session, nextConfig.id(), FlowStepStatus.PENDING, 1);
       nextExecution.setAgentVersion(nextAgent);
       nextExecution.setStepName(nextConfig.name());
-      nextExecution.setInputPayload(buildStepInputContext(session));
+    nextExecution.setInputPayload(FlowStepInputPayload.from(buildStepInputContext(session)));
       flowStepExecutionRepository.save(nextExecution);
 
       FlowJobPayload payload =
@@ -273,7 +277,7 @@ public class FlowControlService {
     if (message != null) {
       payload = objectMapper.createObjectNode().put("message", message);
     }
-    FlowEvent event = new FlowEvent(session, eventType, status, payload);
+    FlowEvent event = new FlowEvent(session, eventType, status, FlowEventPayload.from(payload));
     event.setTraceId(session.getId().toString());
     event.setSpanId(session.getId().toString());
     flowEventRepository.save(event);
@@ -289,22 +293,24 @@ public class FlowControlService {
 
   private com.fasterxml.jackson.databind.JsonNode buildStepInputContext(FlowSession session) {
     ObjectNode input = objectMapper.createObjectNode();
-    if (session.getLaunchParameters() != null && !session.getLaunchParameters().isNull()) {
-      input.set("launchParameters", session.getLaunchParameters().deepCopy());
+    FlowLaunchParameters launchParameters = session.getLaunchParameters();
+    if (!launchParameters.isEmpty()) {
+      input.set("launchParameters", launchParameters.asJson());
     }
 
-    com.fasterxml.jackson.databind.JsonNode shared = session.getSharedContext();
-    if (shared != null && !shared.isNull()) {
-      input.set("sharedContext", shared.deepCopy());
-      com.fasterxml.jackson.databind.JsonNode initial = shared.get("initial");
+    FlowSharedContext shared = session.getSharedContext();
+    if (!shared.isEmpty()) {
+      ObjectNode sharedNode = shared.asObjectNode(objectMapper);
+      input.set("sharedContext", sharedNode.deepCopy());
+      com.fasterxml.jackson.databind.JsonNode initial = sharedNode.get("initial");
       if (initial != null) {
         input.set("initialContext", initial.deepCopy());
       }
-      com.fasterxml.jackson.databind.JsonNode lastOutput = shared.get("lastOutput");
+      com.fasterxml.jackson.databind.JsonNode lastOutput = sharedNode.get("lastOutput");
       if (lastOutput != null && !lastOutput.isNull()) {
         input.set("lastOutput", lastOutput.deepCopy());
       }
-      com.fasterxml.jackson.databind.JsonNode current = shared.get("current");
+      com.fasterxml.jackson.databind.JsonNode current = sharedNode.get("current");
       if (current != null && !current.isNull()) {
         input.set("currentContext", current.deepCopy());
       }

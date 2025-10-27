@@ -139,7 +139,10 @@ public class AgentDefinitionController {
   private AgentVersionResponse toVersionResponse(AgentVersion version) {
     List<AgentCapabilityResponse> capabilityResponses =
         agentCatalogService.listCapabilities(version).stream()
-            .map(capability -> new AgentCapabilityResponse(capability.getCapability(), capability.getPayload()))
+            .map(
+                capability ->
+                    new AgentCapabilityResponse(
+                        capability.getCapability(), capability.getPayload().asJson()))
             .toList();
 
     return new AgentVersionResponse(
@@ -150,9 +153,9 @@ public class AgentDefinitionController {
         version.getProviderId(),
         version.getModelId(),
         version.getSystemPrompt(),
-        version.getDefaultOptions(),
-        version.getToolBindings(),
-        version.getCostProfile(),
+        version.getDefaultOptions().asJson(),
+        version.getToolBindings().asJson(),
+        version.getCostProfile().asJson(),
         version.isSyncOnly(),
         version.getMaxTokens(),
         version.getCreatedBy(),
