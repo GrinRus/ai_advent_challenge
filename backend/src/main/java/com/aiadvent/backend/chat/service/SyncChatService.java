@@ -4,6 +4,7 @@ import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.ChatSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncProvider;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -135,7 +136,13 @@ public class SyncChatService extends AbstractSyncService {
               latencyMs,
               completedAt);
 
-      registerAssistantMessage(conversation, content, selection.providerId(), selection.modelId(), null, usageCost);
+      registerAssistantMessage(
+          conversation,
+          content,
+          selection.providerId(),
+          selection.modelId(),
+          ChatStructuredPayload.empty(),
+          usageCost);
       logAttemptSuccess(retryContext, conversation.sessionId(), selection.providerId());
       return finalResponse;
     } catch (RuntimeException ex) {

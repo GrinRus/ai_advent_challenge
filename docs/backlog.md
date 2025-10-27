@@ -572,6 +572,7 @@
 - [x] Flow execution payloads: добавить `FlowStepInputPayload`, `FlowStepOutputPayload`, `UsageCostPayload` и `FlowEventPayload` + mapper-сервис (`FlowPayloadMapper`), переписать `AgentOrchestratorService`/`FlowStatusService`/`FlowEventRepository`.
 - [x] Тесты конвертеров/mapper'ов: покрыть round-trip сериализацию и схемы дефолтов (JUnit).
 
+
 **Финальный подход Backend:** берём *Value Object + Converter* как базовый слой типизации и сразу выносим сериализацию в mapper-сервисы (`FlowPayloadMapper`, `AgentOptionsMapper`). Генерацию DTO из схем планируем после стабилизации моделей, но текущий rollout от неё не зависит.
 ### Frontend
 - [x] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.

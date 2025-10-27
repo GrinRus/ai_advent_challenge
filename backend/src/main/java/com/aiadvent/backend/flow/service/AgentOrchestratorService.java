@@ -111,9 +111,9 @@ public class AgentOrchestratorService {
   @Transactional
   public FlowSession start(
       UUID flowDefinitionId,
-      JsonNode launchParameters,
-      JsonNode sharedContext,
-      ChatRequestOverrides launchOverrides,
+      FlowLaunchParameters launchParameters,
+      FlowSharedContext sharedContext,
+      FlowOverrides launchOverrides,
       UUID chatSessionId) {
     FlowDefinition flowDefinition =
         flowDefinitionService.getActivePublishedDefinition(flowDefinitionId);
@@ -135,9 +135,17 @@ public class AgentOrchestratorService {
             FlowSessionStatus.RUNNING,
             0L,
             0L);
-    session.setLaunchParameters(FlowLaunchParameters.from(launchParameters));
-    session.setSharedContext(flowPayloadMapper.initializeSharedContext(sharedContext));
-    session.setLaunchOverrides(FlowOverrides.from(toLaunchOverridesNode(launchOverrides)));
+    FlowLaunchParameters effectiveParameters =
+        launchParameters != null ? launchParameters : FlowLaunchParameters.empty();
+    FlowSharedContext requestedContext =
+        sharedContext != null ? sharedContext : FlowSharedContext.empty();
+    FlowOverrides effectiveOverrides =
+        launchOverrides != null ? launchOverrides : FlowOverrides.empty();
+
+    session.setLaunchParameters(effectiveParameters);
+    JsonNode contextNode = !requestedContext.isEmpty() ? requestedContext.asJson() : null;
+    session.setSharedContext(flowPayloadMapper.initializeSharedContext(contextNode));
+    session.setLaunchOverrides(effectiveOverrides);
     session.setStartedAt(Instant.now());
     session.setCurrentStepId(startStep.id());
     session.setChatSessionId(chatSessionId);

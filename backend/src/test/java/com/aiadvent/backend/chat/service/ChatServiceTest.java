@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.backend.chat.domain.ChatMessage;
 import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
@@ -132,12 +133,16 @@ class ChatServiceTest {
     payload.put("status", "success");
 
     chatService.registerAssistantMessage(
-        sessionId, "{\"status\":\"success\"}", "z.ai", "glm", payload);
+        sessionId,
+        "{\"status\":\"success\"}",
+        "z.ai",
+        "glm",
+        ChatStructuredPayload.from(payload));
 
     ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
     verify(chatMessageRepository).save(messageCaptor.capture());
     ChatMessage saved = messageCaptor.getValue();
-    assertThat(saved.getStructuredPayload()).isEqualTo(payload);
+    assertThat(saved.getStructuredPayload().asJson()).isEqualTo(payload);
     assertThat(saved.getPromptTokens()).isNull();
   }
 
@@ -165,7 +170,12 @@ class ChatServiceTest {
             UsageSource.NATIVE);
 
     chatService.registerAssistantMessage(
-        sessionId, "cost aware", "openai", "gpt", null, usageCost);
+        sessionId,
+        "cost aware",
+        "openai",
+        "gpt",
+        ChatStructuredPayload.empty(),
+        usageCost);
 
     ArgumentCaptor<ChatMessage> messageCaptor = ArgumentCaptor.forClass(ChatMessage.class);
     verify(chatMessageRepository).save(messageCaptor.capture());

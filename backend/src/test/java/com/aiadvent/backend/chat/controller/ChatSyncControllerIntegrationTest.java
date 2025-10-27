@@ -119,7 +119,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
     ChatMessage assistantMessage = messages.get(1);
     assertThat(assistantMessage.getRole()).isEqualTo(ChatRole.ASSISTANT);
     assertThat(assistantMessage.getContent()).isEqualTo("Plain assistant response.");
-    assertThat(assistantMessage.getStructuredPayload()).isNull();
+    assertThat(assistantMessage.getStructuredPayload().isEmpty()).isTrue();
   }
 
   @Test
@@ -204,7 +204,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
         chatMessageRepository.findBySessionOrderBySequenceNumberAsc(session);
 
     assertThat(messages).hasSize(2);
-    assertThat(messages.get(1).getStructuredPayload()).isNull();
+    assertThat(messages.get(1).getStructuredPayload().isEmpty()).isTrue();
     assertThat(StubChatClientState.syncCallCount()).isEqualTo(2);
   }
 

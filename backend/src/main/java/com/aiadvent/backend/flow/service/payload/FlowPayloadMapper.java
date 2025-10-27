@@ -28,6 +28,17 @@ public class FlowPayloadMapper {
   }
 
   public FlowSharedContext initializeSharedContext(JsonNode sharedContext) {
+    if (sharedContext != null && !sharedContext.isNull() && sharedContext.isObject()) {
+      boolean looksLikeCanonical =
+          sharedContext.has("initial")
+              || sharedContext.has("current")
+              || sharedContext.has("steps")
+              || sharedContext.has("version")
+              || sharedContext.has("lastOutput");
+      if (looksLikeCanonical) {
+        return FlowSharedContext.from(sharedContext);
+      }
+    }
     ObjectNode context = objectMapper.createObjectNode();
     context.set("initial", cloneNode(sharedContext));
     context.set("current", cloneNode(sharedContext));

@@ -1,7 +1,9 @@
 package com.aiadvent.backend.chat.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.chat.domain.converter.ChatStructuredPayloadConverter;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -47,7 +49,8 @@ public class ChatMessage {
 
   @JdbcTypeCode(SqlTypes.JSON)
   @Column(name = "structured_payload")
-  private JsonNode structuredPayload;
+  @Convert(converter = ChatStructuredPayloadConverter.class)
+  private ChatStructuredPayload structuredPayload = ChatStructuredPayload.empty();
 
   @Column(name = "prompt_tokens")
   private Integer promptTokens;
@@ -79,7 +82,7 @@ public class ChatMessage {
       Integer sequenceNumber,
       String provider,
       String model) {
-    this(session, role, content, sequenceNumber, provider, model, null);
+    this(session, role, content, sequenceNumber, provider, model, ChatStructuredPayload.empty());
   }
 
   public ChatMessage(
@@ -89,14 +92,15 @@ public class ChatMessage {
       Integer sequenceNumber,
       String provider,
       String model,
-      JsonNode structuredPayload) {
+      ChatStructuredPayload structuredPayload) {
     this.session = session;
     this.role = role;
     this.content = content;
     this.sequenceNumber = sequenceNumber;
     this.provider = provider;
     this.model = model;
-    this.structuredPayload = structuredPayload;
+    this.structuredPayload =
+        structuredPayload != null ? structuredPayload : ChatStructuredPayload.empty();
   }
 
   @PrePersist
@@ -132,8 +136,8 @@ public class ChatMessage {
     return model;
   }
 
-  public JsonNode getStructuredPayload() {
-    return structuredPayload;
+  public ChatStructuredPayload getStructuredPayload() {
+    return structuredPayload != null ? structuredPayload : ChatStructuredPayload.empty();
   }
 
   public Integer getPromptTokens() {

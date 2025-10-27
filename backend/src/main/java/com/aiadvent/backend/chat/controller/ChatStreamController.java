@@ -3,6 +3,7 @@ package com.aiadvent.backend.chat.controller;
 import com.aiadvent.backend.chat.api.ChatStreamEvent;
 import com.aiadvent.backend.chat.api.ChatStreamRequest;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
@@ -199,7 +200,12 @@ public class ChatStreamController {
           usageCost.completionTokens());
     }
     chatService.registerAssistantMessage(
-        sessionId, content, selection.providerId(), selection.modelId(), null, usageCost);
+        sessionId,
+        content,
+        selection.providerId(),
+        selection.modelId(),
+        ChatStructuredPayload.empty(),
+        usageCost);
     emit(
         emitter,
         "complete",

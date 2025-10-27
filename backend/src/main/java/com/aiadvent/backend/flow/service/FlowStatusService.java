@@ -7,6 +7,7 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowSessionStatus;
 import com.aiadvent.backend.flow.persistence.FlowEventRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import java.time.Duration;
 import java.time.Instant;
@@ -116,7 +117,7 @@ public class FlowStatusService {
         session.getCompletedAt(),
         session.getFlowDefinition().getId(),
         session.getFlowDefinitionVersion(),
-        session.getSharedContext().isEmpty() ? null : session.getSharedContext().asJson());
+        session.getSharedContext().isEmpty() ? null : session.getSharedContext());
 
     return new FlowStatusResponse(state, events, nextSinceEventId, telemetrySnapshot);
   }
@@ -153,7 +154,7 @@ public class FlowStatusService {
       java.time.Instant completedAt,
       UUID flowDefinitionId,
       int flowDefinitionVersion,
-      com.fasterxml.jackson.databind.JsonNode sharedContext) {}
+      FlowSharedContext sharedContext) {}
 
   public record FlowStatusResponse(
       FlowStateDto state,

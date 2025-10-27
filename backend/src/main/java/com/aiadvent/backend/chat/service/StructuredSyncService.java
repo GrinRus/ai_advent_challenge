@@ -3,6 +3,7 @@ package com.aiadvent.backend.chat.service;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.StructuredSyncAnswer;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.api.StructuredSyncProvider;
 import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncStatus;
@@ -171,7 +172,12 @@ public class StructuredSyncService extends AbstractSyncService {
 
       JsonNode structuredPayload = serializePayload(finalResponse);
       registerAssistantMessage(
-          conversation, content, selection.providerId(), selection.modelId(), structuredPayload, usageCost);
+          conversation,
+          content,
+          selection.providerId(),
+          selection.modelId(),
+          ChatStructuredPayload.from(structuredPayload),
+          usageCost);
 
       logAttemptSuccess(retryContext, conversation.sessionId(), selection.providerId());
       return finalResponse;

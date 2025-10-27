@@ -37,6 +37,9 @@ import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.aiadvent.backend.flow.persistence.FlowStepExecutionRepository;
 import com.aiadvent.backend.flow.telemetry.FlowTelemetryService;
 import com.aiadvent.backend.flow.service.payload.FlowPayloadMapper;
+import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
+import com.aiadvent.backend.flow.session.model.FlowOverrides;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -161,7 +164,11 @@ class AgentOrchestratorServiceTest {
 
     FlowSession session =
         orchestratorService.start(
-            definition.getId(), objectMapper.nullNode(), objectMapper.nullNode(), null, null);
+            definition.getId(),
+            FlowLaunchParameters.empty(),
+            FlowSharedContext.empty(),
+            FlowOverrides.empty(),
+            null);
 
     assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.RUNNING);
     verify(flowEventRepository).save(org.mockito.ArgumentMatchers.any(FlowEvent.class));

@@ -19,6 +19,7 @@ import com.aiadvent.backend.flow.domain.FlowStepStatus;
 import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
 import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
 import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
+import com.aiadvent.backend.flow.session.model.FlowSharedContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -108,6 +109,19 @@ class FlowPayloadMapperTest {
     assertThat(usagePayload.asJson().path("totalTokens").asInt()).isEqualTo(60);
     assertThat(costPayload.asJson().path("total").asDouble()).isEqualTo(0.06);
     assertThat(costPayload.asJson().path("currency").asText()).isEqualTo("USD");
+  }
+
+  @Test
+  void initializeSharedContextReturnsCanonicalWhenProvided() {
+    ObjectNode canonical = objectMapper.createObjectNode();
+    canonical.putObject("initial").put("foo", "bar");
+    canonical.putObject("steps");
+    canonical.put("version", 1);
+
+    FlowSharedContext provided = FlowSharedContext.from(canonical);
+    FlowSharedContext result = mapper.initializeSharedContext(provided.asJson());
+
+    assertThat(result.asJson()).isEqualTo(canonical);
   }
 
   private static void setField(Object target, String field, Object value) {

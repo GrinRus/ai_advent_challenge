@@ -1,12 +1,12 @@
 package com.aiadvent.backend.chat.service;
 
 import com.aiadvent.backend.chat.domain.ChatMessage;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.domain.ChatRole;
 import com.aiadvent.backend.chat.domain.ChatSession;
 import com.aiadvent.backend.chat.persistence.ChatMessageRepository;
 import com.aiadvent.backend.chat.persistence.ChatSessionRepository;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -59,7 +59,8 @@ public class ChatService {
 
   @Transactional
   public void registerAssistantMessage(UUID sessionId, String content, String provider, String model) {
-    registerAssistantMessage(sessionId, content, provider, model, null, UsageCostEstimate.empty());
+    registerAssistantMessage(
+        sessionId, content, provider, model, ChatStructuredPayload.empty(), UsageCostEstimate.empty());
   }
 
   @Transactional
@@ -68,8 +69,14 @@ public class ChatService {
       String content,
       String provider,
       String model,
-      JsonNode structuredPayload) {
-    registerAssistantMessage(sessionId, content, provider, model, structuredPayload, UsageCostEstimate.empty());
+      ChatStructuredPayload structuredPayload) {
+    registerAssistantMessage(
+        sessionId,
+        content,
+        provider,
+        model,
+        structuredPayload != null ? structuredPayload : ChatStructuredPayload.empty(),
+        UsageCostEstimate.empty());
   }
 
   @Transactional
@@ -78,9 +85,11 @@ public class ChatService {
       String content,
       String provider,
       String model,
-      JsonNode structuredPayload,
+      ChatStructuredPayload structuredPayload,
       UsageCostEstimate usageCost) {
-    if (!StringUtils.hasText(content) && structuredPayload == null) {
+    ChatStructuredPayload payload =
+        structuredPayload != null ? structuredPayload : ChatStructuredPayload.empty();
+    if (!StringUtils.hasText(content) && payload.isEmpty()) {
       return;
     }
 
@@ -95,7 +104,7 @@ public class ChatService {
     int nextSequence = nextSequenceNumber(session);
     ChatMessage message =
         new ChatMessage(
-            session, ChatRole.ASSISTANT, content, nextSequence, provider, model, structuredPayload);
+            session, ChatRole.ASSISTANT, content, nextSequence, provider, model, payload);
     if (usageCost != null && (usageCost.hasUsage() || usageCost.hasCost())) {
       message.applyUsage(
           usageCost.promptTokens(),

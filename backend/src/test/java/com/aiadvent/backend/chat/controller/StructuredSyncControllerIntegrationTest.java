@@ -129,8 +129,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     ChatMessage assistantMessage = messages.get(1);
     assertThat(assistantMessage.getRole()).isEqualTo(ChatRole.ASSISTANT);
-    assertThat(assistantMessage.getStructuredPayload()).isNotNull();
-    JsonNode payload = assistantMessage.getStructuredPayload();
+    assertThat(assistantMessage.getStructuredPayload().isEmpty()).isFalse();
+    JsonNode payload = assistantMessage.getStructuredPayload().asJson();
     assertThat(payload.get("answer").get("items")).hasSize(1);
     assertThat(payload.get("provider").get("type").asText()).isEqualTo("OPENAI");
 
@@ -229,7 +229,7 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     assertThat(messages).hasSize(2);
     assertThat(StubChatClientState.syncCallCount()).isEqualTo(2);
-    assertThat(messages.get(1).getStructuredPayload()).isNotNull();
+    assertThat(messages.get(1).getStructuredPayload().isEmpty()).isFalse();
   }
 
   @Test

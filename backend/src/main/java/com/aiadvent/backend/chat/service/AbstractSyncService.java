@@ -6,6 +6,7 @@ import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.chat.domain.ChatStructuredPayload;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
@@ -240,10 +241,15 @@ abstract class AbstractSyncService {
       String content,
       String providerId,
       String modelId,
-      com.fasterxml.jackson.databind.JsonNode structuredPayload,
+      ChatStructuredPayload structuredPayload,
       UsageCostEstimate usageCost) {
     chatService.registerAssistantMessage(
-        context.sessionId(), content, providerId, modelId, structuredPayload, usageCost);
+        context.sessionId(),
+        content,
+        providerId,
+        modelId,
+        structuredPayload != null ? structuredPayload : ChatStructuredPayload.empty(),
+        usageCost);
   }
 
   protected static final class SchemaValidationException extends RuntimeException {
