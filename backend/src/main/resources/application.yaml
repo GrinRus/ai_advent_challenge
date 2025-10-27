@@ -25,7 +25,7 @@ spring:
             perplexity:
               command: ${PERPLEXITY_MCP_CMD:npx}
               args:
-                - -y
+                - "-y"
                 - "@perplexity-ai/mcp-server"
               env:
                 PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:demo-perplexity-key}
