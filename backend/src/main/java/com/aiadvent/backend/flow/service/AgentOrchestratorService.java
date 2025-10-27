@@ -2,6 +2,7 @@ package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
@@ -804,8 +805,9 @@ public class AgentOrchestratorService {
     if (StringUtils.hasText(agentVersion.getSystemPrompt())) {
       agentNode.put("systemPrompt", agentVersion.getSystemPrompt());
     }
-    if (!agentVersion.getDefaultOptions().isEmpty()) {
-      agentNode.set("defaultOptions", agentVersion.getDefaultOptions().asJson());
+    AgentInvocationOptions invocationOptions = agentVersion.getInvocationOptions();
+    if (invocationOptions != null && !AgentInvocationOptions.empty().equals(invocationOptions)) {
+      agentNode.set("invocationOptions", objectMapper.valueToTree(invocationOptions));
     }
     return agentNode;
   }

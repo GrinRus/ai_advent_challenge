@@ -1354,3 +1354,270 @@ databaseChangeLog:
               - column:
                   name: agent_version_id
                   type: UUID
+  - changeSet:
+      id: 20240608-agent-invocation-options
+      author: codex
+      context: local,prod
+      changes:
+        - addColumn:
+            tableName: agent_version
+            columns:
+              - column:
+                  name: agent_invocation_options
+                  type: JSONB
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+        - dropColumn:
+            tableName: agent_version
+            columnName: default_options
+        - dropColumn:
+            tableName: agent_version
+            columnName: tool_bindings
+        - dropColumn:
+            tableName: agent_version
+            columnName: cost_profile
+        - createTable:
+            tableName: tool_schema_version
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: tool_code
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: request_schema
+                  type: JSONB
+              - column:
+                  name: response_schema
+                  type: JSONB
+              - column:
+                  name: schema_checksum
+                  type: VARCHAR(64)
+              - column:
+                  name: examples
+                  type: JSONB
+              - column:
+                  name: mcp_server
+                  type: VARCHAR(128)
+              - column:
+                  name: mcp_tool_name
+                  type: VARCHAR(128)
+              - column:
+                  name: transport
+                  type: VARCHAR(64)
+              - column:
+                  name: auth_scope
+                  type: VARCHAR(128)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: tool_schema_version
+            columnNames: tool_code, version
+            constraintName: uq_tool_schema_version_code_version
+        - createTable:
+            tableName: tool_definition
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: code
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: display_name
+                  type: VARCHAR(160)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: provider_hint
+                  type: VARCHAR(64)
+              - column:
+                  name: call_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tags
+                  type: JSONB
+              - column:
+                  name: capabilities
+                  type: JSONB
+              - column:
+                  name: cost_hint
+                  type: VARCHAR(128)
+              - column:
+                  name: icon_url
+                  type: VARCHAR(256)
+              - column:
+                  name: default_timeout_ms
+                  type: BIGINT
+              - column:
+                  name: schema_version_id
+                  type: UUID
+        - addForeignKeyConstraint:
+            baseTableName: tool_definition
+            baseColumnNames: schema_version_id
+            referencedTableName: tool_schema_version
+            referencedColumnNames: id
+            constraintName: fk_tool_definition_schema_version
+            onDelete: SET NULL
+        - sql:
+            splitStatements: false
+            sql: |
+              TRUNCATE TABLE flow_event,
+                              flow_step_execution,
+                              flow_job,
+                              flow_memory_version,
+                              flow_session,
+                              flow_definition_history,
+                              flow_definition,
+                              agent_capability,
+                              agent_version,
+                              agent_definition
+              RESTART IDENTITY CASCADE;
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('openai-gpt-4o', 1, '{}'::jsonb, '{}'::jsonb, 'checksum-openai-gpt-4o-v1', '[]'::jsonb, NULL, NULL, 'https', NULL),
+                ('perplexity-research', 1, '{"type":"object","properties":{"query":{"type":"string"},"locale":{"type":"string"}},"required":["query"]}'::jsonb, '{"type":"object","properties":{"answer":{"type":"string"},"sources":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"url":{"type":"string"}}}}}}'::jsonb, 'checksum-perplexity-v1', '[]'::jsonb, 'perplexity', 'perplexity_research', 'stdio', 'perplexity');
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('openai-gpt-4o', 'OpenAI GPT-4o', 'General purpose chat completion model', 'openai', 'AUTO', '["llm","chat"]'::jsonb, '["completion"]'::jsonb, 'See OpenAI pricing', NULL, 30000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'openai-gpt-4o' AND version = 1)),
+                ('perplexity-research', 'Perplexity Research', 'Live research via MCP server', 'perplexity', 'AUTO', '["research","search"]'::jsonb, '["web-search"]'::jsonb, 'Usage billed by Perplexity', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'perplexity-research' AND version = 1));
+
+              INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_at, updated_at, updated_by)
+              VALUES
+                (gen_random_uuid(), 'demo-openai-chat', 'Demo OpenAI Chat', 'Sample agent using OpenAI GPT-4o', true, now(), now(), 'seed'),
+                (gen_random_uuid(), 'demo-researcher', 'Demo Researcher', 'Research agent leveraging Perplexity MCP tool', true, now(), now(), 'seed');
+
+              WITH defs AS (
+                SELECT id, identifier FROM agent_definition
+              )
+              INSERT INTO agent_version (
+                id,
+                agent_definition_id,
+                version,
+                status,
+                provider_type,
+                provider_id,
+                model_id,
+                system_prompt,
+                agent_invocation_options,
+                sync_only,
+                max_tokens,
+                created_by,
+                updated_by,
+                created_at,
+                published_at)
+              VALUES
+                (gen_random_uuid(),
+                 (SELECT id FROM defs WHERE identifier = 'demo-openai-chat'),
+                 1,
+                 'PUBLISHED',
+                 'OPENAI',
+                 'openai',
+                 'gpt-4o',
+                 'You are a helpful assistant that answers concisely.',
+                 '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o","mode":"SYNC"},"prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.2,"topP":0.9,"maxOutputTokens":800}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":100,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":30000,"overallDeadlineMs":90000,"jitterMs":100},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[]},"costProfile":{"inputPer1KTokens":0.01,"outputPer1KTokens":0.03,"currency":"USD"}}'::jsonb,
+                 true,
+                 1200,
+                 'seed',
+                 'seed',
+                 now(),
+                 now()),
+                (gen_random_uuid(),
+                 (SELECT id FROM defs WHERE identifier = 'demo-researcher'),
+                 1,
+                 'PUBLISHED',
+                 'OPENAI',
+                 'openai',
+                 'gpt-4o-mini',
+                 'You are an analyst that performs web research and summarizes findings.',
+                 '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.1,"topP":0.9,"maxOutputTokens":900}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":30,"maxEntries":200,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":4,"initialDelayMs":300,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[{"toolCode":"perplexity-research","schemaVersion":1,"executionMode":"AUTO"}]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD","latencyFee":0.001}}'::jsonb,
+                 true,
+                 1400,
+                 'seed',
+                 'seed',
+                 now(),
+                 now());
+
+              WITH openai_agent AS (
+                SELECT id FROM agent_version
+                WHERE version = 1
+                  AND agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'demo-openai-chat')
+              ),
+              researcher_agent AS (
+                SELECT id FROM agent_version
+                WHERE version = 1
+                  AND agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'demo-researcher')
+              )
+              INSERT INTO flow_definition (id, name, version, status, definition, is_active, created_at, updated_at, updated_by)
+              SELECT
+                gen_random_uuid(),
+                'demo-lead-qualify',
+                1,
+                'PUBLISHED',
+                jsonb_build_object(
+                  'schemaVersion', 1,
+                  'metadata', jsonb_build_object('title', 'Demo Lead Qualification', 'description', 'Example flow that gathers lead context and performs research.'),
+                  'startStepId', 'gather_context',
+                  'syncOnly', true,
+                  'launchParameters', jsonb_build_array(jsonb_build_object('name','company','label','Company','type','string','required', true)),
+                  'memory', jsonb_build_object('shared', jsonb_build_object('enabled', true)),
+                  'steps', jsonb_build_array(
+                      jsonb_build_object(
+                        'id','gather_context',
+                        'name','Gather Context',
+                        'agentVersionId', (SELECT id FROM openai_agent),
+                        'prompt','Capture the lead details and summarize them.',
+                        'overrides', jsonb_build_object('maxTokens', 600),
+                        'memoryWrites', jsonb_build_array(jsonb_build_object('channel','shared','mode','AGENT_OUTPUT')),
+                        'transitions', jsonb_build_object('onSuccess', jsonb_build_object('next','perform_research'))
+                      ),
+                      jsonb_build_object(
+                        'id','perform_research',
+                        'name','Perform Research',
+                        'agentVersionId', (SELECT id FROM researcher_agent),
+                        'prompt','Use the research tool to find latest mentions and summarize findings.',
+                        'memoryReads', jsonb_build_array(jsonb_build_object('channel','shared','limit',5)),
+                        'memoryWrites', jsonb_build_array(jsonb_build_object('channel','shared','mode','AGENT_OUTPUT')),
+                        'transitions', jsonb_build_object('onSuccess', jsonb_build_object('complete', true))
+                      )
+                  )
+                ),
+                true,
+                now(),
+                now(),
+                'seed'
+              FROM openai_agent, researcher_agent;

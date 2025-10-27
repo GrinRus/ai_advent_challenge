@@ -6,7 +6,6 @@ import com.aiadvent.backend.chat.provider.model.ChatAdvisorContext;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
-import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
@@ -180,16 +179,19 @@ public class AgentInvocationService {
     Double topP = null;
     Integer maxTokens = agentVersion.getMaxTokens();
 
-    AgentDefaultOptions defaultOptions = agentVersion.getDefaultOptions();
-    if (defaultOptions != null && !defaultOptions.isEmpty()) {
-      if (defaultOptions.temperature() != null) {
-        temperature = defaultOptions.temperature();
-      }
-      if (defaultOptions.topP() != null) {
-        topP = defaultOptions.topP();
-      }
-      if (defaultOptions.maxTokens() != null) {
-        maxTokens = defaultOptions.maxTokens();
+    var invocationOptions = agentVersion.getInvocationOptions();
+    if (invocationOptions != null) {
+      var generationDefaults = invocationOptions.prompt().generation();
+      if (generationDefaults != null && !generationDefaults.isEmpty()) {
+        if (generationDefaults.temperature() != null) {
+          temperature = generationDefaults.temperature();
+        }
+        if (generationDefaults.topP() != null) {
+          topP = generationDefaults.topP();
+        }
+        if (generationDefaults.maxOutputTokens() != null) {
+          maxTokens = generationDefaults.maxOutputTokens();
+        }
       }
     }
 

@@ -2,10 +2,10 @@ package com.aiadvent.backend.flow.api;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
 import com.aiadvent.backend.flow.config.MemoryReadConfig;
 import com.aiadvent.backend.flow.config.MemoryWriteConfig;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -47,8 +47,7 @@ public record FlowLaunchPreviewResponse(
       Integer modelMaxOutputTokens,
       boolean syncOnly,
       Integer maxTokens,
-      JsonNode defaultOptions,
-      JsonNode costProfile,
+      AgentInvocationOptions invocationOptions,
       Pricing pricing) {}
 
   public record Pricing(

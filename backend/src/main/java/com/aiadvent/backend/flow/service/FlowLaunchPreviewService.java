@@ -143,8 +143,7 @@ public class FlowLaunchPreviewService {
         modelConfig != null ? modelConfig.getMaxOutputTokens() : null,
         agentVersion.isSyncOnly(),
         agentVersion.getMaxTokens(),
-        agentVersion.getDefaultOptions().asJson(),
-        agentVersion.getCostProfile().asJson(),
+        agentVersion.getInvocationOptions(),
         pricing);
   }
 
@@ -193,6 +192,14 @@ public class FlowLaunchPreviewService {
     }
     if (agentVersion.getMaxTokens() != null && agentVersion.getMaxTokens() > 0) {
       return agentVersion.getMaxTokens().longValue();
+    }
+
+    var generationDefaults = agentVersion.getInvocationOptions().prompt().generation();
+    if (generationDefaults != null && generationDefaults.maxOutputTokens() != null) {
+      Integer maxOutputTokens = generationDefaults.maxOutputTokens();
+      if (maxOutputTokens != null && maxOutputTokens > 0) {
+        return maxOutputTokens.longValue();
+      }
     }
 
     if (agent.modelMaxOutputTokens() != null && agent.modelMaxOutputTokens() > 0) {

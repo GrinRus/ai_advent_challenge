@@ -4,9 +4,7 @@ import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
 import com.aiadvent.backend.flow.agent.model.AgentCapabilityPayload;
-import com.aiadvent.backend.flow.agent.model.AgentCostProfile;
-import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
-import com.aiadvent.backend.flow.agent.model.AgentToolBindings;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.api.AgentCapabilityRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionRequest;
 import com.aiadvent.backend.flow.api.AgentDefinitionStatusRequest;
@@ -19,7 +17,6 @@ import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.persistence.AgentCapabilityRepository;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -181,6 +178,9 @@ public class AgentCatalogService {
     if (!StringUtils.hasText(request.systemPrompt())) {
       throw new IllegalArgumentException("Field 'systemPrompt' must not be blank");
     }
+    if (request.invocationOptions() == null) {
+      throw new IllegalArgumentException("Field 'invocationOptions' must not be null");
+    }
 
     if (!StringUtils.hasText(request.createdBy())) {
       throw new IllegalArgumentException("Field 'createdBy' must not be blank");
@@ -207,12 +207,27 @@ public class AgentCatalogService {
             definition, nextVersion, AgentVersionStatus.DRAFT, providerType, providerId, modelId);
 
     version.setSystemPrompt(request.systemPrompt().trim());
-    version.setDefaultOptions(
-        AgentDefaultOptions.from(validateJsonObject("defaultOptions", request.defaultOptions())));
-    version.setToolBindings(
-        AgentToolBindings.from(validateJsonObject("toolBindings", request.toolBindings())));
-    version.setCostProfile(
-        AgentCostProfile.from(validateJsonObject("costProfile", request.costProfile())));
+    if (request.invocationOptions() == null) {
+      throw new IllegalArgumentException("Field 'invocationOptions' must not be null");
+    }
+    AgentInvocationOptions invocationOptions = request.invocationOptions();
+    AgentInvocationOptions.Provider invocationProvider = invocationOptions.provider();
+    if (invocationProvider == null || !StringUtils.hasText(invocationProvider.id())) {
+      throw new IllegalArgumentException("Field 'invocationOptions.provider.id' must not be blank");
+    }
+    if (!invocationProvider.id().equals(providerId)) {
+      throw new IllegalArgumentException(
+          "Field 'invocationOptions.provider.id' must match providerId");
+    }
+    if (!StringUtils.hasText(invocationProvider.modelId())) {
+      throw new IllegalArgumentException(
+          "Field 'invocationOptions.provider.modelId' must not be blank");
+    }
+    if (invocationProvider.type() != null && invocationProvider.type() != providerType) {
+      throw new IllegalArgumentException(
+          "Field 'invocationOptions.provider.type' must match providerType");
+    }
+    version.setInvocationOptions(invocationOptions);
     version.setSyncOnly(request.syncOnly() == null || request.syncOnly());
     version.setMaxTokens(request.maxTokens());
     version.setCreatedBy(request.createdBy().trim());
@@ -299,16 +314,6 @@ public class AgentCatalogService {
               + providerId);
     }
     return requested;
-  }
-
-  private JsonNode validateJsonObject(String fieldName, JsonNode node) {
-    if (node == null || node.isNull()) {
-      return null;
-    }
-    if (!node.isObject()) {
-      throw new IllegalArgumentException("Field '" + fieldName + "' must be a JSON object");
-    }
-    return node;
   }
 
   private void replaceCapabilities(AgentVersion version, List<AgentCapabilityRequest> requests) {

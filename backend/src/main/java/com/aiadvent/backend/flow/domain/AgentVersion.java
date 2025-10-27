@@ -1,12 +1,8 @@
 package com.aiadvent.backend.flow.domain;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
-import com.aiadvent.backend.flow.agent.converter.AgentCostProfileConverter;
-import com.aiadvent.backend.flow.agent.converter.AgentDefaultOptionsConverter;
-import com.aiadvent.backend.flow.agent.converter.AgentToolBindingsConverter;
-import com.aiadvent.backend.flow.agent.model.AgentCostProfile;
-import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
-import com.aiadvent.backend.flow.agent.model.AgentToolBindings;
+import com.aiadvent.backend.flow.agent.converter.AgentInvocationOptionsConverter;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -21,9 +17,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UuidGenerator;
-import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "agent_version")
@@ -58,20 +52,9 @@ public class AgentVersion {
   @Column(name = "system_prompt", columnDefinition = "TEXT")
   private String systemPrompt;
 
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "default_options", columnDefinition = "jsonb")
-  @Convert(converter = AgentDefaultOptionsConverter.class)
-  private AgentDefaultOptions defaultOptions = AgentDefaultOptions.empty();
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "tool_bindings", columnDefinition = "jsonb")
-  @Convert(converter = AgentToolBindingsConverter.class)
-  private AgentToolBindings toolBindings = AgentToolBindings.empty();
-
-  @JdbcTypeCode(SqlTypes.JSON)
-  @Column(name = "cost_profile", columnDefinition = "jsonb")
-  @Convert(converter = AgentCostProfileConverter.class)
-  private AgentCostProfile costProfile = AgentCostProfile.empty();
+  @Column(name = "agent_invocation_options", columnDefinition = "jsonb", nullable = false)
+  @Convert(converter = AgentInvocationOptionsConverter.class)
+  private AgentInvocationOptions invocationOptions = AgentInvocationOptions.empty();
 
   @Column(name = "sync_only", nullable = false)
   private boolean syncOnly = true;
@@ -153,28 +136,13 @@ public class AgentVersion {
     this.systemPrompt = systemPrompt;
   }
 
-  public AgentDefaultOptions getDefaultOptions() {
-    return defaultOptions != null ? defaultOptions : AgentDefaultOptions.empty();
+  public AgentInvocationOptions getInvocationOptions() {
+    return invocationOptions != null ? invocationOptions : AgentInvocationOptions.empty();
   }
 
-  public void setDefaultOptions(AgentDefaultOptions defaultOptions) {
-    this.defaultOptions = defaultOptions != null ? defaultOptions : AgentDefaultOptions.empty();
-  }
-
-  public AgentToolBindings getToolBindings() {
-    return toolBindings != null ? toolBindings : AgentToolBindings.empty();
-  }
-
-  public void setToolBindings(AgentToolBindings toolBindings) {
-    this.toolBindings = toolBindings != null ? toolBindings : AgentToolBindings.empty();
-  }
-
-  public AgentCostProfile getCostProfile() {
-    return costProfile != null ? costProfile : AgentCostProfile.empty();
-  }
-
-  public void setCostProfile(AgentCostProfile costProfile) {
-    this.costProfile = costProfile != null ? costProfile : AgentCostProfile.empty();
+  public void setInvocationOptions(AgentInvocationOptions invocationOptions) {
+    this.invocationOptions =
+        invocationOptions != null ? invocationOptions : AgentInvocationOptions.empty();
   }
 
   public boolean isSyncOnly() {

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.api.FlowEventDto;
 import com.aiadvent.backend.flow.api.FlowStartResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
@@ -93,13 +94,8 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
   @BeforeEach
   void cleanDatabase() {
-    jdbcTemplate.execute("TRUNCATE TABLE flow_job RESTART IDENTITY CASCADE");
-    flowEventRepository.deleteAll();
-    flowStepExecutionRepository.deleteAll();
-    flowSessionRepository.deleteAll();
-    flowDefinitionRepository.deleteAll();
-    agentVersionRepository.deleteAll();
-    agentDefinitionRepository.deleteAll();
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE flow_event, flow_step_execution, flow_job, flow_session, flow_definition_history, flow_definition, agent_capability, agent_version, agent_definition RESTART IDENTITY CASCADE");
     Mockito.reset(agentInvocationService);
   }
 
@@ -456,6 +452,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
             com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
             "openai",
             "gpt-4o-mini");
+    version.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
     return agentVersionRepository.save(version);
   }
 

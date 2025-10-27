@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.api.FlowDefinitionHistoryResponse;
 import com.aiadvent.backend.flow.api.FlowDefinitionResponse;
 import com.aiadvent.backend.flow.api.FlowDefinitionSummaryResponse;
@@ -38,6 +39,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -54,17 +56,12 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowJobRepository flowJobRepository;
   @Autowired private AgentDefinitionRepository agentDefinitionRepository;
   @Autowired private AgentVersionRepository agentVersionRepository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
   void clean() {
-    flowJobRepository.deleteAll();
-    flowEventRepository.deleteAll();
-    flowStepExecutionRepository.deleteAll();
-    flowSessionRepository.deleteAll();
-    agentVersionRepository.deleteAll();
-    agentDefinitionRepository.deleteAll();
-    flowDefinitionHistoryRepository.deleteAll();
-    flowDefinitionRepository.deleteAll();
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE flow_event, flow_step_execution, flow_job, flow_session, flow_definition_history, flow_definition, agent_capability, agent_version, agent_definition RESTART IDENTITY CASCADE");
   }
 
   @Test
@@ -163,14 +160,15 @@ class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
         agentDefinitionRepository.save(
             new AgentDefinition("customer-support", "Customer Support", "Handles onboarding", true));
     AgentVersion agentVersion =
-        agentVersionRepository.save(
-            new AgentVersion(
-                agentDefinition,
-                1,
-                AgentVersionStatus.PUBLISHED,
-                ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"));
+        new AgentVersion(
+            agentDefinition,
+            1,
+            AgentVersionStatus.PUBLISHED,
+            ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    agentVersion.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
+    agentVersion = agentVersionRepository.save(agentVersion);
     return agentVersion.getId();
   }
 

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.api.AgentDefinitionResponse;
 import com.aiadvent.backend.flow.api.AgentDefinitionSummaryResponse;
 import com.aiadvent.backend.flow.api.AgentVersionResponse;
@@ -33,6 +34,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,12 +46,11 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
   @Autowired private AgentDefinitionRepository agentDefinitionRepository;
   @Autowired private AgentVersionRepository agentVersionRepository;
   @Autowired private AgentCapabilityRepository agentCapabilityRepository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
   void clean() {
-    agentCapabilityRepository.deleteAll();
-    agentVersionRepository.deleteAll();
-    agentDefinitionRepository.deleteAll();
+    jdbcTemplate.execute("TRUNCATE TABLE agent_capability, agent_version, agent_definition RESTART IDENTITY CASCADE");
   }
 
   @Test
@@ -131,7 +132,10 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
     versionPayload.put("providerId", "openai");
     versionPayload.put("modelId", "gpt-4o-mini");
     versionPayload.put("systemPrompt", "You are a helpful solution architect.");
-    versionPayload.set("defaultOptions", objectMapper.createObjectNode().put("temperature", 0.2));
+    versionPayload.set(
+        "invocationOptions",
+        TestAgentInvocationOptionsFactory.minimalJson(
+            objectMapper, ChatProviderType.OPENAI, "openai", "gpt-4o-mini"));
     versionPayload.put("createdBy", "dave");
     ArrayNode capabilities = versionPayload.putArray("capabilities");
     capabilities
@@ -263,6 +267,10 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
                         .put("modelId", "gpt-4o-mini")
                         .put("systemPrompt", "Test prompt")
                         .put("createdBy", "mallory")
+                        .set(
+                            "invocationOptions",
+                            TestAgentInvocationOptionsFactory.minimalJson(
+                                objectMapper, ChatProviderType.OPENAI, "unknown", "gpt-4o-mini"))
                         .toString()))
         .andExpect(status().isBadRequest());
 
@@ -278,23 +286,32 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
                         .put("modelId", "gpt-4o-mini")
                         .put("systemPrompt", "Test prompt")
                         .put("createdBy", "mallory")
+                        .set(
+                            "invocationOptions",
+                            TestAgentInvocationOptionsFactory.minimalJson(
+                                objectMapper, ChatProviderType.OPENAI, "openai", "gpt-4o-mini"))
                         .toString()))
         .andExpect(status().isUnprocessableEntity());
 
-    mockMvc
-        .perform(
-            post("/api/agents/definitions/" + definition.getId() + "/versions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    objectMapper
-                        .createObjectNode()
-                        .put("providerType", ChatProviderType.OPENAI.name())
-                        .put("providerId", "openai")
-                        .put("modelId", "gpt-4o-mini")
-                        .put("systemPrompt", "Test prompt")
-                        .put("createdBy", "mallory")
-                        .put("defaultOptions", "invalid")
-                        .toString()))
-        .andExpect(status().isBadRequest());
+    MvcResult invalidInvocationOptionsResult =
+        mockMvc
+            .perform(
+                post("/api/agents/definitions/" + definition.getId() + "/versions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper
+                            .createObjectNode()
+                            .put("providerType", ChatProviderType.OPENAI.name())
+                            .put("providerId", "openai")
+                            .put("modelId", "gpt-4o-mini")
+                            .put("systemPrompt", "Test prompt")
+                            .put("createdBy", "mallory")
+                            .set("invocationOptions", objectMapper.createObjectNode())
+                            .toString()))
+            .andReturn();
+
+    int status = invalidInvocationOptionsResult.getResponse().getStatus();
+    String body = invalidInvocationOptionsResult.getResponse().getContentAsString();
+    assertThat(status).withFailMessage("expected 400 but was %s. body=%s", status, body).isEqualTo(400);
   }
 }

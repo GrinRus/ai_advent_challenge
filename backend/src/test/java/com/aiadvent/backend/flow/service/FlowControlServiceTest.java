@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
@@ -258,6 +259,7 @@ class FlowControlServiceTest {
             "openai",
             "gpt-4o-mini");
     setField(version, "id", id);
+    version.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
     return version;
   }
 

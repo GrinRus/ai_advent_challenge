@@ -6,7 +6,7 @@ import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.provider.model.UsageSource;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
-import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -64,7 +64,20 @@ class FlowPayloadMapperTest {
             "openai",
             "gpt-4.0");
     setField(agentVersion, "id", UUID.randomUUID());
-    agentVersion.setDefaultOptions(AgentDefaultOptions.from(objectMapper.createObjectNode().put("temperature", 0.2)));
+    agentVersion.setInvocationOptions(
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                ChatProviderType.OPENAI, "openai", "gpt-4.0", AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                null,
+                java.util.List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.2, null, null)),
+            AgentInvocationOptions.MemoryPolicy.empty(),
+            AgentInvocationOptions.RetryPolicy.empty(),
+            AgentInvocationOptions.AdvisorSettings.empty(),
+            new AgentInvocationOptions.Tooling(java.util.List.of()),
+            AgentInvocationOptions.CostProfile.empty()));
     stepExecution.setAgentVersion(agentVersion);
   }
 

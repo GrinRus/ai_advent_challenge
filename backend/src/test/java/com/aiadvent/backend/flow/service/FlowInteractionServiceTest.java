@@ -13,6 +13,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.config.FlowInteractionConfig;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -115,14 +116,7 @@ class FlowInteractionServiceTest {
     UUID stepExecutionId = UUID.randomUUID();
     setField(stepExecution, "id", stepExecutionId);
 
-    AgentVersion agentVersion =
-        new AgentVersion(
-            new AgentDefinition("agent", "Agent", null, true),
-            1,
-            AgentVersionStatus.PUBLISHED,
-            com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-            "openai",
-            "gpt-4o-mini");
+    AgentVersion agentVersion = buildAgentVersion();
     setField(agentVersion, "id", UUID.randomUUID());
 
     FlowInteractionConfig config =
@@ -175,14 +169,7 @@ class FlowInteractionServiceTest {
         new FlowStepExecution(session, "collect", FlowStepStatus.PENDING, 1);
     setField(stepExecution, "id", UUID.randomUUID());
 
-    AgentVersion agentVersion =
-        new AgentVersion(
-            new AgentDefinition("agent", "Agent", null, true),
-            1,
-            AgentVersionStatus.PUBLISHED,
-            com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-            "openai",
-            "gpt-4o-mini");
+    AgentVersion agentVersion = buildAgentVersion();
     setField(agentVersion, "id", UUID.randomUUID());
 
     ObjectNode suggested = objectMapper.createObjectNode();
@@ -260,18 +247,15 @@ class FlowInteractionServiceTest {
     UUID stepExecutionId = UUID.randomUUID();
     setField(stepExecution, "id", stepExecutionId);
 
+    AgentVersion agentVersion = buildAgentVersion();
+    setField(agentVersion, "id", UUID.randomUUID());
+
     FlowInteractionRequest request =
         new FlowInteractionRequest(
             session,
             stepExecution,
             UUID.randomUUID(),
-            new AgentVersion(
-                new AgentDefinition("agent", "Agent", null, true),
-                1,
-                AgentVersionStatus.PUBLISHED,
-                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"),
+            agentVersion,
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
@@ -324,18 +308,15 @@ class FlowInteractionServiceTest {
         new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
     setField(execution, "id", UUID.randomUUID());
 
+    AgentVersion agentVersion = buildAgentVersion();
+    setField(agentVersion, "id", UUID.randomUUID());
+
     FlowInteractionRequest request =
         new FlowInteractionRequest(
             session,
             execution,
             UUID.randomUUID(),
-            new AgentVersion(
-                new AgentDefinition("agent", "Agent", null, true),
-                1,
-                AgentVersionStatus.PUBLISHED,
-                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"),
+            agentVersion,
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
@@ -378,18 +359,15 @@ class FlowInteractionServiceTest {
     UUID stepExecutionId = UUID.randomUUID();
     setField(stepExecution, "id", stepExecutionId);
 
+    AgentVersion agentVersion = buildAgentVersion();
+    setField(agentVersion, "id", UUID.randomUUID());
+
     FlowInteractionRequest request =
         new FlowInteractionRequest(
             session,
             stepExecution,
             UUID.randomUUID(),
-            new AgentVersion(
-                new AgentDefinition("agent", "Agent", null, true),
-                1,
-                AgentVersionStatus.PUBLISHED,
-                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"),
+            agentVersion,
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
@@ -435,18 +413,15 @@ class FlowInteractionServiceTest {
         new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
     setField(stepExecution, "id", UUID.randomUUID());
 
+    AgentVersion agentVersion = buildAgentVersion();
+    setField(agentVersion, "id", UUID.randomUUID());
+
     FlowInteractionRequest request =
         new FlowInteractionRequest(
             session,
             stepExecution,
             UUID.randomUUID(),
-            new AgentVersion(
-                new AgentDefinition("agent", "Agent", null, true),
-                1,
-                AgentVersionStatus.PUBLISHED,
-                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"),
+            agentVersion,
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
@@ -491,18 +466,15 @@ class FlowInteractionServiceTest {
         new FlowStepExecution(session, "collect", FlowStepStatus.WAITING_USER_INPUT, 1);
     setField(execution, "id", UUID.randomUUID());
 
+    AgentVersion agentVersion = buildAgentVersion();
+    setField(agentVersion, "id", UUID.randomUUID());
+
     FlowInteractionRequest request =
         new FlowInteractionRequest(
             session,
             execution,
             UUID.randomUUID(),
-            new AgentVersion(
-                new AgentDefinition("agent", "Agent", null, true),
-                1,
-                AgentVersionStatus.PUBLISHED,
-                com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini"),
+            agentVersion,
             com.aiadvent.backend.flow.domain.FlowInteractionType.INPUT_FORM,
             FlowInteractionStatus.PENDING);
     setField(request, "id", UUID.randomUUID());
@@ -543,5 +515,18 @@ class FlowInteractionServiceTest {
     } catch (Exception exception) {
       throw new RuntimeException(exception);
     }
+  }
+
+  private AgentVersion buildAgentVersion() {
+    AgentVersion version =
+        new AgentVersion(
+            new AgentDefinition("agent", "Agent", null, true),
+            1,
+            AgentVersionStatus.PUBLISHED,
+            com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    version.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
+    return version;
   }
 }

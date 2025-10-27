@@ -1,6 +1,7 @@
 package com.aiadvent.backend.flow.service.payload;
 
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.FlowSession;
 import com.aiadvent.backend.flow.domain.FlowStepExecution;
@@ -226,8 +227,9 @@ public class FlowPayloadMapper {
     if (agentVersion.getMaxTokens() != null) {
       agentNode.put("maxTokens", agentVersion.getMaxTokens());
     }
-    if (!agentVersion.getDefaultOptions().isEmpty()) {
-      agentNode.set("defaultOptions", agentVersion.getDefaultOptions().asJson());
+    AgentInvocationOptions invocationOptions = agentVersion.getInvocationOptions();
+    if (invocationOptions != null && !AgentInvocationOptions.empty().equals(invocationOptions)) {
+      agentNode.set("invocationOptions", objectMapper.valueToTree(invocationOptions));
     }
     return agentNode;
   }

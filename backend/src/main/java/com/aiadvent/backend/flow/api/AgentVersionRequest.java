@@ -1,7 +1,7 @@
 package com.aiadvent.backend.flow.api;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import java.util.List;
 
 public record AgentVersionRequest(
@@ -9,9 +9,7 @@ public record AgentVersionRequest(
     String providerId,
     String modelId,
     String systemPrompt,
-    JsonNode defaultOptions,
-    JsonNode toolBindings,
-    JsonNode costProfile,
+    AgentInvocationOptions invocationOptions,
     Boolean syncOnly,
     Integer maxTokens,
     String createdBy,

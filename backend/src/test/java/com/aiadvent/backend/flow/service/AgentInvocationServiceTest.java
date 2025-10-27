@@ -17,7 +17,7 @@ import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.provider.model.UsageSource;
-import com.aiadvent.backend.flow.agent.model.AgentDefaultOptions;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -83,11 +83,21 @@ class AgentInvocationServiceTest {
             "gpt-4o-mini");
     agentVersion.setSystemPrompt("Base agent system prompt");
     agentVersion.setMaxTokens(1024);
-    ObjectNode defaultOptions = objectMapper.createObjectNode();
-    defaultOptions.put("temperature", 0.2);
-    defaultOptions.put("topP", 0.4);
-    defaultOptions.put("maxTokens", 1000);
-    agentVersion.setDefaultOptions(AgentDefaultOptions.from(defaultOptions));
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                ChatProviderType.OPENAI, "openai", "gpt-4o-mini", AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                null,
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.2, 0.4, 1000)),
+            AgentInvocationOptions.MemoryPolicy.empty(),
+            AgentInvocationOptions.RetryPolicy.empty(),
+            AgentInvocationOptions.AdvisorSettings.empty(),
+            new AgentInvocationOptions.Tooling(List.of()),
+            AgentInvocationOptions.CostProfile.empty());
+    agentVersion.setInvocationOptions(invocationOptions);
 
     ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
     when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
@@ -212,6 +222,20 @@ class AgentInvocationServiceTest {
             "openai",
             "gpt-4o-mini");
     agentVersion.setSystemPrompt("System");
+    agentVersion.setInvocationOptions(
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                ChatProviderType.OPENAI, "openai", "gpt-4o-mini", AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                null,
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.2, 0.9, 800)),
+            AgentInvocationOptions.MemoryPolicy.empty(),
+            AgentInvocationOptions.RetryPolicy.empty(),
+            AgentInvocationOptions.AdvisorSettings.empty(),
+            new AgentInvocationOptions.Tooling(List.of()),
+            AgentInvocationOptions.CostProfile.empty()));
 
     ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
     when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
@@ -120,6 +121,7 @@ class AgentOrchestratorServiceTest {
             "gpt-4o-mini");
     setField(agentVersion, "id", UUID.randomUUID());
     agentVersion.setSystemPrompt("Base agent system prompt");
+    agentVersion.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
 
     FlowStepConfig stepConfig =
         new FlowStepConfig(

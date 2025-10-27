@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
+import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.config.FlowInteractionConfig;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -81,6 +82,7 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
   @Autowired private FlowMemoryService flowMemoryService;
   @Autowired private FlowMemoryVersionRepository flowMemoryVersionRepository;
   @Autowired private FlowMemorySummaryRepository flowMemorySummaryRepository;
+  @Autowired private JdbcTemplate jdbcTemplate;
 
   @org.springframework.boot.test.mock.mockito.MockBean
   private FlowMemorySummarizerService flowMemorySummarizerService;
@@ -88,16 +90,8 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
   @BeforeEach
   void cleanDatabase() {
     org.mockito.Mockito.reset(jobQueuePort, telemetry);
-    responseRepository.deleteAll();
-    requestRepository.deleteAll();
-    flowEventRepository.deleteAll();
-    flowStepExecutionRepository.deleteAll();
-    flowSessionRepository.deleteAll();
-    flowDefinitionRepository.deleteAll();
-    agentVersionRepository.deleteAll();
-    agentDefinitionRepository.deleteAll();
-    flowMemoryVersionRepository.deleteAll();
-    flowMemorySummaryRepository.deleteAll();
+    jdbcTemplate.execute(
+        "TRUNCATE TABLE flow_memory_summary, flow_memory_version, flow_interaction_response, flow_interaction_request, flow_event, flow_step_execution, flow_session, flow_definition_history, flow_definition, agent_capability, agent_version, agent_definition RESTART IDENTITY CASCADE");
   }
 
   @Test
@@ -280,6 +274,8 @@ class FlowInteractionServiceIntegrationTest extends PostgresTestContainer {
                 ChatProviderType.OPENAI,
                 "openai",
                 "gpt-4o-mini"));
+    agentVersion.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
+    agentVersion = agentVersionRepository.save(agentVersion);
 
     stepExecution.setAgentVersion(agentVersion);
     stepExecution = flowStepExecutionRepository.save(stepExecution);
