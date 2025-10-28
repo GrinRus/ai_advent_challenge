@@ -1,6 +1,8 @@
 package com.aiadvent.backend.chat.service;
 
 import com.aiadvent.backend.chat.api.ChatInteractionMode;
+import com.aiadvent.backend.chat.config.ChatResearchProperties;
+import com.aiadvent.backend.chat.config.ChatResearchProperties.ToolBindingProperties;
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,34 +18,64 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatResearchToolBindingService {
 
-  private static final String RESEARCH_SYSTEM_PROMPT =
-      "You are a meticulous research analyst. Use the Perplexity MCP tooling to collect current information, enrich answers with concise insights, and always cite numbered sources like [1] referencing the returned tool results.";
-
-  private static final String RESEARCH_STRUCTURED_ADVICE =
-      """
-      При необходимости вызывай инструменты MCP Perplexity, чтобы получить актуальные данные. \
-      Включай ссылки на источники в поле `details`, оформляя их в формате [n], где n соответствует номеру источника. \
-      Если инструмент возвращает несколько ссылок, добавь краткое пояснение, чему соответствует каждая из них.
-      """;
-
   private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
   private final List<AgentInvocationOptions.ToolBinding> researchBindings;
+  private final List<String> defaultRequestedToolCodes;
+  private final String systemPrompt;
+  private final String structuredAdvice;
+  private final boolean hasConfiguredPrompt;
 
   public ChatResearchToolBindingService(
-      McpToolBindingService mcpToolBindingService, ObjectMapper objectMapper) {
+      McpToolBindingService mcpToolBindingService,
+      ObjectMapper objectMapper,
+      ChatResearchProperties researchProperties) {
     this.mcpToolBindingService = mcpToolBindingService;
     this.objectMapper = objectMapper;
-    this.researchBindings = List.of(buildSearchBinding());
+    List<AgentInvocationOptions.ToolBinding> bindingsFromConfig =
+        researchProperties.getTools().isEmpty()
+            ? List.of(buildDefaultBinding())
+            : researchProperties.getTools().stream()
+                .map(this::toBinding)
+                .filter(binding -> hasText(binding.toolCode()))
+                .toList();
+
+    this.researchBindings = bindingsFromConfig;
+
+    List<String> configuredDefaults =
+        researchProperties.getDefaultToolCodes().isEmpty()
+            ? bindingsFromConfig.stream()
+                .filter(binding -> binding.executionMode() != AgentInvocationOptions.ExecutionMode.MANUAL)
+                .map(binding -> normalizeCode(binding.toolCode()))
+                .filter(ChatResearchToolBindingService::hasText)
+                .toList()
+            : researchProperties.getDefaultToolCodes().stream()
+                .map(ChatResearchToolBindingService::normalizeCode)
+                .filter(ChatResearchToolBindingService::hasText)
+                .toList();
+
+    this.defaultRequestedToolCodes = List.copyOf(configuredDefaults);
+    this.systemPrompt = researchProperties.getSystemPrompt();
+    this.structuredAdvice = researchProperties.getStructuredAdvice();
+    this.hasConfiguredPrompt = hasText(systemPrompt) || hasText(structuredAdvice);
   }
 
   public ResearchContext resolve(ChatInteractionMode mode, String userQuery) {
+    return resolve(mode, userQuery, null);
+  }
+
+  public ResearchContext resolve(
+      ChatInteractionMode mode, String userQuery, List<String> requestedToolCodes) {
     if (!mode.isResearch() || !hasText(userQuery)) {
       return ResearchContext.empty();
     }
+    List<String> normalizedRequested = normalizeRequestedToolCodes(requestedToolCodes);
+    List<String> selectionCodes =
+        !normalizedRequested.isEmpty() ? normalizedRequested : defaultRequestedToolCodes;
+
     List<McpToolBindingService.ResolvedTool> resolvedTools =
         mcpToolBindingService.resolveCallbacks(
-            researchBindings, userQuery, List.of("perplexity_search"), Collections.emptyMap());
+            researchBindings, userQuery, selectionCodes, Collections.emptyMap());
 
     if (resolvedTools.isEmpty()) {
       return ResearchContext.empty();
@@ -54,11 +86,13 @@ public class ChatResearchToolBindingService {
     List<String> toolCodes =
         resolvedTools.stream()
             .map(McpToolBindingService.ResolvedTool::toolCode)
-            .map(code -> code != null ? code.toLowerCase(Locale.ROOT) : null)
+            .map(ChatResearchToolBindingService::normalizeCode)
             .filter(ChatResearchToolBindingService::hasText)
             .toList();
 
-    return new ResearchContext(RESEARCH_SYSTEM_PROMPT, RESEARCH_STRUCTURED_ADVICE, callbacks, toolCodes);
+    String prompt = hasConfiguredPrompt ? systemPrompt : null;
+    String advice = hasConfiguredPrompt ? structuredAdvice : null;
+    return new ResearchContext(prompt, advice, callbacks, toolCodes);
   }
 
   public Optional<JsonNode> tryParseStructuredPayload(ChatInteractionMode mode, String content) {
@@ -76,7 +110,7 @@ public class ChatResearchToolBindingService {
     return Optional.empty();
   }
 
-  private AgentInvocationOptions.ToolBinding buildSearchBinding() {
+  private AgentInvocationOptions.ToolBinding buildDefaultBinding() {
     ObjectNode overrides = objectMapper.createObjectNode();
     overrides.put("max_results", 8);
     return new AgentInvocationOptions.ToolBinding(
@@ -87,8 +121,42 @@ public class ChatResearchToolBindingService {
         null);
   }
 
+  private AgentInvocationOptions.ToolBinding toBinding(ToolBindingProperties properties) {
+    if (!hasText(properties.code())) {
+      return new AgentInvocationOptions.ToolBinding(
+          null, 0, properties.executionMode(), objectMapper.createObjectNode(), null);
+    }
+    ObjectNode overrides =
+        properties.requestOverrides().isEmpty()
+            ? objectMapper.createObjectNode()
+            : objectMapper.valueToTree(properties.requestOverrides());
+    if (overrides == null || overrides.isNull()) {
+      overrides = objectMapper.createObjectNode();
+    }
+    return new AgentInvocationOptions.ToolBinding(
+        properties.code(),
+        properties.schemaVersion(),
+        properties.executionMode(),
+        overrides,
+        null);
+  }
+
   private static boolean hasText(String value) {
     return value != null && !value.trim().isEmpty();
+  }
+
+  private static String normalizeCode(String code) {
+    return hasText(code) ? code.trim().toLowerCase(Locale.ROOT) : null;
+  }
+
+  private static List<String> normalizeRequestedToolCodes(List<String> codes) {
+    if (codes == null || codes.isEmpty()) {
+      return List.of();
+    }
+    return codes.stream()
+        .map(ChatResearchToolBindingService::normalizeCode)
+        .filter(ChatResearchToolBindingService::hasText)
+        .toList();
   }
 
   public record ResearchContext(

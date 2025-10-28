@@ -59,7 +59,10 @@ class StructuredSyncServiceTest {
             preflightManager,
             researchToolBindingService);
     lenient()
-        .when(researchToolBindingService.resolve(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString()))
+        .when(researchToolBindingService.resolve(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyList()))
         .thenReturn(ChatResearchToolBindingService.ResearchContext.empty());
   }
 

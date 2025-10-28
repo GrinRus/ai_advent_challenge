@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -32,6 +33,19 @@ public record ChatStreamRequest(
         String message,
     @Schema(description = "Explicit provider identifier; defaults to the configured provider.") String provider,
     @Schema(description = "Explicit model identifier; defaults to the provider's default model.") String model,
-    @Schema(description = "Optional interaction mode: set to 'research' to enable Perplexity tooling.")
+    @Schema(description = "Optional interaction mode: set to 'research' to enable MCP tooling.")
         String mode,
-    @Schema(description = "Optional overrides for sampling parameters.") @Valid ChatStreamRequestOptions options) {}
+    @Schema(description = "Explicit tool codes to request from MCP servers (case-insensitive).")
+        List<String> requestedToolCodes,
+    @Schema(description = "Optional overrides for sampling parameters.") @Valid ChatStreamRequestOptions options) {
+
+  public ChatStreamRequest(
+      UUID sessionId,
+      String message,
+      String provider,
+      String model,
+      String mode,
+      @Valid ChatStreamRequestOptions options) {
+    this(sessionId, message, provider, model, mode, null, options);
+  }
+}

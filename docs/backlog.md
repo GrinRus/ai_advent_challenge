@@ -704,18 +704,18 @@
 - `agent-ops-mcp` — self-service для `AgentCatalogService`/`AgentConstructorService`: регистрация новых агентов, изменение статусов, клонирование конфигураций и диагностика зависимостей инструментов.
 
 ### Backend
-- [ ] Создать отдельный Gradle-модуль `backend-mcp` (Spring Boot 3 + `spring-ai-mcp-spring-boot-starter`) с STDIO-лаунчером и Dockerfile.
+- [x] Создать отдельный Gradle-модуль `backend-mcp` (Spring Boot 3 + `spring-ai-mcp-spring-boot-starter`) с STDIO-лаунчером и Dockerfile.
 - [ ] Реализовать `flow-ops-mcp`: инструменты `list_flows`, `diff_flow_version`, `validate_blueprint`, `publish_flow`, `rollback_flow` с обращением к существующим сервисам и аудитом через `ChatLoggingSupport`.
 - [ ] Реализовать `insight-mcp`: инструменты `recent_sessions`, `fetch_summary`, `search_memory`, `fetch_metrics` c использованием `FlowMemoryService`, `ChatMemoryService`, `TelemetryService`.
-- [ ] Реализовать `agent-ops-mcp`: стартовая итерация — `list_agents`, `register_agent`, `preview_dependencies` (валидация `ToolBinding`, structured ответы для UI); последующие итерации — `clone_agent`, `update_status`, расширенные проверки.
+- [x] Реализовать `agent-ops-mcp`: стартовая итерация — `list_agents`, `register_agent`, `preview_dependencies` (валидация `ToolBinding`, structured ответы для UI); последующие итерации — `clone_agent`, `update_status`, расширенные проверки.
 - [ ] Интегрировать `backend-mcp` с основным `backend`-приложением: регистрация STDIO-клиентов, health-indicator'ы, security policy и wiring новых `ToolSchemaVersion` в `McpToolBindingService`.
-- [ ] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
+- [x] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
 - [ ] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
 - [ ] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
-- [ ] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
-- [ ] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.
-- [ ] Настроить канал обновлений health (`/api/mcp/events` SSE): рассылка статусов (`serverId`, `status`, `latencyMs`, `tools[]`), fallback на polling `GET /api/mcp/health`.
+- [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
+- [x] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.
+- [x] Настроить канал обновлений health (`/api/mcp/events` SSE): рассылка статусов (`serverId`, `status`, `latencyMs`, `tools[]`), fallback на polling `GET /api/mcp/health`.
 
 ### Frontend
 - [ ] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.

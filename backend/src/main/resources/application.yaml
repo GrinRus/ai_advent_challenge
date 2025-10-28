@@ -35,6 +35,11 @@ spring:
               args: []                  # обычно без аргументов
               env:
                 PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:demo-perplexity-key}
+            agentops:
+              command: ${AGENT_OPS_MCP_CMD:agent-ops-mcp}
+              args: []
+              env:
+                AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:http://localhost:8080}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -106,6 +111,22 @@ logging:
 
 app:
   chat:
+    research:
+      system-prompt: |
+        You are a meticulous research analyst. Use the configured MCP tools to collect current
+        information, enrich answers with concise insights, and always cite numbered sources like [1].
+      structured-advice: |
+        При необходимости вызывай подключенные MCP-инструменты, чтобы получить актуальные данные.
+        Включай ссылки на источники в поле `details`, оформляя их в формате [n], где n соответствует номеру источника.
+        Если инструмент возвращает несколько ссылок, добавь краткое пояснение каждой.
+      tools:
+        - code: perplexity_search
+          schema-version: 1
+          execution-mode: AUTO
+          request-overrides:
+            max_results: 8
+      default-tool-codes:
+        - perplexity_search
     logging:
       model:
         enabled: ${CHAT_LOGGING_MODEL_ENABLED:true}
@@ -256,6 +277,19 @@ app:
               output-per-1k-tokens: 0.01
             usage:
               mode: native
+
+  mcp:
+    catalog:
+      servers:
+        perplexity:
+          display-name: "Perplexity MCP"
+          description: "Поисковый и research-сервер Perplexity (search / deep research)."
+          tags: ["search", "research"]
+        agentops:
+          display-name: "Agent Ops MCP"
+          description: "Управление каталогом агентов: регистрация, просмотр и диагностика зависимостей."
+          tags: ["agents", "operations"]
+
   flow:
     api:
       v2-enabled: ${FLOW_API_V2_ENABLED:false}

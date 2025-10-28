@@ -26,7 +26,7 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 @Configuration
-@EnableConfigurationProperties(ChatProvidersProperties.class)
+@EnableConfigurationProperties({ChatProvidersProperties.class, ChatResearchProperties.class})
 public class ChatProviderConfiguration {
 
   @Bean

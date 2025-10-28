@@ -2,6 +2,7 @@ package com.aiadvent.backend.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -46,6 +47,13 @@ class SyncChatServiceTest {
             preflightManager,
             researchToolBindingService,
             structuredOutputConverter);
+    lenient()
+        .when(
+            researchToolBindingService.resolve(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList()))
+        .thenReturn(ChatResearchToolBindingService.ResearchContext.empty());
   }
 
   @Test

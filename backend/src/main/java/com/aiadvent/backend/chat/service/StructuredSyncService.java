@@ -130,7 +130,8 @@ public class StructuredSyncService extends AbstractSyncService {
         chatProviderService.buildStructuredOptions(selection, overrides, outputConverter);
 
     String sanitizedPrompt = sanitizeUserPrompt(request.message());
-    ResearchContext researchContext = researchToolBindingService.resolve(mode, sanitizedPrompt);
+    ResearchContext researchContext =
+        researchToolBindingService.resolve(mode, sanitizedPrompt, request.requestedToolCodes());
 
     String systemInstruction =
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());

@@ -110,7 +110,8 @@ public class SyncChatService extends AbstractSyncService {
     }
 
     String userPrompt = sanitizeMessage(request.message());
-    ResearchContext researchContext = researchToolBindingService.resolve(mode, userPrompt);
+    ResearchContext researchContext =
+        researchToolBindingService.resolve(mode, userPrompt, request.requestedToolCodes());
 
     if (log.isDebugEnabled() && researchContext.hasCallbacks()) {
       log.debug(

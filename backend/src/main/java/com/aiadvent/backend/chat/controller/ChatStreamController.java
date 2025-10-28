@@ -79,7 +79,7 @@ public class ChatStreamController {
     ChatInteractionMode mode = ChatInteractionMode.from(request.mode());
     String sanitizedMessage = sanitizeMessage(request.message());
     ResearchContext researchContext =
-        researchToolBindingService.resolve(mode, sanitizedMessage);
+        researchToolBindingService.resolve(mode, sanitizedMessage, request.requestedToolCodes());
 
     ConversationContext context =
         chatService.registerUserMessage(
