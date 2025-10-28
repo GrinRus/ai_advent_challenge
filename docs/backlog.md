@@ -714,8 +714,8 @@
 - [x] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [x] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
-- [x] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.
-- [x] Настроить канал обновлений health (`/api/mcp/events` SSE): рассылка статусов (`serverId`, `status`, `latencyMs`, `tools[]`), fallback на polling `GET /api/mcp/health`.
+- [ ] Завершить канал обновлений health (`/api/mcp/events` SSE): добавить `latencyMs` в payload и реализовать fallback `GET /api/mcp/health`.
+- [ ] Актуализировать предупреждения логгера MCP: убрать упоминание только Perplexity в `McpToolBindingService`.
 
 ### Frontend
 - [x] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.
@@ -728,10 +728,11 @@
 - [x] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
 - [x] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
 - [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку отказов STDIO.
+- [ ] Добавить backend smoke/contract тесты для `/api/mcp/catalog`, SSE `/api/mcp/events` с `latencyMs` и сценариев выбора MCP-инструментов.
 
 ### Infrastructure & Ops
 - [x] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
-- [ ] Перенастроить метрики/алерты (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги и добавить отдельные actuator health endpoints для каждого MCP-сервера.
+- [ ] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
 
 ### Docs & Enablement
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
