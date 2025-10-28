@@ -731,9 +731,7 @@
 
 ### Infrastructure & Ops
 - [x] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
-- [ ] Подготовить Helm/Compose deployment для MCP: ресурсы контейнеров, rotation ключей, алерты по недоступности STDIO.
 - [ ] Перенастроить метрики/алерты (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги и добавить отдельные actuator health endpoints для каждого MCP-сервера.
-- [ ] Протянуть SSE endpoint через ingress/proxy, задокументировать сетевые требования и лимиты подключений; обеспечить деградацию до polling при отсутствии SSE.
 
 ### Docs & Enablement
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
