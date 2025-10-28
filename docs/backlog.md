@@ -712,16 +712,16 @@
 - [x] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
 - [x] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
 - [x] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
-- [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
+- [x] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
 - [x] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.
 - [x] Настроить канал обновлений health (`/api/mcp/events` SSE): рассылка статусов (`serverId`, `status`, `latencyMs`, `tools[]`), fallback на polling `GET /api/mcp/health`.
 
 ### Frontend
-- [ ] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.
-- [ ] Отрисовывать в карточках ответа бейджи активных MCP-инструментов, раскрывать structured payload (ID агента, ссылки на flow и т.п.), обрабатывать ошибки STDIO с подсказками пользователю.
-- [ ] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности, capability hints) в DTO чата и агентов, кешировать выбор на время сессии.
-- [ ] Интегрировать SSE-поток/периодический polling health: обновление UI-индикаторов и отключение недоступных MCP-инструментов в режиме реального времени.
+- [x] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.
+- [x] Отрисовывать в карточках ответа бейджи активных MCP-инструментов, раскрывать structured payload (ID агента, ссылки на flow и т.п.), обрабатывать ошибки STDIO с подсказками пользователю.
+- [x] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности, capability hints) в DTO чата и агентов, кешировать выбор на время сессии.
+- [x] Интегрировать SSE-поток/периодический polling health: обновление UI-индикаторов и отключение недоступных MCP-инструментов в режиме реального времени.
 
 ### Tests & QA
 - [ ] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.

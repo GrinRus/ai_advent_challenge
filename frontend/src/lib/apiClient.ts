@@ -82,6 +82,38 @@ export type {
 } from './types/flowInteraction';
 export type { JsonValue } from './types/json';
 
+export type McpToolSummary = {
+  code: string;
+  displayName?: string | null;
+  description?: string | null;
+  mcpToolName?: string | null;
+  schemaVersion: number;
+  available: boolean;
+};
+
+export type McpServerSummary = {
+  id: string;
+  displayName?: string | null;
+  description?: string | null;
+  tags: string[];
+  status: 'UP' | 'DOWN' | 'UNKNOWN';
+  securityPolicy?: string | null;
+  tools: McpToolSummary[];
+};
+
+export type McpCatalogResponse = {
+  servers: McpServerSummary[];
+};
+
+export type McpHealthEvent = {
+  serverId: string;
+  status: 'UP' | 'DOWN' | 'UNKNOWN';
+  toolCount: number;
+  availableTools: string[];
+  unavailableTools: string[];
+  timestamp: string;
+};
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? '/api';
 export const CHAT_STREAM_URL = `${API_BASE_URL}/llm/chat/stream`;
@@ -178,6 +210,14 @@ function parseJsonBodyOrThrow(raw: string, context: string): unknown {
   return parsed;
 }
 
+export function parseMcpHealthEvent(payload: unknown): McpHealthEvent {
+  return validateWithSchema(
+    payload,
+    McpHealthEventSchema,
+    'Некорректный формат события MCP health',
+  );
+}
+
 export type AgentCapabilityResponse = AgentCapability;
 export type AgentVersionResponse = AgentVersion;
 
@@ -239,6 +279,7 @@ export type ChatSyncRequest = {
   provider?: string;
   model?: string;
   mode?: string;
+  requestedToolCodes?: string[];
   options?: {
     temperature?: number;
     topP?: number;
@@ -320,6 +361,38 @@ const StructuredSyncAnswerSchema = z.object({
   summary: z.string().nullable().optional(),
   items: z.array(StructuredSyncItemSchema).optional(),
   confidence: z.number().nullable().optional(),
+});
+
+const McpToolSchema = z.object({
+  code: z.string(),
+  displayName: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  mcpToolName: z.string().nullable().optional(),
+  schemaVersion: z.number(),
+  available: z.boolean(),
+});
+
+const McpServerSchema = z.object({
+  id: z.string(),
+  displayName: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  tags: z.array(z.string()),
+  status: z.enum(['UP', 'DOWN', 'UNKNOWN']),
+  securityPolicy: z.string().nullable().optional(),
+  tools: z.array(McpToolSchema),
+});
+
+const McpCatalogSchema = z.object({
+  servers: z.array(McpServerSchema),
+});
+
+const McpHealthEventSchema = z.object({
+  serverId: z.string(),
+  status: z.enum(['UP', 'DOWN', 'UNKNOWN']),
+  toolCount: z.number(),
+  availableTools: z.array(z.string()),
+  unavailableTools: z.array(z.string()),
+  timestamp: z.string(),
 });
 
 const StructuredSyncResponseSchema = z.object({
@@ -564,6 +637,19 @@ export async function fetchChatProviders(): Promise<ChatProvidersResponse> {
   }
 
   return response.json() as Promise<ChatProvidersResponse>;
+}
+
+export async function fetchMcpCatalog(): Promise<McpCatalogResponse> {
+  const response = await fetch(`${API_BASE_URL}/mcp/catalog`, {
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+  return parseJsonResponse(
+    response,
+    McpCatalogSchema,
+    'Не удалось загрузить каталог MCP',
+  );
 }
 
 type CacheRecord<T> = {

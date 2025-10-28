@@ -195,6 +195,207 @@
   gap: 1rem;
 }
 
+.llm-chat-tool-badges,
+.structured-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.llm-chat-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.llm-chat-tool-badge-icon {
+  font-size: 0.85rem;
+}
+
+.llm-chat-tool-badge-server {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.llm-chat-tool-badge.status-up {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #047857;
+}
+
+.llm-chat-tool-badge.status-down {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #b91c1c;
+}
+
+.llm-chat-tool-badge.status-unknown {
+  background-color: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
+.llm-chat-mcp {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.llm-chat-mcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.llm-chat-mcp-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.llm-chat-mcp-title {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.llm-chat-mcp-subtitle {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.llm-chat-mcp-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.llm-chat-mcp-summary {
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.llm-chat-mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.llm-chat-mcp-server {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.llm-chat-mcp-server:hover {
+  border-color: #cbd5f5;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.llm-chat-mcp-checkbox {
+  margin-top: 0.4rem;
+}
+
+.llm-chat-mcp-server-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.llm-chat-mcp-server-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.llm-chat-mcp-server-name {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.95rem;
+}
+
+.llm-chat-mcp-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.llm-chat-mcp-status.status-up {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #047857;
+}
+
+.llm-chat-mcp-status.status-down {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #b91c1c;
+}
+
+.llm-chat-mcp-status.status-unknown {
+  background-color: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
+.llm-chat-mcp-description {
+  font-size: 0.8rem;
+  color: #475569;
+  margin: 0;
+}
+
+.llm-chat-mcp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: #1e293b;
+}
+
+.llm-chat-mcp-meta-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+.llm-chat-mcp-meta-entry.muted {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.llm-chat-mcp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.llm-chat-mcp-tag {
+  font-size: 0.7rem;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid #c7d2fe;
+}
+
 .llm-chat-sampling {
   display: flex;
   flex-direction: column;
@@ -492,6 +693,12 @@
   border-radius: 0.75rem;
   padding: 0.65rem 0.9rem;
   font-size: 0.9rem;
+}
+
+.llm-chat-hint {
+  color: #2563eb;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .llm-chat-form {
@@ -825,6 +1032,31 @@
 .structured-value {
   font-weight: 600;
   color: #1f2937;
+}
+
+.structured-raw {
+  margin-top: 0.75rem;
+}
+
+.structured-raw summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.structured-raw pre {
+  margin-top: 0.55rem;
+  border-radius: 0.6rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.75rem;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .structured-placeholder {

@@ -58,7 +58,7 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
   }
 
   @Test
-  void listTemplatesIncludesPerplexityResearch() throws Exception {
+  void listTemplatesExposeBuiltInTemplates() throws Exception {
     MvcResult result =
         mockMvc.perform(get("/api/agents/templates")).andExpect(status().isOk()).andReturn();
 
@@ -67,34 +67,70 @@ class AgentDefinitionControllerIntegrationTest extends PostgresTestContainer {
             result.getResponse().getContentAsString(), AgentTemplateResponse.class);
 
     assertThat(response.templates()).isNotEmpty();
-    AgentTemplateResponse.AgentTemplate template =
+    java.util.Map<String, AgentTemplateResponse.AgentTemplate> templatesById =
         response.templates().stream()
-            .filter(t -> t.identifier().equals("perplexity-research"))
-            .findFirst()
-            .orElseThrow();
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    AgentTemplateResponse.AgentTemplate::identifier, template -> template));
 
-    assertThat(template.displayName()).isEqualTo("Perplexity Research");
-    assertThat(template.syncOnly()).isTrue();
-    assertThat(template.maxTokens()).isEqualTo(1_400);
+    assertThat(templatesById)
+        .containsKeys(
+            "perplexity-research", "flow-ops-operator", "agent-ops-admin", "insight-analyst");
 
-    AgentInvocationOptions options = template.invocationOptions();
-    assertThat(options.provider().id()).isEqualTo("openai");
-    assertThat(options.provider().modelId()).isEqualTo("gpt-4o-mini");
-    assertThat(options.tooling().bindings())
+    AgentTemplateResponse.AgentTemplate perplexity = templatesById.get("perplexity-research");
+    assertThat(perplexity.displayName()).isEqualTo("Perplexity Research");
+    assertThat(perplexity.syncOnly()).isTrue();
+    assertThat(perplexity.maxTokens()).isEqualTo(1_400);
+
+    AgentInvocationOptions perplexityOptions = perplexity.invocationOptions();
+    assertThat(perplexityOptions.provider().id()).isEqualTo("openai");
+    assertThat(perplexityOptions.provider().modelId()).isEqualTo("gpt-4o-mini");
+    assertThat(perplexityOptions.tooling().bindings())
         .extracting(AgentInvocationOptions.ToolBinding::toolCode)
         .containsExactly("perplexity_search", "perplexity_deep_research");
 
-    AgentTemplateResponse.AgentTemplateCapability capability =
-        template.capabilities().stream()
+    AgentTemplateResponse.AgentTemplateCapability perplexityCapability =
+        perplexity.capabilities().stream()
             .filter(cap -> cap.capability().equals("perplexity.tools"))
             .findFirst()
             .orElseThrow();
-    assertThat(capability.payload().path("default").asText()).isEqualTo("perplexity_search");
-    JsonNode optionsNode = capability.payload().path("options");
+    assertThat(perplexityCapability.payload().path("default").asText())
+        .isEqualTo("perplexity_search");
+    JsonNode optionsNode = perplexityCapability.payload().path("options");
     assertThat(optionsNode.isArray()).isTrue();
     java.util.Set<String> optionCodes = new java.util.HashSet<>();
     optionsNode.forEach(node -> optionCodes.add(node.asText()));
     assertThat(optionCodes).contains("perplexity_search", "perplexity_deep_research");
+
+    AgentTemplateResponse.AgentTemplate flowOps = templatesById.get("flow-ops-operator");
+    assertThat(flowOps.displayName()).isEqualTo("Flow Ops Operator");
+    assertThat(flowOps.invocationOptions().tooling().bindings())
+        .extracting(AgentInvocationOptions.ToolBinding::toolCode)
+        .containsExactly(
+            "flow_ops.list_flows",
+            "flow_ops.diff_flow_version",
+            "flow_ops.validate_blueprint",
+            "flow_ops.publish_flow",
+            "flow_ops.rollback_flow");
+    AgentInvocationOptions.ToolBinding listFlowsBinding =
+        flowOps.invocationOptions().tooling().bindings().get(0);
+    assertThat(listFlowsBinding.requestOverrides().path("limit").asInt()).isEqualTo(25);
+
+    AgentTemplateResponse.AgentTemplate agentOps = templatesById.get("agent-ops-admin");
+    AgentInvocationOptions.ToolBinding registerBinding =
+        agentOps.invocationOptions().tooling().bindings().stream()
+            .filter(binding -> binding.toolCode().equals("agent_ops.register_agent"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(registerBinding.requestOverrides().path("active").asBoolean()).isTrue();
+
+    AgentTemplateResponse.AgentTemplate insight = templatesById.get("insight-analyst");
+    AgentInvocationOptions.ToolBinding searchMemoryBinding =
+        insight.invocationOptions().tooling().bindings().stream()
+            .filter(binding -> binding.toolCode().equals("insight.search_memory"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(searchMemoryBinding.requestOverrides().path("limit").asInt()).isEqualTo(25);
   }
 
   @Test

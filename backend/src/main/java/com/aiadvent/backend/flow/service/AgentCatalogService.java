@@ -22,6 +22,7 @@ import com.aiadvent.backend.flow.persistence.AgentCapabilityRepository;
 import com.aiadvent.backend.flow.persistence.AgentDefinitionRepository;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
 import com.aiadvent.backend.flow.telemetry.ConstructorTelemetryService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -56,6 +57,48 @@ public class AgentCatalogService {
   private static final String PERPLEXITY_SEARCH_TOOL = "perplexity_search";
   private static final String PERPLEXITY_DEEP_RESEARCH_TOOL = "perplexity_deep_research";
 
+  private static final String FLOW_OPS_TEMPLATE_IDENTIFIER = "flow-ops-operator";
+  private static final String FLOW_OPS_TEMPLATE_DISPLAY_NAME = "Flow Ops Operator";
+  private static final String FLOW_OPS_TEMPLATE_DESCRIPTION =
+      "Default template for managing flow definitions via Flow Ops MCP tools.";
+  private static final String FLOW_OPS_SYSTEM_PROMPT =
+      "You are a flow operations assistant. Use the Flow Ops MCP tools to inspect definitions, "
+          + "validate blueprints, and manage releases. Ask for confirmation before publish or rollback.";
+  private static final String FLOW_OPS_PROVIDER_ID = "openai";
+  private static final String FLOW_OPS_MODEL_ID = "gpt-4o-mini";
+  private static final String FLOW_OPS_LIST_FLOWS_TOOL = "flow_ops.list_flows";
+  private static final String FLOW_OPS_DIFF_VERSION_TOOL = "flow_ops.diff_flow_version";
+  private static final String FLOW_OPS_VALIDATE_TOOL = "flow_ops.validate_blueprint";
+  private static final String FLOW_OPS_PUBLISH_TOOL = "flow_ops.publish_flow";
+  private static final String FLOW_OPS_ROLLBACK_TOOL = "flow_ops.rollback_flow";
+
+  private static final String AGENT_OPS_TEMPLATE_IDENTIFIER = "agent-ops-admin";
+  private static final String AGENT_OPS_TEMPLATE_DISPLAY_NAME = "Agent Ops Administrator";
+  private static final String AGENT_OPS_TEMPLATE_DESCRIPTION =
+      "Template agent for administering the agent catalog through Agent Ops MCP.";
+  private static final String AGENT_OPS_SYSTEM_PROMPT =
+      "You are an agent catalog administrator. Use the Agent Ops MCP tools to list, register, and "
+          + "inspect agents. Always confirm destructive actions with the user.";
+  private static final String AGENT_OPS_PROVIDER_ID = "openai";
+  private static final String AGENT_OPS_MODEL_ID = "gpt-4o-mini";
+  private static final String AGENT_OPS_LIST_AGENTS_TOOL = "agent_ops.list_agents";
+  private static final String AGENT_OPS_REGISTER_TOOL = "agent_ops.register_agent";
+  private static final String AGENT_OPS_PREVIEW_DEPENDENCIES_TOOL = "agent_ops.preview_dependencies";
+
+  private static final String INSIGHT_TEMPLATE_IDENTIFIER = "insight-analyst";
+  private static final String INSIGHT_TEMPLATE_DISPLAY_NAME = "Insight Analyst";
+  private static final String INSIGHT_TEMPLATE_DESCRIPTION =
+      "Template agent for analysing chat and flow telemetry with Insight MCP.";
+  private static final String INSIGHT_SYSTEM_PROMPT =
+      "You are an analytics specialist. Use the Insight MCP tools to review sessions, surface "
+          + "summaries, search memory, and report telemetry trends.";
+  private static final String INSIGHT_PROVIDER_ID = "openai";
+  private static final String INSIGHT_MODEL_ID = "gpt-4o-mini";
+  private static final String INSIGHT_RECENT_SESSIONS_TOOL = "insight.recent_sessions";
+  private static final String INSIGHT_FETCH_SUMMARY_TOOL = "insight.fetch_summary";
+  private static final String INSIGHT_SEARCH_MEMORY_TOOL = "insight.search_memory";
+  private static final String INSIGHT_FETCH_METRICS_TOOL = "insight.fetch_metrics";
+
   public AgentCatalogService(
       AgentDefinitionRepository agentDefinitionRepository,
       AgentVersionRepository agentVersionRepository,
@@ -78,7 +121,12 @@ public class AgentCatalogService {
 
   @Transactional(readOnly = true)
   public AgentTemplateResponse listTemplates() {
-    return new AgentTemplateResponse(List.of(buildPerplexityResearchTemplate()));
+    return new AgentTemplateResponse(
+        List.of(
+            buildPerplexityResearchTemplate(),
+            buildFlowOpsOperatorTemplate(),
+            buildAgentOpsAdministratorTemplate(),
+            buildInsightAnalystTemplate()));
   }
 
   @Transactional(readOnly = true)
@@ -485,12 +533,8 @@ public class AgentCatalogService {
   }
 
   private AgentTemplate buildPerplexityResearchTemplate() {
-    ChatProvidersProperties.Provider providerConfig =
-        chatProviderRegistry.requireProvider(PERPLEXITY_PROVIDER_ID);
     ChatProviderType providerType =
-        providerConfig != null && providerConfig.getType() != null
-            ? providerConfig.getType()
-            : ChatProviderType.OPENAI;
+        resolveConfiguredProviderType(PERPLEXITY_PROVIDER_ID, PERPLEXITY_MODEL_ID);
 
     AgentInvocationOptions invocationOptions =
         new AgentInvocationOptions(
@@ -530,12 +574,10 @@ public class AgentCatalogService {
                         AgentInvocationOptions.ExecutionMode.AUTO,
                         buildPerplexitySearchOverrides(),
                         null),
-                    new AgentInvocationOptions.ToolBinding(
+                    manualTool(
                         PERPLEXITY_DEEP_RESEARCH_TOOL,
                         1,
-                        AgentInvocationOptions.ExecutionMode.MANUAL,
-                        buildPerplexityDeepResearchOverrides(),
-                        null))),
+                        buildPerplexityDeepResearchOverrides()))),
             new AgentInvocationOptions.CostProfile(
                 new BigDecimal("0.008"),
                 new BigDecimal("0.028"),
@@ -550,7 +592,258 @@ public class AgentCatalogService {
         invocationOptions,
         true,
         1_400,
-        List.of(new AgentTemplateCapability("perplexity.tools", buildPerplexityToolCapabilityPayload())));
+        List.of(
+            new AgentTemplateCapability(
+                "perplexity.tools", buildPerplexityToolCapabilityPayload())));
+  }
+
+  private AgentTemplate buildFlowOpsOperatorTemplate() {
+    ChatProviderType providerType =
+        resolveConfiguredProviderType(FLOW_OPS_PROVIDER_ID, FLOW_OPS_MODEL_ID);
+
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                providerType,
+                FLOW_OPS_PROVIDER_ID,
+                FLOW_OPS_MODEL_ID,
+                AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                FLOW_OPS_SYSTEM_PROMPT,
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.15, 0.85, 900)),
+            new AgentInvocationOptions.MemoryPolicy(
+                List.of("shared", "conversation"),
+                14,
+                150,
+                AgentInvocationOptions.SummarizationStrategy.TAIL_WITH_SUMMARY,
+                AgentInvocationOptions.OverflowAction.TRIM_OLDEST),
+            new AgentInvocationOptions.RetryPolicy(
+                3,
+                250L,
+                2.0,
+                List.of(429, 500, 502, 503, 504),
+                45_000L,
+                120_000L,
+                150L),
+            new AgentInvocationOptions.AdvisorSettings(
+                new AgentInvocationOptions.AdvisorSettings.AdvisorToggle(true),
+                new AgentInvocationOptions.AdvisorSettings.AuditSettings(true, true),
+                AgentInvocationOptions.AdvisorSettings.RoutingSettings.disabled()),
+            new AgentInvocationOptions.Tooling(
+                List.of(
+                    manualTool(FLOW_OPS_LIST_FLOWS_TOOL, 1, buildLimitOverride(25)),
+                    manualTool(FLOW_OPS_DIFF_VERSION_TOOL, 1, null),
+                    manualTool(FLOW_OPS_VALIDATE_TOOL, 1, null),
+                    manualTool(FLOW_OPS_PUBLISH_TOOL, 1, null),
+                    manualTool(FLOW_OPS_ROLLBACK_TOOL, 1, null))),
+            new AgentInvocationOptions.CostProfile(
+                new BigDecimal("0.008"),
+                new BigDecimal("0.028"),
+                null,
+                null,
+                "USD"));
+
+    return new AgentTemplate(
+        FLOW_OPS_TEMPLATE_IDENTIFIER,
+        FLOW_OPS_TEMPLATE_DISPLAY_NAME,
+        FLOW_OPS_TEMPLATE_DESCRIPTION,
+        invocationOptions,
+        true,
+        1_100,
+        List.of(
+            new AgentTemplateCapability(
+                "flow.ops.tools",
+                buildCapabilityPayload(
+                    FLOW_OPS_LIST_FLOWS_TOOL,
+                    FLOW_OPS_LIST_FLOWS_TOOL,
+                    FLOW_OPS_DIFF_VERSION_TOOL,
+                    FLOW_OPS_VALIDATE_TOOL,
+                    FLOW_OPS_PUBLISH_TOOL,
+                    FLOW_OPS_ROLLBACK_TOOL))));
+  }
+
+  private AgentTemplate buildAgentOpsAdministratorTemplate() {
+    ChatProviderType providerType =
+        resolveConfiguredProviderType(AGENT_OPS_PROVIDER_ID, AGENT_OPS_MODEL_ID);
+
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                providerType,
+                AGENT_OPS_PROVIDER_ID,
+                AGENT_OPS_MODEL_ID,
+                AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                AGENT_OPS_SYSTEM_PROMPT,
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.2, 0.85, 850)),
+            new AgentInvocationOptions.MemoryPolicy(
+                List.of("shared", "conversation"),
+                14,
+                120,
+                AgentInvocationOptions.SummarizationStrategy.TAIL_WITH_SUMMARY,
+                AgentInvocationOptions.OverflowAction.TRIM_OLDEST),
+            new AgentInvocationOptions.RetryPolicy(
+                3,
+                250L,
+                2.0,
+                List.of(429, 500, 502, 503, 504),
+                40_000L,
+                100_000L,
+                120L),
+            new AgentInvocationOptions.AdvisorSettings(
+                new AgentInvocationOptions.AdvisorSettings.AdvisorToggle(true),
+                new AgentInvocationOptions.AdvisorSettings.AuditSettings(true, true),
+                AgentInvocationOptions.AdvisorSettings.RoutingSettings.disabled()),
+            new AgentInvocationOptions.Tooling(
+                List.of(
+                    manualTool(AGENT_OPS_LIST_AGENTS_TOOL, 1, buildLimitOverride(40)),
+                    manualTool(
+                        AGENT_OPS_REGISTER_TOOL, 1, buildBooleanOverride("active", true)),
+                    manualTool(AGENT_OPS_PREVIEW_DEPENDENCIES_TOOL, 1, null))),
+            new AgentInvocationOptions.CostProfile(
+                new BigDecimal("0.008"),
+                new BigDecimal("0.028"),
+                null,
+                null,
+                "USD"));
+
+    return new AgentTemplate(
+        AGENT_OPS_TEMPLATE_IDENTIFIER,
+        AGENT_OPS_TEMPLATE_DISPLAY_NAME,
+        AGENT_OPS_TEMPLATE_DESCRIPTION,
+        invocationOptions,
+        true,
+        900,
+        List.of(
+            new AgentTemplateCapability(
+                "agent.ops.tools",
+                buildCapabilityPayload(
+                    AGENT_OPS_LIST_AGENTS_TOOL,
+                    AGENT_OPS_LIST_AGENTS_TOOL,
+                    AGENT_OPS_REGISTER_TOOL,
+                    AGENT_OPS_PREVIEW_DEPENDENCIES_TOOL))));
+  }
+
+  private AgentTemplate buildInsightAnalystTemplate() {
+    ChatProviderType providerType =
+        resolveConfiguredProviderType(INSIGHT_PROVIDER_ID, INSIGHT_MODEL_ID);
+
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                providerType,
+                INSIGHT_PROVIDER_ID,
+                INSIGHT_MODEL_ID,
+                AgentInvocationOptions.InvocationMode.SYNC),
+            new AgentInvocationOptions.Prompt(
+                null,
+                INSIGHT_SYSTEM_PROMPT,
+                List.of(),
+                new AgentInvocationOptions.GenerationDefaults(0.15, 0.85, 900)),
+            new AgentInvocationOptions.MemoryPolicy(
+                List.of("shared", "conversation"),
+                14,
+                120,
+                AgentInvocationOptions.SummarizationStrategy.TAIL_WITH_SUMMARY,
+                AgentInvocationOptions.OverflowAction.TRIM_OLDEST),
+            new AgentInvocationOptions.RetryPolicy(
+                3,
+                250L,
+                2.0,
+                List.of(429, 500, 502, 503, 504),
+                45_000L,
+                120_000L,
+                150L),
+            new AgentInvocationOptions.AdvisorSettings(
+                new AgentInvocationOptions.AdvisorSettings.AdvisorToggle(true),
+                new AgentInvocationOptions.AdvisorSettings.AuditSettings(true, true),
+                AgentInvocationOptions.AdvisorSettings.RoutingSettings.disabled()),
+            new AgentInvocationOptions.Tooling(
+                List.of(
+                    manualTool(INSIGHT_RECENT_SESSIONS_TOOL, 1, buildLimitOverride(20)),
+                    manualTool(INSIGHT_FETCH_SUMMARY_TOOL, 1, null),
+                    manualTool(INSIGHT_SEARCH_MEMORY_TOOL, 1, buildLimitOverride(25)),
+                    manualTool(INSIGHT_FETCH_METRICS_TOOL, 1, null))),
+            new AgentInvocationOptions.CostProfile(
+                new BigDecimal("0.008"),
+                new BigDecimal("0.028"),
+                null,
+                null,
+                "USD"));
+
+    return new AgentTemplate(
+        INSIGHT_TEMPLATE_IDENTIFIER,
+        INSIGHT_TEMPLATE_DISPLAY_NAME,
+        INSIGHT_TEMPLATE_DESCRIPTION,
+        invocationOptions,
+        true,
+        950,
+        List.of(
+            new AgentTemplateCapability(
+                "insight.tools",
+                buildCapabilityPayload(
+                    INSIGHT_RECENT_SESSIONS_TOOL,
+                    INSIGHT_RECENT_SESSIONS_TOOL,
+                    INSIGHT_FETCH_SUMMARY_TOOL,
+                    INSIGHT_SEARCH_MEMORY_TOOL,
+                    INSIGHT_FETCH_METRICS_TOOL))));
+  }
+
+  private ChatProviderType resolveConfiguredProviderType(String providerId, String modelId) {
+    ChatProvidersProperties.Provider providerConfig =
+        chatProviderRegistry.requireProvider(providerId);
+    if (StringUtils.hasText(modelId)) {
+      chatProviderRegistry.requireModel(providerId, modelId);
+    }
+    if (providerConfig != null && providerConfig.getType() != null) {
+      return providerConfig.getType();
+    }
+    return ChatProviderType.OPENAI;
+  }
+
+  private AgentInvocationOptions.ToolBinding manualTool(
+      String toolCode, int schemaVersion, JsonNode overrides) {
+    return new AgentInvocationOptions.ToolBinding(
+        toolCode,
+        schemaVersion,
+        AgentInvocationOptions.ExecutionMode.MANUAL,
+        overrides,
+        null);
+  }
+
+  private ObjectNode buildLimitOverride(int limit) {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put("limit", limit);
+    return node;
+  }
+
+  private ObjectNode buildBooleanOverride(String field, boolean value) {
+    ObjectNode node = objectMapper.createObjectNode();
+    node.put(field, value);
+    return node;
+  }
+
+  private ObjectNode buildCapabilityPayload(String defaultTool, String... options) {
+    ObjectNode payload = objectMapper.createObjectNode();
+    payload.put("default", defaultTool);
+    ArrayNode array = payload.putArray("options");
+    java.util.LinkedHashSet<String> unique = new java.util.LinkedHashSet<>();
+    if (StringUtils.hasText(defaultTool)) {
+      unique.add(defaultTool);
+    }
+    if (options != null) {
+      for (String option : options) {
+        if (StringUtils.hasText(option)) {
+          unique.add(option);
+        }
+      }
+    }
+    unique.forEach(array::add);
+    return payload;
   }
 
   private ObjectNode buildPerplexitySearchOverrides() {
@@ -566,11 +859,7 @@ public class AgentCatalogService {
   }
 
   private ObjectNode buildPerplexityToolCapabilityPayload() {
-    ObjectNode payload = objectMapper.createObjectNode();
-    payload.put("default", PERPLEXITY_SEARCH_TOOL);
-    ArrayNode options = payload.putArray("options");
-    options.add(PERPLEXITY_SEARCH_TOOL);
-    options.add(PERPLEXITY_DEEP_RESEARCH_TOOL);
-    return payload;
+    return buildCapabilityPayload(
+        PERPLEXITY_SEARCH_TOOL, PERPLEXITY_SEARCH_TOOL, PERPLEXITY_DEEP_RESEARCH_TOOL);
   }
 }

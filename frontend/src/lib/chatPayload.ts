@@ -16,6 +16,7 @@ export type BuildChatPayloadParams = {
   overrides?: SamplingOverrides | null;
   defaults?: SamplingDefaults | null;
   mode?: 'default' | 'research';
+  requestedToolCodes?: string[] | null;
 };
 
 export type BuildChatPayloadResult = {
@@ -37,6 +38,7 @@ export function buildChatPayload({
   overrides,
   defaults,
   mode,
+  requestedToolCodes,
 }: BuildChatPayloadParams): BuildChatPayloadResult {
   const basePayload: ChatSyncRequest = { message };
 
@@ -51,6 +53,19 @@ export function buildChatPayload({
   }
   if (mode && mode !== 'default') {
     basePayload.mode = mode;
+  }
+
+  if (requestedToolCodes && requestedToolCodes.length > 0) {
+    const uniqueCodes = Array.from(
+      new Set(
+        requestedToolCodes
+          .map((code) => (typeof code === 'string' ? code.trim() : ''))
+          .filter((code) => code.length > 0),
+      ),
+    );
+    if (uniqueCodes.length > 0) {
+      basePayload.requestedToolCodes = uniqueCodes;
+    }
   }
 
   const resolvedOverrides: Record<string, number> = {};

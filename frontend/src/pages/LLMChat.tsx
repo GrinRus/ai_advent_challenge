@@ -2,13 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
+  API_BASE_URL,
   CHAT_STREAM_URL,
   fetchChatProviders,
+  fetchMcpCatalog,
   fetchSessionUsage,
+  parseMcpHealthEvent,
   requestSync,
   requestStructuredSync,
   type ChatProvidersResponse,
   type ChatSyncResponse,
+  type McpToolSummary,
+  type McpCatalogResponse,
+  type McpHealthEvent,
+  type McpServerSummary,
   type SessionUsageResponse,
   type SessionUsageTotals,
   type StructuredSyncResponse,
@@ -390,6 +397,44 @@ const buildModelOptionLabel = (
   return details ? `${baseName} · ${details}` : baseName;
 };
 
+const MCP_POLL_INTERVAL_MS = 20_000;
+const MCP_SSE_RETRY_DELAY_MS = 30_000;
+
+type McpHealthSnapshot = {
+  status: McpServerSummary['status'];
+  timestamp: string;
+  availableTools: string[];
+  unavailableTools: string[];
+};
+
+const normalizeToolCode = (code: string | null | undefined) =>
+  code ? code.trim().toLowerCase() : '';
+
+const formatMcpStatusLabel = (status: McpServerSummary['status']) => {
+  switch (status) {
+    case 'UP':
+      return 'В работе';
+    case 'DOWN':
+      return 'Недоступен';
+    default:
+      return 'Неизвестно';
+  }
+};
+
+const STATUS_BADGE_CLASS: Record<McpServerSummary['status'], string> = {
+  UP: 'status-up',
+  DOWN: 'status-down',
+  UNKNOWN: 'status-unknown',
+};
+
+type ToolDescriptor = {
+  code: string;
+  label: string;
+  serverLabel?: string;
+  status: McpServerSummary['status'];
+  available: boolean;
+};
+
 const parseStreamPayload = (rawEvent: string): StreamPayload | null => {
   const lines = rawEvent.split('\n');
   let declaredEvent: string | undefined;
@@ -459,6 +504,7 @@ type SyncResponseCardProps = {
   providerLabel?: string;
   modelLabel?: string;
   optionsLabel?: string;
+  toolDescriptors?: ToolDescriptor[];
 };
 
 const SyncResponseCard = ({
@@ -466,6 +512,7 @@ const SyncResponseCard = ({
   providerLabel = '—',
   modelLabel = '—',
   optionsLabel,
+  toolDescriptors = [],
 }: SyncResponseCardProps) => {
   const derivedTotal =
     message.cost?.total ??
@@ -487,6 +534,24 @@ const SyncResponseCard = ({
           <span className="structured-options" data-testid="sync-options">
             {optionsLabel}
           </span>
+        )}
+        {toolDescriptors.length > 0 && (
+          <div className="structured-tools">
+            {toolDescriptors.map((tool) => (
+              <span
+                key={`${tool.code}-${tool.serverLabel ?? 'sync'}`}
+                className={`llm-chat-tool-badge ${STATUS_BADGE_CLASS[tool.status]}`}
+              >
+                <span className="llm-chat-tool-badge-icon" aria-hidden="true">
+                  🔧
+                </span>
+                <span className="llm-chat-tool-badge-label">{tool.label}</span>
+                {tool.serverLabel && (
+                  <span className="llm-chat-tool-badge-server">{tool.serverLabel}</span>
+                )}
+              </span>
+            ))}
+          </div>
         )}
       </div>
 
@@ -556,6 +621,7 @@ type StructuredResponseCardProps = {
   highlight?: boolean;
   onSelect?: () => void;
   optionsLabel?: string;
+  toolDescriptors?: ToolDescriptor[];
 };
 
 const StructuredResponseCard = ({
@@ -565,6 +631,7 @@ const StructuredResponseCard = ({
   highlight,
   onSelect,
   optionsLabel,
+  toolDescriptors = [],
 }: StructuredResponseCardProps) => {
   const className = [
     'structured-response-card',
@@ -573,6 +640,10 @@ const StructuredResponseCard = ({
   ]
     .filter(Boolean)
     .join(' ');
+  const prettyPayload = useMemo(
+    () => JSON.stringify(response, null, 2),
+    [response],
+  );
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!onSelect) {
@@ -610,10 +681,23 @@ const StructuredResponseCard = ({
             {optionsLabel}
           </span>
         )}
-        {response.tools && response.tools.length > 0 && (
-          <span className="structured-tools">
-            🔧 {response.tools.join(', ')}
-          </span>
+        {toolDescriptors.length > 0 && (
+          <div className="structured-tools">
+            {toolDescriptors.map((tool) => (
+              <span
+                key={`${tool.code}-${tool.serverLabel ?? 'structured'}`}
+                className={`llm-chat-tool-badge ${STATUS_BADGE_CLASS[tool.status]}`}
+              >
+                <span className="llm-chat-tool-badge-icon" aria-hidden="true">
+                  🔧
+                </span>
+                <span className="llm-chat-tool-badge-label">{tool.label}</span>
+                {tool.serverLabel && (
+                  <span className="llm-chat-tool-badge-server">{tool.serverLabel}</span>
+                )}
+              </span>
+            ))}
+          </div>
         )}
         {response.answer?.confidence !== undefined && (
           <span className="structured-confidence">
@@ -701,6 +785,11 @@ const StructuredResponseCard = ({
           </span>
         </div>
       </div>
+
+      <details className="structured-raw">
+        <summary>Показать исходный payload</summary>
+        <pre>{prettyPayload}</pre>
+      </details>
     </div>
   );
 };
@@ -741,9 +830,30 @@ export default function LLMChat() {
   const [sessionUsage, setSessionUsage] = useState<SessionUsageResponse | null>(null);
   const [isSessionUsageLoading, setIsSessionUsageLoading] = useState<boolean>(false);
   const [sessionUsageError, setSessionUsageError] = useState<string | null>(null);
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogResponse | null>(null);
+  const [isMcpLoading, setIsMcpLoading] = useState<boolean>(true);
+  const [mcpError, setMcpError] = useState<string | null>(null);
+  const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  const [mcpHealthMap, setMcpHealthMap] = useState<Record<string, McpHealthSnapshot>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const mcpEventSourceRef = useRef<EventSource | null>(null);
+  const mcpPollTimerRef = useRef<number | null>(null);
+  const mcpSseRetryRef = useRef<number | null>(null);
+  const mcpToolIndex = useMemo(() => {
+    if (!mcpCatalog) {
+      return new Map<string, { serverId: string; serverLabel: string; tool: McpToolSummary }>();
+    }
+    const map = new Map<string, { serverId: string; serverLabel: string; tool: McpToolSummary }>();
+    mcpCatalog.servers.forEach((server) => {
+      const serverLabel = server.displayName ?? server.id;
+      server.tools.forEach((tool) => {
+        map.set(normalizeToolCode(tool.code), { serverId: server.id, serverLabel, tool });
+      });
+    });
+    return map;
+  }, [mcpCatalog]);
 
   const updateActiveTabForModel = useCallback((model: ProviderModel | null) => {
     if (!model) {
@@ -852,6 +962,262 @@ export default function LLMChat() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const stored = window.sessionStorage.getItem('llm-chat-mcp-selection');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSelectedMcpServers(parsed.filter((value) => typeof value === 'string'));
+        }
+      }
+    } catch (storageError) {
+      // eslint-disable-next-line no-console
+      console.debug('Не удалось загрузить сохранённый выбор MCP', storageError);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mcpCatalog) {
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    setMcpHealthMap((_prev) => {
+      const next: Record<string, McpHealthSnapshot> = {};
+      mcpCatalog.servers.forEach((server) => {
+        const available = server.tools
+          .filter((tool) => tool.available)
+          .map((tool) => tool.code);
+        const unavailable = server.tools
+          .filter((tool) => !tool.available)
+          .map((tool) => tool.code);
+        next[server.id] = {
+          status: server.status,
+          timestamp: nowIso,
+          availableTools: available,
+          unavailableTools: unavailable,
+        };
+      });
+      return next;
+    });
+    setSelectedMcpServers((prev) =>
+      prev.filter((serverId) =>
+        mcpCatalog.servers.some((server) => server.id === serverId),
+      ),
+    );
+  }, [mcpCatalog]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(
+        'llm-chat-mcp-selection',
+        JSON.stringify(selectedMcpServers),
+      );
+    } catch (storageError) {
+      // eslint-disable-next-line no-console
+      console.debug('Не удалось сохранить выбор MCP', storageError);
+    }
+  }, [selectedMcpServers]);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    const closeEventSource = () => {
+      if (mcpEventSourceRef.current) {
+        mcpEventSourceRef.current.close();
+        mcpEventSourceRef.current = null;
+      }
+    };
+
+    const clearPolling = () => {
+      if (mcpPollTimerRef.current != null) {
+        window.clearInterval(mcpPollTimerRef.current);
+        mcpPollTimerRef.current = null;
+      }
+    };
+
+    const clearRetry = () => {
+      if (mcpSseRetryRef.current != null) {
+        window.clearTimeout(mcpSseRetryRef.current);
+        mcpSseRetryRef.current = null;
+      }
+    };
+
+    const applyHealthEvent = (event: McpHealthEvent) => {
+      if (isDisposed) {
+        return;
+      }
+      const timestamp = event.timestamp ?? new Date().toISOString();
+      const availableSet = new Set(event.availableTools.map(normalizeToolCode));
+      const unavailableSet = new Set(event.unavailableTools.map(normalizeToolCode));
+
+      setMcpHealthMap((prev) => ({
+        ...prev,
+        [event.serverId]: {
+          status: event.status,
+          timestamp,
+          availableTools: event.availableTools,
+          unavailableTools: event.unavailableTools,
+        },
+      }));
+
+      setMcpCatalog((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          servers: prev.servers.map((server) => {
+            if (server.id !== event.serverId) {
+              return server;
+            }
+            const updatedTools = server.tools.map((tool) => {
+              const normalized = normalizeToolCode(tool.code);
+              if (availableSet.has(normalized)) {
+                return { ...tool, available: true };
+              }
+              if (unavailableSet.has(normalized)) {
+                return { ...tool, available: false };
+              }
+              return tool;
+            });
+            return {
+              ...server,
+              status: event.status,
+              tools: updatedTools,
+            };
+          }),
+        };
+      });
+    };
+
+    const applyCatalogSnapshot = (catalog: McpCatalogResponse) => {
+      if (isDisposed) {
+        return;
+      }
+      setMcpCatalog(catalog);
+      setIsMcpLoading(false);
+      setMcpError(null);
+    };
+
+    const pollCatalog = async () => {
+      try {
+        const catalog = await fetchMcpCatalog();
+        applyCatalogSnapshot(catalog);
+      } catch (pollError) {
+        if (isDisposed) {
+          return;
+        }
+        const message =
+          pollError instanceof Error
+            ? pollError.message
+            : 'Не удалось обновить каталог MCP.';
+        setMcpError(message);
+      }
+    };
+
+    const ensurePolling = () => {
+      if (mcpPollTimerRef.current != null) {
+        return;
+      }
+      pollCatalog();
+      mcpPollTimerRef.current = window.setInterval(pollCatalog, MCP_POLL_INTERVAL_MS);
+    };
+
+    const connectSse = () => {
+      if (typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
+        ensurePolling();
+        return;
+      }
+
+      clearPolling();
+      clearRetry();
+      closeEventSource();
+
+      const source = new EventSource(`${API_BASE_URL}/mcp/events`);
+      mcpEventSourceRef.current = source;
+
+      const handleServerEvent = (event: MessageEvent<string>) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const parsed = parseMcpHealthEvent(payload);
+          applyHealthEvent(parsed);
+          setMcpError(null);
+        } catch (parseError) {
+          // eslint-disable-next-line no-console
+          console.debug('Не удалось обработать событие MCP health', parseError);
+        }
+      };
+
+      source.addEventListener('mcp-server', handleServerEvent as EventListener);
+
+      source.onerror = () => {
+        if (isDisposed) {
+          return;
+        }
+        setMcpError('Поток статусов MCP недоступен, переключаемся на polling.');
+        closeEventSource();
+        ensurePolling();
+        if (mcpSseRetryRef.current == null) {
+          mcpSseRetryRef.current = window.setTimeout(() => {
+            if (!isDisposed) {
+              connectSse();
+            }
+          }, MCP_SSE_RETRY_DELAY_MS);
+        }
+      };
+    };
+
+    connectSse();
+
+    return () => {
+      isDisposed = true;
+      closeEventSource();
+      clearPolling();
+      clearRetry();
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadMcpCatalog = async () => {
+      try {
+        setMcpError(null);
+        setIsMcpLoading(true);
+        const catalog = await fetchMcpCatalog();
+        if (isCancelled) {
+          return;
+        }
+        setMcpCatalog(catalog);
+      } catch (loadError) {
+        if (isCancelled) {
+          return;
+        }
+        const message =
+          loadError instanceof Error
+            ? loadError.message
+            : 'Не удалось загрузить каталог MCP.';
+        setMcpError(message);
+      } finally {
+        if (!isCancelled) {
+          setIsMcpLoading(false);
+        }
+      }
+    };
+
+    loadMcpCatalog();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeTab !== 'stream') {
       return;
     }
@@ -864,6 +1230,12 @@ export default function LLMChat() {
   useEffect(() => {
     sessionIdRef.current = sessionId ?? null;
   }, [sessionId]);
+
+  useEffect(() => {
+    if (selectedMcpServers.length > 0 && interactionMode !== 'research') {
+      setInteractionMode('research');
+    }
+  }, [selectedMcpServers, interactionMode]);
 
   const providerOptions = providerCatalog?.providers ?? [];
   const currentProvider =
@@ -965,10 +1337,66 @@ export default function LLMChat() {
     [normalizedSamplingOverrides],
   );
 
+  const resolvedInteractionMode = useMemo(
+    () => (selectedMcpServers.length > 0 ? 'research' : interactionMode),
+    [interactionMode, selectedMcpServers],
+  );
+
+  const resolvedRequestedToolCodes = useMemo(() => {
+    if (!mcpCatalog || selectedMcpServers.length === 0) {
+      return [] as string[];
+    }
+    const codes = new Set<string>();
+    selectedMcpServers.forEach((serverId) => {
+      const server = mcpCatalog.servers.find((item) => item.id === serverId);
+      if (!server) {
+        return;
+      }
+      server.tools.forEach((tool) => {
+        if (tool.code) {
+          codes.add(tool.code);
+        }
+      });
+    });
+    return Array.from(codes);
+  }, [mcpCatalog, selectedMcpServers]);
+
+  const selectedMcpToolCount = resolvedRequestedToolCodes.length;
+
+  const mcpHint = useMemo(() => {
+    if (selectedMcpServers.length === 0) {
+      return null;
+    }
+    const offlineServers = selectedMcpServers
+      .map((serverId) => {
+        const catalogEntry = mcpCatalog?.servers.find((server) => server.id === serverId);
+        const health = mcpHealthMap[serverId];
+        const status = health?.status ?? catalogEntry?.status ?? 'UNKNOWN';
+        return {
+          serverId,
+          serverLabel: catalogEntry?.displayName ?? catalogEntry?.id ?? serverId,
+          status,
+        };
+      })
+      .filter((entry) => entry.status !== 'UP');
+    if (offlineServers.length > 0) {
+      const names = offlineServers.map((entry) => entry.serverLabel).join(', ');
+      return `Подсказка: выбранные MCP сервера недоступны (${names}). Проверьте статус или временно отключите их.`;
+    }
+    if (selectedMcpToolCount === 0) {
+      return 'Подсказка: выбранные MCP сервера не предоставляют активных инструментов. Проверьте каталог или измените выбор.';
+    }
+    return null;
+  }, [selectedMcpServers, mcpCatalog, mcpHealthMap, selectedMcpToolCount]);
+
   const structuredMessages = messages.filter(
     (message): message is ChatMessage & { structured: StructuredSyncResponse } =>
       message.role === 'assistant' && Boolean(message.structured),
   );
+
+  const streamHasError = Boolean(error);
+  const syncHasError = Boolean(syncError);
+  const structuredHasError = Boolean(structuredError);
 
   const syncMessages = useMemo(
     () =>
@@ -1132,6 +1560,78 @@ export default function LLMChat() {
       }
       updateSamplingValue(key, numeric);
     };
+
+  const toggleMcpServerSelection = useCallback((serverId: string) => {
+    setSelectedMcpServers((prev) =>
+      prev.includes(serverId)
+        ? prev.filter((id) => id !== serverId)
+        : [...prev, serverId],
+    );
+  }, []);
+
+  const refreshMcpCatalog = useCallback(async () => {
+    try {
+      setIsMcpLoading(true);
+      setMcpError(null);
+      const catalog = await fetchMcpCatalog();
+      setMcpCatalog(catalog);
+    } catch (refreshError) {
+      const message =
+        refreshError instanceof Error
+          ? refreshError.message
+          : 'Не удалось обновить каталог MCP.';
+      setMcpError(message);
+    } finally {
+      setIsMcpLoading(false);
+    }
+  }, []);
+
+  const resolveToolDescriptors = useCallback(
+    (codes?: string[] | null): ToolDescriptor[] => {
+      if (!codes || codes.length === 0) {
+        return [];
+      }
+      const descriptors: ToolDescriptor[] = [];
+      const seen = new Set<string>();
+      codes.forEach((code) => {
+        const normalized = normalizeToolCode(code);
+        if (!normalized || seen.has(normalized)) {
+          return;
+        }
+        seen.add(normalized);
+        const indexEntry = mcpToolIndex.get(normalized);
+        if (!indexEntry) {
+          descriptors.push({
+            code,
+            label: code,
+            status: 'UNKNOWN',
+            available: true,
+          });
+          return;
+        }
+        const health = mcpHealthMap[indexEntry.serverId];
+        const availableFromHealth = health
+          ? health.availableTools
+              .map((toolCode) => normalizeToolCode(toolCode))
+              .includes(normalized)
+          : undefined;
+        const available =
+          availableFromHealth !== undefined
+            ? availableFromHealth
+            : indexEntry.tool.available;
+        const status = health?.status ?? (indexEntry.tool.available ? 'UP' : 'DOWN');
+        descriptors.push({
+          code,
+          label: indexEntry.tool.displayName ?? indexEntry.tool.code,
+          serverLabel: indexEntry.serverLabel,
+          status,
+          available,
+        });
+      });
+      return descriptors;
+    },
+    [mcpToolIndex, mcpHealthMap],
+  );
 
   const handleProviderChange = (providerId: string) => {
     setSelectedProvider(providerId);
@@ -1332,7 +1832,8 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
-      mode: interactionMode,
+      mode: resolvedInteractionMode,
+      requestedToolCodes: resolvedRequestedToolCodes,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -1444,7 +1945,8 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
-      mode: interactionMode,
+      mode: resolvedInteractionMode,
+      requestedToolCodes: resolvedRequestedToolCodes,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -1495,7 +1997,7 @@ export default function LLMChat() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      if (interactionMode === 'research' && assistantMessage.structured) {
+      if (resolvedInteractionMode === 'research' && assistantMessage.structured) {
         setActiveStructuredMessageId(assistantMessage.id);
       }
 
@@ -1560,7 +2062,8 @@ export default function LLMChat() {
       model: selectedModel,
       overrides: normalizedSamplingOverrides,
       defaults: samplingDefaults,
-      mode: interactionMode,
+      mode: resolvedInteractionMode,
+      requestedToolCodes: resolvedRequestedToolCodes,
     });
     const optionsSnapshot = effectiveOptions;
 
@@ -2020,12 +2523,116 @@ export default function LLMChat() {
               onChange={(event) =>
                 setInteractionMode(event.target.value as 'default' | 'research')
               }
-              disabled={isStreaming}
+              disabled={isStreaming || selectedMcpServers.length > 0}
             >
-              <option value="default">Стандартный</option>
-              <option value="research">Research (Perplexity)</option>
+              <option value="default" disabled={selectedMcpServers.length > 0}>
+                Стандартный
+              </option>
+              <option value="research">Research (MCP инструменты)</option>
             </select>
           </div>
+        </div>
+
+        <div className="llm-chat-mcp">
+          <div className="llm-chat-mcp-header">
+            <div className="llm-chat-mcp-title-block">
+              <span className="llm-chat-mcp-title">MCP инструменты</span>
+              <span className="llm-chat-mcp-subtitle">
+                Выберите сервера, которые ассистент может использовать в режиме Research
+              </span>
+            </div>
+            <div className="llm-chat-mcp-actions">
+              <span className="llm-chat-mcp-summary">
+                {selectedMcpServers.length > 0
+                  ? `${selectedMcpServers.length} серв. · ${selectedMcpToolCount} инструментов`
+                  : 'Серверы не выбраны'}
+              </span>
+              <button
+                type="button"
+                className="llm-chat-button ghost"
+                onClick={() => {
+                  void refreshMcpCatalog();
+                }}
+                disabled={isMcpLoading}
+              >
+                {isMcpLoading ? 'Обновляем…' : 'Обновить'}
+              </button>
+            </div>
+          </div>
+          {mcpError && <div className="llm-chat-error">{mcpError}</div>}
+          {!mcpError && isMcpLoading ? (
+            <div className="llm-chat-info">Загружаем каталог MCP…</div>
+          ) : null}
+          {!isMcpLoading && (mcpCatalog?.servers.length ?? 0) === 0 && !mcpError ? (
+            <div className="llm-chat-info">Серверы MCP не сконфигурированы.</div>
+          ) : null}
+          {mcpCatalog && mcpCatalog.servers.length > 0 ? (
+            <div className="llm-chat-mcp-list">
+              {mcpCatalog.servers.map((server) => {
+                const isChecked = selectedMcpServers.includes(server.id);
+                const health = mcpHealthMap[server.id];
+                const status = health?.status ?? server.status;
+                const availableCount =
+                  health?.availableTools?.length ??
+                  server.tools.filter((tool) => tool.available).length;
+                const unavailableCount =
+                  health?.unavailableTools?.length ??
+                  server.tools.filter((tool) => !tool.available).length;
+                const totalCount = server.tools.length;
+                const lastUpdated = health?.timestamp ?? null;
+                return (
+                  <label key={server.id} className="llm-chat-mcp-server">
+                    <input
+                      type="checkbox"
+                      className="llm-chat-mcp-checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleMcpServerSelection(server.id)}
+                      disabled={isStreaming || isSyncLoading || isStructuredLoading}
+                    />
+                    <div className="llm-chat-mcp-server-body">
+                      <div className="llm-chat-mcp-server-top">
+                        <span className="llm-chat-mcp-server-name">
+                          {server.displayName ?? server.id}
+                        </span>
+                        <span
+                          className={`llm-chat-mcp-status ${STATUS_BADGE_CLASS[status]}`}
+                        >
+                          {formatMcpStatusLabel(status)}
+                        </span>
+                      </div>
+                      {server.description && (
+                        <p className="llm-chat-mcp-description">{server.description}</p>
+                      )}
+                      <div className="llm-chat-mcp-meta">
+                        <span className="llm-chat-mcp-meta-entry">
+                          {availableCount}/{totalCount} доступно
+                        </span>
+                        {unavailableCount > 0 && (
+                          <span className="llm-chat-mcp-meta-entry muted">
+                            {unavailableCount} отключено
+                          </span>
+                        )}
+                        {lastUpdated && (
+                          <span className="llm-chat-mcp-meta-entry muted">
+                            {formatTimestamp(lastUpdated)}
+                          </span>
+                        )}
+                      </div>
+                      {server.tags.length > 0 && (
+                        <div className="llm-chat-mcp-tags">
+                          {server.tags.map((tag) => (
+                            <span key={tag} className="llm-chat-mcp-tag">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
 
         {selectedModelConfig && (
@@ -2210,6 +2817,7 @@ export default function LLMChat() {
                   const samplingSummary = formatSamplingSummary(message.options);
                   const hasSamplingMeta = Boolean(message.options);
                   const hasMeta = Boolean(providerLabel || modelLabel || hasSamplingMeta);
+                  const toolDescriptors = resolveToolDescriptors(message.tools);
 
                   return (
                     <div
@@ -2228,13 +2836,24 @@ export default function LLMChat() {
                           {modelLabel}
                         </span>
                       )}
-                      {message.tools && message.tools.length > 0 && (
-                        <span
-                          className="llm-chat-meta-chip secondary"
-                          title="Инструменты MCP"
-                        >
-                          🔧 {message.tools.join(', ')}
-                        </span>
+                      {toolDescriptors.length > 0 && (
+                        <div className="llm-chat-tool-badges" title="Инструменты MCP">
+                          {toolDescriptors.map((tool) => (
+                            <span
+                              key={`${tool.code}-${tool.serverLabel ?? 'local'}`}
+                              className={`llm-chat-tool-badge ${STATUS_BADGE_CLASS[tool.status]}`}
+                              aria-label={`Инструмент ${tool.label}`}
+                            >
+                              <span className="llm-chat-tool-badge-icon" aria-hidden="true">
+                                🔧
+                              </span>
+                              <span className="llm-chat-tool-badge-label">{tool.label}</span>
+                              {tool.serverLabel && (
+                                <span className="llm-chat-tool-badge-server">{tool.serverLabel}</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
                       )}
                           {hasSamplingMeta && (
                             <span
@@ -2311,6 +2930,7 @@ export default function LLMChat() {
                           optionsLabel={message.options ? formatSamplingSummary(message.options) : undefined}
                           onSelect={() => setActiveStructuredMessageId(message.id)}
                           highlight={message.id === activeStructuredMessage?.id}
+                          toolDescriptors={resolveToolDescriptors(message.structured.tools ?? message.tools)}
                         />
                       ) : null}
                       {message.status === 'streaming' && (
@@ -2338,6 +2958,9 @@ export default function LLMChat() {
                 )}
                 {!catalogError && !error && info && (
                   <span className="llm-chat-info">{info}</span>
+                )}
+                {streamHasError && mcpHint && (
+                  <span className="llm-chat-hint">{mcpHint}</span>
                 )}
                 {!catalogError && !error && !info && isStreaming && (
                   <span className="llm-chat-info">
@@ -2448,6 +3071,9 @@ export default function LLMChat() {
                 {syncError && (
                   <span className="llm-chat-error">{syncError}</span>
                 )}
+                {syncHasError && mcpHint && (
+                  <span className="llm-chat-hint">{mcpHint}</span>
+                )}
                 {!syncError && syncNotice && (
                   <span className="llm-chat-info">{syncNotice}</span>
                 )}
@@ -2489,6 +3115,7 @@ export default function LLMChat() {
                             ? formatSamplingSummary(message.options)
                             : undefined
                         }
+                        toolDescriptors={resolveToolDescriptors(message.tools)}
                       />
                     </div>
                   );
@@ -2553,6 +3180,9 @@ export default function LLMChat() {
                 {structuredError && (
                   <span className="llm-chat-error">{structuredError}</span>
                 )}
+                {structuredHasError && mcpHint && (
+                  <span className="llm-chat-hint">{mcpHint}</span>
+                )}
                 {!structuredError && structuredNotice && (
                   <span className="llm-chat-info">{structuredNotice}</span>
                 )}
@@ -2603,6 +3233,9 @@ export default function LLMChat() {
                             : undefined
                         }
                         onSelect={() => setActiveStructuredMessageId(message.id)}
+                        toolDescriptors={resolveToolDescriptors(
+                          message.structured?.tools ?? message.tools,
+                        )}
                       />
                     </div>
                   );
