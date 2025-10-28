@@ -5,6 +5,7 @@ import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.tool.domain.ToolDefinition;
 import com.aiadvent.backend.flow.tool.domain.ToolSchemaVersion;
 import com.aiadvent.backend.flow.tool.persistence.ToolDefinitionRepository;
+import com.aiadvent.backend.mcp.util.McpToolNameSanitizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -152,7 +153,8 @@ public class McpToolBindingService {
     }
 
     String mcpToolName = schemaVersion.getMcpToolName();
-    if (!StringUtils.hasText(mcpToolName)) {
+    String sanitizedToolName = McpToolNameSanitizer.sanitize(mcpToolName);
+    if (!StringUtils.hasText(mcpToolName) || !StringUtils.hasText(sanitizedToolName)) {
       log.debug("Tool '{}' does not expose an MCP tool name; skipping", toolCode);
       return Optional.empty();
     }
@@ -161,10 +163,17 @@ public class McpToolBindingService {
     JsonNode invocationOverrides = requestOverrides.getOrDefault(normalizedCode, null);
     ObjectNode mergedOverrides = mergeOverrides(baseOverrides, invocationOverrides);
 
-    String normalizedToolName = mcpToolName.trim();
     Consumer<ObjectNode> payloadCustomizer =
-        buildPayloadCustomizer(toolCode, normalizedToolName, userQuery);
-    return resolveToolCallbackByName(normalizedToolName)
+        buildPayloadCustomizer(toolCode, mcpToolName, userQuery);
+    Optional<ToolCallback> resolvedCallback = resolveToolCallbackByName(sanitizedToolName);
+    if (resolvedCallback.isEmpty()) {
+      log.warn(
+          "MCP tool '{}' (sanitized '{}') is not available among registered callbacks; skipping binding for tool code '{}'",
+          mcpToolName,
+          sanitizedToolName,
+          toolCode);
+    }
+    return resolvedCallback
         .map(
             delegate ->
                 new ResolvedTool(
@@ -278,7 +287,7 @@ public class McpToolBindingService {
     return toolCode.trim().toLowerCase(Locale.ROOT);
   }
 
-  private Optional<ToolCallback> resolveToolCallbackByName(String toolName) {
+  private Optional<ToolCallback> resolveToolCallbackByName(String sanitizedToolName) {
     SyncMcpToolCallbackProvider provider = toolCallbackProvider.getIfAvailable();
     if (provider == null) {
       if (missingProviderLogged.compareAndSet(false, true)) {
@@ -291,7 +300,10 @@ public class McpToolBindingService {
     missingProviderLogged.set(false);
     return Arrays.stream(provider.getToolCallbacks())
         .filter(Objects::nonNull)
-        .filter(callback -> toolName.equals(callback.getToolDefinition().name()))
+        .filter(
+            callback ->
+                sanitizedToolName.equals(
+                    McpToolNameSanitizer.sanitize(callback.getToolDefinition().name())))
         .findFirst();
   }
 }

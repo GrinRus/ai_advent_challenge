@@ -6,6 +6,8 @@ import com.aiadvent.backend.flow.tool.persistence.ToolDefinitionRepository;
 import com.aiadvent.backend.mcp.config.McpCatalogProperties;
 import com.aiadvent.backend.mcp.web.dto.McpCatalogResponse;
 import com.aiadvent.backend.mcp.web.dto.McpCatalogResponse.McpServerStatus;
+import static com.aiadvent.backend.mcp.util.McpToolNameSanitizer.sanitize;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -98,7 +100,9 @@ public class McpCatalogService {
         continue;
       }
 
-      boolean available = availableToolNames.contains(toolName);
+      String sanitizedToolName = sanitize(toolName);
+      boolean available =
+          StringUtils.hasText(sanitizedToolName) && availableToolNames.contains(sanitizedToolName);
       McpCatalogResponse.McpTool tool =
           new McpCatalogResponse.McpTool(
               safeTrim(definition.getCode()),
@@ -128,7 +132,7 @@ public class McpCatalogService {
         .filter(Objects::nonNull)
         .map(ToolCallback::getToolDefinition)
         .filter(Objects::nonNull)
-        .map(def -> safeTrim(def.name()))
+        .map(def -> sanitize(def.name()))
         .filter(StringUtils::hasText)
         .collect(Collectors.toSet());
   }
