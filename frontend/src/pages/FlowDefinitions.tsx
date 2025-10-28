@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, Dispatch, SetStateAction } from 'react';
 import type {
   FlowDefinitionDetails,
   FlowDefinitionHistoryEntry,
@@ -54,6 +54,8 @@ const FlowDefinitions = () => {
   const [history, setHistory] = useState<FlowDefinitionHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [editorFieldErrors, setEditorFieldErrors] = useState<Record<string, string>>({});
+  const [newFieldErrors, setNewFieldErrors] = useState<Record<string, string>>({});
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [, setIsLoadingDefinition] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -89,6 +91,50 @@ const FlowDefinitions = () => {
 
   const updateNewForm: ApplyFormUpdate = (updater) => {
     setNewDefinitionForm((prev) => updater(prev));
+  };
+
+  const clearEditorErrors = () => {
+    clearEditorErrors();
+    setEditorFieldErrors({});
+  };
+
+  const clearNewFormErrors = () => {
+    clearNewFormErrors();
+    setNewFieldErrors({});
+  };
+
+  const recordBuildError = (
+    source: unknown,
+    setFieldErrors: Dispatch<SetStateAction<Record<string, string>>>,
+  ) => {
+    if (!(source instanceof Error)) {
+      setFormError('Неизвестная ошибка сборки blueprint');
+      console.error('Flow definition build error', source);
+      return;
+    }
+
+    const message = source.message;
+    setFormError(message);
+    console.error('Flow definition build error', source);
+
+    const issues: Record<string, string> = {};
+    const stepNameMatch = message.match(/Шаг "([^"]+)"/);
+    if (stepNameMatch) {
+      issues[`step:${stepNameMatch[1]}`] = message;
+    }
+    const stepIndexMatch = message.match(/Шаг #(\d+)/);
+    if (stepIndexMatch) {
+      issues[`stepIndex:${stepIndexMatch[1]}`] = message;
+    }
+    const launchMatch = message.match(/Launch parameter #(\d+)/);
+    if (launchMatch) {
+      issues[`launch:${launchMatch[1]}`] = message;
+    }
+    const sharedMatch = message.match(/Shared channel #(\d+)/);
+    if (sharedMatch) {
+      issues[`shared:${sharedMatch[1]}`] = message;
+    }
+    setFieldErrors(issues);
   };
 
   const loadAgents = useCallback(async () => {
@@ -173,6 +219,7 @@ const FlowDefinitions = () => {
     if (!details) {
       setFormState(null);
       setSelectedStepIndex(0);
+      setEditorFieldErrors({});
       return;
     }
     const parsed = parseFlowDefinition(details.definition);
@@ -181,6 +228,7 @@ const FlowDefinitions = () => {
     }
     setFormState(parsed);
     setSelectedStepIndex(0);
+    setEditorFieldErrors({});
   }, [details]);
 
   const addLaunchParameter = (apply: ApplyFormUpdate) =>
@@ -450,13 +498,18 @@ const FlowDefinitions = () => {
   const renderStepEditor = (
     step: FlowStepForm,
     updateStep: (updater: (prev: FlowStepForm) => FlowStepForm) => void,
+    errorMessage?: string,
   ) => (
-    <div className="flow-definitions__step-editor">
+    <div
+      className={`flow-definitions__step-editor${errorMessage ? ' has-error' : ''}`}
+    >
       <h5>Редактор шага</h5>
+      {errorMessage && <div className="flow-definitions__step-error-hint">{errorMessage}</div>}
       <div className="field-grid">
         <label>
           Step ID
           <input
+            className={errorMessage ? 'field-error' : undefined}
             value={step.id}
             onChange={(event) =>
               updateStep((prev) => ({ ...prev, id: event.target.value }))
@@ -908,7 +961,7 @@ const FlowDefinitions = () => {
     if (!formState.syncOnly && formState.syncOnly !== false) {
       // no-op for now
     }
-    setFormError(null);
+    clearEditorErrors();
     setIsSaving(true);
     try {
       const definitionPayload = buildFlowDefinition(formState);
@@ -920,8 +973,9 @@ const FlowDefinitions = () => {
       });
       await loadDefinition(details.id);
       await loadDefinitions();
+      setEditorFieldErrors({});
     } catch (err) {
-      setFormError((err as Error).message);
+      recordBuildError(err, setEditorFieldErrors);
     } finally {
       setIsSaving(false);
     }
@@ -951,7 +1005,7 @@ const FlowDefinitions = () => {
       await loadDefinition(details.id);
       await loadDefinitions();
     } catch (err) {
-      setFormError((err as Error).message);
+      recordBuildError(err, setEditorFieldErrors);
     } finally {
       setIsPublishing(false);
     }
@@ -989,8 +1043,9 @@ const FlowDefinitions = () => {
       setNewDefinitionAuthor('');
       setNewDefinitionChangeNotes('');
       setNewSelectedStepIndex(0);
+      setNewFieldErrors({});
     } catch (err) {
-      setFormError((err as Error).message);
+      recordBuildError(err, setNewFieldErrors);
     } finally {
       setCreatingDefinition(false);
     }
@@ -1003,13 +1058,21 @@ const FlowDefinitions = () => {
     onSelect: (index: number) => void,
     onMove?: (index: number, delta: number) => void,
     onRemove?: (index: number) => void,
+    errorMap: Record<string, string> = {},
   ) => {
     const agent = agentOptionMap.get(step.agentVersionId);
     const hasAgent = Boolean(agent);
+    const stepKey = step.id ? `step:${step.id}` : `stepIndex:${index + 1}`;
+    const stepError = errorMap[stepKey];
     return (
       <tr
         key={`${step.id || 'step'}-${index}`}
-        className={index === activeIndex ? 'active' : undefined}
+        className={[
+          index === activeIndex ? 'active' : '',
+          stepError ? 'flow-definitions__row-error' : '',
+        ]
+          .filter(Boolean)
+          .join(' ') || undefined}
         onClick={() => onSelect(index)}
       >
         <td>{step.id || <em>не задан</em>}</td>
@@ -1019,6 +1082,9 @@ const FlowDefinitions = () => {
         </td>
         <td>{step.maxAttempts || '1'}</td>
         <td className="flow-definitions__row-actions">
+          {stepError && (
+            <span className="flow-definitions__row-error-hint">{stepError}</span>
+          )}
           {onMove && (
             <>
               <button
@@ -1213,6 +1279,7 @@ const FlowDefinitions = () => {
                           });
                           setNewSelectedStepIndex((prevIdx) => Math.max(0, prevIdx - 1));
                         },
+                        newFieldErrors,
                       ),
                     )}
                     {!newDefinitionForm.steps.length && (
@@ -1229,9 +1296,15 @@ const FlowDefinitions = () => {
               </div>
 
               {newDefinitionForm.steps[newSelectedStepIndex] &&
-                renderStepEditor(newDefinitionForm.steps[newSelectedStepIndex], (updater) =>
-                  updateStepAt(updateNewForm, newSelectedStepIndex, updater),
-                )}
+                (() => {
+                  const step = newDefinitionForm.steps[newSelectedStepIndex];
+                  const key = step.id
+                    ? `step:${step.id}`
+                    : `stepIndex:${newSelectedStepIndex + 1}`;
+                  const errorMessage = newFieldErrors[key];
+                  return renderStepEditor(step, (updater) =>
+                    updateStepAt(updateNewForm, newSelectedStepIndex, updater), errorMessage);
+                })()}
 
               <div className="flow-definitions__actions">
                 <button
@@ -1329,6 +1402,7 @@ const FlowDefinitions = () => {
                           setSelectedStepIndex,
                           moveStep,
                           removeStep,
+                          editorFieldErrors,
                         ),
                       )}
                       {!formState.steps.length && (
@@ -1345,10 +1419,18 @@ const FlowDefinitions = () => {
                 </div>
 
                 {formState.steps[selectedStepIndex] &&
-                  renderStepEditor(
-                    formState.steps[selectedStepIndex],
-                    (updater) => updateStepAt(updateExistingForm, selectedStepIndex, updater),
-                  )}
+                  (() => {
+                    const step = formState.steps[selectedStepIndex];
+                    const key = step.id
+                      ? `step:${step.id}`
+                      : `stepIndex:${selectedStepIndex + 1}`;
+                    const errorMessage = editorFieldErrors[key];
+                    return renderStepEditor(
+                      step,
+                      (updater) => updateStepAt(updateExistingForm, selectedStepIndex, updater),
+                      errorMessage,
+                    );
+                  })()}
               </div>
 
               <div className="flow-definitions__history">

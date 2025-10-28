@@ -669,7 +669,7 @@
 
 ### Frontend
 - [x] Починить загрузку flow definition в UI: скорректировать zod-схемы/адаптеры, чтобы поддерживать пустые `memoryReads` и числовые `maxAttempts`, и добавить fallback для старого формата (`frontend/src/lib/types/flowDefinition.ts`, `frontend/src/lib/apiClient.ts`).
-- [ ] Расширить отображение формы так, чтобы некорректные данные подсвечивались inline, а ошибки сериализации детализировались в toast/логах (`frontend/src/pages/FlowDefinitions.tsx`).
+- [x] Расширить отображение формы так, чтобы некорректные данные подсвечивались inline, а ошибки сериализации детализировались в toast/логах (`frontend/src/pages/FlowDefinitions.tsx`).
 
 ### Тесты и документация
 - [ ] Расширить unit/integration тесты (`FlowBlueprintValidator`, `FlowDefinitionController`, `FlowMemoryService`) под новые DTO и memory-политику.
