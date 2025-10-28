@@ -39,6 +39,7 @@ class McpHealthControllerTest {
             null,
             List.of(),
             McpServerStatus.UP,
+            null,
             List.of(new McpTool("perplexity_search", "Search", null, "perplexity_search", 1, true)));
     McpServer agentops =
         new McpServer(
@@ -47,6 +48,7 @@ class McpHealthControllerTest {
             null,
             List.of(),
             McpServerStatus.DOWN,
+            null,
             List.of(new McpTool("agent_ops.list_agents", "List", null, "agent_ops.list_agents", 1, false)));
     when(catalogService.getCatalog()).thenReturn(new McpCatalogResponse(List.of(perplexity, agentops)));
 
@@ -57,5 +59,33 @@ class McpHealthControllerTest {
     assertThat(events.get(0).data().serverId()).isEqualTo("perplexity");
     assertThat(events.get(1).data().serverId()).isEqualTo("agentops");
   }
-}
 
+  @Test
+  void streamHealthIncludesAvailabilityListsAndHandlesInvalidInterval() {
+    McpServer insight =
+        new McpServer(
+            "insight",
+            "Insight",
+            null,
+            List.of("analytics"),
+            McpServerStatus.UP,
+            null,
+            List.of(
+                new McpTool("insight.recent_sessions", "Recent", null, "insight.recent_sessions", 1, true),
+                new McpTool("insight.fetch_metrics", "Metrics", null, "insight.fetch_metrics", 1, false)));
+
+    when(catalogService.getCatalog()).thenReturn(new McpCatalogResponse(List.of(insight)));
+
+    ServerSentEvent<McpHealthEvent> event =
+        controller
+            .streamHealth(Duration.ofMillis(-5))
+            .blockFirst(Duration.ofSeconds(1));
+
+    assertThat(event).isNotNull();
+    McpHealthEvent payload = event.data();
+    assertThat(payload.serverId()).isEqualTo("insight");
+    assertThat(payload.availableTools()).containsExactly("insight.recent_sessions");
+    assertThat(payload.unavailableTools()).containsExactly("insight.fetch_metrics");
+    assertThat(payload.toolCount()).isEqualTo(2);
+  }
+}

@@ -217,6 +217,21 @@ Frontend контейнер проксирует все запросы `/api/*` 
   После старта backend отправьте запрос с `mode: "research"` на `/api/llm/chat/sync` или `/api/llm/chat/stream`, чтобы задействовать инструменты Perplexity.
 - В Docker-образе backend необходимо, чтобы Node.js и `npx` были доступны внутри контейнера. При необходимости добавьте слой установки Node или используйте внешний wrapper (`PERPLEXITY_MCP_CMD="node /opt/mcp/server.js"`).
 
+### Встроенные MCP-серверы (Flow Ops / Agent Ops / Insight)
+
+- Каждый STDIO-сервер собирается модулем `backend-mcp` и запускается как отдельный Spring Boot процесс без web-стека. Чтобы использовать его локально, достаточно поднять контейнеры через `docker compose`. Добавлены сервисы `agent-ops-mcp`, `flow-ops-mcp` и `insight-mcp`; все они используют один и тот же образ и отличаются активным профилем/главным классом (`SPRING_MAIN_APPLICATION_CLASS`).
+- Базовые переменные окружения:
+  - `AGENT_OPS_MCP_CMD`, `FLOW_OPS_MCP_CMD`, `INSIGHT_MCP_CMD` — команды, которые backend вызывает для STDIO-подключения (по умолчанию совпадают с именами контейнеров).
+  - `*_BACKEND_BASE_URL` — адрес REST API основного backend-а (в docker-среде указывает на `http://backend:8080`).
+  - `*_BACKEND_API_TOKEN` — опциональные bearer-токены, прокидываемые MCP-сервером при обращении к backend.
+- В `docker-compose.yml` каждому сервису добавлен healthcheck на наличие Java-процесса и `stdin_open/tty`, чтобы STDIO оставался доступным. Контейнеры зависят от `backend`, поэтому любые rest-вызовы сразу используют живой API.
+- Для ручного тестирования STDIO можно обратиться к контейнеру напрямую:
+
+  ```bash
+  docker compose exec agent-ops-mcp java -jar /app/app.jar --help
+  docker compose logs -f flow-ops-mcp
+  ```
+
 ## Оркестрация мультиагентных флоу
 
 ### Архитектура и исполнение

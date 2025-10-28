@@ -47,6 +47,69 @@ services:
     ports:
       - "4179:4179"
 
+  agent-ops-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/agent-ops-mcp:latest
+    container_name: ai-advent-agent-ops-mcp
+    depends_on:
+      - backend
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.AgentOpsMcpApplication
+      SPRING_PROFILES_ACTIVE: agentops
+      AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:-http://backend:8080}
+      AGENT_OPS_BACKEND_API_TOKEN: ${AGENT_OPS_BACKEND_API_TOKEN:-}
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f AgentOpsMcpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  flow-ops-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/flow-ops-mcp:latest
+    container_name: ai-advent-flow-ops-mcp
+    depends_on:
+      - backend
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.FlowOpsMcpApplication
+      SPRING_PROFILES_ACTIVE: flowops
+      FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:-http://backend:8080}
+      FLOW_OPS_BACKEND_API_TOKEN: ${FLOW_OPS_BACKEND_API_TOKEN:-}
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f FlowOpsMcpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  insight-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/insight-mcp:latest
+    container_name: ai-advent-insight-mcp
+    depends_on:
+      - backend
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.InsightMcpApplication
+      SPRING_PROFILES_ACTIVE: insight
+      INSIGHT_BACKEND_BASE_URL: ${INSIGHT_BACKEND_BASE_URL:-http://backend:8080}
+      INSIGHT_BACKEND_API_TOKEN: ${INSIGHT_BACKEND_API_TOKEN:-}
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f InsightMcpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:

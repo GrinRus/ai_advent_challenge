@@ -42,6 +42,7 @@ class McpHealthIndicatorTest {
             null,
             List.of(),
             McpServerStatus.DOWN,
+            null,
             List.of(new McpTool("perplexity_search", "Search", null, "perplexity_search", 1, false)));
     McpServer upServer =
         new McpServer(
@@ -50,6 +51,7 @@ class McpHealthIndicatorTest {
             null,
             List.of(),
             McpServerStatus.UP,
+            null,
             List.of(new McpTool("agent_ops.list_agents", "List", null, "agent_ops.list_agents", 1, true)));
 
     when(catalogService.getCatalog()).thenReturn(new McpCatalogResponse(List.of(downServer, upServer)));
@@ -71,6 +73,7 @@ class McpHealthIndicatorTest {
             null,
             List.of(),
             McpServerStatus.UP,
+            null,
             List.of(new McpTool("agent_ops.list_agents", "List", null, "agent_ops.list_agents", 1, true)));
 
     when(catalogService.getCatalog()).thenReturn(new McpCatalogResponse(List.of(upServer)));
