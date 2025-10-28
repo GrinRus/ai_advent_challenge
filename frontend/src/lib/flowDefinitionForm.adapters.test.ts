@@ -30,9 +30,12 @@ describe('flowDefinitionForm adapters', () => {
         },
       ],
       draft: {
+        schemaVersion: 2,
         title: 'Customer onboarding',
         startStepId: 'collect-profile',
         syncOnly: true,
+        launchParameters: [],
+        memory: { sharedChannels: [] },
         steps: [],
         metadata: { version: 3 },
       } as FlowDefinitionDraft,
@@ -91,9 +94,12 @@ describe('flowDefinitionForm adapters', () => {
       launchParameters: [],
       sharedChannels: [],
       draft: {
+        schemaVersion: 2,
         title: 'Broken flow',
         startStepId: 'step-1',
         syncOnly: true,
+        launchParameters: [],
+        memory: { sharedChannels: [] },
         steps: [],
       },
       steps: [

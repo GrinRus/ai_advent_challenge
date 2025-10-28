@@ -93,9 +93,12 @@ describe('flowDefinitionForm helpers', () => {
         { id: 'shared', retentionVersions: '2', retentionDays: '14' },
       ],
       draft: {
+        schemaVersion: 2,
         title: 'Flow',
         startStepId: 'step-1',
         syncOnly: true,
+        launchParameters: [],
+        memory: { sharedChannels: [] },
         steps: [],
       },
       steps: [
