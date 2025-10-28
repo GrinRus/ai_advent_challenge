@@ -711,7 +711,7 @@
 - [x] Интегрировать `backend-mcp` с основным `backend`-приложением: регистрация STDIO-клиентов, health-indicator'ы, security policy и wiring новых `ToolSchemaVersion` в `McpToolBindingService`.
 - [x] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
 - [x] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
-- [ ] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
+- [x] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
 - [x] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.

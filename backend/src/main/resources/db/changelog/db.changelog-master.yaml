@@ -1735,3 +1735,176 @@ databaseChangeLog:
                 )
               )
               WHERE agent_invocation_options::text ILIKE '%perplexity-research%';
+  - changeSet:
+      id: 0097-seed-internal-mcp-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('flow_ops.list_flows', 1,
+                 '{"type":"object","properties":{"query":{"type":"string","description":"Optional search string"},"status":{"type":"string","description":"Status filter"},"limit":{"type":"integer","minimum":1,"maximum":100}}}'::jsonb,
+                 '{"type":"object","properties":{"flows":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"name":{"type":"string"},"version":{"type":"integer"},"status":{"type":"string"},"active":{"type":"boolean"},"updatedBy":{"type":"string"},"updatedAt":{"type":"string","format":"date-time"},"publishedAt":{"type":"string","format":"date-time"}}}}}}'::jsonb,
+                 'checksum-flow_ops.list_flows-v1', '[]'::jsonb, 'flowops', 'flow_ops.list_flows', 'stdio', 'flowops'),
+                ('flow_ops.diff_flow_version', 1,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"baseVersion":{"type":"integer","minimum":1},"compareVersion":{"type":"integer","minimum":1}},"required":["definitionId"]}'::jsonb,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"baseVersion":{"type":"integer"},"compareVersion":{"type":"integer"},"differences":{"type":"array","items":{"type":"object","properties":{"pointer":{"type":"string"},"baseValue":{"type":"string"},"compareValue":{"type":"string"}}}},"baseDefinition":{"type":"string"},"compareDefinition":{"type":"string"}}}'::jsonb,
+                 'checksum-flow_ops.diff_flow_version-v1', '[]'::jsonb, 'flowops', 'flow_ops.diff_flow_version', 'stdio', 'flowops'),
+                ('flow_ops.validate_blueprint', 1,
+                 '{"type":"object","properties":{"blueprint":{"type":"object"},"stepId":{"type":"string"}},"required":["blueprint"]}'::jsonb,
+                 '{"type":"object","properties":{"errors":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"},"pointer":{"type":"string"},"stepId":{"type":"string"}}}},"warnings":{"type":"array","items":{"type":"object","properties":{"code":{"type":"string"},"message":{"type":"string"},"pointer":{"type":"string"},"stepId":{"type":"string"}}}}}}'::jsonb,
+                 'checksum-flow_ops.validate_blueprint-v1', '[]'::jsonb, 'flowops', 'flow_ops.validate_blueprint', 'stdio', 'flowops'),
+                ('flow_ops.publish_flow', 1,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"updatedBy":{"type":"string"},"changeNotes":{"type":"string"}},"required":["definitionId"]}'::jsonb,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"version":{"type":"integer"},"status":{"type":"string"},"active":{"type":"boolean"},"publishedAt":{"type":"string","format":"date-time"}}}'::jsonb,
+                 'checksum-flow_ops.publish_flow-v1', '[]'::jsonb, 'flowops', 'flow_ops.publish_flow', 'stdio', 'flowops'),
+                ('flow_ops.rollback_flow', 1,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"targetVersion":{"type":"integer","minimum":1},"updatedBy":{"type":"string"},"changeNotes":{"type":"string"}},"required":["definitionId","targetVersion"]}'::jsonb,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"version":{"type":"integer"},"status":{"type":"string"},"active":{"type":"boolean"},"publishedAt":{"type":"string","format":"date-time"}}}'::jsonb,
+                 'checksum-flow_ops.rollback_flow-v1', '[]'::jsonb, 'flowops', 'flow_ops.rollback_flow', 'stdio', 'flowops'),
+                ('agent_ops.list_agents', 1,
+                 '{"type":"object","properties":{"query":{"type":"string"},"activeOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":100}}}'::jsonb,
+                 '{"type":"object","properties":{"agents":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"identifier":{"type":"string"},"displayName":{"type":"string"},"active":{"type":"boolean"},"latestVersion":{"type":"integer"},"latestPublishedVersion":{"type":"integer"},"updatedAt":{"type":"string","format":"date-time"},"createdAt":{"type":"string","format":"date-time"}}}}}}'::jsonb,
+                 'checksum-agent_ops.list_agents-v1', '[]'::jsonb, 'agentops', 'agent_ops.list_agents', 'stdio', 'agentops'),
+                ('agent_ops.register_agent', 1,
+                 '{"type":"object","properties":{"identifier":{"type":"string"},"displayName":{"type":"string"},"description":{"type":"string"},"active":{"type":"boolean"},"createdBy":{"type":"string"},"updatedBy":{"type":"string"}},"required":["identifier","displayName","createdBy"]}'::jsonb,
+                 '{"type":"object","properties":{"id":{"type":"string","format":"uuid"},"identifier":{"type":"string"},"displayName":{"type":"string"},"active":{"type":"boolean"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}}'::jsonb,
+                 'checksum-agent_ops.register_agent-v1', '[]'::jsonb, 'agentops', 'agent_ops.register_agent', 'stdio', 'agentops'),
+                ('agent_ops.preview_dependencies', 1,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"identifier":{"type":"string"}}}'::jsonb,
+                 '{"type":"object","properties":{"definitionId":{"type":"string","format":"uuid"},"identifier":{"type":"string"},"displayName":{"type":"string"},"active":{"type":"boolean"},"versions":{"type":"array","items":{"type":"object","properties":{"version":{"type":"integer"},"status":{"type":"string"},"providerId":{"type":"string"},"modelId":{"type":"string"},"toolCodes":{"type":"array","items":{"type":"string"}},"createdAt":{"type":"string","format":"date-time"},"publishedAt":{"type":"string","format":"date-time"}}}}}}}'::jsonb,
+                 'checksum-agent_ops.preview_dependencies-v1', '[]'::jsonb, 'agentops', 'agent_ops.preview_dependencies', 'stdio', 'agentops'),
+                ('insight.recent_sessions', 1,
+                 '{"type":"object","properties":{"types":{"type":"array","items":{"type":"string"}},"limit":{"type":"integer","minimum":1,"maximum":100}}}'::jsonb,
+                 '{"type":"object","properties":{"sessions":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"sessionId":{"type":"string","format":"uuid"},"title":{"type":"string"},"createdAt":{"type":"string","format":"date-time"},"lastActivityAt":{"type":"string","format":"date-time"},"status":{"type":"string"},"flowDefinitionId":{"type":"string","format":"uuid"},"flowDefinitionVersion":{"type":"integer"},"chatSessionId":{"type":"string","format":"uuid"},"messageCount":{"type":"integer"},"stepCount":{"type":"integer"},"summaryPreview":{"type":"string"}}}}}}'::jsonb,
+                 'checksum-insight.recent_sessions-v1', '[]'::jsonb, 'insight', 'insight.recent_sessions', 'stdio', 'insight'),
+                ('insight.fetch_summary', 1,
+                 '{"type":"object","properties":{"sessionId":{"type":"string","format":"uuid"},"type":{"type":"string"},"channel":{"type":"string"}},"required":["sessionId","type"]}'::jsonb,
+                 '{"type":"object","properties":{"entries":{"type":"array","items":{"type":"object","properties":{"channel":{"type":"string"},"sourceStart":{"type":"number"},"sourceEnd":{"type":"number"},"summary":{"type":"string"},"tokenCount":{"type":"number"},"language":{"type":"string"},"metadata":{"type":"object"},"createdAt":{"type":"string","format":"date-time"}}}}}}'::jsonb,
+                 'checksum-insight.fetch_summary-v1', '[]'::jsonb, 'insight', 'insight.fetch_summary', 'stdio', 'insight'),
+                ('insight.search_memory', 1,
+                 '{"type":"object","properties":{"sessionId":{"type":"string","format":"uuid"},"type":{"type":"string"},"query":{"type":"string"},"channel":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}},"required":["sessionId","type","query"]}'::jsonb,
+                 '{"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"resourceType":{"type":"string"},"channel":{"type":"string"},"content":{"type":"string"},"createdAt":{"type":"string","format":"date-time"},"sequenceNumber":{"type":"integer"},"version":{"type":"number"},"stepId":{"type":"string"},"stepAttempt":{"type":"integer"},"sourceStart":{"type":"number"},"sourceEnd":{"type":"number"},"messageId":{"type":"string","format":"uuid"},"payload":{"type":"object"}}}}}}'::jsonb,
+                 'checksum-insight.search_memory-v1', '[]'::jsonb, 'insight', 'insight.search_memory', 'stdio', 'insight'),
+                ('insight.fetch_metrics', 1,
+                '{"type":"object","properties":{"sessionId":{"type":"string","format":"uuid"},"type":{"type":"string"}},"required":["sessionId","type"]}'::jsonb,
+                 '{"type":"object","properties":{"sessionId":{"type":"string","format":"uuid"},"status":{"type":"string"},"startedAt":{"type":"string","format":"date-time"},"completedAt":{"type":"string","format":"date-time"},"lastUpdatedAt":{"type":"string","format":"date-time"},"stepsCompleted":{"type":"integer"},"stepsFailed":{"type":"integer"},"retriesScheduled":{"type":"integer"},"totalCostUsd":{"type":"number"},"promptTokens":{"type":"integer"},"completionTokens":{"type":"integer"}}}'::jsonb,
+                 'checksum-insight.fetch_metrics-v1', '[]'::jsonb, 'insight', 'insight.fetch_metrics', 'stdio', 'insight');
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('flow_ops.list_flows', 'Flow Ops · List flows', 'List flow definitions with optional filtering.', 'flowops', 'MANUAL', '["flow-ops","catalog"]'::jsonb, '["flow-management"]'::jsonb, 'Internal service call', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'flow_ops.list_flows' AND version = 1)),
+                ('flow_ops.diff_flow_version', 'Flow Ops · Diff versions', 'Compare two versions of a flow blueprint and highlight differences.', 'flowops', 'MANUAL', '["flow-ops","diff"]'::jsonb, '["flow-management"]'::jsonb, 'Internal service call', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'flow_ops.diff_flow_version' AND version = 1)),
+                ('flow_ops.validate_blueprint', 'Flow Ops · Validate blueprint', 'Run blueprint validation and return warnings and errors.', 'flowops', 'MANUAL', '["flow-ops","validation"]'::jsonb, '["flow-management"]'::jsonb, 'Internal service call', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'flow_ops.validate_blueprint' AND version = 1)),
+                ('flow_ops.publish_flow', 'Flow Ops · Publish flow', 'Publish a new version of a flow definition.', 'flowops', 'MANUAL', '["flow-ops","publish"]'::jsonb, '["flow-management"]'::jsonb, 'Internal service call', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'flow_ops.publish_flow' AND version = 1)),
+                ('flow_ops.rollback_flow', 'Flow Ops · Rollback flow', 'Rollback a flow to a previous blueprint version and publish it.', 'flowops', 'MANUAL', '["flow-ops","rollback"]'::jsonb, '["flow-management"]'::jsonb, 'Internal service call', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'flow_ops.rollback_flow' AND version = 1)),
+                ('agent_ops.list_agents', 'Agent Ops · List agents', 'List agent definitions with filters for identifier and active status.', 'agentops', 'MANUAL', '["agent-ops","catalog"]'::jsonb, '["agent-management"]'::jsonb, 'Internal service call', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'agent_ops.list_agents' AND version = 1)),
+                ('agent_ops.register_agent', 'Agent Ops · Register agent', 'Create a new agent definition in the catalog.', 'agentops', 'MANUAL', '["agent-ops","create"]'::jsonb, '["agent-management"]'::jsonb, 'Internal service call', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'agent_ops.register_agent' AND version = 1)),
+                ('agent_ops.preview_dependencies', 'Agent Ops · Preview dependencies', 'Inspect the dependencies and bound tools for an agent definition.', 'agentops', 'MANUAL', '["agent-ops","inspect"]'::jsonb, '["agent-management"]'::jsonb, 'Internal service call', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'agent_ops.preview_dependencies' AND version = 1)),
+                ('insight.recent_sessions', 'Insight · Recent sessions', 'Fetch recent chat and flow sessions including status and summaries.', 'insight', 'MANUAL', '["insight","analytics"]'::jsonb, '["observability"]'::jsonb, 'Internal service call', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'insight.recent_sessions' AND version = 1)),
+                ('insight.fetch_summary', 'Insight · Fetch summary', 'Retrieve stored summaries for a session and channel.', 'insight', 'MANUAL', '["insight","analytics"]'::jsonb, '["observability"]'::jsonb, 'Internal service call', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'insight.fetch_summary' AND version = 1)),
+                ('insight.search_memory', 'Insight · Search memory', 'Search session memory for matching content and payloads.', 'insight', 'MANUAL', '["insight","search"]'::jsonb, '["observability"]'::jsonb, 'Internal service call', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'insight.search_memory' AND version = 1)),
+                ('insight.fetch_metrics', 'Insight · Fetch metrics', 'Return telemetry snapshot for a flow session.', 'insight', 'MANUAL', '["insight","metrics"]'::jsonb, '["observability"]'::jsonb, 'Internal service call', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'insight.fetch_metrics' AND version = 1));
+
+              INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+              VALUES
+                (gen_random_uuid(), 'flow-ops-operator', 'Flow Ops Operator', 'Default template for managing flow definitions via Flow Ops MCP tools.', true, 'seed', 'seed', now(), now()),
+                (gen_random_uuid(), 'agent-ops-admin', 'Agent Ops Administrator', 'Template agent for administering the agent catalog through Agent Ops MCP.', true, 'seed', 'seed', now(), now()),
+                (gen_random_uuid(), 'insight-analyst', 'Insight Analyst', 'Template agent for analysing chat and flow telemetry with Insight MCP.', true, 'seed', 'seed', now(), now());
+
+              INSERT INTO agent_version (
+                id,
+                agent_definition_id,
+                version,
+                status,
+                provider_type,
+                provider_id,
+                model_id,
+                system_prompt,
+                agent_invocation_options,
+                sync_only,
+                max_tokens,
+                created_by,
+                updated_by,
+                created_at,
+                published_at)
+              VALUES
+                (gen_random_uuid(),
+                 (SELECT id FROM agent_definition WHERE identifier = 'flow-ops-operator'),
+                 1,
+                 'PUBLISHED',
+                 'OPENAI',
+                 'openai',
+                 'gpt-4o-mini',
+                 'You are a flow operations assistant. Use the Flow Ops MCP tools to inspect definitions, validate blueprints, and manage releases. Ask for confirmation before publish or rollback.',
+                 '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"system":"You are a flow operations assistant. Use the Flow Ops MCP tools to inspect definitions, validate blueprints, and manage releases. Ask for confirmation before publish or rollback.","variables":[],"generation":{"temperature":0.15,"topP":0.85,"maxOutputTokens":900}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":150,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[{"toolCode":"flow_ops.list_flows","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"flow_ops.diff_flow_version","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"flow_ops.validate_blueprint","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"flow_ops.publish_flow","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"flow_ops.rollback_flow","schemaVersion":1,"executionMode":"MANUAL"}]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}}'::jsonb,
+                 true,
+                 1100,
+                 'seed',
+                 'seed',
+                 now(),
+                 now()),
+                (gen_random_uuid(),
+                 (SELECT id FROM agent_definition WHERE identifier = 'agent-ops-admin'),
+                 1,
+                 'PUBLISHED',
+                 'OPENAI',
+                 'openai',
+                 'gpt-4o-mini',
+                 'You are an agent catalog administrator. Use the Agent Ops MCP tools to list, register, and inspect agents. Always confirm destructive actions with the user.',
+                 '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"system":"You are an agent catalog administrator. Use the Agent Ops MCP tools to list, register, and inspect agents. Always confirm destructive actions with the user.","variables":[],"generation":{"temperature":0.2,"topP":0.85,"maxOutputTokens":850}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":120,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":40000,"overallDeadlineMs":100000,"jitterMs":120},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[{"toolCode":"agent_ops.list_agents","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"agent_ops.register_agent","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"agent_ops.preview_dependencies","schemaVersion":1,"executionMode":"MANUAL"}]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}}'::jsonb,
+                 true,
+                 900,
+                 'seed',
+                 'seed',
+                 now(),
+                 now()),
+                (gen_random_uuid(),
+                 (SELECT id FROM agent_definition WHERE identifier = 'insight-analyst'),
+                 1,
+                 'PUBLISHED',
+                 'OPENAI',
+                 'openai',
+                 'gpt-4o-mini',
+                 'You are an analytics specialist. Use the Insight MCP tools to review sessions, surface summaries, search memory, and report telemetry trends.',
+                 '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"system":"You are an analytics specialist. Use the Insight MCP tools to review sessions, surface summaries, search memory, and report telemetry trends.","variables":[],"generation":{"temperature":0.15,"topP":0.85,"maxOutputTokens":900}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":120,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[{"toolCode":"insight.recent_sessions","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"insight.fetch_summary","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"insight.search_memory","schemaVersion":1,"executionMode":"MANUAL"},{"toolCode":"insight.fetch_metrics","schemaVersion":1,"executionMode":"MANUAL"}]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}}'::jsonb,
+                 true,
+                 950,
+                 'seed',
+                 'seed',
+                 now(),
+                 now());
+
+              INSERT INTO agent_capability (agent_version_id, capability, payload)
+              VALUES
+                (
+                  (SELECT id FROM agent_version WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'flow-ops-operator') AND version = 1),
+                  'flow.ops.tools',
+                  jsonb_build_object('default', 'flow_ops.list_flows', 'options', jsonb_build_array('flow_ops.list_flows','flow_ops.diff_flow_version','flow_ops.validate_blueprint','flow_ops.publish_flow','flow_ops.rollback_flow'))
+                ),
+                (
+                  (SELECT id FROM agent_version WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'agent-ops-admin') AND version = 1),
+                  'agent.ops.tools',
+                  jsonb_build_object('default', 'agent_ops.list_agents', 'options', jsonb_build_array('agent_ops.list_agents','agent_ops.register_agent','agent_ops.preview_dependencies'))
+                ),
+                (
+                  (SELECT id FROM agent_version WHERE agent_definition_id = (SELECT id FROM agent_definition WHERE identifier = 'insight-analyst') AND version = 1),
+                  'insight.tools',
+                  jsonb_build_object('default', 'insight.recent_sessions', 'options', jsonb_build_array('insight.recent_sessions','insight.fetch_summary','insight.search_memory','insight.fetch_metrics'))
+                );
