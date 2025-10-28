@@ -659,12 +659,12 @@
 
 ## Wave 14 — Typed blueprint runtime polish
 ### Backend
-- [ ] Заменить `JsonNode` в `FlowBlueprintStep` на типизированные value-объекты (`FlowStepOverrides`, `FlowInteractionDraft`, `FlowMemoryReadDraft`, `FlowMemoryWriteDraft`, `FlowStepTransitionsDraft`), обновить `FlowDefinitionParser`/`FlowBlueprintCompiler` под новую модель и покрыть round-trip тестами сериализации.
-- [ ] Применять memory-политику blueprint: при запуске сессии создавать каналы по `memory.sharedChannels`, прокидывать retention-настройки в `FlowMemoryService` и добавлять интеграционные проверки сохранения/очистки истории.
-- [ ] Добавить валидацию `schemaVersion` при сохранении флоу: проверять совместимость, отклонять неподлежащее схеме значение и логировать предупреждения в телеметрию.
+ - [x] Заменить `JsonNode` в `FlowBlueprintStep` на типизированные value-объекты (`FlowStepOverrides`, `FlowInteractionDraft`, `FlowMemoryReadDraft`, `FlowMemoryWriteDraft`, `FlowStepTransitionsDraft`), обновить `FlowDefinitionParser`/`FlowBlueprintCompiler` под новую модель и покрыть round-trip тестами сериализации.
+- [x] Применять memory-политику blueprint: при запуске сессии создавать каналы по `memory.sharedChannels`, прокидывать retention-настройки в `FlowMemoryService` и добавлять интеграционные проверки сохранения/очистки истории.
+- [x] Добавить валидацию `schemaVersion` при сохранении флоу: проверять совместимость, отклонять неподлежащее схеме значение и логировать предупреждения в телеметрию.
 - [ ] Обновить `FlowBlueprintValidator` и `FlowBlueprintCompiler`, чтобы работать с новыми DTO без ручного JSON, и внедрить централизованный набор ошибок/предупреждений.
-- [ ] Расширить `FlowDefinitionParser`/`FlowDefinitionDocument`, чтобы прокидывать `memory.sharedChannels` и retention-политику до уровня оркестратора/инвокеров.
-- [ ] Параметризовать `FlowMemoryService` и все вызовы `append(...)` под blueprint-retention (оркестратор, интеракции, ручные записи).
+- [x] Расширить `FlowDefinitionParser`/`FlowDefinitionDocument`, чтобы прокидывать `memory.sharedChannels` и retention-политику до уровня оркестратора/инвокеров.
+- [x] Параметризовать `FlowMemoryService` и все вызовы `append(...)` под blueprint-retention (оркестратор, интеракции, ручные записи).
 - [ ] Автоматизировать управление `schemaVersion`: выставлять целевую версию при сохранении/публикации, мигрировать текущие `flow_definition`/`history` записи и синхронизировать с историей.
 
 ### Frontend
@@ -694,3 +694,45 @@
 
 ### Документация
 - [ ] Обновить `docs/processes.md` с требованиями к тестированию research-режима и stub MCP.
+
+## Wave 16 — Spring AI MCP servers
+Цель: построить и внедрить собственные STDIO MCP-серверы на Spring AI, чтобы расширить набор инструментов для оркестратора, операторов и аналитики без зависимости от внешних провайдеров.
+
+### Кандидаты MCP
+- `flow-ops-mcp` — доступ к `FlowDefinitionService`, `FlowBlueprintValidator` и пайплайну публикации: просмотр, сравнение версий, форс-валидация и запуск публикаций/rollback.
+- `toolsmith-mcp` — управление каталогом `ToolDefinition`: синхронизация схем, инспекция `ToolSchemaVersion`, выдача ready-to-use payload'ов и подсказок по ручным инструментам.
+- `insight-mcp` — аналитика чатов/флоу: чтение summary из `ChatMemoryService` и `FlowMemoryService`, поиск конверсаций, метрики latency/ошибок из `Telemetry`.
+- `agent-ops-mcp` — self-service для `AgentCatalogService`/`AgentConstructorService`: регистрация новых агентов, изменение статусов, клонирование конфигураций и диагностика зависимостей инструментов.
+
+### Backend
+- [ ] Создать отдельный Gradle-модуль `backend-mcp` (Spring Boot 3 + `spring-ai-mcp-spring-boot-starter`) с STDIO-лаунчером и Dockerfile.
+- [ ] Реализовать `flow-ops-mcp`: инструменты `list_flows`, `diff_flow_version`, `validate_blueprint`, `publish_flow`, `rollback_flow` с обращением к существующим сервисам и аудитом через `ChatLoggingSupport`.
+- [ ] Реализовать `toolsmith-mcp`: инструменты `list_tools`, `inspect_schema`, `generate_payload`, `sync_tool_binding` с reuse `ToolDefinitionRepository`/`McpToolBindingService`.
+- [ ] Реализовать `insight-mcp`: инструменты `recent_sessions`, `fetch_summary`, `search_memory`, `fetch_metrics` c использованием `FlowMemoryService`, `ChatMemoryService`, `TelemetryService`.
+- [ ] Реализовать `agent-ops-mcp`: инструменты `list_agents`, `register_agent`, `clone_agent`, `update_status`, `preview_dependencies` поверх `AgentCatalogService`/`AgentConstructorService` с валидацией связок `ToolBinding`.
+- [ ] Интегрировать `backend-mcp` с основным `backend`-приложением: регистрация STDIO-клиентов, health-indicator'ы, security policy и wiring новых `ToolSchemaVersion` в `McpToolBindingService`.
+- [ ] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
+- [ ] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
+- [ ] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
+- [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
+- [ ] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
+
+### Frontend
+- [ ] Расширить chat UI для подключения MCP-инструментов: выбор доступных tool codes, индикация STDIO-серверов и отправка `requestedToolCodes` в backend.
+- [ ] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности) в DTO чата и агентов.
+
+### Tests & QA
+- [ ] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
+- [ ] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
+- [ ] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
+- [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку отказов STDIO.
+
+### Infrastructure & Ops
+- [ ] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `TOOLSMITH_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
+- [ ] Подготовить Helm/Compose deployment для MCP: ресурсы контейнеров, rotation ключей, алерты по недоступности STDIO.
+- [ ] Перенастроить метрики/алерты (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги и добавить отдельные actuator health endpoints для каждого MCP-сервера.
+
+### Docs & Enablement
+- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, toolsmith, observability).
+- [ ] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
+- [ ] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
