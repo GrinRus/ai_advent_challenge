@@ -99,12 +99,19 @@ logging:
     org.springframework.ai.mcp.client: DEBUG
     org.springframework.ai.mcp.tool: DEBUG
 
-    # чтобы видеть обмен с моделью и SimpleLoggerAdvisor
+    # чтобы видеть обмен с моделью и LoggingChatModel
     org.springframework.ai.chat.model: DEBUG
     org.springframework.ai.chat.client.advisor: DEBUG
+    com.aiadvent.backend.chat.logging: DEBUG
 
 app:
   chat:
+    logging:
+      model:
+        enabled: ${CHAT_LOGGING_MODEL_ENABLED:true}
+        log-completion: ${CHAT_LOGGING_MODEL_COMPLETION:true}
+      tools:
+        enabled: ${CHAT_LOGGING_TOOLS_ENABLED:true}
     memory:
       window-size: ${CHAT_MEMORY_WINDOW_SIZE:20}
       retention: ${CHAT_MEMORY_RETENTION:PT6H}

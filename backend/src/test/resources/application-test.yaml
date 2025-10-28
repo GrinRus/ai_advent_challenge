@@ -27,3 +27,12 @@ spring:
 logging:
   level:
     root: WARN
+
+app:
+  chat:
+    logging:
+      model:
+        enabled: false
+        log-completion: false
+      tools:
+        enabled: false

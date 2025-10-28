@@ -2,6 +2,7 @@ package com.aiadvent.backend.chat.support;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
+import com.aiadvent.backend.chat.logging.ChatLoggingSupport;
 import com.aiadvent.backend.chat.provider.ChatProviderAdapter;
 import com.aiadvent.backend.chat.provider.ChatProviderRegistry;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -23,7 +24,6 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -61,8 +61,8 @@ public class StubChatClientConfiguration {
   @Bean
   @Primary
   public ChatProviderService stubChatProviderService(
-      SimpleLoggerAdvisor simpleLoggerAdvisor,
       MessageChatMemoryAdvisor chatMemoryAdvisor,
+      ChatLoggingSupport chatLoggingSupport,
       TokenUsageEstimator tokenUsageEstimator,
       TokenUsageMetrics tokenUsageMetrics) {
     ChatProvidersProperties properties = new ChatProvidersProperties();
@@ -106,10 +106,12 @@ public class StubChatClientConfiguration {
 
     ChatProviderRegistry registry = new ChatProviderRegistry(properties);
 
-    ChatClient chatClient =
-        ChatClient.builder(new StubChatModel())
-            .defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor)
-            .build();
+    ChatClient.Builder chatClientBuilder =
+        ChatClient.builder(chatLoggingSupport.decorateModel(new StubChatModel()));
+    if (chatMemoryAdvisor != null) {
+      chatClientBuilder.defaultAdvisors(chatMemoryAdvisor);
+    }
+    ChatClient chatClient = chatClientBuilder.build();
 
     ChatProviderAdapter stubAdapter = adapter("stub", chatClient, primaryProvider);
     ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient, alternateProvider);

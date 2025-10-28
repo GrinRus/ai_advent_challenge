@@ -8,11 +8,11 @@ import com.aiadvent.backend.chat.provider.OpenAiChatProviderAdapter;
 import com.aiadvent.backend.chat.provider.ZhiPuAiChatProviderAdapter;
 import com.aiadvent.backend.chat.token.TokenUsageEstimator;
 import com.aiadvent.backend.chat.token.TokenUsageMetrics;
+import com.aiadvent.backend.chat.logging.ChatLoggingSupport;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
@@ -39,8 +39,8 @@ public class ChatProviderConfiguration {
       ChatProvidersProperties properties,
       ObjectProvider<OpenAiApi> openAiApiProvider,
       ObjectProvider<ZhiPuAiApi> zhiPuAiApiProvider,
-      SimpleLoggerAdvisor simpleLoggerAdvisor,
       MessageChatMemoryAdvisor chatMemoryAdvisor,
+      ChatLoggingSupport chatLoggingSupport,
       ObjectProvider<SyncMcpToolCallbackProvider> mcpToolCallbackProvider) {
 
     ToolCallbackProvider toolCallbackProvider = mcpToolCallbackProvider.getIfAvailable();
@@ -72,9 +72,9 @@ public class ChatProviderConfiguration {
                     providerId,
                     providerConfig,
                     openAiApi,
-                    simpleLoggerAdvisor,
                     chatMemoryAdvisor,
-                    toolCallbackProvider));
+                    toolCallbackProvider,
+                    chatLoggingSupport));
           } else if (providerConfig.getType() == ChatProviderType.ZHIPUAI) {
             ZhiPuAiApi zhiPuAiApi = zhiPuAiApiProvider.getIfAvailable();
             if (zhiPuAiApi == null) {
@@ -98,9 +98,9 @@ public class ChatProviderConfiguration {
                     providerId,
                     providerConfig,
                     zhiPuAiApi,
-                    simpleLoggerAdvisor,
                     chatMemoryAdvisor,
-                    toolCallbackProvider));
+                    toolCallbackProvider,
+                    chatLoggingSupport));
           } else {
             throw new IllegalStateException(
                 "Unsupported provider type for '" + providerId + "': " + providerConfig.getType());

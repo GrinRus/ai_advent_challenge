@@ -3,7 +3,6 @@ package com.aiadvent.backend.chat.config;
 import com.aiadvent.backend.chat.memory.DatabaseChatMemoryRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -35,10 +34,5 @@ public class ChatMemoryConfiguration {
   @Bean
   public MessageChatMemoryAdvisor messageChatMemoryAdvisor(ChatMemory chatMemory) {
     return MessageChatMemoryAdvisor.builder(chatMemory).build();
-  }
-
-  @Bean
-  public SimpleLoggerAdvisor simpleLoggerAdvisor() {
-    return new SimpleLoggerAdvisor();
   }
 }

@@ -2,12 +2,12 @@ package com.aiadvent.backend.chat.provider;
 
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
+import com.aiadvent.backend.chat.logging.ChatLoggingSupport;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import java.util.Optional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
-import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.zhipuai.ZhiPuAiChatModel;
@@ -24,14 +24,15 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
   private final ChatClient chatClient;
   private final ChatClient statelessChatClient;
   private final ToolCallbackProvider toolCallbackProvider;
+  private final ChatLoggingSupport chatLoggingSupport;
 
   public ZhiPuAiChatProviderAdapter(
       String providerId,
       ChatProvidersProperties.Provider providerConfig,
       ZhiPuAiApi baseZhiPuAiApi,
-      SimpleLoggerAdvisor simpleLoggerAdvisor,
       MessageChatMemoryAdvisor chatMemoryAdvisor,
-      ToolCallbackProvider toolCallbackProvider) {
+      ToolCallbackProvider toolCallbackProvider,
+      ChatLoggingSupport chatLoggingSupport) {
     Assert.notNull(providerConfig, "providerConfig must not be null");
     Assert.state(
         providerConfig.getType() == ChatProviderType.ZHIPUAI,
@@ -40,26 +41,21 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
     this.providerId = providerId;
     this.providerConfig = providerConfig;
     this.toolCallbackProvider = toolCallbackProvider;
+    this.chatLoggingSupport = chatLoggingSupport;
 
     ZhiPuAiApi providerApi = mutateApi(baseZhiPuAiApi, providerConfig);
     ZhiPuAiChatOptions defaultOptions = defaultOptions(providerConfig);
     ZhiPuAiChatModel chatModel = new ZhiPuAiChatModel(providerApi, defaultOptions);
     this.chatClient =
-        buildChatClient(chatModel, simpleLoggerAdvisor, chatMemoryAdvisor, toolCallbackProvider);
-    this.statelessChatClient =
-        buildChatClient(chatModel, simpleLoggerAdvisor, null, toolCallbackProvider);
+        buildChatClient(chatModel, chatMemoryAdvisor);
+    this.statelessChatClient = buildChatClient(chatModel, null);
   }
 
   private ChatClient buildChatClient(
-      ZhiPuAiChatModel chatModel,
-      SimpleLoggerAdvisor simpleLoggerAdvisor,
-      MessageChatMemoryAdvisor chatMemoryAdvisor,
-      ToolCallbackProvider toolCallbackProvider) {
-    ChatClient.Builder builder = ChatClient.builder(chatModel);
+      ZhiPuAiChatModel chatModel, MessageChatMemoryAdvisor chatMemoryAdvisor) {
+    ChatClient.Builder builder = ChatClient.builder(chatLoggingSupport.decorateModel(chatModel));
     if (chatMemoryAdvisor != null) {
-      builder.defaultAdvisors(simpleLoggerAdvisor, chatMemoryAdvisor);
-    } else {
-      builder.defaultAdvisors(simpleLoggerAdvisor);
+      builder.defaultAdvisors(chatMemoryAdvisor);
     }
     return builder.build();
   }

@@ -1,5 +1,6 @@
 package com.aiadvent.backend.flow.tool.service;
 
+import com.aiadvent.backend.chat.logging.ChatLoggingSupport;
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.tool.domain.ToolDefinition;
 import com.aiadvent.backend.flow.tool.domain.ToolSchemaVersion;
@@ -45,6 +46,7 @@ public class McpToolBindingService {
   private final ToolDefinitionRepository toolDefinitionRepository;
   private final ObjectProvider<SyncMcpToolCallbackProvider> toolCallbackProvider;
   private final ObjectMapper objectMapper;
+  private final ChatLoggingSupport chatLoggingSupport;
   private final AtomicBoolean missingProviderLogged = new AtomicBoolean(false);
 
   public record ResolvedTool(String toolCode, ToolCallback callback) {}
@@ -52,10 +54,12 @@ public class McpToolBindingService {
   public McpToolBindingService(
       ToolDefinitionRepository toolDefinitionRepository,
       ObjectProvider<SyncMcpToolCallbackProvider> toolCallbackProvider,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ChatLoggingSupport chatLoggingSupport) {
     this.toolDefinitionRepository = toolDefinitionRepository;
     this.toolCallbackProvider = toolCallbackProvider;
     this.objectMapper = objectMapper;
+    this.chatLoggingSupport = chatLoggingSupport;
   }
 
   /**
@@ -152,8 +156,9 @@ public class McpToolBindingService {
             delegate ->
                 new ResolvedTool(
                     toolCode.trim(),
-                    new QueryOverridingToolCallback(
-                        delegate, objectMapper, mergedOverrides, payloadCustomizer)));
+                    chatLoggingSupport.decorateToolCallback(
+                        new QueryOverridingToolCallback(
+                            delegate, objectMapper, mergedOverrides, payloadCustomizer))));
   }
 
   private Consumer<ObjectNode> buildPayloadCustomizer(
