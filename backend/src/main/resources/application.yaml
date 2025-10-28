@@ -67,6 +67,7 @@ logging:
     org.springframework.web: INFO
     org.springframework.ai.chat.client.advisor: DEBUG
     ConstructorAudit: INFO
+    org.springframework.ai.tool: DEBUG
 
 app:
   chat:

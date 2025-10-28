@@ -675,7 +675,7 @@
 - [ ] Реализовать интеграционный тест `FlowMemoryService` (retention/cleanup) и e2e сценарий публикации флоу с кастомными каналами памяти.
 - [ ] Дополнить frontend-vitest покрытие: проверить serialise/deserialize адаптеров на typed step DTO и memory retention.
 
-## Wave 16 — MCP Research Testing & Stability
+## Wave 15 — MCP Research Testing & Stability
 ### Backend
 - [ ] Обновить unit-тесты (`AgentInvocationServiceTest` и др.) с поддержкой `McpToolBindingService`, покрыть передачу tool callbacks и tool codes.
 - [ ] Добавить stub-конфигурацию (`SyncMcpToolCallbackProvider`) для интеграционных тестов без запуска STDIO.
