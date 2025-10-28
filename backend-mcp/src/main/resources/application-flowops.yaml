@@ -1,0 +1,19 @@
+spring:
+  ai:
+    mcp:
+      server:
+        name: flow-ops-mcp
+        version: 0.1.0
+        type: SYNC
+        instructions: |
+          Flow Ops MCP предоставляет инструменты для просмотра, сравнения и публикации flow-definition.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
+flowops:
+  backend:
+    base-url: ${FLOW_OPS_BACKEND_BASE_URL:http://localhost:8080}
+    api-token: ${FLOW_OPS_BACKEND_API_TOKEN:}

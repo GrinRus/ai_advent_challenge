@@ -705,12 +705,12 @@
 
 ### Backend
 - [x] Создать отдельный Gradle-модуль `backend-mcp` (Spring Boot 3 + `spring-ai-mcp-spring-boot-starter`) с STDIO-лаунчером и Dockerfile.
-- [ ] Реализовать `flow-ops-mcp`: инструменты `list_flows`, `diff_flow_version`, `validate_blueprint`, `publish_flow`, `rollback_flow` с обращением к существующим сервисам и аудитом через `ChatLoggingSupport`.
+- [x] Реализовать `flow-ops-mcp`: инструменты `list_flows`, `diff_flow_version`, `validate_blueprint`, `publish_flow`, `rollback_flow` с обращением к существующим сервисам и аудитом через `ChatLoggingSupport`.
 - [ ] Реализовать `insight-mcp`: инструменты `recent_sessions`, `fetch_summary`, `search_memory`, `fetch_metrics` c использованием `FlowMemoryService`, `ChatMemoryService`, `TelemetryService`.
 - [x] Реализовать `agent-ops-mcp`: стартовая итерация — `list_agents`, `register_agent`, `preview_dependencies` (валидация `ToolBinding`, structured ответы для UI); последующие итерации — `clone_agent`, `update_status`, расширенные проверки.
 - [ ] Интегрировать `backend-mcp` с основным `backend`-приложением: регистрация STDIO-клиентов, health-indicator'ы, security policy и wiring новых `ToolSchemaVersion` в `McpToolBindingService`.
 - [x] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
-- [ ] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
+- [x] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
 - [ ] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.

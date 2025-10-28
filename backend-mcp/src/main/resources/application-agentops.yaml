@@ -1,0 +1,19 @@
+spring:
+  ai:
+    mcp:
+      server:
+        name: agent-ops-mcp
+        version: 0.1.0
+        type: SYNC
+        instructions: |
+          Agent Ops MCP предоставляет инструменты для управления каталогом агентов.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
+agentops:
+  backend:
+    base-url: ${AGENT_OPS_BACKEND_BASE_URL:http://localhost:8080}
+    api-token: ${AGENT_OPS_BACKEND_API_TOKEN:}

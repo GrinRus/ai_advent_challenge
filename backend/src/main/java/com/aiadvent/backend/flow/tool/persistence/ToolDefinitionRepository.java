@@ -15,4 +15,7 @@ public interface ToolDefinitionRepository extends JpaRepository<ToolDefinition, 
   Optional<ToolDefinition> findByCodeIgnoreCase(String code);
 
   List<ToolDefinition> findAllByOrderByDisplayNameAsc();
+
+  @EntityGraph(attributePaths = "schemaVersion")
+  List<ToolDefinition> findAllBySchemaVersionIsNotNull();
 }

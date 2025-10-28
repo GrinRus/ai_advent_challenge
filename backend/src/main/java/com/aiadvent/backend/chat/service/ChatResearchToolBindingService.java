@@ -126,12 +126,14 @@ public class ChatResearchToolBindingService {
       return new AgentInvocationOptions.ToolBinding(
           null, 0, properties.executionMode(), objectMapper.createObjectNode(), null);
     }
-    ObjectNode overrides =
-        properties.requestOverrides().isEmpty()
-            ? objectMapper.createObjectNode()
-            : objectMapper.valueToTree(properties.requestOverrides());
-    if (overrides == null || overrides.isNull()) {
+    JsonNode overridesNode = properties.requestOverrides();
+    ObjectNode overrides;
+    if (overridesNode == null || overridesNode.isNull()) {
       overrides = objectMapper.createObjectNode();
+    } else if (overridesNode instanceof ObjectNode objectNode) {
+      overrides = objectNode.deepCopy();
+    } else {
+      overrides = objectMapper.convertValue(overridesNode, ObjectNode.class);
     }
     return new AgentInvocationOptions.ToolBinding(
         properties.code(),

@@ -39,7 +39,16 @@ spring:
               command: ${AGENT_OPS_MCP_CMD:agent-ops-mcp}
               args: []
               env:
+                SPRING_PROFILES_ACTIVE: agentops
+                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.AgentOpsMcpApplication
                 AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:http://localhost:8080}
+            flowops:
+              command: ${FLOW_OPS_MCP_CMD:flow-ops-mcp}
+              args: []
+              env:
+                SPRING_PROFILES_ACTIVE: flowops
+                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.FlowOpsMcpApplication
+                FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:http://localhost:8080}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

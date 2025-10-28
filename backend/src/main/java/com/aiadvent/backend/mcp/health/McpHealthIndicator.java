@@ -40,22 +40,19 @@ public class McpHealthIndicator implements HealthIndicator {
       long elapsed = System.nanoTime() - started;
       Duration duration = Duration.ofNanos(elapsed);
 
-      Map<String, Object> serverDetails = new LinkedHashMap<>();
+      Map<String, ServerHealthDetails> serverDetails = new LinkedHashMap<>();
       boolean anyDown = false;
 
       for (McpServer server : catalog.servers()) {
         recordLatency(server.id(), duration);
 
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("status", server.status());
-        details.put("toolCount", server.tools().size());
-        details.put(
-            "availableTools",
-            toCodeList(server.tools().stream().filter(McpTool::available).toList()));
-        details.put(
-            "unavailableTools",
-            toCodeList(server.tools().stream().filter(tool -> !tool.available()).toList()));
-        serverDetails.put(server.id(), details);
+        List<String> available =
+            toCodeList(server.tools().stream().filter(McpTool::available).toList());
+        List<String> unavailable =
+            toCodeList(server.tools().stream().filter(tool -> !tool.available()).toList());
+        serverDetails.put(
+            server.id(),
+            new ServerHealthDetails(server.status(), server.tools().size(), available, unavailable));
 
         if (server.status() == McpServerStatus.DOWN) {
           anyDown = true;
@@ -101,5 +98,7 @@ public class McpHealthIndicator implements HealthIndicator {
                     .register(meterRegistry))
         .increment();
   }
-}
 
+  private record ServerHealthDetails(
+      McpServerStatus status, int toolCount, List<String> availableTools, List<String> unavailableTools) {}
+}

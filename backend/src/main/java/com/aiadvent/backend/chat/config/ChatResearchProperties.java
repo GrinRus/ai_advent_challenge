@@ -1,8 +1,8 @@
 package com.aiadvent.backend.chat.config;
 
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
-import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.StringUtils;
 
@@ -67,7 +67,7 @@ public class ChatResearchProperties {
     private String code;
     private Integer schemaVersion;
     private AgentInvocationOptions.ExecutionMode executionMode;
-    private Map<String, Object> requestOverrides;
+    private JsonNode requestOverrides;
 
     public String getCode() {
       return code != null ? code.trim() : null;
@@ -97,11 +97,11 @@ public class ChatResearchProperties {
       this.executionMode = executionMode;
     }
 
-    public Map<String, Object> getRequestOverrides() {
+    public JsonNode getRequestOverrides() {
       return requestOverrides;
     }
 
-    public void setRequestOverrides(Map<String, Object> requestOverrides) {
+    public void setRequestOverrides(JsonNode requestOverrides) {
       this.requestOverrides = requestOverrides;
     }
 
@@ -113,8 +113,8 @@ public class ChatResearchProperties {
       return executionMode != null ? executionMode : AgentInvocationOptions.ExecutionMode.AUTO;
     }
 
-    public Map<String, Object> requestOverrides() {
-      return requestOverrides != null ? requestOverrides : Map.of();
+    public JsonNode requestOverrides() {
+      return requestOverrides;
     }
   }
 }
