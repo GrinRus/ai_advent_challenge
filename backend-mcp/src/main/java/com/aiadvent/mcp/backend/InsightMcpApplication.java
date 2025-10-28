@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication(
-    scanBasePackages = {"com.aiadvent.mcp.backend.insight", "com.aiadvent.mcp.backend.config"})
+    scanBasePackages = {"com.aiadvent.backend.mcp.insight", "com.aiadvent.backend.mcp.config"})
 @EnableConfigurationProperties(InsightBackendProperties.class)
 public class InsightMcpApplication {
 

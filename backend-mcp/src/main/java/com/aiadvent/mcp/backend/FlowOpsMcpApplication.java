@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-@SpringBootApplication(scanBasePackages = {"com.aiadvent.mcp.backend.flowops", "com.aiadvent.mcp.backend.config"})
+@SpringBootApplication(scanBasePackages = {"com.aiadvent.backend.mcp.flowops", "com.aiadvent.backend.mcp.config"})
 @EnableConfigurationProperties(FlowOpsBackendProperties.class)
 public class FlowOpsMcpApplication {
 

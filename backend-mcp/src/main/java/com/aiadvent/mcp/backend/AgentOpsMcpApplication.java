@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-@SpringBootApplication(scanBasePackages = {"com.aiadvent.mcp.backend.agentops", "com.aiadvent.mcp.backend.config"})
+@SpringBootApplication(scanBasePackages = {"com.aiadvent.backend.mcp.agentops", "com.aiadvent.backend.mcp.config"})
 @EnableConfigurationProperties(AgentOpsBackendProperties.class)
 public class AgentOpsMcpApplication {
 
