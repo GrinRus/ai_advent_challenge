@@ -16,6 +16,7 @@ public record McpCatalogResponse(List<McpServer> servers) {
       String description,
       List<String> tags,
       McpServerStatus status,
+      String securityPolicy,
       List<McpTool> tools) {}
 
   public record McpTool(
@@ -26,4 +27,3 @@ public record McpCatalogResponse(List<McpServer> servers) {
       int schemaVersion,
       boolean available) {}
 }
-

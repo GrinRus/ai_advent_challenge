@@ -49,6 +49,14 @@ spring:
                 SPRING_PROFILES_ACTIVE: flowops
                 SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.FlowOpsMcpApplication
                 FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:http://localhost:8080}
+            insight:
+              command: ${INSIGHT_MCP_CMD:insight-mcp}
+              args: []
+              env:
+                SPRING_PROFILES_ACTIVE: insight
+                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.InsightMcpApplication
+                INSIGHT_BACKEND_BASE_URL: ${INSIGHT_BACKEND_BASE_URL:http://localhost:8080}
+                INSIGHT_BACKEND_API_TOKEN: ${INSIGHT_BACKEND_API_TOKEN:}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -294,10 +302,22 @@ app:
           display-name: "Perplexity MCP"
           description: "Поисковый и research-сервер Perplexity (search / deep research)."
           tags: ["search", "research"]
+          security-policy: "external-readonly"
         agentops:
           display-name: "Agent Ops MCP"
           description: "Управление каталогом агентов: регистрация, просмотр и диагностика зависимостей."
           tags: ["agents", "operations"]
+          security-policy: "internal-admin"
+        flowops:
+          display-name: "Flow Ops MCP"
+          description: "Инструменты для управления и публикации flow-definition."
+          tags: ["flows", "operations"]
+          security-policy: "internal-change-managed"
+        insight:
+          display-name: "Insight MCP"
+          description: "Аналитика сессий чатов и flow: summary, поиск по памяти, метрики."
+          tags: ["analytics", "observability"]
+          security-policy: "internal-readonly"
 
   flow:
     api:

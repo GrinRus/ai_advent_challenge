@@ -19,6 +19,7 @@ public class McpCatalogProperties {
     private String displayName;
     private String description;
     private List<String> tags = List.of();
+    private String securityPolicy;
 
     public String getDisplayName() {
       return displayName;
@@ -43,6 +44,13 @@ public class McpCatalogProperties {
     public void setTags(List<String> tags) {
       this.tags = tags != null ? List.copyOf(tags) : List.of();
     }
+
+    public String getSecurityPolicy() {
+      return securityPolicy;
+    }
+
+    public void setSecurityPolicy(String securityPolicy) {
+      this.securityPolicy = securityPolicy;
+    }
   }
 }
-

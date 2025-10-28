@@ -1,0 +1,20 @@
+spring:
+  ai:
+    mcp:
+      server:
+        name: insight-mcp
+        version: 0.1.0
+        type: SYNC
+        instructions: |
+          Insight MCP предоставляет аналитические инструменты для чтения summary чатов и flow,
+          поиска по памяти и просмотра телеметрии сессий.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+
+insight:
+  backend:
+    base-url: ${INSIGHT_BACKEND_BASE_URL:http://localhost:8080}
+    api-token: ${INSIGHT_BACKEND_API_TOKEN:}

@@ -43,6 +43,9 @@ public class McpCatalogService {
     Map<String, McpCatalogProperties.ServerProperties> metadata =
         catalogProperties.getServers();
 
+    metadata.keySet().forEach(
+        serverId -> toolsByServer.computeIfAbsent(serverId, key -> new ArrayList<>()));
+
     Map<String, McpCatalogResponse.McpServer> servers = new LinkedHashMap<>();
     for (Map.Entry<String, List<McpCatalogResponse.McpTool>> entry : toolsByServer.entrySet()) {
       String serverId = entry.getKey();
@@ -62,12 +65,18 @@ public class McpCatalogService {
           Optional.ofNullable(serverProps)
               .map(McpCatalogProperties.ServerProperties::getTags)
               .orElse(List.of());
+      String securityPolicy =
+          Optional.ofNullable(serverProps)
+              .map(McpCatalogProperties.ServerProperties::getSecurityPolicy)
+              .filter(StringUtils::hasText)
+              .orElse(null);
 
       McpServerStatus status = deriveStatus(serverId, tools);
 
       servers.put(
           serverId,
-          new McpCatalogResponse.McpServer(serverId, displayName, description, tags, status, tools));
+          new McpCatalogResponse.McpServer(
+              serverId, displayName, description, tags, status, securityPolicy, tools));
     }
 
     return new McpCatalogResponse(new ArrayList<>(servers.values()));

@@ -203,7 +203,12 @@ public class McpToolBindingService {
       };
     }
 
-    return payload -> payload.put("query", userQuery);
+    if ("insight.search_memory".equals(normalizedName)
+        || normalizedCode.contains("insight_search_memory")) {
+      return payload -> payload.put("query", userQuery);
+    }
+
+    return payload -> {};
   }
 
   private ObjectNode safeOverrides(JsonNode overrides) {

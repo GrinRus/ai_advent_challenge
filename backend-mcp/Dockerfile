@@ -17,7 +17,9 @@ WORKDIR /app
 
 ENV SPRING_MAIN_BANNER_MODE=off \
     JAVA_OPTS="" \
-    AGENT_OPS_BACKEND_BASE_URL=http://backend:8080
+    AGENT_OPS_BACKEND_BASE_URL=http://backend:8080 \
+    FLOW_OPS_BACKEND_BASE_URL=http://backend:8080 \
+    INSIGHT_BACKEND_BASE_URL=http://backend:8080
 
 COPY --from=build /workspace/build/libs/backend-mcp-0.0.1-SNAPSHOT.jar app.jar
 
