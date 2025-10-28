@@ -5,6 +5,8 @@ import com.aiadvent.backend.flow.domain.FlowSession;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -25,6 +27,9 @@ public interface FlowMemoryVersionRepository extends JpaRepository<FlowMemoryVer
 
   List<FlowMemoryVersion> findByFlowSessionAndChannelAndVersionGreaterThanOrderByVersionAsc(
       FlowSession flowSession, String channel, long version);
+
+  Page<FlowMemoryVersion> findByFlowSessionAndChannel(
+      FlowSession flowSession, String channel, Pageable pageable);
 
   @Modifying
   @Query(
