@@ -9,9 +9,16 @@ spring:
       connect-timeout: ${HTTP_CLIENT_CONNECT_TIMEOUT:PT45S}
       read-timeout: ${HTTP_CLIENT_READ_TIMEOUT:PT4M}
   ai:
+    tools:
+      observations:
+        include-content: true   # ⚠️ может содержать чувствительные данные
     chat:
       client:
-        enabled: false
+        observations:
+          log-prompt: true      # вывести собранный prompt
+      observations:
+        log-prompt: true        # вывести prompt на уровне ChatModel
+        log-completion: true    # вывести completion
     mcp:
       client:
         enabled: ${PERPLEXITY_MCP_ENABLED:true}
@@ -65,9 +72,22 @@ logging:
     com.aiadvent.backend.chat: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
+    # полезно видеть и модель/адвайзоры
+    org.springframework.ai.chat.model: DEBUG
     org.springframework.ai.chat.client.advisor: DEBUG
-    ConstructorAudit: INFO
+    # сам механизм tool calling
+    org.springframework.ai.model.tool: DEBUG
     org.springframework.ai.tool: DEBUG
+    org.springframework.ai.tool.method: DEBUG
+    # конвертация результата tool -> JSON для модели
+    org.springframework.ai.tool.execution: DEBUG
+    org.springframework.ai.tool.executor: DEBUG
+    org.springframework.ai.tool.convert: DEBUG
+    # если инструмент идёт через MCP (у тебя perplexity_search)
+    org.springframework.ai.mcp: DEBUG
+    org.springframework.ai.mcp.client: DEBUG
+    org.springframework.ai.mcp.tool: DEBUG
+    ConstructorAudit: INFO
 
 app:
   chat:
