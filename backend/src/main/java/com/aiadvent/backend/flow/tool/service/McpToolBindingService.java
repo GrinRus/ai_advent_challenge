@@ -299,6 +299,9 @@ public class McpToolBindingService {
     }
 
     ToolCallback[] callbacks = provider.getToolCallbacks();
+
+    log.debug("Get all tool callbacks {}", Arrays.toString(callbacks));
+
     missingProviderLogged.set(false);
     Optional<ToolCallback> resolved = Arrays.stream(callbacks)
         .filter(Objects::nonNull)
