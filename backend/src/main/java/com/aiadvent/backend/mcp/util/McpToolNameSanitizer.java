@@ -15,6 +15,7 @@ public final class McpToolNameSanitizer {
         trimmed.replaceAll(
             "[^\\p{IsHan}\\p{InCJK_Unified_Ideographs}\\p{InCJK_Compatibility_Ideographs}a-zA-Z0-9_-]",
             "");
+    sanitized = sanitized.replace('-', '_');
     return StringUtils.hasText(sanitized) ? sanitized : null;
   }
 }

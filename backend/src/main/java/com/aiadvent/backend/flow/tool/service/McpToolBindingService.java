@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
@@ -297,13 +298,25 @@ public class McpToolBindingService {
       return Optional.empty();
     }
 
+    ToolCallback[] callbacks = provider.getToolCallbacks();
     missingProviderLogged.set(false);
-    return Arrays.stream(provider.getToolCallbacks())
+    Optional<ToolCallback> resolved = Arrays.stream(callbacks)
         .filter(Objects::nonNull)
         .filter(
             callback ->
                 sanitizedToolName.equals(
                     McpToolNameSanitizer.sanitize(callback.getToolDefinition().name())))
         .findFirst();
+    if (resolved.isEmpty() && log.isDebugEnabled()) {
+      Set<String> knownNames =
+          Arrays.stream(callbacks)
+              .filter(Objects::nonNull)
+              .map(callback -> McpToolNameSanitizer.sanitize(callback.getToolDefinition().name()))
+              .filter(Objects::nonNull)
+              .collect(Collectors.toCollection(LinkedHashSet::new));
+      log.debug(
+          "Known sanitized MCP tool names from provider: {}", knownNames);
+    }
+    return resolved;
   }
 }

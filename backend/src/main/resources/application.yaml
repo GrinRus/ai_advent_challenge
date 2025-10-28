@@ -92,6 +92,7 @@ springdoc:
 logging:
   level:
     com.aiadvent.backend.chat: DEBUG
+    com.aiadvent.backend.mcp: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
     ConstructorAudit: INFO
@@ -133,6 +134,42 @@ app:
           execution-mode: AUTO
           request-overrides:
             max_results: 8
+        - code: agent_ops.list_agents
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: agent_ops.preview_dependencies
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: agent_ops.register_agent
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: flow_ops.list_flows
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: flow_ops.diff_flow_version
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: flow_ops.publish_flow
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: flow_ops.rollback_flow
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: flow_ops.validate_blueprint
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: insight.recent_sessions
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: insight.fetch_metrics
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: insight.fetch_summary
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: insight.search_memory
+          schema-version: 1
+          execution-mode: MANUAL
       default-tool-codes:
         - perplexity_search
     logging:

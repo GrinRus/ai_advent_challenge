@@ -18,6 +18,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,6 +28,8 @@ import org.springframework.util.StringUtils;
 
 @Service
 public class McpCatalogService {
+
+  private static final Logger log = LoggerFactory.getLogger(McpCatalogService.class);
 
   private final ToolDefinitionRepository toolDefinitionRepository;
   private final ObjectProvider<SyncMcpToolCallbackProvider> toolCallbackProvider;
@@ -126,15 +130,28 @@ public class McpCatalogService {
     }
     ToolCallback[] callbacks = provider.getToolCallbacks();
     if (callbacks == null || callbacks.length == 0) {
+      log.info("No MCP tool callbacks discovered (provider returned empty set)");
       return Set.of();
     }
-    return Arrays.stream(callbacks)
-        .filter(Objects::nonNull)
-        .map(ToolCallback::getToolDefinition)
-        .filter(Objects::nonNull)
-        .map(def -> sanitize(def.name()))
-        .filter(StringUtils::hasText)
-        .collect(Collectors.toSet());
+    List<String> rawNames =
+        Arrays.stream(callbacks)
+            .filter(Objects::nonNull)
+            .map(ToolCallback::getToolDefinition)
+            .filter(Objects::nonNull)
+            .map(def -> safeTrim(def.name()))
+            .filter(StringUtils::hasText)
+            .toList();
+
+    Set<String> sanitized =
+        rawNames.stream()
+            .map(name -> sanitize(name))
+            .filter(StringUtils::hasText)
+            .collect(Collectors.toSet());
+
+    log.info("Discovered MCP tool callbacks: {}", rawNames);
+    log.info("Sanitized MCP tool names: {}", sanitized);
+
+    return sanitized;
   }
 
   private McpServerStatus deriveStatus(String serverId, List<McpCatalogResponse.McpTool> tools) {
