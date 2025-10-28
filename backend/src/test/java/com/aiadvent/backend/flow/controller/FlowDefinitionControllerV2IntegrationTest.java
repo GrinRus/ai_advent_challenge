@@ -13,6 +13,7 @@ import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponseV2;
 import com.aiadvent.backend.flow.api.FlowMemoryReferenceResponse;
 import com.aiadvent.backend.flow.api.FlowStepValidationResponse;
 import com.aiadvent.backend.flow.api.FlowValidationIssue;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -123,7 +124,8 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
     FlowDefinitionResponseV2 fetched =
         objectMapper.readValue(getResult.getResponse().getContentAsString(), FlowDefinitionResponseV2.class);
     assertThat(fetched.definition().startStepId()).isEqualTo("step-1");
-    assertThat(fetched.definition().schemaVersion()).isEqualTo(1);
+    assertThat(fetched.definition().schemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
 
     // Launch preview should return blueprint in payload
     MvcResult previewResult =
@@ -135,6 +137,8 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
         objectMapper.readValue(previewResult.getResponse().getContentAsString(), FlowLaunchPreviewResponseV2.class);
     assertThat(preview.blueprint()).isNotNull();
     assertThat(preview.blueprint().steps()).hasSize(1);
+    assertThat(preview.blueprint().schemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
   }
 
   @Test
