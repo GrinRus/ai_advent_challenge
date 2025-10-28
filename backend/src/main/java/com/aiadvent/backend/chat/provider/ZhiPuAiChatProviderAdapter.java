@@ -53,7 +53,8 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
 
   private ChatClient buildChatClient(
       ZhiPuAiChatModel chatModel, MessageChatMemoryAdvisor chatMemoryAdvisor) {
-    ChatClient.Builder builder = ChatClient.builder(chatLoggingSupport.decorateModel(chatModel));
+    var loggingModel = chatLoggingSupport.decorateModel(chatModel);
+    ChatClient.Builder builder = ChatClient.builder(loggingModel);
     if (chatMemoryAdvisor != null) {
       builder.defaultAdvisors(chatMemoryAdvisor);
     }
