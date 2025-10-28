@@ -726,7 +726,7 @@
 ### Tests & QA
 - [x] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
 - [ ] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
-- [ ] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
+- [x] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
 - [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку отказов STDIO.
 
 ### Infrastructure & Ops

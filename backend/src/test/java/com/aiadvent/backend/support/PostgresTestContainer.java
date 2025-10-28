@@ -4,7 +4,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-@Import(TestTokenUsageConfiguration.class)
+@Import({TestTokenUsageConfiguration.class, TestMcpToolCallbackConfiguration.class})
 public abstract class PostgresTestContainer {
   static {
     System.setProperty("app.chat.token-usage.lightweight-mode", "true");
