@@ -129,6 +129,9 @@ public class McpCatalogService {
       return Set.of();
     }
     ToolCallback[] callbacks = provider.getToolCallbacks();
+
+    log.info("All tool callback {}", Arrays.toString(callbacks));
+
     if (callbacks == null || callbacks.length == 0) {
       log.info("No MCP tool callbacks discovered (provider returned empty set)");
       return Set.of();
