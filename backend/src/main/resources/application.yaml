@@ -14,6 +14,7 @@ spring:
         include-content: true   # ⚠️ может содержать чувствительные данные
     chat:
       client:
+        enabled: false
         observations:
           log-prompt: true      # вывести собранный prompt
       observations:
@@ -60,6 +61,14 @@ spring:
           top-p: ${ZHIPU_TOP_P:0.95}
           max-tokens: ${ZHIPU_MAX_TOKENS:1024}
 
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+    logging:
+      enabled: true          # выводить трейсы в логи
+
 springdoc:
   api-docs:
     enabled: true
@@ -73,6 +82,11 @@ logging:
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
     ConstructorAudit: INFO
+
+    # обязательно DEBUG для обработчика наблюдений, иначе логи не увидишь
+    org.springframework.ai.model.chat.observation: DEBUG
+    org.springframework.ai.chat: DEBUG
+
     # tool calling в целом
     org.springframework.ai.model.tool: DEBUG
     org.springframework.ai.tool: DEBUG
