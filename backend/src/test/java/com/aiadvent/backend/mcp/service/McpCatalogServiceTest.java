@@ -145,7 +145,7 @@ class McpCatalogServiceTest {
   }
 
   private static ToolSchemaVersion schemaVersion(String toolCode, String serverId, String toolName) {
-    return new ToolSchemaVersion(toolCode, 1, null, null, null, null, serverId, toolName, "stdio", null);
+    return new ToolSchemaVersion(toolCode, 1, null, null, null, null, serverId, toolName, "http-stream", null);
   }
 
   private static class StaticObjectProvider<T> implements ObjectProvider<T> {

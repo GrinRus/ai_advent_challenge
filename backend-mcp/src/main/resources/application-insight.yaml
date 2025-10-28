@@ -1,7 +1,13 @@
+server:
+  port: ${INSIGHT_MCP_HTTP_PORT:${SERVER_PORT:8080}}
+
 spring:
   ai:
     mcp:
       server:
+        enabled: true
+        stdio: false
+        protocol: STREAMABLE
         name: insight-mcp
         version: 0.1.0
         type: SYNC
@@ -13,6 +19,9 @@ spring:
           resource: false
           prompt: false
           completion: false
+      streamable-http:
+        mcp-endpoint: /mcp
+        keep-alive-interval: 30s
 
 insight:
   backend:

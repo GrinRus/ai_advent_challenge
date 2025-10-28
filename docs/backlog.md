@@ -715,8 +715,8 @@
 - [x] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
 - [ ] Завершить канал обновлений health (`/api/mcp/events` SSE): добавить `latencyMs` в payload и реализовать fallback `GET /api/mcp/health`.
-- [ ] Перевести `backend-mcp` сервисы с STDIO на потоковый HTTP MCP: включить WebFlux приложение (`spring.main.web-application-type`), реализовать HTTP эндпоинты `stream`/`call` через `spring-ai-mcp-server` с SSE/ndjson выдачей, удалить STDIO launcher'ы/скрипты, обновить профили `application-*.yaml` и health-индикаторы, добавить smoke-тесты WebTestClient на handshake/stream.
-- [ ] Перевести backend на HTTP-only MCP: удалить STDIO конфигурацию (`spring.ai.mcp.client.stdio.*`, переменные `*_MCP_CMD`), добавить `http.connections.*` и env (`*_MCP_HTTP_BASE_URL`, `*_MCP_TRANSPORT`), обновить `McpToolBindingService`/health-индикаторы под `transport=http-stream`, выполнить Liquibase-миграцию для новых transport-значений и покрыть unit/integration тестами.
+- [x] Перевести `backend-mcp` сервисы с STDIO на потоковый HTTP MCP: включить WebFlux приложение (`spring.main.web-application-type`), реализовать HTTP эндпоинты `stream`/`call` через `spring-ai-mcp-server` с SSE/ndjson выдачей, удалить STDIO launcher'ы/скрипты, обновить профили `application-*.yaml` и health-индикаторы, добавить smoke-тесты WebTestClient на handshake/stream (Perplexity остаётся STDIO).
+- [x] Адаптировать backend под смешанный MCP транспорт: оставить `spring.ai.mcp.client.stdio` для Perplexity, добавить `streamable-http.connections` для внутренних серверов, обновить `McpToolBindingService`/health-индикаторы и Liquibase-модификации, покрыть unit/integration тестами.
 - [ ] Актуализировать предупреждения логгера MCP: убрать упоминание только Perplexity в `McpToolBindingService`.
 
 ### Frontend
@@ -736,7 +736,7 @@
 ### Infrastructure & Ops
 - [x] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
 - [ ] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
-- [ ] Обновить `docker-compose.yml` и деплой пайплайны под HTTP MCP: выделить порты для `agent-ops`/`flow-ops`/`insight`, прокинуть `*_MCP_HTTP_BASE_URL` и `*_MCP_TRANSPORT`, перенастроить healthcheck на HTTP эндпоинты и убрать STDIO wrapper'ы/переменные.
+- [x] Обновить `docker-compose.yml` и деплой пайплайны под HTTP MCP: выделить порты для `agent-ops`/`flow-ops`/`insight`, прокинуть `*_MCP_HTTP_BASE_URL` и `*_MCP_TRANSPORT`, перенастроить healthcheck на HTTP эндпоинты и убрать STDIO wrapper'ы/переменные.
 
 ### Docs & Enablement
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).

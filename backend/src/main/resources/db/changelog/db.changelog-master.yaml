@@ -1908,3 +1908,16 @@ databaseChangeLog:
                   'insight.tools',
                   jsonb_build_object('default', 'insight.recent_sessions', 'options', jsonb_build_array('insight.recent_sessions','insight.fetch_summary','insight.search_memory','insight.fetch_metrics'))
                 );
+  - changeSet:
+      id: 0098-switch-mcp-transport-http
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              UPDATE tool_schema_version
+              SET transport = 'http-stream'
+              WHERE transport = 'stdio'
+                AND (mcp_server IS NULL OR lower(mcp_server) <> 'perplexity');

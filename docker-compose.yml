@@ -32,6 +32,9 @@ services:
       - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      AGENT_OPS_MCP_HTTP_BASE_URL: ${AGENT_OPS_MCP_HTTP_BASE_URL:-http://agent-ops-mcp:8080}
+      FLOW_OPS_MCP_HTTP_BASE_URL: ${FLOW_OPS_MCP_HTTP_BASE_URL:-http://flow-ops-mcp:8080}
+      INSIGHT_MCP_HTTP_BASE_URL: ${INSIGHT_MCP_HTTP_BASE_URL:-http://insight-mcp:8080}
     ports:
       - "8080:8080"
 
@@ -59,6 +62,8 @@ services:
       SPRING_PROFILES_ACTIVE: agentops
       AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:-http://backend:8080}
       AGENT_OPS_BACKEND_API_TOKEN: ${AGENT_OPS_BACKEND_API_TOKEN:-}
+    ports:
+      - "${AGENT_OPS_MCP_HTTP_PORT:-7091}:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -80,6 +85,8 @@ services:
       SPRING_PROFILES_ACTIVE: flowops
       FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:-http://backend:8080}
       FLOW_OPS_BACKEND_API_TOKEN: ${FLOW_OPS_BACKEND_API_TOKEN:-}
+    ports:
+      - "${FLOW_OPS_MCP_HTTP_PORT:-7092}:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -101,6 +108,8 @@ services:
       SPRING_PROFILES_ACTIVE: insight
       INSIGHT_BACKEND_BASE_URL: ${INSIGHT_BACKEND_BASE_URL:-http://backend:8080}
       INSIGHT_BACKEND_API_TOKEN: ${INSIGHT_BACKEND_API_TOKEN:-}
+    ports:
+      - "${INSIGHT_MCP_HTTP_PORT:-7093}:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped

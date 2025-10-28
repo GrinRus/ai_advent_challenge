@@ -41,6 +41,7 @@ public class McpToolBindingService {
 
   private static final Logger log = LoggerFactory.getLogger(McpToolBindingService.class);
 
+  private static final String HTTP_STREAM_TRANSPORT = "http-stream";
   private static final String STDIO_TRANSPORT = "stdio";
 
   private final ToolDefinitionRepository toolDefinitionRepository;
@@ -131,10 +132,22 @@ public class McpToolBindingService {
       return Optional.empty();
     }
 
-    if (!StringUtils.hasText(schemaVersion.getTransport())
-        || !STDIO_TRANSPORT.equalsIgnoreCase(schemaVersion.getTransport())) {
+    String transport = schemaVersion.getTransport();
+    if (!StringUtils.hasText(transport)) {
       log.debug(
-          "Tool '{}' is not configured for STDIO MCP transport; skipping MCP resolution", toolCode);
+          "Tool '{}' does not declare an MCP transport; skipping MCP resolution", toolCode);
+      return Optional.empty();
+    }
+
+    String normalizedTransport = transport.trim().toLowerCase(Locale.ROOT);
+    boolean httpTransport = HTTP_STREAM_TRANSPORT.equals(normalizedTransport);
+    boolean stdioTransport = STDIO_TRANSPORT.equals(normalizedTransport);
+
+    if (!httpTransport && !stdioTransport) {
+      log.debug(
+          "Tool '{}' uses unsupported MCP transport '{}'; skipping MCP resolution",
+          toolCode,
+          transport);
       return Optional.empty();
     }
 
@@ -270,7 +283,7 @@ public class McpToolBindingService {
     if (provider == null) {
       if (missingProviderLogged.compareAndSet(false, true)) {
         log.warn(
-            "MCP tool callback provider is not available; Perplexity MCP tools are disabled until the provider is configured");
+            "MCP tool callback provider is not available; MCP tools are disabled until the provider is configured");
       }
       return Optional.empty();
     }

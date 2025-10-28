@@ -141,8 +141,8 @@ Wave 14 закрепил типизированный runtime (`FlowBlueprint` 
 
 ## MCP-сервисы, связанные с флоу
 
-- Внутренний сервер **Flow Ops MCP** предоставляет набор инструментов `flow_ops.*` (list/diff/validate/publish/rollback). Сервис живёт в модуле `backend-mcp` и доступен как STDIO-процесс (`Spring Main Class: com.aiadvent.backend.mcp.FlowOpsMcpApplication`).
-- Через Spring AI backend может включить Flow Ops для сценариев оркестратора. В `application.yaml` описан STDIO-коннекшн `spring.ai.mcp.client.stdio.connections.flowops`, который вызывает команду `FLOW_OPS_MCP_CMD` и прокидывает `FLOW_OPS_BACKEND_BASE_URL`.
+- Внутренний сервер **Flow Ops MCP** предоставляет набор инструментов `flow_ops.*` (list/diff/validate/publish/rollback). Сервис живёт в модуле `backend-mcp` и развёртывается как streamable HTTP приложение (`Spring Main Class: com.aiadvent.backend.mcp.FlowOpsMcpApplication`).
+- Через Spring AI backend может включить Flow Ops для сценариев оркестратора. В `application.yaml` описан HTTP-коннекшн `spring.ai.mcp.client.streamable-http.connections.flowops`, который указывает на `FLOW_OPS_MCP_HTTP_BASE_URL` и endpoint `/mcp`.
 - При разработке флоу убедитесь, что:
   - версия агента, указанная в шаге, имеет нужные MCP-инструменты (в каталоге агента появилось capability `flow.ops.tools`);
   - JSON-схемы инструментов синхронизированы с `tool_schema_version` (Liquibase миграции Wave 16 создают записи для `flow_ops.*`).

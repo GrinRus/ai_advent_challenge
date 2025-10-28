@@ -7,42 +7,36 @@
 1. Установите Docker Desktop (или совместимый движок), убедитесь, что `docker compose` доступен из CLI.
 2. Склонируйте репозиторий и скопируйте `.env.example` → `.env`. Отредактируйте блок `*_MCP_*`, если хотите подключаться к staging/prod backend-у.
 3. Поднимите окружение:
-   ```bash
-   docker compose up --build backend frontend agent-ops-mcp flow-ops-mcp insight-mcp
-   ```
-   - `backend` — основной REST API.
-   - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp` — STDIO MCP-сервера (Spring Boot). Healthcheck следит, что Java-процесс жив.
-   - Переменные `AGENT_OPS_BACKEND_BASE_URL`, `FLOW_OPS_BACKEND_BASE_URL`, `INSIGHT_BACKEND_BASE_URL` указывают базовый URL API; по умолчанию — `http://backend:8080` внутри compose-сети.
+ ```bash
+  docker compose up --build backend frontend agent-ops-mcp flow-ops-mcp insight-mcp
+  ```
+  - `backend` — основной REST API.
+  - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp` — HTTP MCP-сервера (Spring Boot, streamable transport). Контейнеры слушают порт `8080`; на хост по умолчанию пробрасываются порты `7091`, `7092`, `7093`.
+  - Переменные `AGENT_OPS_BACKEND_BASE_URL`, `FLOW_OPS_BACKEND_BASE_URL`, `INSIGHT_BACKEND_BASE_URL` указывают базовый URL API бэкенда; по умолчанию — `http://backend:8080` внутри compose-сети.
 
 ## Подключение backend → MCP
 
-Backend вызывает команду из `spring.ai.mcp.client.stdio.connections.<server>.command`. Для работы с контейнерами доступны два варианта:
+Backend использует `spring.ai.mcp.client.streamable-http.connections.<server>` для внутренних сервисов и `spring.ai.mcp.client.stdio.connections.perplexity` для Perplexity. Для HTTP каждый сервер описывается парой `url` + `endpoint` (по умолчанию `/mcp`).
 
-### 1. Backend на хостовой машине
-
-Создайте исполняемые скрипты, которые пробрасывают STDIO в контейнер.
-
-```bash
-#!/usr/bin/env bash
-exec docker exec -i ai-advent-agent-ops-mcp java \
-  -Dspring.profiles.active=agentops \
-  -cp /app/app.jar com.aiadvent.backend.mcp.AgentOpsMcpApplication
-```
-
-Поместите файл в PATH и укажите `AGENT_OPS_MCP_CMD=agent-ops-mcp.sh` (аналогично для Flow/Insight). Команда будет вызываться напрямую из backend.
-
-### 2. Backend внутри Docker
-
-В docker-compose backend не имеет доступа к docker socket, поэтому STDIO запускает MCP в том же контейнере. Обновите `backend` образ, добавив wrapper-скрипты и Supervisor, либо используйте sidecar-контейнер и подключение по TCP (например, через `socat`). Простейший вариант — запуск backend локально (`./gradlew bootRun`), пока MCP работают в контейнерах.
+- Backend внутри docker-compose автоматически получает адреса `http://agent-ops-mcp:8080`, `http://flow-ops-mcp:8080`, `http://insight-mcp:8080`.
+- При запуске backend на хостовой машине укажите:
+  ```bash
+  export AGENT_OPS_MCP_HTTP_BASE_URL=http://localhost:7091
+  export FLOW_OPS_MCP_HTTP_BASE_URL=http://localhost:7092
+  export INSIGHT_MCP_HTTP_BASE_URL=http://localhost:7093
+  ```
+  При необходимости измените порты (`AGENT_OPS_MCP_HTTP_PORT`, `FLOW_OPS_MCP_HTTP_PORT`, `INSIGHT_MCP_HTTP_PORT`) в `docker-compose.yml`.
+- Перplexity продолжает работать через STDIO: убедитесь, что бинарь/скрипт `perplexity-mcp` доступен в `PATH`, либо переопределите `PERPLEXITY_MCP_CMD`.
 
 ## IDE и внешние клиенты
 
-- MCP использует стандарт [Model Context Protocol](https://modelcontextprotocol.dev). Большинство IDE-расширений (Cursor, Continue, Windsurf) поддерживают локальные STDIO-серверы.
-- Для подключения выберите "Custom MCP" и укажите команду запуска:
-  - Flow Ops: `docker exec -i ai-advent-flow-ops-mcp java -jar /app/app.jar`
-  - Agent Ops: `docker exec -i ai-advent-agent-ops-mcp java -jar /app/app.jar`
-  - Insight: `docker exec -i ai-advent-insight-mcp java -jar /app/app.jar`
-- Для защищённых сред вместо `docker exec` можно использовать SSH-туннель и запускать jar напрямую на сервере.
+- MCP использует стандарт [Model Context Protocol](https://modelcontextprotocol.dev). Внутренние сервисы доступны по HTTP/SSE, а Perplexity — через STDIO.
+- Для подключения к HTTP-серверам выберите "Custom MCP (HTTP)" и укажите:
+  - Flow Ops: `URL=http://localhost:7092`, `Endpoint=/mcp`
+  - Agent Ops: `URL=http://localhost:7091`, `Endpoint=/mcp`
+  - Insight: `URL=http://localhost:7093`, `Endpoint=/mcp`
+- Для Perplexity используйте STDIO команду (`perplexity-mcp --api-key ...`) или собственный wrapper. IDE обычно позволяет указать произвольную команду запуска.
+- Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway.
 
 ## Примеры запросов
 
@@ -67,8 +61,8 @@ Tool: insight.recent_sessions → insight.fetch_metrics
 ## Безопасность
 
 - Инструменты Flow Ops и Agent Ops имеют права на изменение production-конфигураций. Используйте API-токены с минимальными привилегиями (`*_BACKEND_API_TOKEN`) и ограничивайте доступ к контейнерам через firewall/ssh.
-- Логи MCP не должны содержать конфиденциальные данные; перенаправляйте STDIO в файлы/ELK с ротацией.
-- При работе из IDE держите в голове, что MCP-команда выполняется локально: не храните токены в публичных dotfiles.
+- Ограничьте сеть и аутентификацию HTTP MCP (mTLS, OAuth2 proxy). Минимум — закрыть порты 7091-7093 во внешнем фаерволе и экспонировать их через VPN.
+- Логи MCP не должны содержать конфиденциальные данные; используйте централизованный сбор (stdout контейнера) и ротацию.
 
 ## Тестирование
 

@@ -31,32 +31,21 @@ spring:
         stdio:
           connections:
             perplexity:
-              command: perplexity-mcp   # глобальный бинарь из /usr/local/bin
-              args: []                  # обычно без аргументов
+              command: ${PERPLEXITY_MCP_CMD:perplexity-mcp}   # глобальный бинарь из /usr/local/bin
+              args: []                                        # обычно без аргументов
               env:
                 PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:demo-perplexity-key}
-            agentops:
-              command: ${AGENT_OPS_MCP_CMD:agent-ops-mcp}
-              args: []
-              env:
-                SPRING_PROFILES_ACTIVE: agentops
-                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.AgentOpsMcpApplication
-                AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:http://localhost:8080}
-            flowops:
-              command: ${FLOW_OPS_MCP_CMD:flow-ops-mcp}
-              args: []
-              env:
-                SPRING_PROFILES_ACTIVE: flowops
-                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.FlowOpsMcpApplication
-                FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:http://localhost:8080}
-            insight:
-              command: ${INSIGHT_MCP_CMD:insight-mcp}
-              args: []
-              env:
-                SPRING_PROFILES_ACTIVE: insight
-                SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.InsightMcpApplication
-                INSIGHT_BACKEND_BASE_URL: ${INSIGHT_BACKEND_BASE_URL:http://localhost:8080}
-                INSIGHT_BACKEND_API_TOKEN: ${INSIGHT_BACKEND_API_TOKEN:}
+      streamable-http:
+        connections:
+          agentops:
+            url: ${AGENT_OPS_MCP_HTTP_BASE_URL:http://localhost:7091}
+            endpoint: ${AGENT_OPS_MCP_HTTP_ENDPOINT:/mcp}
+          flowops:
+            url: ${FLOW_OPS_MCP_HTTP_BASE_URL:http://localhost:7092}
+            endpoint: ${FLOW_OPS_MCP_HTTP_ENDPOINT:/mcp}
+          insight:
+            url: ${INSIGHT_MCP_HTTP_BASE_URL:http://localhost:7093}
+            endpoint: ${INSIGHT_MCP_HTTP_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
