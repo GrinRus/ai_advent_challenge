@@ -91,6 +91,7 @@ springdoc:
 
 logging:
   level:
+    com.aiadvent: DEBUG
     com.aiadvent.backend.chat: DEBUG
     com.aiadvent.backend.mcp: DEBUG
     org.springframework.ai: DEBUG
