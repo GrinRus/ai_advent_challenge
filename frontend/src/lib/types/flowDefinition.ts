@@ -2,6 +2,34 @@ import { z } from 'zod';
 import { JsonValueSchema } from './json';
 import { FlowInteractionTypeSchema } from './flowInteraction';
 
+export const FLOW_BLUEPRINT_SCHEMA_VERSION = 2;
+
+const TagsSchema = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string');
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  },
+  z.array(z.string()),
+);
+
+export const FlowBlueprintMetadataSchema = z
+  .object({
+    title: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    tags: TagsSchema.optional(),
+  })
+  .passthrough()
+  .optional();
+export type FlowBlueprintMetadata = z.infer<typeof FlowBlueprintMetadataSchema>;
+
 export const MemoryReadSchema = z.object({
   channel: z.string().min(1, 'Укажите канал памяти'),
   limit: z.number().int().positive().default(10),
@@ -17,6 +45,32 @@ export const MemoryWriteSchema = z.object({
   payload: JsonValueSchema.optional(),
 });
 export type MemoryWriteConfig = z.infer<typeof MemoryWriteSchema>;
+
+const MemoryReadListSchema = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value == null) {
+      return [];
+    }
+    return value;
+  },
+  z.array(MemoryReadSchema),
+);
+
+const MemoryWriteListSchema = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value == null) {
+      return [];
+    }
+    return value;
+  },
+  z.array(MemoryWriteSchema),
+);
 
 export const FlowDefinitionTransitionsSchema = z.object({
   onSuccess: z
@@ -53,6 +107,37 @@ export const FlowInteractionConfigSchema = z.object({
 });
 export type FlowInteractionConfig = z.infer<typeof FlowInteractionConfigSchema>;
 
+export const FlowLaunchParameterSchema = z.object({
+  name: z.string().min(1, 'Укажите имя параметра'),
+  label: z.string().nullable().optional(),
+  type: z.string().default('string').optional(),
+  required: z.boolean().optional(),
+  description: z.string().nullable().optional(),
+  schema: JsonValueSchema.optional(),
+  defaultValue: JsonValueSchema.optional(),
+});
+export type FlowLaunchParameter = z.infer<typeof FlowLaunchParameterSchema>;
+
+export const FlowMemoryChannelSchema = z.object({
+  id: z.string().min(1, 'Укажите идентификатор канала'),
+  retentionVersions: z.number().int().positive().nullable().optional(),
+  retentionDays: z.number().int().positive().nullable().optional(),
+});
+export type FlowMemoryChannel = z.infer<typeof FlowMemoryChannelSchema>;
+
+export const FlowBlueprintMemorySchema = z
+  .object({
+    sharedChannels: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value : value == null ? [] : value),
+        z.array(FlowMemoryChannelSchema),
+      )
+      .optional(),
+  })
+  .passthrough()
+  .optional();
+export type FlowBlueprintMemory = z.infer<typeof FlowBlueprintMemorySchema>;
+
 export const FlowStepDefinitionSchema = z
   .object({
     id: z.string().min(1, 'Укажите идентификатор шага'),
@@ -61,8 +146,8 @@ export const FlowStepDefinitionSchema = z
     prompt: z.string().optional().default(''),
     overrides: ChatRequestOverridesSchema.optional(),
     interaction: FlowInteractionConfigSchema.nullish(),
-    memoryReads: z.array(MemoryReadSchema).default([]),
-    memoryWrites: z.array(MemoryWriteSchema).default([]),
+    memoryReads: MemoryReadListSchema,
+    memoryWrites: MemoryWriteListSchema,
     transitions: FlowDefinitionTransitionsSchema.optional(),
     maxAttempts: z.number().int().min(1).default(1),
   })
@@ -71,9 +156,18 @@ export type FlowStepDefinition = z.infer<typeof FlowStepDefinitionSchema>;
 
 const FlowDefinitionBaseSchema = z
   .object({
+    schemaVersion: z.number().int().optional(),
+    metadata: FlowBlueprintMetadataSchema,
     title: z.string().optional().default(''),
     startStepId: z.string().optional(),
     syncOnly: z.boolean().optional().default(true),
+    launchParameters: z
+      .preprocess(
+        (value) => (Array.isArray(value) ? value : value == null ? [] : value),
+        z.array(FlowLaunchParameterSchema),
+      )
+      .default([]),
+    memory: FlowBlueprintMemorySchema,
     steps: z.array(FlowStepDefinitionSchema),
   })
   .passthrough();

@@ -1,4 +1,5 @@
 import {
+  FLOW_BLUEPRINT_SCHEMA_VERSION,
   FlowDefinitionDraftSchema,
   FlowDefinitionSchema,
   MemoryWriteModeSchema,
@@ -93,11 +94,14 @@ export type FlowDefinitionFormState = {
 const cloneDraft = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? {}));
 
 const emptyDraft: FlowDefinitionDraft = FlowDefinitionDraftSchema.parse({
+  schemaVersion: FLOW_BLUEPRINT_SCHEMA_VERSION,
   title: '',
   startStepId: '',
   syncOnly: true,
   steps: [],
   metadata: {},
+  launchParameters: [],
+  memory: { sharedChannels: [] },
 });
 
 export const createEmptyLaunchParameterForm = (): FlowLaunchParameterForm => ({
@@ -163,6 +167,14 @@ export function parseFlowDefinition(definition: unknown): FlowDefinitionFormStat
     ? cloneDraft(parsedDraft.data)
     : cloneDraft(emptyDraft);
 
+  if (
+    typeof draft.schemaVersion !== 'number' ||
+    !Number.isInteger(draft.schemaVersion) ||
+    draft.schemaVersion <= 0
+  ) {
+    (draft as any).schemaVersion = FLOW_BLUEPRINT_SCHEMA_VERSION;
+  }
+
   const metadata = (draft as any).metadata ?? {};
   const launchParameters: FlowLaunchParameterForm[] =
     Array.isArray((draft as any).launchParameters) &&
@@ -185,7 +197,7 @@ export function parseFlowDefinition(definition: unknown): FlowDefinitionFormStat
       : [];
 
   const sharedChannels: FlowSharedChannelForm[] =
-    (draft as any)?.memory?.sharedChannels instanceof Array
+    Array.isArray((draft as any)?.memory?.sharedChannels)
       ? (draft as any).memory.sharedChannels.map(
           (channel: any): FlowSharedChannelForm => ({
             id: channel?.id ?? '',
@@ -265,10 +277,13 @@ export function parseFlowDefinition(definition: unknown): FlowDefinitionFormStat
       step.maxAttempts !== undefined ? String(step.maxAttempts) : '1',
   }));
 
-  const tags =
+  const tagsArray =
     Array.isArray(metadata.tags) && metadata.tags.length
-      ? metadata.tags.join(', ')
-      : metadata.tags ?? '';
+      ? metadata.tags
+      : Array.isArray(metadata.tags)
+        ? []
+        : [];
+  const tags = tagsArray.length ? tagsArray.join(', ') : '';
 
   return {
     title: metadata.title ?? draft.title ?? '',
@@ -292,6 +307,7 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
   }
 
   const draft = cloneDraft(form.draft);
+  (draft as any).schemaVersion = FLOW_BLUEPRINT_SCHEMA_VERSION;
   draft.title = form.title;
   draft.startStepId = form.startStepId || form.steps[0]?.id || '';
   draft.syncOnly = form.syncOnly !== false;
@@ -357,24 +373,21 @@ export function buildFlowDefinition(form: FlowDefinitionFormState): FlowDefiniti
     ),
   }));
 
-  (draft as any).memory =
-    form.sharedChannels.length > 0
-      ? {
-          sharedChannels: form.sharedChannels.map((channel, index) => ({
-            id: channel.id.trim(),
-            retentionVersions: normalizeNumber(
-              `Shared channel #${index + 1} retentionVersions`,
-              channel.retentionVersions,
-              { integer: true },
-            ),
-            retentionDays: normalizeNumber(
-              `Shared channel #${index + 1} retentionDays`,
-              channel.retentionDays,
-              { integer: true },
-            ),
-          })),
-        }
-      : undefined;
+  (draft as any).memory = {
+    sharedChannels: form.sharedChannels.map((channel, index) => ({
+      id: channel.id.trim(),
+      retentionVersions: normalizeNumber(
+        `Shared channel #${index + 1} retentionVersions`,
+        channel.retentionVersions,
+        { integer: true },
+      ),
+      retentionDays: normalizeNumber(
+        `Shared channel #${index + 1} retentionDays`,
+        channel.retentionDays,
+        { integer: true },
+      ),
+    })),
+  };
 
   draft.steps = form.steps.map<FlowStepDefinition>((step, index) => {
     if (!step.id.trim()) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FLOW_BLUEPRINT_SCHEMA_VERSION,
   FlowDefinitionDetailsSchema,
   FlowDefinitionHistoryEntrySchema,
 } from './flowDefinition';
@@ -16,21 +17,27 @@ describe('FlowDefinition schemas', () => {
       updatedBy: 'tester',
       updatedAt: '2024-07-15T10:00:00Z',
       definition: {
-        schemaVersion: 2,
+        schemaVersion: FLOW_BLUEPRINT_SCHEMA_VERSION,
         metadata: {
           title: 'Typed Flow',
           description: 'Blueprint with schema version 2',
+          tags: ['typed', 'v2'],
         },
         startStepId: 'start',
         syncOnly: true,
+        memory: {
+          sharedChannels: [
+            { id: 'shared', retentionVersions: 5, retentionDays: 7 },
+          ],
+        },
         steps: [
           {
             id: 'start',
             name: 'Start',
             agentVersionId: 'aaaaaaaa-1111-4111-8aaa-333333333333',
             prompt: 'Begin',
-            memoryReads: [],
-            memoryWrites: [],
+            memoryReads: null,
+            memoryWrites: null,
             transitions: {},
             maxAttempts: 1,
           },
@@ -38,7 +45,8 @@ describe('FlowDefinition schemas', () => {
       },
     });
 
-    expect(details.definition.schemaVersion).toBe(2);
+    expect(details.definition.schemaVersion).toBe(FLOW_BLUEPRINT_SCHEMA_VERSION);
+    expect(details.definition.memory?.sharedChannels).toHaveLength(1);
     expect(details.definition.steps).toHaveLength(1);
   });
 
@@ -55,14 +63,15 @@ describe('FlowDefinition schemas', () => {
         },
         startStepId: 'initial',
         syncOnly: true,
+        launchParameters: null,
         steps: [
           {
             id: 'initial',
             name: 'Initial Step',
             agentVersionId: 'bbbbbbbb-1111-4111-8aaa-444444444444',
             prompt: 'Init',
-            memoryReads: [],
-            memoryWrites: [],
+            memoryReads: null,
+            memoryWrites: null,
             transitions: {},
             maxAttempts: 1,
           },
