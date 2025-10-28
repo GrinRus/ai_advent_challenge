@@ -175,6 +175,42 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
   }
 
   @Test
+  void syncHonorsRequestedMcpToolsInResearchMode() throws Exception {
+    StubChatClientState.setSyncResponses(List.of("Research answer with MCP tools."));
+    StubChatClientState.setUsage(50, 120, 170);
+
+    ChatSyncRequest request =
+        new ChatSyncRequest(
+            null,
+            "Расскажи о последних обновлениях платформы.",
+            "openai",
+            "gpt-4o-mini",
+            "research",
+            List.of("perplexity_search"),
+            null);
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                post(SYNC_ENDPOINT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(header().exists("X-Session-Id"))
+            .andExpect(header().string("X-New-Session", "true"))
+            .andReturn();
+
+    ChatSyncResponse response =
+        objectMapper.readValue(result.getResponse().getContentAsString(), ChatSyncResponse.class);
+
+    assertThat(response.content()).contains("Research answer");
+    assertThat(response.tools()).containsExactly("perplexity_search");
+    assertThat(response.usage()).isNotNull();
+    assertThat(response.usage().promptTokens()).isEqualTo(50);
+    assertThat(response.usage().completionTokens()).isEqualTo(120);
+  }
+
+  @Test
   void syncRetriesOnConfiguredStatusAndSucceeds() throws Exception {
     WebClientResponseException tooManyRequests =
         WebClientResponseException.create(

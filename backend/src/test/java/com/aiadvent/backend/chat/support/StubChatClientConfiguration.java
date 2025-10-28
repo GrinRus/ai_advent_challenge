@@ -78,6 +78,10 @@ public class StubChatClientConfiguration {
     ChatProvidersProperties.Model defaultModel = model("Stub Model", "standard");
     defaultModel.getUsage().setMode(ChatProvidersProperties.UsageMode.NATIVE);
     primaryProvider.getModels().put("stub-model", defaultModel);
+    ChatProvidersProperties.Model openAiMiniModel =
+        model("OpenAI GPT-4o Mini (stub)", "standard");
+    openAiMiniModel.getUsage().setMode(ChatProvidersProperties.UsageMode.NATIVE);
+    primaryProvider.getModels().put("gpt-4o-mini", openAiMiniModel);
     ChatProvidersProperties.Model fastModel = model("Stub Model Fast", "budget");
     fastModel.getUsage().setMode(ChatProvidersProperties.UsageMode.FALLBACK);
     fastModel.getUsage().setFallbackTokenizer("cl100k_base");
@@ -102,6 +106,7 @@ public class StubChatClientConfiguration {
     alternateProvider.getModels().put("alt-model-sync-only", syncOnlyModel);
 
     properties.getProviders().put("stub", primaryProvider);
+    properties.getProviders().put("openai", primaryProvider);
     properties.getProviders().put("alternate", alternateProvider);
 
     ChatProviderRegistry registry = new ChatProviderRegistry(properties);
@@ -114,9 +119,11 @@ public class StubChatClientConfiguration {
     ChatClient chatClient = chatClientBuilder.build();
 
     ChatProviderAdapter stubAdapter = adapter("stub", chatClient, primaryProvider);
+    ChatProviderAdapter openaiAdapter = adapter("openai", chatClient, primaryProvider);
     ChatProviderAdapter alternateAdapter = adapter("alternate", chatClient, alternateProvider);
 
-    return new ChatProviderService(registry, List.of(stubAdapter, alternateAdapter), tokenUsageEstimator, tokenUsageMetrics);
+    return new ChatProviderService(
+        registry, List.of(stubAdapter, openaiAdapter, alternateAdapter), tokenUsageEstimator, tokenUsageMetrics);
   }
 
   private static ChatProvidersProperties.Model model(String displayName, String tier) {
