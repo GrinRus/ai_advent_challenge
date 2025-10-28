@@ -8,6 +8,8 @@ import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintMemory;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintMetadata;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintStep;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
+import com.aiadvent.backend.flow.blueprint.FlowStepTransitionsDraft;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
@@ -66,7 +68,7 @@ class FlowBlueprintMigrationServiceTest extends PostgresTestContainer {
 
     FlowBlueprint blueprint =
         new FlowBlueprint(
-            2,
+            1,
             FlowBlueprintMetadata.empty(),
             "Test Flow",
             "Test Flow Description",
@@ -82,9 +84,9 @@ class FlowBlueprintMigrationServiceTest extends PostgresTestContainer {
                     "Gather context",
                     null,
                     null,
-                    null,
-                    null,
-                    null,
+                    List.of(),
+                    List.of(),
+                    new FlowStepTransitionsDraft(null, null),
                     1)));
 
     FlowDefinition definition =
@@ -139,7 +141,13 @@ class FlowBlueprintMigrationServiceTest extends PostgresTestContainer {
     FlowDefinitionHistory migratedHistory =
         flowDefinitionHistoryRepository.findById(savedHistory.getId()).orElseThrow();
 
-    assertThat(migratedDefinition.getBlueprintSchemaVersion()).isEqualTo(2);
-    assertThat(migratedHistory.getBlueprintSchemaVersion()).isEqualTo(2);
+    assertThat(migratedDefinition.getBlueprintSchemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
+    assertThat(migratedHistory.getBlueprintSchemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
+    assertThat(migratedDefinition.getDefinition().schemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
+    assertThat(migratedHistory.getDefinition().schemaVersion())
+        .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
   }
 }

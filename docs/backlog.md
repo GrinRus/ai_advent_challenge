@@ -662,10 +662,10 @@
  - [x] Заменить `JsonNode` в `FlowBlueprintStep` на типизированные value-объекты (`FlowStepOverrides`, `FlowInteractionDraft`, `FlowMemoryReadDraft`, `FlowMemoryWriteDraft`, `FlowStepTransitionsDraft`), обновить `FlowDefinitionParser`/`FlowBlueprintCompiler` под новую модель и покрыть round-trip тестами сериализации.
 - [x] Применять memory-политику blueprint: при запуске сессии создавать каналы по `memory.sharedChannels`, прокидывать retention-настройки в `FlowMemoryService` и добавлять интеграционные проверки сохранения/очистки истории.
 - [x] Добавить валидацию `schemaVersion` при сохранении флоу: проверять совместимость, отклонять неподлежащее схеме значение и логировать предупреждения в телеметрию.
-- [ ] Обновить `FlowBlueprintValidator` и `FlowBlueprintCompiler`, чтобы работать с новыми DTO без ручного JSON, и внедрить централизованный набор ошибок/предупреждений.
+- [x] Обновить `FlowBlueprintValidator` и `FlowBlueprintCompiler`, чтобы работать с новыми DTO без ручного JSON, и внедрить централизованный набор ошибок/предупреждений.
 - [x] Расширить `FlowDefinitionParser`/`FlowDefinitionDocument`, чтобы прокидывать `memory.sharedChannels` и retention-политику до уровня оркестратора/инвокеров.
 - [x] Параметризовать `FlowMemoryService` и все вызовы `append(...)` под blueprint-retention (оркестратор, интеракции, ручные записи).
-- [ ] Автоматизировать управление `schemaVersion`: выставлять целевую версию при сохранении/публикации, мигрировать текущие `flow_definition`/`history` записи и синхронизировать с историей.
+- [x] Автоматизировать управление `schemaVersion`: выставлять целевую версию при сохранении/публикации, мигрировать текущие `flow_definition`/`history` записи и синхронизировать с историей.
 
 ### Frontend
 - [ ] Починить загрузку flow definition в UI: скорректировать zod-схемы/адаптеры, чтобы поддерживать пустые `memoryReads` и числовые `maxAttempts`, и добавить fallback для старого формата (`frontend/src/lib/types/flowDefinition.ts`, `frontend/src/lib/apiClient.ts`).

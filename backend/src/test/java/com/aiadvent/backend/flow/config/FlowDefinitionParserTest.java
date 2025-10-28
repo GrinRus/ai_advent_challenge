@@ -8,6 +8,8 @@ import static com.aiadvent.backend.flow.memory.FlowMemoryChannels.SHARED;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
+import com.aiadvent.backend.flow.validation.FlowBlueprintIssueCodes;
+import com.aiadvent.backend.flow.validation.FlowBlueprintParsingException;
 import com.aiadvent.backend.flow.validation.FlowInteractionSchemaValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +47,43 @@ class FlowDefinitionParserTest {
     assertThat(config.memoryReads())
         .extracting(MemoryReadConfig::channel)
         .contains(SHARED, CONVERSATION);
+
+    FlowMemoryConfig memoryConfig = document.memoryConfig();
+    assertThat(memoryConfig.sharedChannels())
+        .extracting(FlowMemoryChannelConfig::channel)
+        .contains(CONVERSATION, SHARED);
+  }
+
+  @Test
+  void parsesMemoryRetentionPolicy() {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "step-1");
+    ArrayNode steps = root.putArray("steps");
+    ObjectNode step = steps.addObject();
+    step.put("id", "step-1");
+    step.put("name", "Bootstrap");
+    step.put("agentVersionId", UUID.randomUUID().toString());
+    ObjectNode memory = root.putObject("memory");
+    ArrayNode shared = memory.putArray("sharedChannels");
+    ObjectNode sharedChannel = shared.addObject();
+    sharedChannel.put("id", "shared");
+    sharedChannel.put("retentionVersions", 3);
+    sharedChannel.put("retentionDays", 5);
+    ObjectNode analyticsChannel = shared.addObject();
+    analyticsChannel.put("id", "analytics");
+    analyticsChannel.put("retentionVersions", 2);
+    analyticsChannel.put("retentionDays", 1);
+
+    FlowDefinition definition = createDefinition("memory-policy", root);
+    FlowDefinitionDocument document = parser.parse(definition);
+
+    FlowMemoryConfig memoryConfig = document.memoryConfig();
+    assertThat(memoryConfig.sharedChannels())
+        .extracting(FlowMemoryChannelConfig::channel)
+        .containsExactly("conversation", "shared", "analytics");
+    FlowMemoryChannelConfig sharedConfig = memoryConfig.sharedChannels().get(1);
+    assertThat(sharedConfig.retentionVersions()).isEqualTo(3);
+    assertThat(sharedConfig.retentionTtl()).isEqualTo(java.time.Duration.ofDays(5));
   }
 
   @Test
@@ -92,8 +131,15 @@ class FlowDefinitionParserTest {
     FlowDefinition definition = createDefinition("invalid-format", root);
 
     assertThatThrownBy(() -> parser.parse(definition))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("format");
+        .isInstanceOf(FlowBlueprintParsingException.class)
+        .satisfies(
+            throwable ->
+                assertThat(((FlowBlueprintParsingException) throwable).issues())
+                    .singleElement()
+                    .satisfies(issue -> {
+                      assertThat(issue.code()).isEqualTo(FlowBlueprintIssueCodes.INTERACTION_SCHEMA_INVALID);
+                      assertThat(issue.path()).isEqualTo("/steps/step-1/interaction/payloadSchema");
+                    }));
   }
 
   private FlowDefinition createDefinition(String name, ObjectNode root) {

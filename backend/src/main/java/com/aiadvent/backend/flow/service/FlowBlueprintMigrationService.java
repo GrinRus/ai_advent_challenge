@@ -1,6 +1,7 @@
 package com.aiadvent.backend.flow.service;
 
 import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.persistence.FlowDefinitionHistoryRepository;
@@ -165,7 +166,8 @@ public class FlowBlueprintMigrationService {
       throw new IllegalArgumentException("Flow blueprint must not be null");
     }
     JsonNode tree = objectMapper.valueToTree(blueprint);
-    return objectMapper.convertValue(tree, FlowBlueprint.class);
+    FlowBlueprint sanitized = objectMapper.convertValue(tree, FlowBlueprint.class);
+    return FlowBlueprintSchemaVersion.upgradeToCurrent(sanitized, objectMapper);
   }
 
   private boolean hasDefinitionChanged(FlowBlueprint original, FlowBlueprint candidate) {
@@ -175,8 +177,7 @@ public class FlowBlueprintMigrationService {
   }
 
   private int schemaVersionOrDefault(FlowBlueprint blueprint) {
-    Integer schemaVersion = blueprint.schemaVersion();
-    return schemaVersion != null && schemaVersion > 0 ? schemaVersion : 1;
+    return FlowBlueprintSchemaVersion.normalize(blueprint.schemaVersion());
   }
 
   public record FlowBlueprintMigrationRequest(

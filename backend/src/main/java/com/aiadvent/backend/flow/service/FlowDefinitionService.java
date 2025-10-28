@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.service;
 import com.aiadvent.backend.flow.api.FlowDefinitionPublishRequest;
 import com.aiadvent.backend.flow.api.FlowDefinitionRequest;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
@@ -84,7 +85,9 @@ public class FlowDefinitionService {
         throw new IllegalArgumentException("Flow definition name must not be empty");
       }
 
-      FlowBlueprint blueprint = blueprintFromRequest(request);
+      FlowBlueprint originalBlueprint = blueprintFromRequest(request);
+      int requestedSchemaVersion = FlowBlueprintSchemaVersion.normalize(originalBlueprint.schemaVersion());
+      FlowBlueprint blueprint = upgradeBlueprintToCurrent(originalBlueprint);
 
       int nextVersion =
           flowDefinitionRepository.findByNameOrderByVersionDesc(request.name()).stream()
@@ -99,6 +102,7 @@ public class FlowDefinitionService {
       definition.setDescription(request.description());
       definition.setUpdatedBy(request.updatedBy());
 
+      validateSchemaVersion(requestedSchemaVersion, definition, "create", actor);
       flowBlueprintValidator.validateBlueprintOrThrow(blueprint);
 
       FlowDefinition saved = flowDefinitionRepository.save(definition);
@@ -133,13 +137,16 @@ public class FlowDefinitionService {
         throw new IllegalStateException("Only DRAFT definitions can be updated");
       }
 
-      FlowBlueprint blueprint = blueprintFromRequest(request);
+      FlowBlueprint originalBlueprint = blueprintFromRequest(request);
+      int requestedSchemaVersion = FlowBlueprintSchemaVersion.normalize(originalBlueprint.schemaVersion());
+      FlowBlueprint blueprint = upgradeBlueprintToCurrent(originalBlueprint);
       definition.setDefinition(blueprint);
       definition.setDescription(request.description());
       if (StringUtils.hasText(request.updatedBy())) {
         definition.setUpdatedBy(request.updatedBy());
       }
 
+      validateSchemaVersion(requestedSchemaVersion, definition, "update", actor);
       flowBlueprintValidator.validateBlueprintOrThrow(blueprint);
 
       FlowDefinition saved = flowDefinitionRepository.save(definition);
@@ -174,6 +181,14 @@ public class FlowDefinitionService {
         return definition;
       }
 
+      FlowBlueprint existingBlueprint = definition.getDefinition();
+      int requestedSchemaVersion = FlowBlueprintSchemaVersion.normalize(existingBlueprint != null ? existingBlueprint.schemaVersion() : null);
+      FlowBlueprint upgraded = upgradeBlueprintToCurrent(existingBlueprint);
+      if (upgraded != null && upgraded != definition.getDefinition()) {
+        definition.setDefinition(upgraded);
+      }
+
+      validateSchemaVersion(requestedSchemaVersion, definition, "publish", actor);
       flowBlueprintValidator.validateDefinitionOrThrow(definition);
 
       if (StringUtils.hasText(request.updatedBy())) {
@@ -216,6 +231,42 @@ public class FlowDefinitionService {
               other.setActive(false);
               flowDefinitionRepository.save(other);
             });
+  }
+
+  private void validateSchemaVersion(
+      int schemaVersion, FlowDefinition definition, String stage, String actor) {
+    if (schemaVersion < FlowBlueprintSchemaVersion.MIN_SUPPORTED) {
+      String message =
+          "Flow blueprint schemaVersion must be >= "
+              + FlowBlueprintSchemaVersion.MIN_SUPPORTED
+              + ", actual="
+              + schemaVersion;
+      constructorTelemetryService.recordFlowBlueprintWarning(
+          "schema_version_invalid", stage, definition, actor, message);
+      throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
+    }
+    if (schemaVersion > FlowBlueprintSchemaVersion.CURRENT) {
+      String message =
+          "Flow blueprint schemaVersion "
+              + schemaVersion
+              + " is not supported. Maximum supported version is "
+              + FlowBlueprintSchemaVersion.CURRENT;
+      constructorTelemetryService.recordFlowBlueprintWarning(
+          "schema_version_unsupported", stage, definition, actor, message);
+      throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
+    }
+    if (schemaVersion < FlowBlueprintSchemaVersion.CURRENT) {
+      constructorTelemetryService.recordFlowBlueprintWarning(
+          "schema_version_legacy",
+          stage,
+          definition,
+          actor,
+          "Flow blueprint schemaVersion=" + schemaVersion + " is deprecated but still supported");
+    }
+  }
+
+  private FlowBlueprint upgradeBlueprintToCurrent(FlowBlueprint blueprint) {
+    return FlowBlueprintSchemaVersion.upgradeToCurrent(blueprint, objectMapper);
   }
 
   private FlowBlueprint blueprintFromRequest(FlowDefinitionRequest request) {

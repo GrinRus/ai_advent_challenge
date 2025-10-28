@@ -10,6 +10,7 @@ import com.aiadvent.backend.flow.domain.AgentVersion;
 import com.aiadvent.backend.flow.domain.AgentVersionStatus;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.persistence.AgentVersionRepository;
+import com.aiadvent.backend.flow.validation.FlowBlueprintParsingException;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -43,7 +44,12 @@ public class FlowBlueprintValidator {
     if (definition == null) {
       throw new IllegalArgumentException("Flow definition must not be null");
     }
-    FlowDefinitionDocument document = flowBlueprintCompiler.compile(definition);
+    FlowDefinitionDocument document;
+    try {
+      document = flowBlueprintCompiler.compile(definition);
+    } catch (FlowBlueprintParsingException parsingException) {
+      throw parsingException(parsingException);
+    }
     validateAgentVersionsOrThrow(document);
     return document;
   }
@@ -52,7 +58,12 @@ public class FlowBlueprintValidator {
     if (blueprint == null) {
       throw new IllegalArgumentException("Flow blueprint must not be null");
     }
-    FlowDefinitionDocument document = flowBlueprintCompiler.compile(blueprint);
+    FlowDefinitionDocument document;
+    try {
+      document = flowBlueprintCompiler.compile(blueprint);
+    } catch (FlowBlueprintParsingException parsingException) {
+      throw parsingException(parsingException);
+    }
     validateAgentVersionsOrThrow(document);
     return document;
   }
@@ -67,13 +78,8 @@ public class FlowBlueprintValidator {
     FlowDefinitionDocument document;
     try {
       document = flowBlueprintCompiler.compile(blueprint);
-    } catch (IllegalArgumentException validationException) {
-      return new FlowBlueprintValidationResult(
-          null,
-          List.of(
-              new FlowValidationIssue(
-                  "BLUEPRINT_INVALID", validationException.getMessage(), null, null)),
-          List.of());
+    } catch (FlowBlueprintParsingException parsingException) {
+      return new FlowBlueprintValidationResult(null, parsingException.issues(), List.of());
     } catch (Exception unexpected) {
       return new FlowBlueprintValidationResult(
           null,
@@ -95,6 +101,16 @@ public class FlowBlueprintValidator {
           HttpStatus.UNPROCESSABLE_ENTITY,
           first.message() != null ? first.message() : "Flow blueprint validation failed");
     }
+  }
+
+  private ResponseStatusException parsingException(FlowBlueprintParsingException exception) {
+    FlowValidationIssue first =
+        exception.issues().isEmpty() ? null : exception.issues().get(0);
+    String message =
+        first != null && first.message() != null
+            ? first.message()
+            : "Flow blueprint parsing failed";
+    return new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, message);
   }
 
   private List<FlowValidationIssue> validateAgentVersions(

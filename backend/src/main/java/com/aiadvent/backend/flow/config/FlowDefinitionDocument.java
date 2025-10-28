@@ -9,8 +9,10 @@ public class FlowDefinitionDocument {
   private final String startStepId;
   private final Map<String, FlowStepConfig> stepsById;
   private final List<FlowStepConfig> stepsInOrder;
+  private final FlowMemoryConfig memoryConfig;
 
-  public FlowDefinitionDocument(String startStepId, Map<String, FlowStepConfig> stepsById) {
+  public FlowDefinitionDocument(
+      String startStepId, Map<String, FlowStepConfig> stepsById, FlowMemoryConfig memoryConfig) {
     if (stepsById == null || stepsById.isEmpty()) {
       throw new IllegalArgumentException("Flow definition must contain at least one step");
     }
@@ -23,6 +25,7 @@ public class FlowDefinitionDocument {
     } else {
       this.startStepId = startStepId;
     }
+    this.memoryConfig = memoryConfig != null ? memoryConfig : FlowMemoryConfig.empty();
   }
 
   public String startStepId() {
@@ -39,5 +42,9 @@ public class FlowDefinitionDocument {
 
   public List<FlowStepConfig> steps() {
     return stepsInOrder;
+  }
+
+  public FlowMemoryConfig memoryConfig() {
+    return memoryConfig;
   }
 }

@@ -152,6 +152,8 @@ public class AgentOrchestratorService {
     session.setChatSessionId(chatSessionId);
     flowSessionRepository.save(session);
 
+    flowMemoryService.initializeSharedChannels(session.getId(), document.memoryConfig());
+
     telemetry.sessionStarted(session.getId(), flowDefinition.getId(), flowDefinition.getVersion());
 
     recordEvent(session, null, FlowEventType.FLOW_STARTED, "running", null, null);

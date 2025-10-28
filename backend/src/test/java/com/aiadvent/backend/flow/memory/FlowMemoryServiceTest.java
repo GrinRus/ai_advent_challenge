@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
+import com.aiadvent.backend.flow.config.FlowMemoryChannelConfig;
+import com.aiadvent.backend.flow.config.FlowMemoryConfig;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionStatus;
 import com.aiadvent.backend.flow.domain.FlowMemorySummary;
@@ -15,6 +17,7 @@ import com.aiadvent.backend.flow.persistence.FlowMemoryVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -109,6 +112,38 @@ class FlowMemoryServiceTest {
     Instant cutoff = cutoffCaptor.getValue();
     assertThat(cutoff).isBefore(Instant.now());
     assertThat(cutoff).isAfter(Instant.now().minusSeconds(60L * 60 * 24 * 31));
+  }
+
+  @Test
+  void appendUsesCustomRetentionFromInitialization() {
+    UUID sessionId = session.getId();
+    String channel = "analytics";
+
+    flowMemoryService.initializeSharedChannels(
+        sessionId,
+        new FlowMemoryConfig(
+            List.of(new FlowMemoryChannelConfig(channel, 2, Duration.ofDays(1)))));
+
+    FlowMemoryVersion latest = new FlowMemoryVersion(session, channel, 6L, objectMapper.createObjectNode(), null);
+    setField(latest, "id", 21L);
+
+    when(flowSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
+    when(flowMemoryVersionRepository.findFirstByFlowSessionAndChannelOrderByVersionDesc(session, channel))
+        .thenReturn(Optional.of(latest));
+    when(flowMemoryVersionRepository.save(Mockito.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+    flowMemoryService.append(sessionId, channel, objectMapper.createObjectNode(), FlowMemoryMetadata.builder().build());
+
+    Mockito.verify(flowMemoryVersionRepository)
+        .deleteByFlowSessionAndChannelAndVersionLessThan(session, channel, 6L);
+
+    ArgumentCaptor<Instant> cutoffCaptor = ArgumentCaptor.forClass(Instant.class);
+    Mockito.verify(flowMemoryVersionRepository)
+        .deleteByFlowSessionAndChannelAndCreatedAtBefore(Mockito.eq(session), Mockito.eq(channel), cutoffCaptor.capture());
+
+    Instant cutoff = cutoffCaptor.getValue();
+    assertThat(cutoff).isAfter(Instant.now().minus(Duration.ofDays(2)))
+        .isBefore(Instant.now());
   }
 
   private static void setField(Object target, String fieldName, Object value) {

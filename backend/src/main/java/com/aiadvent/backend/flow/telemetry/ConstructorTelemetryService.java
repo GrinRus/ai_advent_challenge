@@ -45,6 +45,24 @@ public class ConstructorTelemetryService {
         safeActor(actor));
   }
 
+  public void recordFlowBlueprintWarning(
+      String code, String stage, FlowDefinition definition, String actor, String message) {
+    incrementCounter(
+        "constructor_flow_blueprint_warnings_total",
+        Tags.of("code", safeTagValue(code), "stage", safeTagValue(stage)));
+    incrementCounter(
+        "constructor_user_events_total",
+        Tags.of("event", safeMetricEvent("flow_blueprint_warning", code + "_" + stage)));
+    auditLogger.warn(
+        "flow_blueprint_warning code={} stage={} definitionId={} version={} actor={} message={}",
+        safeLogValue(code),
+        safeLogValue(stage),
+        definition != null ? definition.getId() : null,
+        definition != null ? definition.getVersion() : null,
+        safeActor(actor),
+        safeLogValue(message));
+  }
+
   public void recordAgentDefinitionSave(String action, AgentDefinition definition, String actor) {
     incrementCounter(
         "constructor_agent_definition_saves_total", Tags.of("action", safeTagValue(action)));

@@ -14,6 +14,7 @@ import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
+import com.aiadvent.backend.flow.config.FlowMemoryConfig;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
@@ -135,7 +136,7 @@ class AgentOrchestratorServiceTest {
             List.of(),
             FlowStepTransitions.defaults(),
             1);
-    document = new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, stepConfig));
+    document = new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, stepConfig), FlowMemoryConfig.empty());
 
     doAnswer(invocation -> {
           FlowStepExecution execution = invocation.getArgument(0);
@@ -177,6 +178,7 @@ class AgentOrchestratorServiceTest {
     verify(jobQueuePort)
         .enqueueStepJob(eq(session), any(FlowStepExecution.class), any(FlowJobPayload.class), any(Instant.class));
     verify(telemetry).sessionStarted(eq(session.getId()), eq(definition.getId()), eq(definition.getVersion()));
+    verify(flowMemoryService).initializeSharedChannels(eq(session.getId()), eq(document.memoryConfig()));
   }
 
   @Test
@@ -292,7 +294,7 @@ class AgentOrchestratorServiceTest {
             new FlowStepTransitions(null, false, null, true),
             1);
     FlowDefinitionDocument retryDocument =
-        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, retryConfig));
+        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, retryConfig), FlowMemoryConfig.empty());
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
@@ -336,7 +338,7 @@ class AgentOrchestratorServiceTest {
             FlowStepTransitions.defaults(),
             2);
     FlowDefinitionDocument retryDocument =
-        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, retryConfig));
+        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, retryConfig), FlowMemoryConfig.empty());
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));
@@ -396,7 +398,10 @@ class AgentOrchestratorServiceTest {
             FlowStepTransitions.defaults(),
             1);
     FlowDefinitionDocument waitingDocument =
-        new FlowDefinitionDocument(STEP_ID, Map.of(STEP_ID, waitingConfig, "fallback", fallbackConfig));
+        new FlowDefinitionDocument(
+            STEP_ID,
+            Map.of(STEP_ID, waitingConfig, "fallback", fallbackConfig),
+            FlowMemoryConfig.empty());
 
     when(jobQueuePort.lockNextPending(eq("worker"), any(Instant.class))).thenReturn(Optional.of(job));
     when(flowStepExecutionRepository.findById(stepExecution.getId())).thenReturn(Optional.of(stepExecution));

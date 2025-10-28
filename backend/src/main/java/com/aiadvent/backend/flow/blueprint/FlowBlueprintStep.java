@@ -1,7 +1,7 @@
 package com.aiadvent.backend.flow.blueprint;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.JsonNode;
+import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record FlowBlueprintStep(
@@ -9,10 +9,16 @@ public record FlowBlueprintStep(
     String name,
     String agentVersionId,
     String prompt,
-    JsonNode overrides,
-    JsonNode interaction,
-    JsonNode memoryReads,
-    JsonNode memoryWrites,
-    JsonNode transitions,
+    FlowStepOverrides overrides,
+    FlowInteractionDraft interaction,
+    List<FlowMemoryReadDraft> memoryReads,
+    List<FlowMemoryWriteDraft> memoryWrites,
+    FlowStepTransitionsDraft transitions,
     Integer maxAttempts) {
+
+  public FlowBlueprintStep {
+    prompt = prompt != null ? prompt : "";
+    memoryReads = memoryReads != null ? List.copyOf(memoryReads) : List.of();
+    memoryWrites = memoryWrites != null ? List.copyOf(memoryWrites) : List.of();
+  }
 }

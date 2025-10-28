@@ -11,6 +11,7 @@ import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintCompiler;
 import com.aiadvent.backend.flow.config.FlowDefinitionDocument;
+import com.aiadvent.backend.flow.config.FlowMemoryConfig;
 import com.aiadvent.backend.flow.config.FlowStepConfig;
 import com.aiadvent.backend.flow.config.FlowStepTransitions;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
@@ -102,7 +103,8 @@ class FlowControlServiceTest {
                     List.of(),
                     List.of(),
                     FlowStepTransitions.defaults(),
-                    1)));
+                    1)),
+            FlowMemoryConfig.empty());
     when(flowBlueprintCompiler.compile(session.getFlowDefinition())).thenReturn(document);
 
     when(flowStepExecutionRepository.save(any(FlowStepExecution.class)))
@@ -178,7 +180,7 @@ class FlowControlServiceTest {
             FlowStepTransitions.defaults(),
             1);
     FlowDefinitionDocument document =
-        new FlowDefinitionDocument("step-approve", Map.of("step-approve", config));
+        new FlowDefinitionDocument("step-approve", Map.of("step-approve", config), FlowMemoryConfig.empty());
 
     AgentVersion agentVersion = createAgentVersion(config.agentVersionId());
 
@@ -230,7 +232,10 @@ class FlowControlServiceTest {
             FlowStepTransitions.defaults(),
             1);
     FlowDefinitionDocument document =
-        new FlowDefinitionDocument("primary", Map.of("primary", primaryConfig, "fallback", fallbackConfig));
+        new FlowDefinitionDocument(
+            "primary",
+            Map.of("primary", primaryConfig, "fallback", fallbackConfig),
+            FlowMemoryConfig.empty());
 
     AgentVersion agentVersion = createAgentVersion(agentVersionId);
 
