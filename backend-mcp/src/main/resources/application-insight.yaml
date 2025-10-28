@@ -11,8 +11,6 @@ spring:
         name: insight-mcp
         version: 0.1.0
         type: SYNC
-        annotation-scanner:
-          enabled: false
         instructions: |
           Insight MCP предоставляет аналитические инструменты для чтения summary чатов и flow,
           поиска по памяти и просмотра телеметрии сессий.

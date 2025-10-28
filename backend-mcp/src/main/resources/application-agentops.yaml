@@ -11,8 +11,6 @@ spring:
         name: agent-ops-mcp
         version: 0.1.0
         type: SYNC
-        annotation-scanner:
-          enabled: false
         instructions: |
           Agent Ops MCP предоставляет инструменты для управления каталогом агентов.
         capabilities:
