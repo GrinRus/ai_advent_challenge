@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/mcp")
@@ -34,7 +36,11 @@ public class McpHealthController {
       @RequestParam(name = "interval", required = false) Duration interval) {
     Duration pollInterval = sanitize(interval);
     return Flux.interval(Duration.ZERO, pollInterval)
-        .flatMap(ignore -> Flux.fromIterable(toEvents()))
+        .flatMap(
+            ignore ->
+                Mono.fromCallable(this::toEvents)
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMapMany(Flux::fromIterable))
         .onBackpressureDrop();
   }
 
@@ -67,4 +73,3 @@ public class McpHealthController {
         server.id(), server.status(), tools.size(), available, unavailable, timestamp);
   }
 }
-
