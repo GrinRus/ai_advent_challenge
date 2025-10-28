@@ -63,8 +63,7 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
 
   private ChatClient buildChatClient(
       OpenAiChatModel chatModel, MessageChatMemoryAdvisor chatMemoryAdvisor) {
-    var loggingModel = chatLoggingSupport.decorateModel(chatModel);
-    ChatClient.Builder builder = ChatClient.builder(loggingModel);
+    ChatClient.Builder builder = ChatClient.builder(chatLoggingSupport.decorateModel(chatModel));
     if (chatMemoryAdvisor != null) {
       builder.defaultAdvisors(chatMemoryAdvisor);
     }
