@@ -1,5 +1,8 @@
 spring:
   ai:
+    mcp:
+      client:
+        enabled: false
     openai:
       api-key: test-openai-key
       base-url: http://localhost

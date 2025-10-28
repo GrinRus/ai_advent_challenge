@@ -13,16 +13,18 @@ import com.aiadvent.backend.flow.api.FlowMemoryReferenceResponse;
 import com.aiadvent.backend.flow.api.FlowStepValidationRequest;
 import com.aiadvent.backend.flow.api.FlowStepValidationResponse;
 import com.aiadvent.backend.flow.api.FlowValidationIssue;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.config.FlowApiProperties;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
 import com.aiadvent.backend.flow.domain.FlowDefinitionHistory;
 import com.aiadvent.backend.flow.domain.FlowInteractionType;
 import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
-import com.aiadvent.backend.flow.config.FlowApiProperties;
 import com.aiadvent.backend.flow.service.FlowBlueprintValidationResult;
 import com.aiadvent.backend.flow.service.FlowBlueprintValidator;
 import com.aiadvent.backend.flow.service.FlowDefinitionService;
 import com.aiadvent.backend.flow.service.FlowLaunchPreviewPayload;
 import com.aiadvent.backend.flow.service.FlowLaunchPreviewService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -212,13 +214,14 @@ public class FlowDefinitionController {
   }
 
   private FlowDefinitionResponseV2 toResponseV2(FlowDefinition definition) {
+    FlowBlueprint sanitizedBlueprint = sanitizeBlueprint(definition.getDefinition());
     return new FlowDefinitionResponseV2(
         definition.getId(),
         definition.getName(),
         definition.getVersion(),
         definition.getStatus(),
         definition.isActive(),
-        definition.getDefinition(),
+        sanitizedBlueprint,
         definition.getDescription(),
         definition.getUpdatedBy(),
         definition.getCreatedAt(),
@@ -297,14 +300,90 @@ public class FlowDefinitionController {
     if (stepsNode instanceof ArrayNode stepsArray) {
       for (JsonNode stepNode : stepsArray) {
         if (stepNode instanceof ObjectNode stepObject) {
-          JsonNode overridesNode = stepObject.get("overrides");
-          if (!(overridesNode instanceof ObjectNode)) {
-            stepObject.set("overrides", objectMapper.createObjectNode());
-          }
+          ensureObjectNode(stepObject, "overrides");
+          ensureArrayNode(stepObject, "memoryReads");
+          ensureArrayNode(stepObject, "memoryWrites");
+          normalizeMemoryReads(stepObject.withArray("memoryReads"));
+          normalizeMaxAttempts(stepObject);
         }
       }
     }
 
     return objectNode;
+  }
+
+  private FlowBlueprint sanitizeBlueprint(FlowBlueprint blueprint) {
+    if (blueprint == null) {
+      return null;
+    }
+    try {
+      JsonNode sanitized = sanitizeDefinition(objectMapper.valueToTree(blueprint));
+      return objectMapper.treeToValue(sanitized, FlowBlueprint.class);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException("Failed to sanitize flow blueprint", exception);
+    }
+  }
+
+  private void ensureObjectNode(ObjectNode parent, String fieldName) {
+    JsonNode node = parent.get(fieldName);
+    if (!(node instanceof ObjectNode)) {
+      parent.set(fieldName, objectMapper.createObjectNode());
+    }
+  }
+
+  private void ensureArrayNode(ObjectNode parent, String fieldName) {
+    JsonNode node = parent.get(fieldName);
+    if (!(node instanceof ArrayNode)) {
+      parent.set(fieldName, objectMapper.createArrayNode());
+    }
+  }
+
+  private void normalizeMemoryReads(ArrayNode memoryReads) {
+    for (JsonNode readNode : memoryReads) {
+      if (!(readNode instanceof ObjectNode readObject)) {
+        continue;
+      }
+      JsonNode channelNode = readObject.get("channel");
+      if (channelNode == null || channelNode.isNull() || channelNode.asText().isBlank()) {
+        readObject.put("channel", "");
+      } else {
+        readObject.put("channel", channelNode.asText());
+      }
+
+      int limit = 10;
+      JsonNode limitNode = readObject.get("limit");
+      if (limitNode != null && !limitNode.isNull()) {
+        if (limitNode.canConvertToInt()) {
+          limit = limitNode.asInt();
+        } else if (limitNode.isTextual()) {
+          try {
+            limit = Integer.parseInt(limitNode.asText());
+          } catch (NumberFormatException ignored) {
+            limit = 10;
+          }
+        }
+      }
+      if (limit <= 0) {
+        limit = 10;
+      }
+      readObject.put("limit", limit);
+    }
+  }
+
+  private void normalizeMaxAttempts(ObjectNode stepObject) {
+    int maxAttempts = 1;
+    JsonNode maxNode = stepObject.get("maxAttempts");
+    if (maxNode != null && !maxNode.isNull()) {
+      if (maxNode.canConvertToInt()) {
+        maxAttempts = Math.max(1, maxNode.asInt());
+      } else if (maxNode.isTextual()) {
+        try {
+          maxAttempts = Math.max(1, Integer.parseInt(maxNode.asText()));
+        } catch (NumberFormatException ignored) {
+          maxAttempts = 1;
+        }
+      }
+    }
+    stepObject.put("maxAttempts", maxAttempts);
   }
 }
