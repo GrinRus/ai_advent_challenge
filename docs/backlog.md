@@ -700,26 +700,28 @@
 
 ### Кандидаты MCP
 - `flow-ops-mcp` — доступ к `FlowDefinitionService`, `FlowBlueprintValidator` и пайплайну публикации: просмотр, сравнение версий, форс-валидация и запуск публикаций/rollback.
-- `toolsmith-mcp` — управление каталогом `ToolDefinition`: синхронизация схем, инспекция `ToolSchemaVersion`, выдача ready-to-use payload'ов и подсказок по ручным инструментам.
 - `insight-mcp` — аналитика чатов/флоу: чтение summary из `ChatMemoryService` и `FlowMemoryService`, поиск конверсаций, метрики latency/ошибок из `Telemetry`.
 - `agent-ops-mcp` — self-service для `AgentCatalogService`/`AgentConstructorService`: регистрация новых агентов, изменение статусов, клонирование конфигураций и диагностика зависимостей инструментов.
 
 ### Backend
 - [ ] Создать отдельный Gradle-модуль `backend-mcp` (Spring Boot 3 + `spring-ai-mcp-spring-boot-starter`) с STDIO-лаунчером и Dockerfile.
 - [ ] Реализовать `flow-ops-mcp`: инструменты `list_flows`, `diff_flow_version`, `validate_blueprint`, `publish_flow`, `rollback_flow` с обращением к существующим сервисам и аудитом через `ChatLoggingSupport`.
-- [ ] Реализовать `toolsmith-mcp`: инструменты `list_tools`, `inspect_schema`, `generate_payload`, `sync_tool_binding` с reuse `ToolDefinitionRepository`/`McpToolBindingService`.
 - [ ] Реализовать `insight-mcp`: инструменты `recent_sessions`, `fetch_summary`, `search_memory`, `fetch_metrics` c использованием `FlowMemoryService`, `ChatMemoryService`, `TelemetryService`.
-- [ ] Реализовать `agent-ops-mcp`: инструменты `list_agents`, `register_agent`, `clone_agent`, `update_status`, `preview_dependencies` поверх `AgentCatalogService`/`AgentConstructorService` с валидацией связок `ToolBinding`.
+- [ ] Реализовать `agent-ops-mcp`: стартовая итерация — `list_agents`, `register_agent`, `preview_dependencies` (валидация `ToolBinding`, structured ответы для UI); последующие итерации — `clone_agent`, `update_status`, расширенные проверки.
 - [ ] Интегрировать `backend-mcp` с основным `backend`-приложением: регистрация STDIO-клиентов, health-indicator'ы, security policy и wiring новых `ToolSchemaVersion` в `McpToolBindingService`.
 - [ ] Рефакторинг perplexity-специфичных сервисов (`ChatResearchToolBindingService`, `PerplexityMcpHealthIndicator`, payload overrides) в обобщённую MCP-инфраструктуру с выбором сервера, метриками по тегам и поддержкой разных наборов инструментов.
 - [ ] Настроить конфигурацию `spring.ai.mcp.client` для подключения новых STDIO-серверов, обновить `McpToolBindingService` и биндить новые `ToolSchemaVersion`.
 - [ ] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [ ] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [ ] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
+- [ ] Добавить API выдачи каталога MCP (`GET /api/mcp/catalog`): структура `serverId/displayName/status/tools[]`, capability hints и ссылки на structured payload; обеспечить кэширование и авторизацию.
+- [ ] Настроить канал обновлений health (`/api/mcp/events` SSE): рассылка статусов (`serverId`, `status`, `latencyMs`, `tools[]`), fallback на polling `GET /api/mcp/health`.
 
 ### Frontend
-- [ ] Расширить chat UI для подключения MCP-инструментов: выбор доступных tool codes, индикация STDIO-серверов и отправка `requestedToolCodes` в backend.
-- [ ] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности) в DTO чата и агентов.
+- [ ] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.
+- [ ] Отрисовывать в карточках ответа бейджи активных MCP-инструментов, раскрывать structured payload (ID агента, ссылки на flow и т.п.), обрабатывать ошибки STDIO с подсказками пользователю.
+- [ ] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности, capability hints) в DTO чата и агентов, кешировать выбор на время сессии.
+- [ ] Интегрировать SSE-поток/периодический polling health: обновление UI-индикаторов и отключение недоступных MCP-инструментов в режиме реального времени.
 
 ### Tests & QA
 - [ ] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
@@ -728,11 +730,12 @@
 - [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку отказов STDIO.
 
 ### Infrastructure & Ops
-- [ ] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `TOOLSMITH_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
+- [ ] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
 - [ ] Подготовить Helm/Compose deployment для MCP: ресурсы контейнеров, rotation ключей, алерты по недоступности STDIO.
 - [ ] Перенастроить метрики/алерты (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги и добавить отдельные actuator health endpoints для каждого MCP-сервера.
+- [ ] Протянуть SSE endpoint через ingress/proxy, задокументировать сетевые требования и лимиты подключений; обеспечить деградацию до polling при отсутствии SSE.
 
 ### Docs & Enablement
-- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, toolsmith, observability).
+- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
 - [ ] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
 - [ ] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
