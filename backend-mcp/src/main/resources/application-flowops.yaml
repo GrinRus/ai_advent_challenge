@@ -11,6 +11,8 @@ spring:
         name: flow-ops-mcp
         version: 0.1.0
         type: SYNC
+        annotation-scanner:
+          enabled: false
         instructions: |
           Flow Ops MCP предоставляет инструменты для просмотра, сравнения и публикации flow-definition.
         capabilities:

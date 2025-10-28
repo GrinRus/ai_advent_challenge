@@ -310,14 +310,14 @@ public class McpToolBindingService {
                 sanitizedToolName.equals(
                     McpToolNameSanitizer.sanitize(callback.getToolDefinition().name())))
         .findFirst();
-    if (resolved.isEmpty() && log.isDebugEnabled()) {
+    if (resolved.isEmpty()) {
       Set<String> knownNames =
           Arrays.stream(callbacks)
               .filter(Objects::nonNull)
               .map(callback -> McpToolNameSanitizer.sanitize(callback.getToolDefinition().name()))
               .filter(Objects::nonNull)
               .collect(Collectors.toCollection(LinkedHashSet::new));
-      log.debug(
+      log.warn(
           "Known sanitized MCP tool names from provider: {}", knownNames);
     }
     return resolved;
