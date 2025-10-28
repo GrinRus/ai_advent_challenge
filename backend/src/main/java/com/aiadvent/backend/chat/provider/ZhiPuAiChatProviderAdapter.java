@@ -61,9 +61,6 @@ public class ZhiPuAiChatProviderAdapter implements ChatProviderAdapter {
     } else {
       builder.defaultAdvisors(simpleLoggerAdvisor);
     }
-    if (toolCallbackProvider != null) {
-      builder.defaultToolCallbacks(toolCallbackProvider);
-    }
     return builder.build();
   }
 

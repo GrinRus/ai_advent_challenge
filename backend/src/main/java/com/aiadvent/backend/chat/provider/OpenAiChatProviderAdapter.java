@@ -71,9 +71,6 @@ public class OpenAiChatProviderAdapter implements ChatProviderAdapter {
     } else {
       builder.defaultAdvisors(simpleLoggerAdvisor);
     }
-    if (toolCallbackProvider != null) {
-      builder.defaultToolCallbacks(toolCallbackProvider);
-    }
     return builder.build();
   }
 

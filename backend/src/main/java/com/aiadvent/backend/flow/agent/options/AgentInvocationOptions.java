@@ -3,6 +3,7 @@ package com.aiadvent.backend.flow.agent.options;
 import com.aiadvent.backend.chat.config.ChatProviderType;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -225,6 +226,7 @@ public final class AgentInvocationOptions {
       return maxOutputTokens;
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
       return temperature == null && topP == null && maxOutputTokens == null;
     }
@@ -563,6 +565,7 @@ public final class AgentInvocationOptions {
       return currency;
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
       return inputPer1KTokens == null
           && outputPer1KTokens == null
