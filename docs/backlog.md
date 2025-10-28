@@ -715,6 +715,8 @@
 - [x] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
 - [ ] Завершить канал обновлений health (`/api/mcp/events` SSE): добавить `latencyMs` в payload и реализовать fallback `GET /api/mcp/health`.
+- [ ] Перевести `backend-mcp` сервисы с STDIO на потоковый HTTP MCP: включить WebFlux приложение (`spring.main.web-application-type`), реализовать HTTP эндпоинты `stream`/`call` через `spring-ai-mcp-server` с SSE/ndjson выдачей, удалить STDIO launcher'ы/скрипты, обновить профили `application-*.yaml` и health-индикаторы, добавить smoke-тесты WebTestClient на handshake/stream.
+- [ ] Перевести backend на HTTP-only MCP: удалить STDIO конфигурацию (`spring.ai.mcp.client.stdio.*`, переменные `*_MCP_CMD`), добавить `http.connections.*` и env (`*_MCP_HTTP_BASE_URL`, `*_MCP_TRANSPORT`), обновить `McpToolBindingService`/health-индикаторы под `transport=http-stream`, выполнить Liquibase-миграцию для новых transport-значений и покрыть unit/integration тестами.
 - [ ] Актуализировать предупреждения логгера MCP: убрать упоминание только Perplexity в `McpToolBindingService`.
 
 ### Frontend
@@ -727,14 +729,17 @@
 - [x] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
 - [x] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
 - [x] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
-- [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку отказов STDIO.
+- [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку деградаций HTTP MCP (timeouts, health down).
 - [ ] Добавить backend smoke/contract тесты для `/api/mcp/catalog`, SSE `/api/mcp/events` с `latencyMs` и сценариев выбора MCP-инструментов.
+- [ ] Расширить тестовое покрытие под HTTP MCP: WebTestClient smoke для `backend-mcp` HTTP эндпоинтов, интеграции backend конфигурации (HTTP-only) и e2e сценарии stream/fallback с проверкой деградаций.
 
 ### Infrastructure & Ops
 - [x] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
 - [ ] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
+- [ ] Обновить `docker-compose.yml` и деплой пайплайны под HTTP MCP: выделить порты для `agent-ops`/`flow-ops`/`insight`, прокинуть `*_MCP_HTTP_BASE_URL` и `*_MCP_TRANSPORT`, перенастроить healthcheck на HTTP эндпоинты и убрать STDIO wrapper'ы/переменные.
 
 ### Docs & Enablement
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
 - [x] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
 - [x] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
+- [ ] Обновить документацию под HTTP MCP: `docs/infra.md`, `docs/guides/mcp-operators.md`, `docs/processes.md` и README с новыми переменными окружения, схемой backend ⇔ MCP (HTTP-only) и сценариями миграции/отката без STDIO.
