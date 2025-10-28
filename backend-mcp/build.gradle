@@ -1,45 +1,45 @@
 plugins {
-  id 'java'
-  id 'org.springframework.boot' version '3.5.6'
+    id 'java'
+    id 'org.springframework.boot' version '3.5.6'
 }
 
 group = 'com.aiadvent'
 version = '0.0.1-SNAPSHOT'
 
 java {
-  toolchain {
-    languageVersion = JavaLanguageVersion.of(21)
-  }
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 repositories {
-  mavenCentral()
-  maven { url 'https://repo.spring.io/milestone' }
-  maven { url 'https://repo.spring.io/snapshot' }
-  maven {
-    name = 'Central Portal Snapshots'
-    url = 'https://central.sonatype.com/repository/maven-snapshots/'
-  }
+    mavenCentral()
+    maven { url 'https://repo.spring.io/milestone' }
+    maven { url 'https://repo.spring.io/snapshot' }
+    maven {
+        name = 'Central Portal Snapshots'
+        url = 'https://central.sonatype.com/repository/maven-snapshots/'
+    }
 }
 
 dependencies {
-  implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.6")
-  implementation platform("org.springframework.ai:spring-ai-bom:1.1.0-M3")
-  implementation "org.springframework.ai:spring-ai-starter-mcp-server"
-  implementation "org.springframework.ai:spring-ai-starter-mcp-server-webmvc"
+    implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.6")
+    implementation platform("org.springframework.ai:spring-ai-bom:1.1.0-M3")
+    implementation "org.springframework.ai:spring-ai-starter-mcp-server"
+    implementation "org.springframework.ai:spring-ai-starter-mcp-server-webmvc"
 
-  implementation "org.springframework.boot:spring-boot-starter-webflux"
-  implementation "org.springframework.boot:spring-boot-starter-validation"
+    implementation "org.springframework.boot:spring-boot-starter-webflux"
+    implementation "org.springframework.boot:spring-boot-starter-validation"
 
-  implementation "com.fasterxml.jackson.core:jackson-databind"
+    implementation "com.fasterxml.jackson.core:jackson-databind"
 
-  testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
 }
 
 tasks.named('test') {
-  useJUnitPlatform()
+    useJUnitPlatform()
 }
 
 bootJar {
-  mainClass = 'com.aiadvent.backend.mcp.AgentOpsMcpApplication'
+    mainClass = 'com.aiadvent.mcp.backend.McpApplication'
 }
