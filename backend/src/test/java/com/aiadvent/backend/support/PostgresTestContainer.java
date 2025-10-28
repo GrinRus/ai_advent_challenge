@@ -8,6 +8,9 @@ import org.springframework.test.context.DynamicPropertySource;
 public abstract class PostgresTestContainer {
   static {
     System.setProperty("app.chat.token-usage.lightweight-mode", "true");
+    // Disable MCP client startup in tests; some environments set PERPLEXITY_MCP_ENABLED=true which
+    // would otherwise trigger the external lifecycle initializer and time out.
+    System.setProperty("spring.ai.mcp.client.enabled", "false");
   }
 
   private static final SingletonPostgresContainer POSTGRES =
