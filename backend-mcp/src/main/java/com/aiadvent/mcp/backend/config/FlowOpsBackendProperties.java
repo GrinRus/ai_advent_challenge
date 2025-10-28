@@ -1,4 +1,4 @@
-package com.aiadvent.mcp.backend.flowops;
+package com.aiadvent.mcp.backend.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

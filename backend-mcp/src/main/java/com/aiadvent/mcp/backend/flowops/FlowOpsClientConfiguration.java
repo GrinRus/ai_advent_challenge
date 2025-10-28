@@ -1,5 +1,6 @@
 package com.aiadvent.mcp.backend.flowops;
 
+import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.ReactorClientHttpConnectorBuilder;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
