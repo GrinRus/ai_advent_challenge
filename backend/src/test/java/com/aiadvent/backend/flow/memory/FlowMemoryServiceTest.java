@@ -4,6 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.backend.flow.TestFlowBlueprintFactory;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprint;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintMemory;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintMemoryChannel;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintMetadata;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintStep;
+import com.aiadvent.backend.flow.blueprint.FlowStepTransitionsDraft;
 import com.aiadvent.backend.flow.config.FlowMemoryChannelConfig;
 import com.aiadvent.backend.flow.config.FlowMemoryConfig;
 import com.aiadvent.backend.flow.domain.FlowDefinition;
@@ -16,8 +23,8 @@ import com.aiadvent.backend.flow.persistence.FlowMemorySummaryRepository;
 import com.aiadvent.backend.flow.persistence.FlowMemoryVersionRepository;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.Instant;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -144,6 +151,64 @@ class FlowMemoryServiceTest {
     Instant cutoff = cutoffCaptor.getValue();
     assertThat(cutoff).isAfter(Instant.now().minus(Duration.ofDays(2)))
         .isBefore(Instant.now());
+  }
+
+  @Test
+  void appendRespectsBlueprintRetentionWhenPolicyNotInitialized() {
+    UUID sessionId = session.getId();
+    String channel = "analytics";
+
+    FlowBlueprint blueprint =
+        new FlowBlueprint(
+            FlowBlueprintSchemaVersion.CURRENT,
+            new FlowBlueprintMetadata("Memory-aware flow", null, List.of()),
+            null,
+            null,
+            "step-1",
+            true,
+            List.of(),
+            new FlowBlueprintMemory(List.of(new FlowBlueprintMemoryChannel(channel, 3, 2))),
+            List.of(
+                new FlowBlueprintStep(
+                    "step-1",
+                    "Bootstrap",
+                    UUID.randomUUID().toString(),
+                    "Prompt",
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    new FlowStepTransitionsDraft(
+                        new FlowStepTransitionsDraft.Success(null, true),
+                        null),
+                    1)));
+
+    session.getFlowDefinition().setDefinition(blueprint);
+
+    FlowMemoryVersion latest =
+        new FlowMemoryVersion(session, channel, 7L, objectMapper.createObjectNode(), null);
+    setField(latest, "id", 84L);
+
+    when(flowSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
+    when(flowMemoryVersionRepository.findFirstByFlowSessionAndChannelOrderByVersionDesc(session, channel))
+        .thenReturn(Optional.of(latest));
+    when(flowMemoryVersionRepository.save(Mockito.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+    flowMemoryService.append(
+        sessionId, channel, objectMapper.createObjectNode(), FlowMemoryMetadata.builder().build());
+
+    Mockito.verify(flowMemoryVersionRepository)
+        .deleteByFlowSessionAndChannelAndVersionLessThan(session, channel, 6L);
+
+    ArgumentCaptor<Instant> cutoffCaptor = ArgumentCaptor.forClass(Instant.class);
+    Mockito.verify(flowMemoryVersionRepository)
+        .deleteByFlowSessionAndChannelAndCreatedAtBefore(
+            Mockito.eq(session), Mockito.eq(channel), cutoffCaptor.capture());
+
+    Instant cutoff = cutoffCaptor.getValue();
+    Duration age = Duration.between(cutoff, Instant.now());
+    assertThat(age).isGreaterThan(Duration.ofDays(1)).isLessThan(Duration.ofDays(3));
+    assertThat(session.getCurrentMemoryVersion()).isEqualTo(8L);
   }
 
   private static void setField(Object target, String fieldName, Object value) {

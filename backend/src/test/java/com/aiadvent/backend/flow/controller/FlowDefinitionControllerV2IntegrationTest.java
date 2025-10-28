@@ -13,6 +13,7 @@ import com.aiadvent.backend.flow.api.FlowLaunchPreviewResponseV2;
 import com.aiadvent.backend.flow.api.FlowMemoryReferenceResponse;
 import com.aiadvent.backend.flow.api.FlowStepValidationResponse;
 import com.aiadvent.backend.flow.api.FlowValidationIssue;
+import com.aiadvent.backend.flow.blueprint.FlowBlueprintMemoryChannel;
 import com.aiadvent.backend.flow.blueprint.FlowBlueprintSchemaVersion;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
 import com.aiadvent.backend.flow.domain.AgentVersion;
@@ -80,6 +81,13 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
 
     assertThat(created.definition()).isNotNull();
     assertThat(created.definition().steps()).hasSize(1);
+    assertThat(created.definition().memory().sharedChannels())
+        .anySatisfy(
+            channel -> {
+              assertThat(channel.id()).isEqualTo("analytics");
+              assertThat(channel.retentionVersions()).isEqualTo(3);
+              assertThat(channel.retentionDays()).isEqualTo(2);
+            });
     UUID definitionId = created.id();
 
     // Update definition to ensure PUT also returns blueprint
@@ -102,6 +110,9 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
     FlowDefinitionResponseV2 updated =
         objectMapper.readValue(updateResult.getResponse().getContentAsString(), FlowDefinitionResponseV2.class);
     assertThat(updated.definition().metadata().title()).isEqualTo("Updated Title");
+    assertThat(updated.definition().memory().sharedChannels())
+        .extracting(FlowBlueprintMemoryChannel::id)
+        .contains("analytics");
 
     // Publish to access preview
     mockMvc
@@ -126,6 +137,9 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
     assertThat(fetched.definition().startStepId()).isEqualTo("step-1");
     assertThat(fetched.definition().schemaVersion())
         .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
+    assertThat(fetched.definition().memory().sharedChannels())
+        .extracting(FlowBlueprintMemoryChannel::retentionVersions)
+        .contains(3);
 
     // Launch preview should return blueprint in payload
     MvcResult previewResult =
@@ -139,6 +153,9 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
     assertThat(preview.blueprint().steps()).hasSize(1);
     assertThat(preview.blueprint().schemaVersion())
         .isEqualTo(FlowBlueprintSchemaVersion.CURRENT);
+    assertThat(preview.blueprint().memory().sharedChannels())
+        .extracting(FlowBlueprintMemoryChannel::id)
+        .contains("analytics");
   }
 
   @Test
@@ -203,6 +220,12 @@ class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
     ObjectNode root = objectMapper.createObjectNode();
     root.put("title", "V2 Demo Flow");
     root.put("startStepId", "step-1");
+    ObjectNode memory = root.putObject("memory");
+    ArrayNode channels = memory.putArray("sharedChannels");
+    ObjectNode analytics = channels.addObject();
+    analytics.put("id", "analytics");
+    analytics.put("retentionVersions", 3);
+    analytics.put("retentionDays", 2);
     ArrayNode steps = root.putArray("steps");
     ObjectNode step = steps.addObject();
     step.put("id", "step-1");

@@ -672,11 +672,11 @@
 - [x] Расширить отображение формы так, чтобы некорректные данные подсвечивались inline, а ошибки сериализации детализировались в toast/логах (`frontend/src/pages/FlowDefinitions.tsx`).
 
 ### Тесты и документация
-- [ ] Расширить unit/integration тесты (`FlowBlueprintValidator`, `FlowDefinitionController`, `FlowMemoryService`) под новые DTO и memory-политику.
-- [ ] Обновить `docs/architecture/flow-definition.md` и `docs/infra.md` описанием typed step-модели, ретеншена каналов и правил обновления `schemaVersion`.
-- [ ] Добавить отдельные unit-тесты `FlowBlueprintValidator` на ветки ошибок (неизвестные агенты, конфликт версий, невалидные переходы).
-- [ ] Реализовать интеграционный тест `FlowMemoryService` (retention/cleanup) и e2e сценарий публикации флоу с кастомными каналами памяти.
-- [ ] Дополнить frontend-vitest покрытие: проверить serialise/deserialize адаптеров на typed step DTO и memory retention.
+- [x] Расширить unit/integration тесты (`FlowBlueprintValidator`, `FlowDefinitionController`, `FlowMemoryService`) под новые DTO и memory-политику.
+- [x] Обновить `docs/architecture/flow-definition.md` и `docs/infra.md` описанием typed step-модели, ретеншена каналов и правил обновления `schemaVersion`.
+- [x] Добавить отдельные unit-тесты `FlowBlueprintValidator` на ветки ошибок (неизвестные агенты, конфликт версий, невалидные переходы).
+- [x] Реализовать интеграционный тест `FlowMemoryService` (retention/cleanup) и e2e сценарий публикации флоу с кастомными каналами памяти.
+- [x] Дополнить frontend-vitest покрытие: проверить serialise/deserialize адаптеров на typed step DTO и memory retention.
 
 ## Wave 15 — MCP Research Testing & Stability
 ### Backend

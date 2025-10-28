@@ -245,7 +245,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
   - `flow_session` — запуски (`PENDING`, `RUNNING`, `PAUSED`, `FAILED`, `COMPLETED`, `ABORTED`), `launch_parameters`, `shared_context`, `current_step_id`, `current_memory_version`.
   - `flow_step_execution` — состояние шага (attempt, prompt, input/output, usage/cost, timestamps).
   - `flow_event` — журнал (`event_type`, `status`, `payload_jsonb`, `usage/cost`, `trace_id`, `span_id`) для SSE и аудита.
-  - `flow_memory_version` — shared/isolated память, версии и TTL. Держим последние 10 версий и чистим записи старше 30 дней батчем.
+  - `flow_memory_version` — shared/isolated память, версии и TTL. Wave 14: ретеншен (`retentionVersions`/`retentionDays`) читается из blueprint; при отсутствии настроек применяются дефолты (10 версий, 30 дней) и фиксируются при каждом append.
 
 ### Наблюдаемость flow саммари
 - `FlowMemorySummarizerService` отдаёт отдельные метрики с тегом `scope=flow`: `flow_summary_runs_total`, `flow_summary_duration_seconds`, `flow_summary_queue_size`, `flow_summary_queue_rejections_total`, `flow_summary_failures_total`, `flow_summary_failure_alerts_total`. Экспортируйте Micrometer в Prometheus/OTLP и добавьте теги `providerId`/`channel`, если нужен более детальный анализ.
@@ -254,11 +254,11 @@ Frontend контейнер проксирует все запросы `/api/*` 
 - Для миграции легаси-флоу на типизированные blueprints предусмотрен CLI (`app.flow.migration.cli.*`): по умолчанию он работает в `dry-run` режиме, умеет ограничиваться списком `definition-ids` и обновляет как текущие определения, так и историю версий. Запуски фиксируйте в журнале изменений.
 
 ### Формат flow definition
-- Blueprint описан value-объектом `FlowBlueprint` (см. `docs/architecture/flow-definition.md`): включает `schemaVersion`, `metadata`, `launchParameters`, `memory.sharedChannels`, массив `steps[]`.
+- Blueprint описан value-объектом `FlowBlueprint` (см. `docs/architecture/flow-definition.md`): включает `schemaVersion`, `metadata`, `launchParameters`, `memory.sharedChannels` с ретеншеном и массив `steps[]`.
 - `steps[]` — типизированные записи `FlowBlueprintStep` (id, name, `agentVersionId`, `prompt`, `overrides`, `interaction`, `memoryReads`, `memoryWrites`, `transitions`, `maxAttempts`).
 - API V2 (`app.flow.api.v2-enabled=true`) возвращает blueprint как есть (`FlowDefinitionResponseV2`, `FlowLaunchPreviewResponseV2`); V1 сохраняет обратную совместимость с JSON-структурами.
 
-## Мониторинг конструктора (Wave 12)
+## Мониторинг конструктора (Wave 14)
 - `ConstructorTelemetryService` в backend инкрементирует Micrometer-счётчики для всех операций конструктора:
   - `constructor_flow_blueprint_saves_total{action=create|update|publish}` — успешные сохранения/публикации флоу.
   - `constructor_agent_definition_saves_total{action=create|update|status}` и `constructor_agent_version_saves_total{action=create|update|publish|deprecate}` — активность каталога агентов.
@@ -278,6 +278,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
 
 ### Политики памяти и конфигурации
 - Настройки памяти (`app.chat.memory.*`) определяют размер окна (`window-size`), TTL (`retention`) и интервал очистки (`cleanup-interval`). Shared/isolated каналы инжектируются через Spring AI `MessageChatMemoryAdvisor`.
+- Blueprint-уровень (`memory.sharedChannels`) дополняет эти значения на уровне флоу: `FlowMemoryService` объединяет системные дефолты с per-channel overrides и применяет их при очистке версии памяти.
 - Настройки воркера флоу:
 
 ```yaml
