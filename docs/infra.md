@@ -197,7 +197,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
 ```
 
 ### Perplexity MCP (live research)
-- Провайдер Perplexity подключается через Model Context Protocol (STDIO). Backend использует стартер `org.springframework.ai:spring-ai-starter-mcp-client`, который по умолчанию запускает `npx -y @perplexity-ai/mcp-server`.
+- Провайдер Perplexity подключается через Model Context Protocol (STDIO) на той же платформе Spring AI, что и Flow/Agent/Insight MCP. Backend использует стартер `org.springframework.ai:spring-ai-starter-mcp-client`, который по умолчанию запускает `npx -y @perplexity-ai/mcp-server`.
 - Требования:
   - Node.js ≥ 20 (рекомендуется LTS 22) и доступ к `npx`/npm registry. На production-хостах убедитесь, что Node установлен и не блокируется политики безопасности.
   - Ключ API Perplexity (`PERPLEXITY_API_KEY`). Значение берётся из `.env`/секрет-хранилища и прокидывается в `application.yaml` (см. секцию `spring.ai.mcp.client.stdio.connections.perplexity.env`).
@@ -231,6 +231,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
   docker compose exec agent-ops-mcp java -jar /app/app.jar --help
   docker compose logs -f flow-ops-mcp
   ```
+- Подробное руководство для операторов и аналитиков находится в `docs/guides/mcp-operators.md`.
 
 ## Оркестрация мультиагентных флоу
 

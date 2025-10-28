@@ -736,6 +736,6 @@
 - [ ] Протянуть SSE endpoint через ingress/proxy, задокументировать сетевые требования и лимиты подключений; обеспечить деградацию до polling при отсутствии SSE.
 
 ### Docs & Enablement
-- [ ] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
-- [ ] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
-- [ ] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
+- [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
+- [x] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
+- [x] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
