@@ -72,22 +72,22 @@ logging:
     com.aiadvent.backend.chat: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.web: INFO
-    # полезно видеть и модель/адвайзоры
-    org.springframework.ai.chat.model: DEBUG
-    org.springframework.ai.chat.client.advisor: DEBUG
-    # сам механизм tool calling
+    ConstructorAudit: INFO
+    # tool calling в целом
     org.springframework.ai.model.tool: DEBUG
     org.springframework.ai.tool: DEBUG
     org.springframework.ai.tool.method: DEBUG
-    # конвертация результата tool -> JSON для модели
-    org.springframework.ai.tool.execution: DEBUG
     org.springframework.ai.tool.executor: DEBUG
     org.springframework.ai.tool.convert: DEBUG
-    # если инструмент идёт через MCP (у тебя perplexity_search)
+
+    # MCP-уровень (важно для perplexity_search)
     org.springframework.ai.mcp: DEBUG
     org.springframework.ai.mcp.client: DEBUG
     org.springframework.ai.mcp.tool: DEBUG
-    ConstructorAudit: INFO
+
+    # чтобы видеть обмен с моделью и SimpleLoggerAdvisor
+    org.springframework.ai.chat.model: DEBUG
+    org.springframework.ai.chat.client.advisor: DEBUG
 
 app:
   chat:
