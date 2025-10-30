@@ -459,14 +459,26 @@ class GitHubRepositoryService {
               return toReviewCommentResult(repository, number, existing, false);
             }
 
-            GHPullRequestReviewCommentBuilder builder =
-                pr.createReviewComment().body(body).path(reviewLocation.path().trim());
+            String trimmedPath = reviewLocation.path().trim();
+            boolean hasLine = reviewLocation.line() != null;
+            boolean hasRange = reviewLocation.startLine() != null && reviewLocation.endLine() != null;
+            Integer diffPosition = reviewLocation.position();
+            if (diffPosition != null && !hasLine && !hasRange) {
+              String commitSha = StringUtils.hasText(reviewLocation.commitSha())
+                  ? reviewLocation.commitSha().trim()
+                  : null;
+              GHPullRequestReviewComment created =
+                  pr.createReviewComment(body, commitSha, trimmedPath, diffPosition);
+              return toReviewCommentResult(repository, number, created, true);
+            }
+
+            GHPullRequestReviewCommentBuilder builder = pr.createReviewComment().body(body).path(trimmedPath);
             if (StringUtils.hasText(reviewLocation.commitSha())) {
               builder.commitId(reviewLocation.commitSha().trim());
             }
-            if (reviewLocation.startLine() != null && reviewLocation.endLine() != null) {
+            if (hasRange) {
               builder.lines(reviewLocation.startLine(), reviewLocation.endLine());
-            } else if (reviewLocation.line() != null) {
+            } else if (hasLine) {
               builder.line(reviewLocation.line());
             } else {
               throw new IllegalStateException("Unsupported review comment location configuration");
@@ -705,11 +717,15 @@ class GitHubRepositoryService {
       throw new IllegalArgumentException("Review comment path must not be blank");
     }
     boolean hasLine = location.line() != null;
-    boolean hasRange = location.startLine() != null && location.endLine() != null;
+    boolean hasStartLine = location.startLine() != null;
+    boolean hasEndLine = location.endLine() != null;
+    boolean hasRange = hasStartLine && hasEndLine;
     boolean hasPosition = location.position() != null;
-    if (!(hasLine || hasRange)) {
-      throw new IllegalArgumentException(
-          "Review comment location requires line or range");
+    if (hasStartLine ^ hasEndLine) {
+      throw new IllegalArgumentException("Review comment range requires both startLine and endLine");
+    }
+    if (!(hasLine || hasRange || hasPosition)) {
+      throw new IllegalArgumentException("Review comment location requires line, range or diff position");
     }
     if (hasLine && location.line() <= 0) {
       throw new IllegalArgumentException("Review comment line must be positive");
@@ -724,9 +740,6 @@ class GitHubRepositoryService {
     }
     if (hasPosition && location.position() <= 0) {
       throw new IllegalArgumentException("Review comment position must be positive");
-    }
-    if (hasPosition) {
-      throw new IllegalArgumentException("Diff position comments are not supported; specify line or range");
     }
   }
 
@@ -796,7 +809,8 @@ class GitHubRepositoryService {
       return comment.getStartLine() == location.startLine() && comment.getLine() == location.endLine();
     }
     if (location.position() != null) {
-      return false;
+      Integer target = location.position();
+      return Objects.equals(target, comment.getPosition()) || Objects.equals(target, comment.getOriginalPosition());
     }
     return false;
   }
@@ -861,9 +875,14 @@ class GitHubRepositoryService {
       return;
     }
     if (draft.position() != null) {
-      throw new IllegalArgumentException("Diff position drafts are not supported; specify line or range");
+      int position = draft.position();
+      if (position <= 0) {
+        throw new IllegalArgumentException("Review comment draft position must be positive");
+      }
+      builder.comment(body, path, position);
+      return;
     }
-    throw new IllegalArgumentException("Review comment draft requires line or range");
+    throw new IllegalArgumentException("Review comment draft requires line, range or diff position");
   }
 
   private GHPullRequestReviewEvent parseReviewEvent(String value) {
