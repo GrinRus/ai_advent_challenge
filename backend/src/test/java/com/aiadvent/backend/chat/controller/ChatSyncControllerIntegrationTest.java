@@ -211,6 +211,37 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
   }
 
   @Test
+  void syncDoesNotFallbackToDefaultMcpToolsWhenNoneRequested() throws Exception {
+    StubChatClientState.setSyncResponses(List.of("Research answer without MCP tools."));
+    StubChatClientState.setUsage(45, 90, 135);
+
+    ChatSyncRequest request =
+        new ChatSyncRequest(
+            null,
+            "Расскажи об архитектуре проекта.",
+            "openai",
+            "gpt-4o-mini",
+            "research",
+            List.of(),
+            null);
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                post(SYNC_ENDPOINT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)))
+            .andExpect(status().isOk())
+            .andExpect(header().exists("X-Session-Id"))
+            .andReturn();
+
+    ChatSyncResponse response =
+        objectMapper.readValue(result.getResponse().getContentAsString(), ChatSyncResponse.class);
+
+    assertThat(response.tools()).isNull();
+  }
+
+  @Test
   void syncRetriesOnConfiguredStatusAndSucceeds() throws Exception {
     WebClientResponseException tooManyRequests =
         WebClientResponseException.create(

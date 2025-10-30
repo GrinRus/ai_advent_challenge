@@ -55,7 +55,7 @@ export function buildChatPayload({
     basePayload.mode = mode;
   }
 
-  if (requestedToolCodes && requestedToolCodes.length > 0) {
+  if (Array.isArray(requestedToolCodes)) {
     const uniqueCodes = Array.from(
       new Set(
         requestedToolCodes
@@ -63,9 +63,7 @@ export function buildChatPayload({
           .filter((code) => code.length > 0),
       ),
     );
-    if (uniqueCodes.length > 0) {
-      basePayload.requestedToolCodes = uniqueCodes;
-    }
+    basePayload.requestedToolCodes = uniqueCodes;
   }
 
   const resolvedOverrides: Record<string, number> = {};

@@ -70,8 +70,17 @@ public class ChatResearchToolBindingService {
       return ResearchContext.empty();
     }
     List<String> normalizedRequested = normalizeRequestedToolCodes(requestedToolCodes);
+    boolean hasExplicitRequest = requestedToolCodes != null;
+    if (hasExplicitRequest && normalizedRequested.isEmpty()) {
+      return ResearchContext.empty();
+    }
+
     List<String> selectionCodes =
-        !normalizedRequested.isEmpty() ? normalizedRequested : defaultRequestedToolCodes;
+        hasExplicitRequest ? normalizedRequested : defaultRequestedToolCodes;
+
+    if (selectionCodes.isEmpty()) {
+      return ResearchContext.empty();
+    }
 
     List<McpToolBindingService.ResolvedTool> resolvedTools =
         mcpToolBindingService.resolveCallbacks(
