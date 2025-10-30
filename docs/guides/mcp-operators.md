@@ -38,7 +38,7 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
   - Insight: `URL=http://localhost:7093`, `Endpoint=/mcp`
   - GitHub: `URL=http://localhost:7094`, `Endpoint=/mcp`
 - Для Perplexity используйте STDIO команду (`perplexity-mcp --api-key ...`) или собственный wrapper. IDE обычно позволяет указать произвольную команду запуска.
-- Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway. GitHub MCP требует корректно настроенный GitHub App либо PAT токен, заданные через переменные окружения.
+- Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway. GitHub MCP требует Personal Access Token с правами `repo`, `read:org`, `read:checks`, переданный через переменную `GITHUB_PAT`.
 
 ## Примеры запросов
 
@@ -71,6 +71,9 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.get_pull_request_diff` — агрегированный unified diff по файлам (обрезается по `maxBytes`).
 - `github.list_pull_request_comments` — раздельно issue- и review-комментарии с лимитами.
 - `github.list_pull_request_checks` — check run'ы и commit status'ы с ограничениями по количеству.
+- `github.create_pull_request_comment` — создаёт issue- или review-комментарий; для review требуется указать файл и строку/диапазон.
+- `github.create_pull_request_review` — оформляет ревью с действием `APPROVE`/`REQUEST_CHANGES`/`COMMENT` или оставляет `PENDING`, поддерживает пакет комментариев.
+- `github.submit_pull_request_review` — отправляет ранее созданное ревью с выбранным действием.
 
 ## Безопасность
 

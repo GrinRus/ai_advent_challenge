@@ -10,9 +10,14 @@
 - Frontend (React + Vite + Nginx) — сервис `frontend`, порт `4179`.
 - Postgres + pgvector — сервис `postgres`, порт `5434` (наружный порт; внутри контейнера используется `5432`).
 - Redis (опционально для fallback-токенизации) — сервис `redis`, наружный порт `6380`, внутри контейнера `6379`.
+- Внутренние MCP:
+  - `agent-ops-mcp` — порт `7091` (HTTP MCP, профиль `agentops`).
+  - `flow-ops-mcp` — порт `7092` (HTTP MCP, профиль `flowops`).
+  - `insight-mcp` — порт `7093` (HTTP MCP, профиль `insight`).
+  - `github-mcp` — порт `7094` (HTTP MCP, профиль `github`).
 
 ## Docker Compose
-Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости.
+Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости. Для GitHub MCP обязательно задайте Personal Access Token (`GITHUB_PAT`) с правами `repo`, `read:org` и `read:checks`. Оформите процесс выдачи и ротации PAT согласно внутренним правилам безопасности (см. `docs/processes.md`).
 
 Для локального запуска всех компонентов выполните:
 
@@ -23,6 +28,29 @@ docker compose up --build
 Переменные окружения для backend (URL, логин, пароль БД) передаются через `APP_DB_*` и уже заданы в `docker-compose.yml`. При необходимости вынесите их в `.env` файл и подключите через ключ `env_file`.
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
+
+### Запуск GitHub MCP отдельно
+GitHub MCP упакован в тот же образ, что и остальные MCP, и запускается с профилем `github`. Для локального тестирования достаточно:
+
+```bash
+docker compose up --build github-mcp
+```
+
+Параметры подключения GitHub MCP внутри Compose:
+
+| Переменная | Назначение | Значение по умолчанию |
+|------------|------------|------------------------|
+| `GITHUB_MCP_HTTP_PORT` | прокинутый порт сервиса | `7094` |
+| `SPRING_PROFILES_ACTIVE` | активный профиль Spring Boot | `github` |
+| `GITHUB_API_BASE_URL` | базовый URL GitHub API | `https://api.github.com` |
+| `GITHUB_PAT` | PAT с правами `repo`, `read:org`, `read:checks` | пусто, требуется задать в `.env` |
+
+Backend автоматически подключает `github-mcp` по адресу `http://github-mcp:8080` (см. `GITHUB_MCP_HTTP_BASE_URL` в `docker-compose.yml`). Для локального запуска бэкенда вне Compose укажите:
+
+```bash
+export GITHUB_MCP_HTTP_BASE_URL=http://localhost:7094
+export GITHUB_MCP_HTTP_ENDPOINT=/mcp
+```
 
 ### Redis для fallback-оценки токенов
 - Сервис `redis` поднимается вместе с `docker compose` и хранит результаты подсчёта токенов для повторно используемых промптов. По умолчанию кэш выключен (`CHAT_TOKEN_USAGE_CACHE_ENABLED=false`), поэтому Redis безвреден при локальной разработке.

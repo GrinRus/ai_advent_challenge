@@ -35,6 +35,7 @@ services:
       AGENT_OPS_MCP_HTTP_BASE_URL: ${AGENT_OPS_MCP_HTTP_BASE_URL:-http://agent-ops-mcp:8080}
       FLOW_OPS_MCP_HTTP_BASE_URL: ${FLOW_OPS_MCP_HTTP_BASE_URL:-http://flow-ops-mcp:8080}
       INSIGHT_MCP_HTTP_BASE_URL: ${INSIGHT_MCP_HTTP_BASE_URL:-http://insight-mcp:8080}
+      GITHUB_MCP_HTTP_BASE_URL: ${GITHUB_MCP_HTTP_BASE_URL:-http://github-mcp:8080}
     ports:
       - "8080:8080"
 
@@ -115,6 +116,30 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f InsightMcpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  github-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/github-mcp:latest
+    container_name: ai-advent-github-mcp
+    depends_on:
+      - backend
+    env_file:
+      - .env
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
+      SPRING_PROFILES_ACTIVE: github
+      GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
+    ports:
+      - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f McpApplication >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3

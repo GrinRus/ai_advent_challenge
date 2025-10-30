@@ -24,25 +24,28 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.kohsuke.github.GHCheckRun;
 import org.kohsuke.github.GHCommit;
-import org.kohsuke.github.GHCommitState;
 import org.kohsuke.github.GHCommitStatus;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHDirection;
 import org.kohsuke.github.GHIssueComment;
 import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHLabel;
-import org.kohsuke.github.GHApp;
-import org.kohsuke.github.GHPullRequest;
 import org.kohsuke.github.GHMilestone;
+import org.kohsuke.github.GHPullRequest;
 import org.kohsuke.github.GHPullRequestFileDetail;
 import org.kohsuke.github.GHPullRequestQueryBuilder;
+import org.kohsuke.github.GHPullRequestReview;
+import org.kohsuke.github.GHPullRequestReviewBuilder;
 import org.kohsuke.github.GHPullRequestReviewComment;
+import org.kohsuke.github.GHPullRequestReviewCommentBuilder;
+import org.kohsuke.github.GHPullRequestReviewEvent;
+import org.kohsuke.github.GHPullRequestReviewState;
 import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHRepository;
+import org.kohsuke.github.GHTeam;
 import org.kohsuke.github.GHTree;
 import org.kohsuke.github.GHTreeEntry;
 import org.kohsuke.github.GHUser;
-import org.kohsuke.github.GHTeam;
 import org.kohsuke.github.PagedIterable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +63,8 @@ class GitHubRepositoryService {
   private static final int DEFAULT_CHECK_LIMIT = 50;
   private static final int MAX_CHECK_LIMIT = 200;
   private static final long MAX_DIFF_BYTES = 1_048_576L; // 1 MiB safeguard
+  private static final int COMMENT_DEDUP_LIMIT = 50;
+  private static final int REVIEW_DEDUP_LIMIT = 20;
 
   private final GitHubClientExecutor executor;
   private final GitHubBackendProperties properties;
@@ -423,6 +428,155 @@ class GitHubRepositoryService {
     }
   }
 
+  CreatePullRequestCommentResult createPullRequestComment(CreatePullRequestCommentInput input) {
+    Objects.requireNonNull(input, "input must not be null");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int number = requirePositive(input.number(), "pullRequestNumber");
+    String body = safeTrim(input.body());
+    if (!StringUtils.hasText(body)) {
+      throw new IllegalArgumentException("Comment body must not be blank");
+    }
+
+    ReviewCommentLocation reviewLocation = input.reviewLocation();
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            GHPullRequest pr = repo.getPullRequest(number);
+            if (reviewLocation == null) {
+              GHIssueComment existing = findMatchingIssueComment(pr, body);
+              if (existing != null) {
+                return toIssueCommentResult(repository, number, existing, false);
+              }
+              GHIssueComment created = pr.comment(body);
+              return toIssueCommentResult(repository, number, created, true);
+            }
+
+            validateReviewCommentLocation(reviewLocation);
+            GHPullRequestReviewComment existing = findMatchingReviewComment(pr, reviewLocation, body);
+            if (existing != null) {
+              return toReviewCommentResult(repository, number, existing, false);
+            }
+
+            GHPullRequestReviewCommentBuilder builder =
+                pr.createReviewComment().body(body).path(reviewLocation.path().trim());
+            if (StringUtils.hasText(reviewLocation.commitSha())) {
+              builder.commitId(reviewLocation.commitSha().trim());
+            }
+            if (reviewLocation.startLine() != null && reviewLocation.endLine() != null) {
+              builder.lines(reviewLocation.startLine(), reviewLocation.endLine());
+            } else if (reviewLocation.line() != null) {
+              builder.line(reviewLocation.line());
+            } else {
+              throw new IllegalStateException("Unsupported review comment location configuration");
+            }
+            GHPullRequestReviewComment created = builder.create();
+            return toReviewCommentResult(repository, number, created, true);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to create comment for pull request %s#%d".formatted(repository.fullName(), number), ex);
+          }
+        });
+  }
+
+  CreatePullRequestReviewResult createPullRequestReview(CreatePullRequestReviewInput input) {
+    Objects.requireNonNull(input, "input must not be null");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int number = requirePositive(input.number(), "pullRequestNumber");
+    GHPullRequestReviewEvent event = parseReviewEvent(input.event());
+    String body = safeTrim(input.body());
+    if (event == GHPullRequestReviewEvent.COMMENT || event == GHPullRequestReviewEvent.REQUEST_CHANGES) {
+      if (!StringUtils.hasText(body)) {
+        throw new IllegalArgumentException("Review body is required for COMMENT or REQUEST_CHANGES");
+      }
+    }
+
+    List<ReviewCommentDraft> drafts =
+        input.comments() == null ? List.of() : List.copyOf(input.comments());
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            GHPullRequest pr = repo.getPullRequest(number);
+
+            GHPullRequestReviewState targetState = toReviewState(event);
+
+            if (drafts.isEmpty()) {
+              GHPullRequestReview duplicate = findMatchingReview(pr, targetState, body);
+              if (duplicate != null) {
+                return new CreatePullRequestReviewResult(
+                    repository, number, toReviewInfo(duplicate), false);
+              }
+            }
+
+            GHPullRequestReviewBuilder builder = pr.createReview();
+            if (StringUtils.hasText(input.commitId())) {
+              builder.commitId(input.commitId().trim());
+            }
+            if (StringUtils.hasText(body)) {
+              builder.body(body);
+            }
+            if (event != null && event != GHPullRequestReviewEvent.PENDING) {
+              builder.event(event);
+            }
+            for (ReviewCommentDraft draft : drafts) {
+              appendDraft(builder, draft);
+            }
+            GHPullRequestReview review = builder.create();
+            return new CreatePullRequestReviewResult(
+                repository, number, toReviewInfo(review), true);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to create review for pull request %s#%d".formatted(repository.fullName(), number), ex);
+          }
+        });
+  }
+
+  SubmitPullRequestReviewResult submitPullRequestReview(SubmitPullRequestReviewInput input) {
+    Objects.requireNonNull(input, "input must not be null");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int number = requirePositive(input.number(), "pullRequestNumber");
+    long reviewId = requirePositiveLong(input.reviewId(), "reviewId");
+    GHPullRequestReviewEvent event = parseReviewEvent(input.event());
+    if (event == null || event == GHPullRequestReviewEvent.PENDING) {
+      throw new IllegalArgumentException("Review submission requires event APPROVE, REQUEST_CHANGES or COMMENT");
+    }
+    String body = safeTrim(input.body());
+    if ((event == GHPullRequestReviewEvent.COMMENT || event == GHPullRequestReviewEvent.REQUEST_CHANGES)
+        && !StringUtils.hasText(body)) {
+      throw new IllegalArgumentException("Review body is required for COMMENT or REQUEST_CHANGES submission");
+    }
+
+    final String payloadBody = body != null ? body : "";
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            GHPullRequest pr = repo.getPullRequest(number);
+            GHPullRequestReview review = findReviewById(pr, reviewId);
+            if (review == null) {
+              throw new IllegalArgumentException(
+                  "Review %d not found for pull request %s#%d".formatted(reviewId, repository.fullName(), number));
+            }
+            review.submit(payloadBody, event);
+            GHPullRequestReview refreshed = findReviewById(pr, reviewId);
+            if (refreshed == null) {
+              refreshed = review;
+            }
+            return new SubmitPullRequestReviewResult(
+                repository, number, toReviewInfo(refreshed));
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to submit review %d for pull request %s#%d"
+                    .formatted(reviewId, repository.fullName(), number),
+                ex);
+          }
+        });
+  }
+
   private PullRequestSummary toPullRequestSummarySafe(RepositoryRef repository, GHPullRequest pr) {
     try {
       return toPullRequestSummary(pr);
@@ -541,6 +695,237 @@ class GitHubRepositoryService {
               safeTrim(team.getDescription())));
     }
     return List.copyOf(result);
+  }
+
+  private void validateReviewCommentLocation(ReviewCommentLocation location) {
+    if (location == null) {
+      return;
+    }
+    if (!StringUtils.hasText(location.path())) {
+      throw new IllegalArgumentException("Review comment path must not be blank");
+    }
+    boolean hasLine = location.line() != null;
+    boolean hasRange = location.startLine() != null && location.endLine() != null;
+    boolean hasPosition = location.position() != null;
+    if (!(hasLine || hasRange)) {
+      throw new IllegalArgumentException(
+          "Review comment location requires line or range");
+    }
+    if (hasLine && location.line() <= 0) {
+      throw new IllegalArgumentException("Review comment line must be positive");
+    }
+    if (hasRange) {
+      if (location.startLine() <= 0 || location.endLine() <= 0) {
+        throw new IllegalArgumentException("Review comment range must be positive");
+      }
+      if (location.endLine() < location.startLine()) {
+        throw new IllegalArgumentException("Review comment endLine must be >= startLine");
+      }
+    }
+    if (hasPosition && location.position() <= 0) {
+      throw new IllegalArgumentException("Review comment position must be positive");
+    }
+    if (hasPosition) {
+      throw new IllegalArgumentException("Diff position comments are not supported; specify line or range");
+    }
+  }
+
+  private int requirePositive(Integer value, String fieldName) {
+    if (value == null || value <= 0) {
+      throw new IllegalArgumentException(fieldName + " must be positive");
+    }
+    return value;
+  }
+
+  private long requirePositiveLong(Long value, String fieldName) {
+    if (value == null || value <= 0) {
+      throw new IllegalArgumentException(fieldName + " must be positive");
+    }
+    return value;
+  }
+
+  private GHIssueComment findMatchingIssueComment(GHPullRequest pr, String body) throws IOException {
+    if (!StringUtils.hasText(body)) {
+      return null;
+    }
+    int inspected = 0;
+    for (GHIssueComment comment : pr.listComments().withPageSize(COMMENT_DEDUP_LIMIT)) {
+      if (inspected++ >= COMMENT_DEDUP_LIMIT) {
+        break;
+      }
+      if (Objects.equals(safeTrim(comment.getBody()), body)) {
+        return comment;
+      }
+    }
+    return null;
+  }
+
+  private GHPullRequestReviewComment findMatchingReviewComment(
+      GHPullRequest pr, ReviewCommentLocation location, String body) throws IOException {
+    int inspected = 0;
+    for (GHPullRequestReviewComment comment : pr.listReviewComments().withPageSize(COMMENT_DEDUP_LIMIT)) {
+      if (inspected++ >= COMMENT_DEDUP_LIMIT) {
+        break;
+      }
+      if (!Objects.equals(safeTrim(comment.getBody()), body)) {
+        continue;
+      }
+      if (matchesReviewLocation(comment, location)) {
+        return comment;
+      }
+    }
+    return null;
+  }
+
+  private boolean matchesReviewLocation(GHPullRequestReviewComment comment, ReviewCommentLocation location) {
+    if (location == null) {
+      return false;
+    }
+    if (!Objects.equals(safeTrim(comment.getPath()), safeTrim(location.path()))) {
+      return false;
+    }
+    if (StringUtils.hasText(location.commitSha())) {
+      if (!Objects.equals(location.commitSha().trim(), safeTrim(comment.getCommitId()))) {
+        return false;
+      }
+    }
+    if (location.line() != null) {
+      return comment.getLine() == location.line();
+    }
+    if (location.startLine() != null && location.endLine() != null) {
+      return comment.getStartLine() == location.startLine() && comment.getLine() == location.endLine();
+    }
+    if (location.position() != null) {
+      return false;
+    }
+    return false;
+  }
+
+  private GHPullRequestReview findMatchingReview(
+      GHPullRequest pr, GHPullRequestReviewState targetState, String body) throws IOException {
+    int inspected = 0;
+    for (GHPullRequestReview review : pr.listReviews().withPageSize(REVIEW_DEDUP_LIMIT)) {
+      if (inspected++ >= REVIEW_DEDUP_LIMIT) {
+        break;
+      }
+      GHPullRequestReviewState state = review.getState();
+      if (targetState != null && state != null && state != targetState) {
+        continue;
+      }
+      if (Objects.equals(safeTrim(review.getBody()), body)) {
+        return review;
+      }
+    }
+    return null;
+  }
+
+  private GHPullRequestReview findReviewById(GHPullRequest pr, long reviewId) throws IOException {
+    for (GHPullRequestReview review : pr.listReviews()) {
+      if (review.getId() == reviewId) {
+        return review;
+      }
+    }
+    return null;
+  }
+
+  private void appendDraft(GHPullRequestReviewBuilder builder, ReviewCommentDraft draft) {
+    if (draft == null) {
+      return;
+    }
+    String body = safeTrim(draft.body());
+    if (!StringUtils.hasText(body)) {
+      throw new IllegalArgumentException("Review comment draft body must not be blank");
+    }
+    String path = safeTrim(draft.path());
+    if (!StringUtils.hasText(path)) {
+      throw new IllegalArgumentException("Review comment draft path must not be blank");
+    }
+    if (draft.startLine() != null && draft.endLine() != null) {
+      int start = draft.startLine();
+      int end = draft.endLine();
+      if (start <= 0 || end <= 0) {
+        throw new IllegalArgumentException("Review comment draft range must be positive");
+      }
+      if (end < start) {
+        throw new IllegalArgumentException("Review comment draft endLine must be >= startLine");
+      }
+      builder.multiLineComment(body, path, start, end);
+      return;
+    }
+    if (draft.line() != null) {
+      int line = draft.line();
+      if (line <= 0) {
+        throw new IllegalArgumentException("Review comment draft line must be positive");
+      }
+      builder.singleLineComment(body, path, line);
+      return;
+    }
+    if (draft.position() != null) {
+      throw new IllegalArgumentException("Diff position drafts are not supported; specify line or range");
+    }
+    throw new IllegalArgumentException("Review comment draft requires line or range");
+  }
+
+  private GHPullRequestReviewEvent parseReviewEvent(String value) {
+    if (!StringUtils.hasText(value)) {
+      return null;
+    }
+    try {
+      return GHPullRequestReviewEvent.valueOf(value.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException("Unsupported review event: " + value, ex);
+    }
+  }
+
+  private GHPullRequestReviewState toReviewState(GHPullRequestReviewEvent event) {
+    if (event == null) {
+      return GHPullRequestReviewState.PENDING;
+    }
+    return switch (event) {
+      case APPROVE -> GHPullRequestReviewState.APPROVED;
+      case REQUEST_CHANGES -> GHPullRequestReviewState.CHANGES_REQUESTED;
+      case COMMENT -> GHPullRequestReviewState.COMMENTED;
+      case PENDING -> GHPullRequestReviewState.PENDING;
+    };
+  }
+
+  private CreatePullRequestCommentResult toIssueCommentResult(
+      RepositoryRef repository, int number, GHIssueComment comment, boolean created) {
+    return new CreatePullRequestCommentResult(
+        repository,
+        number,
+        CommentType.ISSUE,
+        comment.getId(),
+        null,
+        safeUrl(comment.getHtmlUrl()),
+        created);
+  }
+
+  private CreatePullRequestCommentResult toReviewCommentResult(
+      RepositoryRef repository, int number, GHPullRequestReviewComment comment, boolean created) {
+    Long reviewId = comment.getPullRequestReviewId();
+    if (reviewId != null && reviewId <= 0) {
+      reviewId = null;
+    }
+    return new CreatePullRequestCommentResult(
+        repository,
+        number,
+        CommentType.REVIEW,
+        comment.getId(),
+        reviewId,
+        safeUrl(comment.getHtmlUrl()),
+        created);
+  }
+
+  private PullRequestReviewInfo toReviewInfo(GHPullRequestReview review) {
+    if (review == null) {
+      return null;
+    }
+    return new PullRequestReviewInfo(
+        review.getId(),
+        safeLower(review.getState()),
+        safeUrl(review.getHtmlUrl()),
+        safeInstant(review::getSubmittedAt));
   }
 
   private MilestoneInfo toMilestone(GHMilestone milestone) {
@@ -1000,6 +1385,48 @@ class GitHubRepositoryService {
   record MilestoneInfo(Integer number, String title, String state, Instant dueOn, String description) {}
 
   record MergeInfo(Boolean mergeable, String mergeableState, Boolean draft) {}
+
+  record CreatePullRequestCommentInput(
+      RepositoryRef repository, Integer number, String body, ReviewCommentLocation reviewLocation) {}
+
+  record ReviewCommentLocation(
+      String commitSha, String path, Integer line, Integer startLine, Integer endLine, Integer position) {}
+
+  enum CommentType {
+    ISSUE,
+    REVIEW
+  }
+
+  record CreatePullRequestCommentResult(
+      RepositoryRef repository,
+      int pullRequestNumber,
+      CommentType type,
+      long commentId,
+      Long reviewId,
+      String htmlUrl,
+      boolean created) {}
+
+  record CreatePullRequestReviewInput(
+      RepositoryRef repository,
+      Integer number,
+      String body,
+      String commitId,
+      String event,
+      List<ReviewCommentDraft> comments) {}
+
+  record ReviewCommentDraft(
+      String body, String path, Integer line, Integer startLine, Integer endLine, Integer position) {}
+
+  record CreatePullRequestReviewResult(
+      RepositoryRef repository, int pullRequestNumber, PullRequestReviewInfo review, boolean created) {}
+
+  record PullRequestReviewInfo(long id, String state, String htmlUrl, Instant submittedAt) {}
+
+  record SubmitPullRequestReviewInput(
+      RepositoryRef repository, Integer number, Long reviewId, String body, String event) {}
+
+  record SubmitPullRequestReviewResult(
+      RepositoryRef repository, int pullRequestNumber, PullRequestReviewInfo review) {}
 
   record GetPullRequestDiffInput(RepositoryRef repository, Integer number, Long maxBytes) {}
 

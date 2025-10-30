@@ -7,14 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class GitHubBackendProperties {
 
   private String baseUrl = "https://api.github.com";
-  private String appId;
-  private Long installationId;
-  private String privateKeyBase64;
   private String personalAccessToken;
   private Duration connectTimeout = Duration.ofSeconds(10);
   private Duration readTimeout = Duration.ofSeconds(30);
-  private Duration appJwtTtl = Duration.ofMinutes(8);
-  private Duration tokenRefreshSkew = Duration.ofMinutes(1);
   private Duration treeCacheTtl = Duration.ofMinutes(2);
   private Duration fileCacheTtl = Duration.ofMinutes(2);
   private Integer treeMaxDepth = 3;
@@ -28,30 +23,6 @@ public class GitHubBackendProperties {
 
   public void setBaseUrl(String baseUrl) {
     this.baseUrl = baseUrl;
-  }
-
-  public String getAppId() {
-    return appId;
-  }
-
-  public void setAppId(String appId) {
-    this.appId = appId;
-  }
-
-  public Long getInstallationId() {
-    return installationId;
-  }
-
-  public void setInstallationId(Long installationId) {
-    this.installationId = installationId;
-  }
-
-  public String getPrivateKeyBase64() {
-    return privateKeyBase64;
-  }
-
-  public void setPrivateKeyBase64(String privateKeyBase64) {
-    this.privateKeyBase64 = privateKeyBase64;
   }
 
   public String getPersonalAccessToken() {
@@ -76,22 +47,6 @@ public class GitHubBackendProperties {
 
   public void setReadTimeout(Duration readTimeout) {
     this.readTimeout = readTimeout;
-  }
-
-  public Duration getAppJwtTtl() {
-    return appJwtTtl;
-  }
-
-  public void setAppJwtTtl(Duration appJwtTtl) {
-    this.appJwtTtl = appJwtTtl;
-  }
-
-  public Duration getTokenRefreshSkew() {
-    return tokenRefreshSkew;
-  }
-
-  public void setTokenRefreshSkew(Duration tokenRefreshSkew) {
-    this.tokenRefreshSkew = tokenRefreshSkew;
   }
 
   public Duration getTreeCacheTtl() {
@@ -142,4 +97,3 @@ public class GitHubBackendProperties {
     this.userAgent = userAgent;
   }
 }
-

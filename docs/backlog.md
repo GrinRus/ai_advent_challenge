@@ -746,11 +746,11 @@
 
 ## Wave 17 — GitHub MCP интеграция
 ### MCP Server
-- [x] Реализовать GitHub MCP сервер в `backend-mcp`: настроить OAuth/пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
+- [x] Реализовать GitHub MCP сервер в `backend-mcp`: настроить пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
 - [x] Настроить получение GitHub App installation token: генерация JWT из `GITHUB_PRIVATE_KEY`, вызов `GHAppInstallation#createToken()`, кеширование и ротация короткоживущих токенов.
 - [x] Добавить методы `github.list_repository_tree` и `github.read_file`: выбор репозитория/ветки, выдача структуры и содержимого файлов с лимитами, кешированием и нормализацией кодировок.
 - [x] Добавить инструменты `github.list_pull_requests`, `github.get_pull_request`, `github.get_pull_request_diff`, `github.list_pull_request_comments`, `github.list_pull_request_checks`: поддержать фильтры, отдачу diff/metadata, комментарии и статусы проверок.
-- [ ] Реализовать инструменты `github.create_pull_request_comment`, `github.create_pull_request_review` и `github.submit_pull_request_review`: публикация комментариев, выставление `APPROVE`/`REQUEST_CHANGES`, обработка rate limit и идемпотентности.
+- [x] Реализовать инструменты `github.create_pull_request_comment`, `github.create_pull_request_review` и `github.submit_pull_request_review`: публикация комментариев, выставление `APPROVE`/`REQUEST_CHANGES`, обработка rate limit и идемпотентности.
 - [x] Интегрировать сервер `github` в `McpCatalogService`/конфигурацию backend: поддержать выбор инструмента, обновить health-checkи и регистрацию capability hints.
 - [x] Добавить профиль `github` в `McpApplication`, компонент-скан пакета GitHub и `@ConfigurationProperties` для GitHub API (базовый `https://api.github.com`, таймауты, headers).
 - [x] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
@@ -780,9 +780,8 @@
 - [ ] Дополнить SSE health-индикатор GitHub MCP, показать degraded state и подсказки при rate limit/ошибках токена.
 
 ### Security & Governance
-- [ ] Создать GitHub App с необходимыми правами (репозиторий, pull request, checks), задокументировать процесс установки и разграничение доступов; предусмотреть fallback на PAT для локальной разработки.
-- [ ] Сконфигурировать хранение единого набора GitHub токенов в `.env`/секретах `docker-compose`/CI, обозначить политику ротации и обновления переменных.
-- [ ] Хранить приватный ключ GitHub App в `GITHUB_PRIVATE_KEY_B64`, декодировать при старте, логировать только метаданные (app id, installation id), без fallback на PAT.
+- [x] Задокументировать процесс выпуска Personal Access Token (scopes `repo`, `read:org`, `read:checks`), владельцев и SLA ротации (GitHub App больше не используется).
+- [x] Настроить хранение PAT в `.env`/секретах `docker-compose`/CI, описать процедуру ротации и оповещения.
 - [ ] Добавить детализированные логи (без отдельного аудита) для действий MCP: вызовы методов, создание комментариев, approve/request changes, обработка rate limit.
 
 ### Tests & QA
@@ -797,9 +796,9 @@
 - [ ] Тесты SSE/health-индикатора: degraded state для GitHub MCP (rate limit, токен), корректные подсказки в UI.
 
 ### Infrastructure & Ops
-- [ ] Добавить переменные окружения GitHub (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_B64`, `GITHUB_PAT`) в `.env` / `.env.example` и прокинуть их в `docker-compose.yml`.
-- [ ] Добавить сервис GitHub MCP в `docker-compose.yml`: образ `backend-mcp`, `SPRING_PROFILES_ACTIVE=github`, порт, токены из `.env`, healthcheck по аналогии с остальными MCP.
-- [ ] Дополнить документацию/README: сборка образа GitHub MCP, запуск `docker compose up github-mcp`, переменные окружения, логирование.
+- [x] Добавить переменные окружения GitHub (`GITHUB_PAT`) в `.env` / `.env.example` и прокинуть их в `docker-compose.yml`.
+- [x] Добавить сервис GitHub MCP в `docker-compose.yml`: образ `backend-mcp`, `SPRING_PROFILES_ACTIVE=github`, порт, токены из `.env`, healthcheck по аналогии с остальными MCP.
+- [x] Дополнить документацию/README: сборка образа GitHub MCP, запуск `docker compose up github-mcp`, переменные окружения, логирование.
 
 ### Docs & Enablement
 - [ ] Обновить `docs/guides/mcp-operators.md`/`docs/infra.md` описанием GitHub MCP, требуемых прав и сценариев использования.
