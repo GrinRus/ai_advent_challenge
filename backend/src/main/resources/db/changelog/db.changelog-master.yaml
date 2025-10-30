@@ -1921,3 +1921,117 @@ databaseChangeLog:
               SET transport = 'http-stream'
               WHERE transport = 'stdio'
                 AND (mcp_server IS NULL OR lower(mcp_server) <> 'perplexity');
+  - changeSet:
+      id: 0099-seed-github-mcp-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('github.list_repository_tree', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","description":"Target repository (owner/name/ref).","properties":{"owner":{"type":"string","description":"Repository owner or organization."},"name":{"type":"string","description":"Repository name."},"ref":{"type":"string","description":"Branch, tag, or commit SHA to resolve."}},"required":["owner","name"]},"path":{"type":"string","description":"Optional directory path to filter tree entries."},"recursive":{"type":"boolean","description":"Fetch entries recursively when true."},"maxDepth":{"type":"integer","minimum":1,"maximum":20,"description":"Maximum depth to traverse (defaults to configuration)."},"maxEntries":{"type":"integer","minimum":1,"maximum":2000,"description":"Maximum number of tree entries to return."}},"required":["repository"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"resolvedRef":{"type":"string","description":"Commit SHA used to resolve the tree."},"truncated":{"type":"boolean","description":"True when the tree was truncated due to limits."},"entries":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"type":{"type":"string"},"sha":{"type":"string"},"size":{"type":"integer","minimum":0}},"required":["path","type"]}}},"required":["repository","entries"]}
+                 $$::jsonb,
+                 'checksum-github.list_repository_tree-v1', '[]'::jsonb, 'github', 'github.list_repository_tree', 'http-stream', 'github'),
+                ('github.read_file', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","description":"Target repository (owner/name/ref).","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"path":{"type":"string","description":"File path relative to repository root."}},"required":["repository","path"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"resolvedRef":{"type":"string"},"file":{"type":"object","properties":{"path":{"type":"string"},"sha":{"type":"string"},"size":{"type":"integer","minimum":0},"encoding":{"type":"string"},"downloadUrl":{"type":"string","format":"uri"},"contentBase64":{"type":"string"},"textContent":{"type":"string"}},"required":["path","sha","size"]},"fetchedAt":{"type":"string","format":"date-time"}},"required":["repository","file"]}
+                 $$::jsonb,
+                 'checksum-github.read_file-v1', '[]'::jsonb, 'github', 'github.read_file', 'http-stream', 'github'),
+                ('github.list_pull_requests', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","description":"Target repository (owner/name/ref).","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"state":{"type":"string","enum":["open","closed","all"]},"head":{"type":"string","description":"Filter by head reference (user:branch)."},"base":{"type":"string","description":"Filter by base branch."},"limit":{"type":"integer","minimum":1,"maximum":50,"description":"Maximum number of pull requests to return."},"sort":{"type":"string","enum":["created","updated","popularity","long_running"]},"direction":{"type":"string","enum":["asc","desc"]}},"required":["repository"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequests":{"type":"array","items":{"type":"object","properties":{"number":{"type":"integer"},"title":{"type":"string"},"state":{"type":"string"},"draft":{"type":"boolean"},"merged":{"type":"boolean"},"author":{"type":"object","properties":{"id":{"type":"integer"},"login":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"},"avatarUrl":{"type":"string","format":"uri"}}},"baseRef":{"type":"string"},"headRef":{"type":"string"},"headSha":{"type":"string"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"closedAt":{"type":"string","format":"date-time"},"mergedAt":{"type":"string","format":"date-time"},"htmlUrl":{"type":"string","format":"uri"}},"required":["number","title","state"]}},"truncated":{"type":"boolean"}},"required":["repository","pullRequests"]}
+                 $$::jsonb,
+                 'checksum-github.list_pull_requests-v1', '[]'::jsonb, 'github', 'github.list_pull_requests', 'http-stream', 'github'),
+                ('github.get_pull_request', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequest":{"type":"object","properties":{"summary":{"type":"object"},"body":{"type":"string"},"labels":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"color":{"type":"string"},"description":{"type":"string"}}}},"assignees":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"login":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"}}}},"requestedReviewers":{"type":"array","items":{"type":"object"}},"requestedTeams":{"type":"array","items":{"type":"object"}},"milestone":{"type":"object"},"merge":{"type":"object"},"maintainerCanModify":{"type":"boolean"},"mergeCommitSha":{"type":"string"}}}},"required":["repository","pullRequest"]}
+                 $$::jsonb,
+                 'checksum-github.get_pull_request-v1', '[]'::jsonb, 'github', 'github.get_pull_request', 'http-stream', 'github'),
+                ('github.get_pull_request_diff', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"maxBytes":{"type":"integer","minimum":1,"description":"Maximum diff size in bytes before truncation."}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"headSha":{"type":"string"},"diff":{"type":"string","description":"Unified diff payload (may be truncated)."},"truncated":{"type":"boolean"}},"required":["repository","diff"]}
+                 $$::jsonb,
+                 'checksum-github.get_pull_request_diff-v1', '[]'::jsonb, 'github', 'github.get_pull_request_diff', 'http-stream', 'github'),
+                ('github.list_pull_request_comments', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"issueCommentLimit":{"type":"integer","minimum":0,"maximum":200},"reviewCommentLimit":{"type":"integer","minimum":0,"maximum":200}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"issueComments":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"body":{"type":"string"},"author":{"type":"object","properties":{"login":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"}}},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"htmlUrl":{"type":"string","format":"uri"}}}},"reviewComments":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"body":{"type":"string"},"diffHunk":{"type":"string"},"author":{"type":"object","properties":{"login":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"}}},"path":{"type":"string"},"position":{"type":"integer"},"line":{"type":"integer"},"startLine":{"type":"integer"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"htmlUrl":{"type":"string","format":"uri"}}}},"issueCommentsTruncated":{"type":"boolean"},"reviewCommentsTruncated":{"type":"boolean"}},"required":["repository","issueComments","reviewComments"]}
+                 $$::jsonb,
+                 'checksum-github.list_pull_request_comments-v1', '[]'::jsonb, 'github', 'github.list_pull_request_comments', 'http-stream', 'github'),
+                ('github.list_pull_request_checks', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"checkRunLimit":{"type":"integer","minimum":0,"maximum":200},"statusLimit":{"type":"integer","minimum":0,"maximum":200}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"headSha":{"type":"string"},"overallStatus":{"type":"string"},"checkRuns":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string"},"status":{"type":"string"},"conclusion":{"type":"string"},"appSlug":{"type":"string"},"appName":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"},"detailsUrl":{"type":"string","format":"uri"},"startedAt":{"type":"string","format":"date-time"},"completedAt":{"type":"string","format":"date-time"}}}},"statuses":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"context":{"type":"string"},"state":{"type":"string"},"description":{"type":"string"},"targetUrl":{"type":"string","format":"uri"},"creator":{"type":"object","properties":{"login":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"}}},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"}}}},"checkRunsTruncated":{"type":"boolean"},"statusesTruncated":{"type":"boolean"}},"required":["repository","checkRuns","statuses"]}
+                 $$::jsonb,
+                 'checksum-github.list_pull_request_checks-v1', '[]'::jsonb, 'github', 'github.list_pull_request_checks', 'http-stream', 'github'),
+                ('github.create_pull_request_comment', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"body":{"type":"string","description":"Markdown content of the comment."},"location":{"type":"object","description":"Optional review location when creating a review comment.","properties":{"commitSha":{"type":"string"},"path":{"type":"string"},"line":{"type":"integer"},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"position":{"type":"integer"}}}},"required":["repository","number","body"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"type":{"type":"string"},"commentId":{"type":"integer"},"reviewId":{"type":"integer"},"htmlUrl":{"type":"string","format":"uri"},"created":{"type":"boolean"}},"required":["repository","pullRequestNumber","commentId"]}
+                 $$::jsonb,
+                 'checksum-github.create_pull_request_comment-v1', '[]'::jsonb, 'github', 'github.create_pull_request_comment', 'http-stream', 'github'),
+                ('github.create_pull_request_review', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"body":{"type":"string"},"commitId":{"type":"string","description":"Optional head commit SHA to attach review to."},"event":{"type":"string","enum":["APPROVE","REQUEST_CHANGES","COMMENT","PENDING"]},"comments":{"type":"array","items":{"type":"object","properties":{"body":{"type":"string"},"path":{"type":"string"},"line":{"type":"integer"},"startLine":{"type":"integer"},"endLine":{"type":"integer"},"position":{"type":"integer"}},"required":["body","path"]}}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"review":{"type":"object","properties":{"id":{"type":"integer"},"state":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"},"submittedAt":{"type":"string","format":"date-time"}}},"created":{"type":"boolean"}},"required":["repository","pullRequestNumber","review"]}
+                 $$::jsonb,
+                 'checksum-github.create_pull_request_review-v1', '[]'::jsonb, 'github', 'github.create_pull_request_review', 'http-stream', 'github'),
+                ('github.submit_pull_request_review', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"reviewId":{"type":"integer","minimum":1},"body":{"type":"string"},"event":{"type":"string","enum":["APPROVE","REQUEST_CHANGES","COMMENT"]}},"required":["repository","number","reviewId"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"review":{"type":"object","properties":{"id":{"type":"integer"},"state":{"type":"string"},"htmlUrl":{"type":"string","format":"uri"},"submittedAt":{"type":"string","format":"date-time"}}}},"required":["repository","pullRequestNumber","review"]}
+                 $$::jsonb,
+                 'checksum-github.submit_pull_request_review-v1', '[]'::jsonb, 'github', 'github.submit_pull_request_review', 'http-stream', 'github');
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('github.list_repository_tree', 'GitHub · List repository tree', 'Возвращает структуру репозитория с учётом фильтров по пути и глубине.', 'github', 'MANUAL', '["github","tree"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.list_repository_tree' AND version = 1)),
+                ('github.read_file', 'GitHub · Read file', 'Читает содержимое файла репозитория с декодированием и базовой метаинформацией.', 'github', 'MANUAL', '["github","file"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.read_file' AND version = 1)),
+                ('github.list_pull_requests', 'GitHub · List pull requests', 'Список pull request''ов с фильтрами по состоянию, веткам и сортировке.', 'github', 'MANUAL', '["github","pull-request"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.list_pull_requests' AND version = 1)),
+                ('github.get_pull_request', 'GitHub · Get pull request', 'Детальная информация о pull request: описание, метки, ревьюеры и merge-состояние.', 'github', 'MANUAL', '["github","pull-request"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.get_pull_request' AND version = 1)),
+                ('github.get_pull_request_diff', 'GitHub · Get pull request diff', 'Unified diff для pull request с ограничением по размеру.', 'github', 'MANUAL', '["github","pull-request","diff"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.get_pull_request_diff' AND version = 1)),
+                ('github.list_pull_request_comments', 'GitHub · List pull request comments', 'Возвращает issue- и review-комментарии pull request с лимитами.', 'github', 'MANUAL', '["github","pull-request","comments"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.list_pull_request_comments' AND version = 1)),
+                ('github.list_pull_request_checks', 'GitHub · List pull request checks', 'Статусы проверок и check run''ы для head-коммита pull request.', 'github', 'MANUAL', '["github","pull-request","checks"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.list_pull_request_checks' AND version = 1)),
+                ('github.create_pull_request_comment', 'GitHub · Create pull request comment', 'Публикует issue- или review-комментарий в pull request.', 'github', 'MANUAL', '["github","pull-request","comments"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.create_pull_request_comment' AND version = 1)),
+                ('github.create_pull_request_review', 'GitHub · Create pull request review', 'Создаёт ревью pull request с выбранным действием и комментариями.', 'github', 'MANUAL', '["github","pull-request","reviews"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.create_pull_request_review' AND version = 1)),
+                ('github.submit_pull_request_review', 'GitHub · Submit pull request review', 'Отправляет существующее ревью pull request с выбранным действием.', 'github', 'MANUAL', '["github","pull-request","reviews"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.submit_pull_request_review' AND version = 1));

@@ -19,6 +19,7 @@
 Backend использует `spring.ai.mcp.client.streamable-http.connections.<server>` для внутренних сервисов и `spring.ai.mcp.client.stdio.connections.perplexity` для Perplexity. Для HTTP каждый сервер описывается парой `url` + `endpoint` (по умолчанию `/mcp`).
 
 - Backend внутри docker-compose автоматически получает адреса `http://agent-ops-mcp:8080`, `http://flow-ops-mcp:8080`, `http://insight-mcp:8080`, `http://github-mcp:8080`.
+- В `docker-compose.yml` сервис `backend` теперь ожидает успешный healthcheck всех HTTP MCP (`agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp`, `github-mcp`), чтобы Spring AI не падал при инициализации клиента.
 - При запуске backend на хостовой машине укажите:
   ```bash
   export AGENT_OPS_MCP_HTTP_BASE_URL=http://localhost:7091

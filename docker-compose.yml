@@ -26,8 +26,18 @@ services:
     image: ai-advent/backend:latest
     container_name: ai-advent-backend
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      agent-ops-mcp:
+        condition: service_healthy
+      flow-ops-mcp:
+        condition: service_healthy
+      insight-mcp:
+        condition: service_healthy
+      github-mcp:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -56,8 +66,6 @@ services:
       context: ./backend-mcp
     image: ai-advent/agent-ops-mcp:latest
     container_name: ai-advent-agent-ops-mcp
-    depends_on:
-      - backend
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.AgentOpsMcpApplication
       SPRING_PROFILES_ACTIVE: agentops
@@ -79,8 +87,6 @@ services:
       context: ./backend-mcp
     image: ai-advent/flow-ops-mcp:latest
     container_name: ai-advent-flow-ops-mcp
-    depends_on:
-      - backend
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.FlowOpsMcpApplication
       SPRING_PROFILES_ACTIVE: flowops
@@ -102,8 +108,6 @@ services:
       context: ./backend-mcp
     image: ai-advent/insight-mcp:latest
     container_name: ai-advent-insight-mcp
-    depends_on:
-      - backend
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.backend.mcp.InsightMcpApplication
       SPRING_PROFILES_ACTIVE: insight
@@ -125,8 +129,6 @@ services:
       context: ./backend-mcp
     image: ai-advent/github-mcp:latest
     container_name: ai-advent-github-mcp
-    depends_on:
-      - backend
     env_file:
       - .env
     environment:
