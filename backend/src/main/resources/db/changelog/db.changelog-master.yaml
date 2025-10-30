@@ -2045,7 +2045,7 @@ databaseChangeLog:
             stripComments: true
             sql: |
               WITH resolver_def AS (
-                INSERT INTO agent_definition (id, identifier, display_name, description, active, created_by, updated_by, created_at, updated_at)
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
                 VALUES (
                   gen_random_uuid(),
                   'github-target-resolver',
@@ -2148,11 +2148,7 @@ databaseChangeLog:
                       'name','Resolve GitHub Target',
                       'agentVersionId', resolver_version_id.id::text,
                       'prompt',
-                        'Analyse the conversation and optional interaction payload to determine the GitHub resource the user wants to inspect. '
-                        'When you can resolve an owner, repository name, and target type, return status=RESOLVED with githubTarget fields: '
-                        'type ("REPOSITORY" or "PULL_REQUEST"), owner, repository, ref (branch, tag, or commit), pullRequestNumber (for PR), headRef/baseRef when available, and url. '
-                        'If information is missing or ambiguous, respond with status=NEEDS_CLARIFICATION and populate clarificationPrompt, clarificationReason, and missingFields describing what to ask the user. '
-                        'Never include conversational prose or markdown, only the JSON object.',
+                        $$Analyse the conversation and optional interaction payload to determine the GitHub resource the user wants to inspect. When you can resolve an owner, repository name, and target type, return status=RESOLVED with githubTarget fields: type ("REPOSITORY" or "PULL_REQUEST"), owner, repository, ref (branch, tag, or commit), pullRequestNumber (for PR), headRef/baseRef when available, and url. If information is missing or ambiguous, respond with status=NEEDS_CLARIFICATION and populate clarificationPrompt, clarificationReason, and missingFields describing what to ask the user. Never include conversational prose or markdown, only the JSON object.$$,
                       'overrides', jsonb_build_object('temperature', 0.05, 'maxTokens', 750),
                       'interaction', jsonb_build_object(
                         'type', 'INPUT_FORM',
@@ -2180,7 +2176,7 @@ databaseChangeLog:
                         jsonb_build_object('channel','conversation','mode','AGENT_OUTPUT')),
                       'transitions', jsonb_build_object(
                         'onSuccess', jsonb_build_object('complete', true)),
-                      'maxAttempts', 2)))
+                      'maxAttempts', 2))
                 ),
                 true,
                 'GitHub analysis orchestrator',
