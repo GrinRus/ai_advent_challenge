@@ -59,8 +59,11 @@ class GitHubTools {
   @Tool(
       name = "github.list_repository_tree",
       description =
-          "Возвращает структуру репозитория GitHub по ссылке owner/name и ветке/коммите."
-              + " Поддерживает фильтрацию по path и ограничение глубины дерева.")
+          "Сканирует git-дерево репозитория. Передайте repository{owner,name,ref?} (ref по умолчанию heads/main). "
+              + "path очищается от ведущих/замыкающих '/' и задаёт стартовый каталог (пусто = корневая). "
+              + "recursive=true включает обход подкаталогов. maxDepth ограничивается диапазоном 1-10, "
+              + "maxEntries обрезает количество элементов; truncated=true сигнализирует об отсечении. "
+              + "resolvedRef содержит точный SHA коммита, чьё дерево было использовано.")
   GitHubTreeResponse listRepositoryTree(GitHubTreeRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     ListRepositoryTreeInput serviceInput =
@@ -83,7 +86,10 @@ class GitHubTools {
   @Tool(
       name = "github.list_pull_requests",
       description =
-          "Возвращает список pull request'ов репозитория. Поддерживаются фильтры state/base/head и сортировка.")
+          "Возвращает сводки pull request'ов. Обязателен блок repository. Необязательные фильтры: "
+              + "state (OPEN/CLOSED/ALL), head, base, sort (CREATED/UPDATED/POPULARITY/LONG_RUNNING), "
+              + "direction (ASC/DESC). limit ограничивается диапазоном 1-50; некорректные значения фильтров "
+              + "игнорируются. truncated=true означает, что список был урезан по limit.")
   GitHubPullRequestsResponse listPullRequests(GitHubListPullRequestsRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     ListPullRequestsResult result =
@@ -105,7 +111,9 @@ class GitHubTools {
 
   @Tool(
       name = "github.get_pull_request",
-      description = "Возвращает детальную информацию о pull request." )
+      description =
+          "Читает расширенные сведения о pull request: тело, лейблы, ассайни, запрошенные ревьюеры/команды, "
+              + "milestone, mergeability, maintainerCanModify, mergeCommitSha. Требуются repository и положительный number.")
   GitHubPullRequestDetailsResponse getPullRequest(GitHubGetPullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -122,7 +130,9 @@ class GitHubTools {
 
   @Tool(
       name = "github.get_pull_request_diff",
-      description = "Возвращает unified diff для указанного pull request." )
+      description =
+          "Возвращает unified diff по PR. number > 0 обязателен. maxBytes (по умолчанию конфигурация или 1 МиБ) "
+              + "ограничивает размер UTF-8 текста; при превышении response.truncated=true. headSha указывает SHA головой ветки.")
   GitHubPullRequestDiffResponse getPullRequestDiff(GitHubGetPullRequestDiffRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -143,7 +153,9 @@ class GitHubTools {
   @Tool(
       name = "github.list_pull_request_comments",
       description =
-          "Возвращает issue- и review-комментарии для pull request с ограничениями на количество.")
+          "Возвращает issue- и review-комментарии для PR. issueCommentLimit/reviewCommentLimit (0–200) управляют объёмом, "
+              + "0 отключает соответствующий список. issueComments содержат id/body/author/url, reviewComments дополнительно включают "
+              + "diffHunk, path, line/startLine/endLine, position, side. truncated флаги показывают, что лимит был достигнут.")
   GitHubPullRequestCommentsResponse listPullRequestComments(GitHubListPullRequestCommentsRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -165,7 +177,9 @@ class GitHubTools {
 
   @Tool(
       name = "github.list_pull_request_checks",
-      description = "Возвращает статусы и check runs для head-коммита pull request.")
+      description =
+          "Возвращает check runs и commit statuses для head SHA PR. Параметры checkRunLimit/statusLimit (0–200) "
+              + "определяют число элементов; truncation флаги сообщают об урезанных списках. overallStatus агрегирует результат проверок.")
   GitHubPullRequestChecksResponse listPullRequestChecks(GitHubListPullRequestChecksRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -190,7 +204,11 @@ class GitHubTools {
 
   @Tool(
       name = "github.create_pull_request_comment",
-      description = "Публикует комментарий в pull request (issue-комментарий или review-комментарий).")
+      description =
+          "Публикует комментарий в PR. body обязателен. Если location не задан, создаётся issue-комментарий. "
+              + "Для review-комментария location.path обязателен и нужно задать либо line ( >0 ), либо интервал startLine/endLine "
+              + "(оба >0, endLine >= startLine; если они равны, используется одиночная строка), либо position (diff offset >0). "
+              + "commitSha опционален и уточняет контекст diff. Инструмент проверяет дубликаты (по body+координатам) перед созданием.")
   GitHubPullRequestCommentResponse createPullRequestComment(GitHubCreatePullRequestCommentRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -227,7 +245,12 @@ class GitHubTools {
 
   @Tool(
       name = "github.create_pull_request_review",
-      description = "Создаёт review для pull request с опциональными комментариями и действием (APPROVE/REQUEST_CHANGES/COMMENT/PENDING).")
+      description =
+          "Создаёт review. Обязательны repository и number. event может быть APPROVE/REQUEST_CHANGES/COMMENT/PENDING; "
+              + "для COMMENT и REQUEST_CHANGES требуется непустой body. commitId задаёт SHA (опционально). "
+              + "comments — список черновиков: каждый содержит body+path и либо line, либо startLine/endLine "
+              + "(валидируются как для комментариев), либо position >0. Интервалы с equal start/end превращаются в single-line. "
+              + "Перед созданием сервис ищет дубликат review с тем же состоянием и body.")
   GitHubCreatePullRequestReviewResponse createPullRequestReview(GitHubCreatePullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -254,7 +277,10 @@ class GitHubTools {
 
   @Tool(
       name = "github.submit_pull_request_review",
-      description = "Отправляет существующее review pull request с выбранным действием.")
+      description =
+          "Отправляет ранее созданное review. reviewId и number обязаны быть положительными. "
+              + "event должен быть APPROVE, REQUEST_CHANGES или COMMENT (PENDING запрещён); "
+              + "для COMMENT/REQUEST_CHANGES требуется body. Ответ возвращает обновлённую сводку review.")
   GitHubSubmitPullRequestReviewResponse submitPullRequestReview(GitHubSubmitPullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -277,7 +303,10 @@ class GitHubTools {
 
   @Tool(
       name = "github.read_file",
-      description = "Читает файл из репозитория GitHub (ветка или конкретный commit).")
+      description =
+          "Читает файл репозитория. repository обязателен; path очищается от лишних '/' и должен быть непустым. "
+              + "Ответ содержит resolvedRef, метаданные файла (sha, size, encoding, downloadUrl), "
+              + "Base64 содержимое и UTF-8 текст (если декодирование удалось). Результаты кешируются в соответствии с настройками.")
   GitHubFileResponse readFile(GitHubFileRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     if (!StringUtils.hasText(request.path())) {

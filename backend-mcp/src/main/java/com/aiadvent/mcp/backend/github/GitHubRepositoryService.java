@@ -1,6 +1,9 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.ByteBuffer;
@@ -40,6 +43,7 @@ import org.kohsuke.github.GHPullRequestReviewComment;
 import org.kohsuke.github.GHPullRequestReviewCommentBuilder;
 import org.kohsuke.github.GHPullRequestReviewEvent;
 import org.kohsuke.github.GHPullRequestReviewState;
+import org.kohsuke.github.HttpException;
 import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GHTeam;
@@ -65,6 +69,8 @@ class GitHubRepositoryService {
   private static final long MAX_DIFF_BYTES = 1_048_576L; // 1 MiB safeguard
   private static final int COMMENT_DEDUP_LIMIT = 50;
   private static final int REVIEW_DEDUP_LIMIT = 20;
+  private static final int MAX_API_ERROR_DETAIL = 500;
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private final GitHubClientExecutor executor;
   private final GitHubBackendProperties properties;
@@ -487,11 +493,11 @@ class GitHubRepositoryService {
               builder.line(effectiveLine);
             } else {
               throw new IllegalStateException("Unsupported review comment location configuration");
-            }
+          }
             GHPullRequestReviewComment created = builder.create();
             return toReviewCommentResult(repository, number, created, true);
           } catch (IOException ex) {
-            throw new GitHubClientException(
+            throw wrapGitHubException(
                 "Failed to create comment for pull request %s#%d".formatted(repository.fullName(), number), ex);
           }
         });
@@ -1002,6 +1008,119 @@ class GitHubRepositoryService {
         safeInstant(comment::getCreatedAt),
         safeInstant(comment::getUpdatedAt),
         safeUrl(comment.getHtmlUrl()));
+  }
+
+  private GitHubClientException wrapGitHubException(String message, IOException cause) {
+    String detail = describeGitHubHttpError(cause);
+    if (StringUtils.hasText(detail)) {
+      message = message + " (" + detail + ")";
+    }
+    return new GitHubClientException(message, cause);
+  }
+
+  private String describeGitHubHttpError(Throwable throwable) {
+    HttpException httpException = findHttpException(throwable);
+    if (httpException == null) {
+      return null;
+    }
+    StringBuilder detail = new StringBuilder();
+    if (httpException.getResponseCode() > 0) {
+      detail.append("status ").append(httpException.getResponseCode());
+      if (StringUtils.hasText(httpException.getResponseMessage())) {
+        detail.append(" ").append(httpException.getResponseMessage());
+      }
+    }
+    String bodyDetail = extractGitHubErrorBody(httpException.getMessage());
+    if (StringUtils.hasText(bodyDetail)) {
+      if (detail.length() > 0) {
+        detail.append(" - ");
+      }
+      detail.append(bodyDetail);
+    }
+    String result = detail.toString();
+    if (result.length() > MAX_API_ERROR_DETAIL) {
+      return result.substring(0, MAX_API_ERROR_DETAIL) + "...";
+    }
+    return result;
+  }
+
+  private HttpException findHttpException(Throwable throwable) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (current instanceof HttpException httpException) {
+        return httpException;
+      }
+      current = current.getCause();
+    }
+    return null;
+  }
+
+  private String extractGitHubErrorBody(String rawBody) {
+    if (!StringUtils.hasText(rawBody)) {
+      return null;
+    }
+    String trimmed = rawBody.trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        JsonNode node = OBJECT_MAPPER.readTree(trimmed);
+        List<String> parts = new ArrayList<>();
+        String message = node.path("message").asText(null);
+        if (StringUtils.hasText(message)) {
+          parts.add(message);
+        }
+        JsonNode errors = node.get("errors");
+        if (errors != null && errors.isArray()) {
+          for (JsonNode errorNode : errors) {
+            String errorDetail = extractGitHubErrorDetail(errorNode);
+            if (StringUtils.hasText(errorDetail)) {
+              parts.add(errorDetail);
+            }
+          }
+        }
+        if (!parts.isEmpty()) {
+          return String.join("; ", parts);
+        }
+      } catch (JsonProcessingException ex) {
+        // Ignore parsing failure and fall back to the raw payload
+      }
+    }
+    return trimmed;
+  }
+
+  private String extractGitHubErrorDetail(JsonNode errorNode) {
+    if (errorNode == null || errorNode.isNull()) {
+      return null;
+    }
+    if (errorNode.isTextual()) {
+      return errorNode.asText();
+    }
+    String message = errorNode.path("message").asText(null);
+    if (!StringUtils.hasText(message)) {
+      message = errorNode.path("code").asText(null);
+    }
+    String resource = errorNode.path("resource").asText(null);
+    String field = errorNode.path("field").asText(null);
+    StringBuilder builder = new StringBuilder();
+    if (StringUtils.hasText(resource)) {
+      builder.append(resource);
+    }
+    if (StringUtils.hasText(field)) {
+      if (builder.length() > 0) {
+        builder.append('.');
+      }
+      builder.append(field);
+    }
+    if (StringUtils.hasText(message)) {
+      if (builder.length() > 0) {
+        builder.append(": ");
+      }
+      builder.append(message);
+    }
+    String detail = builder.toString();
+    if (StringUtils.hasText(detail)) {
+      return detail;
+    }
+    return errorNode.toString();
   }
 
   private CheckRunInfo toCheckRun(GHCheckRun run) {
