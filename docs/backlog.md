@@ -764,7 +764,6 @@
 - [ ] Добавить flow/agent pipeline `github-analysis-flow`: старт по URL, шаги «fetch tree», «prefetch files», «LLM repo summary», «LLM risk scoring», «generate recommendations», сохранение результатов и structured payload.
 - [ ] Добавить пайплайн анализа pull request: сбор diff/metadata через GitHub MCP, подготовка промптов, генерация рекомендаций LLM и вычисление сигналов (компоненты, TODO, риски).
 - [ ] Обновить `AgentInvocationService`/flow сценарии для вызова GitHub MCP методов, маршрутизации ссылок (репо vs PR) и последующей обработки результатов LLM.
-- [ ] Сохранение результатов анализа: summary, список рисков, ссылки на затронутые файлы, интерактивные комментарии; обеспечить повторный запуск и идемпотентность по URL/PR номеру.
 - [ ] Определить канонический payload для LLM анализа: список файлов с diff (unified), агрегированные метрики, summary вводных и сигналов, сохранить схему в shared context и документации.
 - [x] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
 
@@ -807,6 +806,7 @@
 ## Wave 19 — UX для GitHub Analysis Flow
 ### Backend & LLM
 - [ ] Дополнить `McpToolBindingService` кастомизацией payload для GitHub: разбор URL, заполнение `repository/ref/pullRequest`, генерация `requestId`, ручная сборка unified diff (`diff --git`/`@@`).
+- [ ] Сохранение результатов анализа: summary, список рисков, ссылки на затронутые файлы, интерактивные комментарии; обеспечить повторный запуск и идемпотентность по URL/PR номеру.
 
 ### Frontend & UX
 - [ ] Обновить панель MCP: отдельный блок для GitHub сервера с полем ввода ссылки/репо, поддержкой выбора ветки/PR и стартом `github-analysis-flow`.
