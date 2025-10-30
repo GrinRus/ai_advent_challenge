@@ -460,10 +460,15 @@ class GitHubRepositoryService {
             }
 
             String trimmedPath = reviewLocation.path().trim();
-            boolean hasLine = reviewLocation.line() != null;
-            boolean hasRange = reviewLocation.startLine() != null && reviewLocation.endLine() != null;
+            Integer line = reviewLocation.line();
+            Integer startLine = reviewLocation.startLine();
+            Integer endLine = reviewLocation.endLine();
+            boolean hasRange = startLine != null && endLine != null;
+            boolean multiLineRange = hasRange && !Objects.equals(startLine, endLine);
+            boolean singleLineRange = hasRange && Objects.equals(startLine, endLine);
+            Integer effectiveLine = line != null ? line : (singleLineRange ? startLine : null);
             Integer diffPosition = reviewLocation.position();
-            if (diffPosition != null && !hasLine && !hasRange) {
+            if (diffPosition != null && effectiveLine == null && !multiLineRange) {
               String commitSha = StringUtils.hasText(reviewLocation.commitSha())
                   ? reviewLocation.commitSha().trim()
                   : null;
@@ -476,10 +481,10 @@ class GitHubRepositoryService {
             if (StringUtils.hasText(reviewLocation.commitSha())) {
               builder.commitId(reviewLocation.commitSha().trim());
             }
-            if (hasRange) {
-              builder.lines(reviewLocation.startLine(), reviewLocation.endLine());
-            } else if (hasLine) {
-              builder.line(reviewLocation.line());
+            if (multiLineRange) {
+              builder.lines(startLine, endLine);
+            } else if (effectiveLine != null) {
+              builder.line(effectiveLine);
             } else {
               throw new IllegalStateException("Unsupported review comment location configuration");
             }
@@ -802,11 +807,20 @@ class GitHubRepositoryService {
         return false;
       }
     }
-    if (location.line() != null) {
-      return comment.getLine() == location.line();
+    Integer line = location.line();
+    Integer startLine = location.startLine();
+    Integer endLine = location.endLine();
+    boolean hasRange = startLine != null && endLine != null;
+    boolean multiLineRange = hasRange && !Objects.equals(startLine, endLine);
+    boolean singleLineRange = hasRange && Objects.equals(startLine, endLine);
+    if (line != null) {
+      return comment.getLine() == line;
     }
-    if (location.startLine() != null && location.endLine() != null) {
-      return comment.getStartLine() == location.startLine() && comment.getLine() == location.endLine();
+    if (singleLineRange) {
+      return comment.getLine() == endLine;
+    }
+    if (multiLineRange) {
+      return comment.getStartLine() == startLine && comment.getLine() == endLine;
     }
     if (location.position() != null) {
       Integer target = location.position();
@@ -862,6 +876,10 @@ class GitHubRepositoryService {
       }
       if (end < start) {
         throw new IllegalArgumentException("Review comment draft endLine must be >= startLine");
+      }
+      if (start == end) {
+        builder.singleLineComment(body, path, end);
+        return;
       }
       builder.multiLineComment(body, path, start, end);
       return;
