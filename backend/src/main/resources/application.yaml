@@ -42,12 +42,12 @@ spring:
             agentops:
               url: ${AGENT_OPS_MCP_HTTP_BASE_URL:http://localhost:7091}
               endpoint: ${AGENT_OPS_MCP_HTTP_ENDPOINT:/mcp}
-#            flowops:
-#              url: ${FLOW_OPS_MCP_HTTP_BASE_URL:http://localhost:7092}
-#              endpoint: ${FLOW_OPS_MCP_HTTP_ENDPOINT:/mcp}
-#            insight:
-#              url: ${INSIGHT_MCP_HTTP_BASE_URL:http://localhost:7093}
-#              endpoint: ${INSIGHT_MCP_HTTP_ENDPOINT:/mcp}
+            flowops:
+              url: ${FLOW_OPS_MCP_HTTP_BASE_URL:http://localhost:7092}
+              endpoint: ${FLOW_OPS_MCP_HTTP_ENDPOINT:/mcp}
+            insight:
+              url: ${INSIGHT_MCP_HTTP_BASE_URL:http://localhost:7093}
+              endpoint: ${INSIGHT_MCP_HTTP_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

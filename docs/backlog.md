@@ -743,3 +743,66 @@
 - [x] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
 - [x] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
 - [ ] Обновить документацию под HTTP MCP: `docs/infra.md`, `docs/guides/mcp-operators.md`, `docs/processes.md` и README с новыми переменными окружения, схемой backend ⇔ MCP (HTTP-only) и сценариями миграции/отката без STDIO.
+
+## Wave 17 — GitHub MCP интеграция
+### MCP Server
+- [ ] Реализовать GitHub MCP сервер в `backend-mcp`: настроить OAuth/пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
+- [ ] Настроить получение GitHub App installation token: генерация JWT из `GITHUB_PRIVATE_KEY`, вызов `GHAppInstallation#createToken()`, кеширование и ротация короткоживущих токенов.
+- [ ] Добавить методы `github.list_repository_tree` и `github.read_file`: выбор репозитория/ветки, выдача структуры и содержимого файлов с лимитами, кешированием и нормализацией кодировок.
+- [ ] Добавить инструменты `github.list_pull_requests`, `github.get_pull_request`, `github.get_pull_request_diff`, `github.list_pull_request_comments`, `github.list_pull_request_checks`: поддержать фильтры, отдачу diff/metadata, комментарии и статусы проверок.
+- [ ] Реализовать инструменты `github.create_pull_request_comment`, `github.create_pull_request_review` и `github.submit_pull_request_review`: публикация комментариев, выставление `APPROVE`/`REQUEST_CHANGES`, обработка rate limit и идемпотентности.
+- [ ] Интегрировать сервер `github` в `McpCatalogService`/конфигурацию backend: поддержать выбор инструмента, обновить health-checkи и регистрацию capability hints.
+- [ ] Добавить профиль `github` в `McpApplication`, компонент-скан пакета GitHub и `@ConfigurationProperties` для GitHub API (базовый `https://api.github.com`, таймауты, headers).
+- [ ] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
+- [ ] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
+- [ ] Реализовать сервис генерации JWT из Base64-приватного ключа, получение installation token, кеширование и ротацию (только github.com).
+- [ ] Зафиксировать контракт MCP payload'ов (`repository{owner,name}`, `ref`, `requestId`, `metadata`, `pullRequest{number}`, `location`), добавить валидацию и javadoc.
+
+### Backend & LLM
+- [ ] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
+- [ ] Запускать `github-analysis-flow` через существующий flow-оркестратор: шаги получают контекст резолвера, вызывают GitHub MCP (tree/file/diff) и агрегируют статические проверки + LLM summary/риски.
+- [ ] Добавить flow/agent pipeline `github-analysis-flow`: старт по URL, шаги «fetch tree», «prefetch files», «LLM repo summary», «LLM risk scoring», «generate recommendations», сохранение результатов и structured payload.
+- [ ] Добавить пайплайн анализа pull request: сбор diff/metadata через GitHub MCP, подготовка промптов, генерация рекомендаций LLM и вычисление сигналов (компоненты, TODO, риски).
+- [ ] Обновить `AgentInvocationService`/flow сценарии для вызова GitHub MCP методов, маршрутизации ссылок (репо vs PR) и последующей обработки результатов LLM.
+- [ ] Настроить кеширование и ограничение объёмов при подготовке контекста для LLM, логирование и метрики использования анализа.
+- [ ] Сохранение результатов анализа: summary, список рисков, ссылки на затронутые файлы, интерактивные комментарии; обеспечить повторный запуск и идемпотентность по URL/PR номеру.
+- [ ] Дополнить `McpToolBindingService` кастомизацией payload для GitHub: разбор URL, заполнение `repository/ref/pullRequest`, генерация `requestId`, ручная сборка unified diff (`diff --git`/`@@`).
+- [ ] Кешировать tree/diff/метаданные GitHub в `sharedContext` (раздел `githubCache`), переиспользовать между шагами вместо повторных запросов.
+- [ ] Определить канонический payload для LLM анализа: список файлов с diff (unified), агрегированные метрики, summary вводных и сигналов, сохранить схему в shared context и документации.
+- [ ] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
+
+### Frontend & UX
+- [ ] Обновить панель MCP: отдельный блок для GitHub сервера с полем ввода ссылки/репо, поддержкой выбора ветки/PR и стартом `github-analysis-flow`.
+- [ ] В чате отобразить прогресс `github-analysis-flow`: шаги (fetch tree → анализ → рекомендации), статусы/ошибки, подсказки по retry и кнопку перезапуска, чтобы не переключаться на FlowSessions при запуске анализа через чат.
+- [ ] Карточка результата: summary, риски, рекомендации, список файлов (с подчёркиванием изменённых), ссылки на PR/комментарии, действия approve/request changes.
+- [ ] Управление комментариями/ревью: предпросмотр, inline-редактирование, статус отправки (`pending`, `commented`, `approved`/`changes_requested`).
+- [ ] Расширить API-клиент/DTO: payload `github-analysis-flow` (summary, risks, recommendations, files, metrics, links), статусы review и step-by-step прогресс.
+- [ ] Дополнить SSE health-индикатор GitHub MCP, показать degraded state и подсказки при rate limit/ошибках токена.
+
+### Security & Governance
+- [ ] Создать GitHub App с необходимыми правами (репозиторий, pull request, checks), задокументировать процесс установки и разграничение доступов; предусмотреть fallback на PAT для локальной разработки.
+- [ ] Сконфигурировать хранение единого набора GitHub токенов в `.env`/секретах `docker-compose`/CI, обозначить политику ротации и обновления переменных.
+- [ ] Хранить приватный ключ GitHub App в `GITHUB_PRIVATE_KEY_B64`, декодировать при старте, логировать только метаданные (app id, installation id), без fallback на PAT.
+- [ ] Добавить детализированные логи (без отдельного аудита) для действий MCP: вызовы методов, создание комментариев, approve/request changes, обработка rate limit.
+
+### Tests & QA
+- [ ] Покрыть GitHub MCP unit/integration тестами: handshake, tree/file чтение, pull request инструменты (list/get/diff/comments/checks) и действия (create comment/review/submit) с mock GitHub API.
+- [ ] Протестировать управление токенами: генерация JWT из `.env`, получение installation token, кеширование и ротация.
+- [ ] Unit/интеграционные тесты стартового резолвера: валидные репо/PR ссылки, невалидные входы, ветка WAITING_USER_INPUT и запись `githubTarget` в shared context.
+- [ ] Добавить backend-тесты `github-analysis-flow`: сценарии по ссылке на репо/ветку/PR, корректность шагов, агрегирование LLM summary/рисков, идемпотентность по URL и переиспользование данных из shared context.
+- [ ] Добавить проверки логирования и обработки rate limit: unit тесты для логгера/ретраев, negative-case (403, абьюз лимит).
+- [ ] Добавить e2e сценарии: запуск анализа из чата, отображение прогресса/статусов шагов, подсказки по retry, публикация комментария и approve/request changes через GitHub MCP.
+- [ ] Обновить unit/интеграционные тесты каталога и binding: ожидать сервер `github`, проверять sanitize и статусы доступности.
+- [ ] Unit-тесты ручной сборки unified diff: заголовки `diff --git`, `index`, `@@` соответствуют patch'ам GitHub API.
+- [ ] Тесты SSE/health-индикатора: degraded state для GitHub MCP (rate limit, токен), корректные подсказки в UI.
+
+### Infrastructure & Ops
+- [ ] Добавить переменные окружения GitHub (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_B64`, `GITHUB_PAT`) в `.env` / `.env.example` и прокинуть их в `docker-compose.yml`.
+- [ ] Добавить сервис GitHub MCP в `docker-compose.yml`: образ `backend-mcp`, `SPRING_PROFILES_ACTIVE=github`, порт, токены из `.env`, healthcheck по аналогии с остальными MCP.
+- [ ] Дополнить документацию/README: сборка образа GitHub MCP, запуск `docker compose up github-mcp`, переменные окружения, логирование.
+
+### Docs & Enablement
+- [ ] Обновить `docs/guides/mcp-operators.md`/`docs/infra.md` описанием GitHub MCP, требуемых прав и сценариев использования.
+- [ ] Подготовить сценарии для аналитиков/разработчиков: быстрый start guide, список поддерживаемых инструментов и ограничения по объёму данных.
+- [ ] Документировать контракт payload'ов (`repository/ref/requestId/pullRequest/location`), ограничения (только github.com, без fallback) и требования к токенам.
+- [ ] Добавить раздел про логи, метрики, ротацию ключей GitHub App и восстановление после rate-limit.
