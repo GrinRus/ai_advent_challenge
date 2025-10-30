@@ -125,7 +125,10 @@ public class AgentInvocationService {
 
     ToolSelection toolSelection = resolveToolSelection(request.inputContext());
     List<McpToolBindingService.ResolvedTool> resolvedTools =
-        resolveToolCallbacks(agentVersion.getInvocationOptions(), sanitizedUserPrompt, toolSelection);
+        toolSelection.hasExplicitSelection()
+            ? resolveToolCallbacks(
+                agentVersion.getInvocationOptions(), sanitizedUserPrompt, toolSelection)
+            : List.of();
     List<ToolCallback> toolCallbacks =
         resolvedTools.stream().map(McpToolBindingService.ResolvedTool::callback).toList();
     List<String> resolvedToolCodes =

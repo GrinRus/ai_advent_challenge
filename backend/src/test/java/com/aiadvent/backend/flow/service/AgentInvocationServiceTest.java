@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -152,13 +153,18 @@ class AgentInvocationServiceTest {
             any()))
         .thenReturn(List.of(new McpToolBindingService.ResolvedTool("perplexity_search", toolCallback)));
 
+    ObjectNode inputContext = objectMapper.createObjectNode();
+    ObjectNode interactionNode = inputContext.putObject("interaction");
+    ObjectNode payloadNode = interactionNode.putObject("payload");
+    payloadNode.putArray("toolCodes").add("perplexity_search");
+
     AgentInvocationRequest request =
         new AgentInvocationRequest(
             sessionId,
             UUID.randomUUID(),
             agentVersion,
             "  Research topic   ",
-            null,
+            inputContext,
             objectMapper.createObjectNode(),
             ChatRequestOverrides.empty(),
             ChatRequestOverrides.empty(),
@@ -169,6 +175,83 @@ class AgentInvocationServiceTest {
 
     assertThat(result.selectedToolCodes()).containsExactly("perplexity_search");
     assertThat(toolCallbackCaptor.getValue()).containsExactly(toolCallback);
+  }
+
+  @Test
+  void invokeSkipsMcpToolsWhenNotExplicitlyRequested() {
+    UUID sessionId = UUID.randomUUID();
+    FlowSession flowSession = mock(FlowSession.class);
+    when(flowSession.getId()).thenReturn(sessionId);
+    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(flowSession));
+
+    AgentInvocationOptions.ToolBinding binding =
+        new AgentInvocationOptions.ToolBinding(
+            "perplexity_search",
+            1,
+            AgentInvocationOptions.ExecutionMode.AUTO,
+            null,
+            null);
+    AgentInvocationOptions invocationOptions =
+        new AgentInvocationOptions(
+            new AgentInvocationOptions.Provider(
+                ChatProviderType.OPENAI, "openai", "gpt-4o-mini", AgentInvocationOptions.InvocationMode.SYNC),
+            AgentInvocationOptions.Prompt.empty(),
+            AgentInvocationOptions.MemoryPolicy.empty(),
+            AgentInvocationOptions.RetryPolicy.empty(),
+            AgentInvocationOptions.AdvisorSettings.empty(),
+            new AgentInvocationOptions.Tooling(List.of(binding)),
+            AgentInvocationOptions.CostProfile.empty());
+
+    AgentVersion agentVersion =
+        new AgentVersion(
+            new AgentDefinition("research-agent", "Research Agent", null, true),
+            1,
+            AgentVersionStatus.PUBLISHED,
+            ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    agentVersion.setInvocationOptions(invocationOptions);
+    agentVersion.setSystemPrompt("Research system prompt");
+
+    ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
+    when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
+        .thenReturn(selection);
+    when(chatProviderService.provider(selection.providerId()))
+        .thenReturn(new ChatProvidersProperties.Provider());
+
+    Generation generation =
+        new Generation(AssistantMessage.builder().content("analysis").build());
+    ChatResponse chatResponse = new ChatResponse(List.of(generation));
+    ArgumentCaptor<List> toolCallbackCaptor = ArgumentCaptor.forClass(List.class);
+    when(chatProviderService.chatSyncWithOverrides(
+            eq(selection),
+            eq(agentVersion.getSystemPrompt()),
+            anyList(),
+            any(ChatAdvisorContext.class),
+            anyString(),
+            any(),
+            toolCallbackCaptor.capture()))
+        .thenReturn(chatResponse);
+
+    AgentInvocationRequest request =
+        new AgentInvocationRequest(
+            sessionId,
+            UUID.randomUUID(),
+            agentVersion,
+            "follow up",
+            null,
+            objectMapper.createObjectNode(),
+            ChatRequestOverrides.empty(),
+            ChatRequestOverrides.empty(),
+            List.of(),
+            List.of());
+
+    AgentInvocationResult result = agentInvocationService.invoke(request);
+
+    verify(mcpToolBindingService, never())
+        .resolveCallbacks(any(), anyString(), any(), any());
+    assertThat(result.selectedToolCodes()).isEmpty();
+    assertThat(toolCallbackCaptor.getValue()).isEmpty();
   }
 
   @Test
