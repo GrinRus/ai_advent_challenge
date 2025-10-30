@@ -32,6 +32,8 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-validation"
 
     implementation "com.fasterxml.jackson.core:jackson-databind"
+    implementation "org.kohsuke:github-api:1.330"
+    implementation "com.auth0:java-jwt:4.5.0"
 
     testImplementation "org.springframework.boot:spring-boot-starter-test"
 }

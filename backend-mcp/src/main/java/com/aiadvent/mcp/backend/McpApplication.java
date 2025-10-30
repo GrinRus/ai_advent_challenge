@@ -1,7 +1,8 @@
 package com.aiadvent.mcp.backend;
 
-import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.AgentOpsBackendProperties;
+import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
+import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -12,7 +13,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 
 @SpringBootApplication(scanBasePackages = "com.aiadvent.mcp.backend.config")
-@Import({McpApplication.InsightConfig.class, McpApplication.FlowOpsConfig.class, McpApplication.AgentOpsConfig.class})
+@Import({
+  McpApplication.InsightConfig.class,
+  McpApplication.FlowOpsConfig.class,
+  McpApplication.AgentOpsConfig.class,
+  McpApplication.GitHubConfig.class
+})
 public class McpApplication {
 
     public static void main(String[] args) {
@@ -45,6 +51,15 @@ public class McpApplication {
     })
     @EnableConfigurationProperties(AgentOpsBackendProperties.class)
     public class AgentOpsConfig {
+    }
+
+    @Configuration
+    @Profile("github")
+    @ComponentScan(basePackages = {
+            "com.aiadvent.mcp.backend.github", "com.aiadvent.mcp.backend.config"
+    })
+    @EnableConfigurationProperties(GitHubBackendProperties.class)
+    public class GitHubConfig {
     }
 
 }

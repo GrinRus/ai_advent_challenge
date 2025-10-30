@@ -746,16 +746,16 @@
 
 ## Wave 17 — GitHub MCP интеграция
 ### MCP Server
-- [ ] Реализовать GitHub MCP сервер в `backend-mcp`: настроить OAuth/пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
-- [ ] Настроить получение GitHub App installation token: генерация JWT из `GITHUB_PRIVATE_KEY`, вызов `GHAppInstallation#createToken()`, кеширование и ротация короткоживущих токенов.
-- [ ] Добавить методы `github.list_repository_tree` и `github.read_file`: выбор репозитория/ветки, выдача структуры и содержимого файлов с лимитами, кешированием и нормализацией кодировок.
+- [x] Реализовать GitHub MCP сервер в `backend-mcp`: настроить OAuth/пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
+- [x] Настроить получение GitHub App installation token: генерация JWT из `GITHUB_PRIVATE_KEY`, вызов `GHAppInstallation#createToken()`, кеширование и ротация короткоживущих токенов.
+- [x] Добавить методы `github.list_repository_tree` и `github.read_file`: выбор репозитория/ветки, выдача структуры и содержимого файлов с лимитами, кешированием и нормализацией кодировок.
 - [ ] Добавить инструменты `github.list_pull_requests`, `github.get_pull_request`, `github.get_pull_request_diff`, `github.list_pull_request_comments`, `github.list_pull_request_checks`: поддержать фильтры, отдачу diff/metadata, комментарии и статусы проверок.
 - [ ] Реализовать инструменты `github.create_pull_request_comment`, `github.create_pull_request_review` и `github.submit_pull_request_review`: публикация комментариев, выставление `APPROVE`/`REQUEST_CHANGES`, обработка rate limit и идемпотентности.
-- [ ] Интегрировать сервер `github` в `McpCatalogService`/конфигурацию backend: поддержать выбор инструмента, обновить health-checkи и регистрацию capability hints.
-- [ ] Добавить профиль `github` в `McpApplication`, компонент-скан пакета GitHub и `@ConfigurationProperties` для GitHub API (базовый `https://api.github.com`, таймауты, headers).
-- [ ] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
-- [ ] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
-- [ ] Реализовать сервис генерации JWT из Base64-приватного ключа, получение installation token, кеширование и ротацию (только github.com).
+- [x] Интегрировать сервер `github` в `McpCatalogService`/конфигурацию backend: поддержать выбор инструмента, обновить health-checkи и регистрацию capability hints.
+- [x] Добавить профиль `github` в `McpApplication`, компонент-скан пакета GitHub и `@ConfigurationProperties` для GitHub API (базовый `https://api.github.com`, таймауты, headers).
+- [x] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
+- [x] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
+- [x] Реализовать сервис генерации JWT из Base64-приватного ключа, получение installation token, кеширование и ротацию (только github.com).
 - [ ] Зафиксировать контракт MCP payload'ов (`repository{owner,name}`, `ref`, `requestId`, `metadata`, `pullRequest{number}`, `location`), добавить валидацию и javadoc.
 
 ### Backend & LLM

@@ -48,6 +48,9 @@ spring:
             insight:
               url: ${INSIGHT_MCP_HTTP_BASE_URL:http://localhost:7093}
               endpoint: ${INSIGHT_MCP_HTTP_ENDPOINT:/mcp}
+            github:
+              url: ${GITHUB_MCP_HTTP_BASE_URL:http://localhost:7094}
+              endpoint: ${GITHUB_MCP_HTTP_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -347,6 +350,11 @@ app:
           description: "Аналитика сессий чатов и flow: summary, поиск по памяти, метрики."
           tags: ["analytics", "observability"]
           security-policy: "internal-readonly"
+        github:
+          display-name: "GitHub MCP"
+          description: "Инструменты чтения репозиториев GitHub, подготовка данных для анализа PR."
+          tags: ["github", "code-review"]
+          security-policy: "external-restricted"
 
   flow:
     api:

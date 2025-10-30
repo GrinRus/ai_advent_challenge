@@ -1,0 +1,44 @@
+server:
+  port: ${GITHUB_MCP_HTTP_PORT:${SERVER_PORT:8080}}
+
+spring:
+  ai:
+    mcp:
+      server:
+        enabled: true
+        stdio: false
+        protocol: STREAMABLE
+        name: github-mcp
+        version: 0.1.0
+        type: SYNC
+        annotation-scanner:
+          enabled: false
+        instructions: |
+          GitHub MCP предоставляет инструменты для чтения дерева репозитория и содержимого файлов.
+          Убедитесь, что у приложения есть доступ к нужному репозиторию. Все запросы выполняются от лица GitHub App installation.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+      streamable-http:
+        mcp-endpoint: /mcp
+        keep-alive-interval: 30s
+
+github:
+  backend:
+    base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
+    app-id: ${GITHUB_APP_ID:}
+    installation-id: ${GITHUB_INSTALLATION_ID:}
+    private-key-base64: ${GITHUB_PRIVATE_KEY_B64:}
+    personal-access-token: ${GITHUB_PAT:}
+    connect-timeout: ${GITHUB_CONNECT_TIMEOUT:PT15S}
+    read-timeout: ${GITHUB_READ_TIMEOUT:PT45S}
+    app-jwt-ttl: ${GITHUB_APP_JWT_TTL:PT8M}
+    token-refresh-skew: ${GITHUB_TOKEN_REFRESH_SKEW:PT1M}
+    tree-cache-ttl: ${GITHUB_TREE_CACHE_TTL:PT2M}
+    file-cache-ttl: ${GITHUB_FILE_CACHE_TTL:PT2M}
+    tree-max-depth: ${GITHUB_TREE_MAX_DEPTH:4}
+    tree-max-entries: ${GITHUB_TREE_MAX_ENTRIES:500}
+    file-max-size-bytes: ${GITHUB_FILE_MAX_SIZE_BYTES:524288}
+    user-agent: ${GITHUB_USER_AGENT:AI Advent GitHub MCP/0.1}
