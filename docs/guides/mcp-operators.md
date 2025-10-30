@@ -60,6 +60,18 @@ User: Найди последние 10 сессий типа FLOW, затем п
 Tool: insight.recent_sessions → insight.fetch_metrics
 ```
 
+### GitHub
+```
+User: Покажи открытые PR по ветке `feature/rework`, затем верни diff и проверки для PR #42.
+Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_request_diff → github.list_pull_request_checks
+```
+
+- `github.list_pull_requests` — фильтры `state` (`open`/`closed`/`all`), `base`, `head`, сортировка `created|updated|popularity|long_running`, лимит до 50 записей.
+- `github.get_pull_request` — детальные метаданные (label'ы, assignee, reviewers, merge state).
+- `github.get_pull_request_diff` — агрегированный unified diff по файлам (обрезается по `maxBytes`).
+- `github.list_pull_request_comments` — раздельно issue- и review-комментарии с лимитами.
+- `github.list_pull_request_checks` — check run'ы и commit status'ы с ограничениями по количеству.
+
 ## Безопасность
 
 - Инструменты Flow Ops и Agent Ops имеют права на изменение production-конфигураций. Используйте API-токены с минимальными привилегиями (`*_BACKEND_API_TOKEN`) и ограничивайте доступ к контейнерам через firewall/ssh.

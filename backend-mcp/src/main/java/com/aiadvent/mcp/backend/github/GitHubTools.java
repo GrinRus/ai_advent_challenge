@@ -1,13 +1,34 @@
 package com.aiadvent.mcp.backend.github;
 
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckRunInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitStatusInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestDiffInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.LabelInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestChecksInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestCommentsInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestsInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestsResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListRepositoryTreeInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListRepositoryTreeResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergeInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MilestoneInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestChecksResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestCommentsResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestDetails;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestDetailsResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestDiffResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestIssueComment;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestReviewComment;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PullRequestSummary;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ReadFileInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ReadFileResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryFile;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TeamInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntry;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntryType;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.UserInfo;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -46,6 +67,114 @@ class GitHubTools {
         result.resolvedRef(),
         result.truncated(),
         result.entries().stream().map(this::toTreeNode).toList());
+  }
+
+  @Tool(
+      name = "github.list_pull_requests",
+      description =
+          "Возвращает список pull request'ов репозитория. Поддерживаются фильтры state/base/head и сортировка.")
+  GitHubPullRequestsResponse listPullRequests(GitHubListPullRequestsRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    ListPullRequestsResult result =
+        repositoryService.listPullRequests(
+            new ListPullRequestsInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.state(),
+                request.head(),
+                request.base(),
+                request.limit(),
+                request.sort(),
+                request.direction()));
+    return new GitHubPullRequestsResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequests(),
+        result.truncated());
+  }
+
+  @Tool(
+      name = "github.get_pull_request",
+      description = "Возвращает детальную информацию о pull request." )
+  GitHubPullRequestDetailsResponse getPullRequest(GitHubGetPullRequestRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    int number = requirePullRequestNumber(request.number());
+    PullRequestDetailsResult result =
+        repositoryService.getPullRequest(
+            new GetPullRequestInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                number));
+    return new GitHubPullRequestDetailsResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequest());
+  }
+
+  @Tool(
+      name = "github.get_pull_request_diff",
+      description = "Возвращает unified diff для указанного pull request." )
+  GitHubPullRequestDiffResponse getPullRequestDiff(GitHubGetPullRequestDiffRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    int number = requirePullRequestNumber(request.number());
+    PullRequestDiffResult result =
+        repositoryService.getPullRequestDiff(
+            new GetPullRequestDiffInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                number,
+                request.maxBytes()));
+    return new GitHubPullRequestDiffResponse(
+        toRepositoryInfo(result.repository()),
+        result.headSha(),
+        result.diff(),
+        result.truncated());
+  }
+
+  @Tool(
+      name = "github.list_pull_request_comments",
+      description =
+          "Возвращает issue- и review-комментарии для pull request с ограничениями на количество.")
+  GitHubPullRequestCommentsResponse listPullRequestComments(GitHubListPullRequestCommentsRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    int number = requirePullRequestNumber(request.number());
+    PullRequestCommentsResult result =
+        repositoryService.listPullRequestComments(
+            new ListPullRequestCommentsInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                number,
+                request.issueCommentLimit(),
+                request.reviewCommentLimit()));
+    return new GitHubPullRequestCommentsResponse(
+        toRepositoryInfo(result.repository()),
+        result.issueComments(),
+        result.reviewComments(),
+        result.issueCommentsTruncated(),
+        result.reviewCommentsTruncated());
+  }
+
+  @Tool(
+      name = "github.list_pull_request_checks",
+      description = "Возвращает статусы и check runs для head-коммита pull request.")
+  GitHubPullRequestChecksResponse listPullRequestChecks(GitHubListPullRequestChecksRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    int number = requirePullRequestNumber(request.number());
+    PullRequestChecksResult result =
+        repositoryService.listPullRequestChecks(
+            new ListPullRequestChecksInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                number,
+                request.checkRunLimit(),
+                request.statusLimit()));
+    return new GitHubPullRequestChecksResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequestNumber(),
+        result.headSha(),
+        result.overallStatus(),
+        result.checkRuns(),
+        result.statuses(),
+        result.checkRunsTruncated(),
+        result.statusesTruncated());
   }
 
   @Tool(
@@ -95,6 +224,13 @@ class GitHubTools {
     return request.repository();
   }
 
+  private int requirePullRequestNumber(Integer number) {
+    if (number == null || number <= 0) {
+      throw new IllegalArgumentException("pullRequestNumber must be positive");
+    }
+    return number;
+  }
+
   record RepositoryInfo(String owner, String name, String ref) {}
 
   interface RepositoryRequest {
@@ -125,4 +261,46 @@ class GitHubTools {
       String downloadUrl,
       String contentBase64,
       String textContent) {}
+
+  record GitHubListPullRequestsRequest(
+      RepositoryInput repository, String state, String head, String base, Integer limit, String sort, String direction)
+      implements RepositoryRequest {}
+
+  record GitHubPullRequestsResponse(
+      RepositoryInfo repository, List<PullRequestSummary> pullRequests, boolean truncated) {}
+
+  record GitHubGetPullRequestRequest(RepositoryInput repository, Integer number) implements RepositoryRequest {}
+
+  record GitHubPullRequestDetailsResponse(RepositoryInfo repository, PullRequestDetails pullRequest) {}
+
+  record GitHubGetPullRequestDiffRequest(RepositoryInput repository, Integer number, Long maxBytes)
+      implements RepositoryRequest {}
+
+  record GitHubPullRequestDiffResponse(
+      RepositoryInfo repository, String headSha, String diff, boolean truncated) {}
+
+  record GitHubListPullRequestCommentsRequest(
+      RepositoryInput repository, Integer number, Integer issueCommentLimit, Integer reviewCommentLimit)
+      implements RepositoryRequest {}
+
+  record GitHubPullRequestCommentsResponse(
+      RepositoryInfo repository,
+      List<PullRequestIssueComment> issueComments,
+      List<PullRequestReviewComment> reviewComments,
+      boolean issueCommentsTruncated,
+      boolean reviewCommentsTruncated) {}
+
+  record GitHubListPullRequestChecksRequest(
+      RepositoryInput repository, Integer number, Integer checkRunLimit, Integer statusLimit)
+      implements RepositoryRequest {}
+
+  record GitHubPullRequestChecksResponse(
+      RepositoryInfo repository,
+      int pullRequestNumber,
+      String headSha,
+      String overallStatus,
+      List<CheckRunInfo> checkRuns,
+      List<CommitStatusInfo> statuses,
+      boolean checkRunsTruncated,
+      boolean statusesTruncated) {}
 }

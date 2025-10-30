@@ -2,7 +2,9 @@ package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
@@ -11,18 +13,37 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.kohsuke.github.GHCheckRun;
+import org.kohsuke.github.GHCommit;
+import org.kohsuke.github.GHCommitState;
+import org.kohsuke.github.GHCommitStatus;
 import org.kohsuke.github.GHContent;
+import org.kohsuke.github.GHDirection;
+import org.kohsuke.github.GHIssueComment;
+import org.kohsuke.github.GHIssueState;
+import org.kohsuke.github.GHLabel;
+import org.kohsuke.github.GHApp;
+import org.kohsuke.github.GHPullRequest;
+import org.kohsuke.github.GHMilestone;
+import org.kohsuke.github.GHPullRequestFileDetail;
+import org.kohsuke.github.GHPullRequestQueryBuilder;
+import org.kohsuke.github.GHPullRequestReviewComment;
 import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GHTree;
 import org.kohsuke.github.GHTreeEntry;
+import org.kohsuke.github.GHUser;
+import org.kohsuke.github.GHTeam;
+import org.kohsuke.github.PagedIterable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -32,6 +53,13 @@ import org.springframework.util.StringUtils;
 class GitHubRepositoryService {
 
   private static final Logger log = LoggerFactory.getLogger(GitHubRepositoryService.class);
+  private static final int DEFAULT_PR_PAGE_LIMIT = 20;
+  private static final int MAX_PR_PAGE_LIMIT = 50;
+  private static final int DEFAULT_COMMENT_LIMIT = 50;
+  private static final int MAX_COMMENT_LIMIT = 200;
+  private static final int DEFAULT_CHECK_LIMIT = 50;
+  private static final int MAX_CHECK_LIMIT = 200;
+  private static final long MAX_DIFF_BYTES = 1_048_576L; // 1 MiB safeguard
 
   private final GitHubClientExecutor executor;
   private final GitHubBackendProperties properties;
@@ -73,6 +101,102 @@ class GitHubRepositoryService {
     return new ReadFileResult(repository, data.ref(), data.file());
   }
 
+  ListPullRequestsResult listPullRequests(ListPullRequestsInput input) {
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int limit =
+        Math.max(
+            1,
+            Math.min(
+                Optional.ofNullable(input.limit()).orElse(DEFAULT_PR_PAGE_LIMIT), MAX_PR_PAGE_LIMIT));
+
+    PullRequestListData data =
+        executor.execute(github -> fetchPullRequests(github, repository, input, limit));
+
+    return new ListPullRequestsResult(repository, data.pullRequests(), data.truncated());
+  }
+
+  PullRequestDetailsResult getPullRequest(GetPullRequestInput input) {
+    RepositoryRef repository = normalizeRepository(input.repository());
+    if (input.number() == null || input.number() <= 0) {
+      throw new IllegalArgumentException("pullRequestNumber must be positive");
+    }
+
+    PullRequestDetailsData data =
+        executor.execute(github -> fetchPullRequestDetails(github, repository, input.number()));
+    return new PullRequestDetailsResult(repository, data.pullRequest());
+  }
+
+  PullRequestDiffResult getPullRequestDiff(GetPullRequestDiffInput input) {
+    RepositoryRef repository = normalizeRepository(input.repository());
+    if (input.number() == null || input.number() <= 0) {
+      throw new IllegalArgumentException("pullRequestNumber must be positive");
+    }
+    long maxBytes =
+        Optional.ofNullable(input.maxBytes())
+            .filter(value -> value > 0)
+            .map(Long::valueOf)
+            .orElseGet(
+                () -> Optional.ofNullable(properties.getFileMaxSizeBytes()).orElse(MAX_DIFF_BYTES));
+
+    PullRequestDiffData data =
+        executor.execute(github -> fetchPullRequestDiff(github, repository, input.number(), maxBytes));
+    return new PullRequestDiffResult(repository, data.ref(), data.diff(), data.truncated());
+  }
+
+  PullRequestCommentsResult listPullRequestComments(ListPullRequestCommentsInput input) {
+    RepositoryRef repository = normalizeRepository(input.repository());
+    if (input.number() == null || input.number() <= 0) {
+      throw new IllegalArgumentException("pullRequestNumber must be positive");
+    }
+    int issueLimit =
+        Math.max(
+            0,
+            Math.min(
+                Optional.ofNullable(input.issueCommentLimit()).orElse(DEFAULT_COMMENT_LIMIT),
+                MAX_COMMENT_LIMIT));
+    int reviewLimit =
+        Math.max(
+            0,
+            Math.min(
+                Optional.ofNullable(input.reviewCommentLimit()).orElse(DEFAULT_COMMENT_LIMIT),
+                MAX_COMMENT_LIMIT));
+
+    PullRequestCommentsData data =
+        executor.execute(
+            github -> fetchPullRequestComments(github, repository, input.number(), issueLimit, reviewLimit));
+    return new PullRequestCommentsResult(repository, data.issueComments(), data.reviewComments(), data.truncatedIssue(), data.truncatedReview());
+  }
+
+  PullRequestChecksResult listPullRequestChecks(ListPullRequestChecksInput input) {
+    RepositoryRef repository = normalizeRepository(input.repository());
+    if (input.number() == null || input.number() <= 0) {
+      throw new IllegalArgumentException("pullRequestNumber must be positive");
+    }
+    int checkRunLimit =
+        Math.max(
+            0,
+            Math.min(
+                Optional.ofNullable(input.checkRunLimit()).orElse(DEFAULT_CHECK_LIMIT), MAX_CHECK_LIMIT));
+    int statusLimit =
+        Math.max(
+            0,
+            Math.min(
+                Optional.ofNullable(input.statusLimit()).orElse(DEFAULT_CHECK_LIMIT), MAX_CHECK_LIMIT));
+
+    PullRequestChecksData data =
+        executor.execute(
+            github -> fetchPullRequestChecks(github, repository, input.number(), checkRunLimit, statusLimit));
+    return new PullRequestChecksResult(
+        repository,
+        data.pullRequestNumber(),
+        data.headSha(),
+        data.overallStatus(),
+        data.checkRuns(),
+        data.statuses(),
+        data.truncatedCheckRuns(),
+        data.truncatedStatuses());
+  }
+
   private TreeData loadTree(RepositoryRef repository, int requestedDepth) {
     int depth = Math.max(1, Math.min(10, requestedDepth));
     String cacheKey = treeCacheKey(repository, depth);
@@ -95,6 +219,517 @@ class GitHubRepositoryService {
     FileData loaded = executor.execute(github -> fetchFile(github, repository, path));
     fileCache.put(cacheKey, new CachedFile(loaded, expiry(properties.getFileCacheTtl())));
     return loaded;
+  }
+
+  private PullRequestListData fetchPullRequests(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      ListPullRequestsInput input,
+      int limit) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      GHPullRequestQueryBuilder builder = repo.queryPullRequests();
+
+      GHIssueState state = parseIssueState(input.state());
+      if (state != null) {
+        builder.state(state);
+      }
+      if (StringUtils.hasText(input.base())) {
+        builder.base(input.base().trim());
+      }
+      if (StringUtils.hasText(input.head())) {
+        builder.head(input.head().trim());
+      }
+      Optional.ofNullable(parseSort(input.sort())).ifPresent(builder::sort);
+      Optional.ofNullable(parseDirection(input.direction())).ifPresent(builder::direction);
+
+      PagedIterable<GHPullRequest> iterable = builder.list().withPageSize(Math.min(limit, MAX_PR_PAGE_LIMIT));
+
+      List<PullRequestSummary> summaries = new ArrayList<>();
+      boolean truncated = false;
+      for (GHPullRequest pr : iterable) {
+        summaries.add(toPullRequestSummarySafe(repository, pr));
+        if (summaries.size() >= limit) {
+          truncated = true;
+          break;
+        }
+      }
+      return new PullRequestListData(List.copyOf(summaries), truncated);
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to list pull requests for %s".formatted(repository.fullName()), ex);
+    }
+  }
+
+  private PullRequestDetailsData fetchPullRequestDetails(
+      org.kohsuke.github.GitHub github, RepositoryRef repository, int number) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      GHPullRequest pr = repo.getPullRequest(number);
+      List<UserInfo> assignees = toUserList(pr.getAssignees());
+      List<UserInfo> requestedReviewers = toUserList(pr.getRequestedReviewers());
+      List<TeamInfo> requestedTeams = toTeamList(pr.getRequestedTeams());
+      return new PullRequestDetailsData(
+          toPullRequestDetails(pr, assignees, requestedReviewers, requestedTeams));
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to load pull request %s#%d".formatted(repository.fullName(), number), ex);
+    }
+  }
+
+  private PullRequestDiffData fetchPullRequestDiff(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      int number,
+      long maxBytes) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      GHPullRequest pr = repo.getPullRequest(number);
+      StringBuilder diffBuilder = new StringBuilder();
+      for (GHPullRequestFileDetail file : pr.listFiles()) {
+        String filename = safeTrim(file.getFilename());
+        if (StringUtils.hasText(filename)) {
+          diffBuilder
+              .append("diff --git a/")
+              .append(filename)
+              .append(" b/")
+              .append(filename)
+              .append("\n");
+        }
+        String patch = file.getPatch();
+        if (patch != null) {
+          diffBuilder.append(patch);
+          if (!patch.endsWith("\n")) {
+            diffBuilder.append('\n');
+          }
+        }
+      }
+      String diffPayload = diffBuilder.toString();
+      TruncatedValue truncated = truncateUtf8(diffPayload, maxBytes);
+      String ref = pr.getHead() != null ? pr.getHead().getSha() : null;
+      return new PullRequestDiffData(ref, truncated.value(), truncated.truncated());
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to fetch diff for pull request %s#%d".formatted(repository.fullName(), number), ex);
+    }
+  }
+
+  private PullRequestCommentsData fetchPullRequestComments(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      int number,
+      int issueLimit,
+      int reviewLimit) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      GHPullRequest pr = repo.getPullRequest(number);
+
+      List<PullRequestIssueComment> issueComments = new ArrayList<>();
+      boolean truncatedIssue = false;
+      if (issueLimit != 0) {
+        PagedIterable<GHIssueComment> issueIterable = pr.listComments();
+        for (GHIssueComment comment : issueIterable) {
+          issueComments.add(toIssueComment(comment));
+          if (issueComments.size() >= issueLimit) {
+            truncatedIssue = true;
+            break;
+          }
+        }
+      }
+
+      List<PullRequestReviewComment> reviewComments = new ArrayList<>();
+      boolean truncatedReview = false;
+      if (reviewLimit != 0) {
+        PagedIterable<GHPullRequestReviewComment> reviewIterable = pr.listReviewComments();
+        for (GHPullRequestReviewComment comment : reviewIterable) {
+          reviewComments.add(toReviewComment(comment));
+          if (reviewComments.size() >= reviewLimit) {
+            truncatedReview = true;
+            break;
+          }
+        }
+      }
+
+      return new PullRequestCommentsData(
+          List.copyOf(issueComments),
+          List.copyOf(reviewComments),
+          truncatedIssue,
+          truncatedReview);
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to list comments for pull request %s#%d".formatted(repository.fullName(), number), ex);
+    }
+  }
+
+  private PullRequestChecksData fetchPullRequestChecks(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      int number,
+      int checkRunLimit,
+      int statusLimit) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      GHPullRequest pr = repo.getPullRequest(number);
+      String headSha = pr.getHead() != null ? pr.getHead().getSha() : null;
+
+      List<CheckRunInfo> checkRuns = new ArrayList<>();
+      boolean truncatedRuns = false;
+      if (headSha != null && checkRunLimit != 0) {
+        PagedIterable<GHCheckRun> runsIterable = repo.getCheckRuns(headSha).withPageSize(Math.min(checkRunLimit, MAX_CHECK_LIMIT));
+        for (GHCheckRun run : runsIterable) {
+          CheckRunInfo info = toCheckRun(run);
+          if (info != null) {
+            checkRuns.add(info);
+          }
+          if (checkRuns.size() >= checkRunLimit) {
+            truncatedRuns = true;
+            break;
+          }
+        }
+      }
+
+      List<CommitStatusInfo> statuses = new ArrayList<>();
+      boolean truncatedStatuses = false;
+      if (headSha != null) {
+        GHCommit commit = repo.getCommit(headSha);
+        if (statusLimit != 0) {
+          PagedIterable<GHCommitStatus> statusIterable = commit.listStatuses().withPageSize(Math.min(statusLimit, MAX_CHECK_LIMIT));
+          for (GHCommitStatus status : statusIterable) {
+            CommitStatusInfo info = toCommitStatus(status);
+            if (info != null) {
+              statuses.add(info);
+            }
+            if (statuses.size() >= statusLimit) {
+              truncatedStatuses = true;
+              break;
+            }
+          }
+        }
+      }
+
+      String overallStatus = statuses.isEmpty() ? null : statuses.get(0).state();
+
+      return new PullRequestChecksData(
+          number,
+          headSha,
+          overallStatus,
+          List.copyOf(checkRuns),
+          List.copyOf(statuses),
+          truncatedRuns,
+          truncatedStatuses);
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to list checks for pull request %s#%d".formatted(repository.fullName(), number), ex);
+    }
+  }
+
+  private PullRequestSummary toPullRequestSummarySafe(RepositoryRef repository, GHPullRequest pr) {
+    try {
+      return toPullRequestSummary(pr);
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to read pull request %s#%d".formatted(repository.fullName(), pr.getNumber()), ex);
+    }
+  }
+
+  private PullRequestSummary toPullRequestSummary(GHPullRequest pr) throws IOException {
+    boolean draft = pr.isDraft();
+    boolean merged = pr.isMerged();
+    return new PullRequestSummary(
+        pr.getNumber(),
+        safeTrim(pr.getTitle()),
+        pr.getState() != null ? pr.getState().name().toLowerCase(Locale.ROOT) : null,
+        draft,
+        merged,
+        toUser(pr.getUser()),
+        pr.getBase() != null ? pr.getBase().getRef() : null,
+        pr.getHead() != null ? pr.getHead().getRef() : null,
+        pr.getHead() != null ? pr.getHead().getSha() : null,
+        toInstant(pr.getCreatedAt()),
+        toInstant(pr.getUpdatedAt()),
+        toInstant(pr.getClosedAt()),
+        toInstant(pr.getMergedAt()),
+        safeUrl(pr.getHtmlUrl()));
+  }
+
+  private PullRequestDetails toPullRequestDetails(
+      GHPullRequest pr,
+      List<UserInfo> assignees,
+      List<UserInfo> requestedReviewers,
+      List<TeamInfo> requestedTeams)
+      throws IOException {
+    PullRequestSummary summary = toPullRequestSummary(pr);
+
+    List<LabelInfo> labels = toLabelInfos(pr.getLabels());
+    MilestoneInfo milestone = toMilestone(pr.getMilestone());
+    MergeInfo merge =
+        new MergeInfo(
+            pr.getMergeable(),
+            safeLower(pr.getMergeableState()),
+            summary.draft());
+
+    Boolean maintainerCanModify = null;
+    try {
+      maintainerCanModify = pr.canMaintainerModify();
+    } catch (IOException ex) {
+      log.debug("Unable to resolve maintainer permissions for PR {}: {}", pr.getNumber(), ex.getMessage());
+    }
+
+    String mergeCommitSha = null;
+    try {
+      mergeCommitSha = pr.getMergeCommitSha();
+    } catch (IOException ex) {
+      log.debug("Unable to resolve merge commit SHA for PR {}: {}", pr.getNumber(), ex.getMessage());
+    }
+
+    return new PullRequestDetails(
+        summary,
+        safeTrim(pr.getBody()),
+        labels,
+        assignees,
+        requestedReviewers,
+        requestedTeams,
+        milestone,
+        merge,
+        maintainerCanModify,
+        mergeCommitSha);
+  }
+
+  private List<LabelInfo> toLabelInfos(java.util.Collection<GHLabel> labels) {
+    if (labels == null || labels.isEmpty()) {
+      return List.of();
+    }
+    List<LabelInfo> result = new ArrayList<>(labels.size());
+    for (GHLabel label : labels) {
+      if (label == null) {
+        continue;
+      }
+      result.add(
+          new LabelInfo(
+              safeTrim(label.getName()),
+              safeTrim(label.getColor()),
+              safeTrim(label.getDescription())));
+    }
+    return List.copyOf(result);
+  }
+
+  private List<UserInfo> toUserList(java.util.Collection<? extends GHUser> users) {
+    if (users == null || users.isEmpty()) {
+      return List.of();
+    }
+    List<UserInfo> result = new ArrayList<>(users.size());
+    for (GHUser user : users) {
+      result.add(toUser(user));
+    }
+    return List.copyOf(result);
+  }
+
+  private List<TeamInfo> toTeamList(List<GHTeam> teams) {
+    if (teams == null || teams.isEmpty()) {
+      return List.of();
+    }
+    List<TeamInfo> result = new ArrayList<>(teams.size());
+    for (GHTeam team : teams) {
+      if (team == null) {
+        continue;
+      }
+      result.add(
+          new TeamInfo(
+              team.getId(),
+              safeTrim(team.getSlug()),
+              safeTrim(team.getName()),
+              safeTrim(team.getDescription())));
+    }
+    return List.copyOf(result);
+  }
+
+  private MilestoneInfo toMilestone(GHMilestone milestone) {
+    if (milestone == null) {
+      return null;
+    }
+    return new MilestoneInfo(
+        milestone.getNumber(),
+        safeTrim(milestone.getTitle()),
+        safeLower(milestone.getState()),
+        toInstant(milestone.getDueOn()),
+        safeTrim(milestone.getDescription()));
+  }
+
+  private PullRequestIssueComment toIssueComment(GHIssueComment comment) {
+    return new PullRequestIssueComment(
+        comment.getId(),
+        safeTrim(comment.getBody()),
+        safeUser(comment::getUser),
+        safeInstant(comment::getCreatedAt),
+        safeInstant(comment::getUpdatedAt),
+        safeUrl(comment.getHtmlUrl()));
+  }
+
+  private PullRequestReviewComment toReviewComment(GHPullRequestReviewComment comment) {
+    return new PullRequestReviewComment(
+        comment.getId(),
+        safeTrim(comment.getBody()),
+        safeTrim(comment.getDiffHunk()),
+        safeUser(comment::getUser),
+        safeTrim(comment.getPath()),
+        comment.getPosition(),
+        comment.getOriginalPosition(),
+        comment.getStartLine(),
+        comment.getLine(),
+        safeLower(comment.getSide()),
+        safeInstant(comment::getCreatedAt),
+        safeInstant(comment::getUpdatedAt),
+        safeUrl(comment.getHtmlUrl()));
+  }
+
+  private CheckRunInfo toCheckRun(GHCheckRun run) {
+    if (run == null) {
+      return null;
+    }
+    String status = run.getStatus() != null ? run.getStatus().toString().toLowerCase(Locale.ROOT) : null;
+    String conclusion =
+        run.getConclusion() != null ? run.getConclusion().toString().toLowerCase(Locale.ROOT) : null;
+    String appSlug = run.getApp() != null ? safeTrim(run.getApp().getSlug()) : null;
+    String appName = run.getApp() != null ? safeTrim(run.getApp().getName()) : null;
+    return new CheckRunInfo(
+        run.getId(),
+        safeTrim(run.getName()),
+        status,
+        conclusion,
+        safeTrim(run.getExternalId()),
+        appSlug,
+        appName,
+        safeUrl(run.getHtmlUrl()),
+        safeUrl(run.getDetailsUrl()),
+        toInstant(run.getStartedAt()),
+        toInstant(run.getCompletedAt()));
+  }
+
+  private CommitStatusInfo toCommitStatus(GHCommitStatus status) {
+    if (status == null) {
+      return null;
+    }
+    return new CommitStatusInfo(
+        status.getId(),
+        safeTrim(status.getContext()),
+        status.getState() != null ? status.getState().toString().toLowerCase(Locale.ROOT) : null,
+        safeTrim(status.getDescription()),
+        status.getTargetUrl(),
+        safeUser(status::getCreator),
+        safeInstant(status::getCreatedAt),
+        safeInstant(status::getUpdatedAt));
+  }
+
+  private UserInfo toUser(GHUser user) {
+    if (user == null) {
+      return null;
+    }
+    return new UserInfo(
+        user.getId(),
+        safeTrim(user.getLogin()),
+        safeUrl(user.getHtmlUrl()),
+        safeTrim(user.getAvatarUrl()));
+  }
+
+  private UserInfo safeUser(IOSupplier<GHUser> supplier) {
+    if (supplier == null) {
+      return null;
+    }
+    try {
+      return toUser(supplier.get());
+    } catch (IOException ex) {
+      log.debug("Unable to load GitHub user: {}", ex.getMessage());
+      return null;
+    }
+  }
+
+  private Instant safeInstant(IOSupplier<Date> supplier) {
+    if (supplier == null) {
+      return null;
+    }
+    try {
+      return toInstant(supplier.get());
+    } catch (IOException ex) {
+      log.debug("Unable to read timestamp: {}", ex.getMessage());
+      return null;
+    }
+  }
+
+  private Instant toInstant(Date date) {
+    return date != null ? date.toInstant() : null;
+  }
+
+  private String safeUrl(URL url) {
+    return url != null ? url.toString() : null;
+  }
+
+  private String safeTrim(String value) {
+    return value != null ? value.trim() : null;
+  }
+
+  private String safeLower(String value) {
+    return value != null ? value.trim().toLowerCase(Locale.ROOT) : null;
+  }
+
+  private String safeLower(Enum<?> value) {
+    return value != null ? value.name().toLowerCase(Locale.ROOT) : null;
+  }
+
+  private GHIssueState parseIssueState(String state) {
+    if (!StringUtils.hasText(state)) {
+      return null;
+    }
+    try {
+      return GHIssueState.valueOf(state.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      log.debug("Unsupported pull request state filter '{}'", state, ex);
+      return null;
+    }
+  }
+
+  private GHPullRequestQueryBuilder.Sort parseSort(String sort) {
+    if (!StringUtils.hasText(sort)) {
+      return null;
+    }
+    try {
+      return GHPullRequestQueryBuilder.Sort.valueOf(sort.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      log.debug("Unsupported pull request sort '{}'", sort, ex);
+      return null;
+    }
+  }
+
+  private GHDirection parseDirection(String direction) {
+    if (!StringUtils.hasText(direction)) {
+      return null;
+    }
+    try {
+      return GHDirection.valueOf(direction.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      log.debug("Unsupported pull request direction '{}'", direction, ex);
+      return null;
+    }
+  }
+
+  private TruncatedValue truncateUtf8(String value, long maxBytes) {
+    if (value == null) {
+      return new TruncatedValue("", false);
+    }
+    byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length <= maxBytes) {
+      return new TruncatedValue(value, false);
+    }
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+    decoder.onMalformedInput(CodingErrorAction.IGNORE);
+    decoder.onUnmappableCharacter(CodingErrorAction.IGNORE);
+    ByteBuffer buffer = ByteBuffer.wrap(bytes, 0, (int) Math.min(bytes.length, maxBytes));
+    try {
+      CharBuffer decoded = decoder.decode(buffer);
+      return new TruncatedValue(decoded.toString(), true);
+    } catch (CharacterCodingException ex) {
+      log.debug("Failed to decode truncated diff payload: {}", ex.getMessage());
+      return new TruncatedValue(new String(bytes, 0, (int) Math.min(bytes.length, maxBytes), StandardCharsets.UTF_8), true);
+    }
   }
 
   private TreeData fetchTree(org.kohsuke.github.GitHub github, RepositoryRef repository, int depth) {
@@ -319,6 +954,126 @@ class GitHubRepositoryService {
     }
   }
 
+  record ListPullRequestsInput(
+      RepositoryRef repository, String state, String head, String base, Integer limit, String sort, String direction) {}
+
+  record ListPullRequestsResult(RepositoryRef repository, List<PullRequestSummary> pullRequests, boolean truncated) {}
+
+  record PullRequestSummary(
+      int number,
+      String title,
+      String state,
+      boolean draft,
+      boolean merged,
+      UserInfo author,
+      String baseRef,
+      String headRef,
+      String headSha,
+      Instant createdAt,
+      Instant updatedAt,
+      Instant closedAt,
+      Instant mergedAt,
+      String htmlUrl) {}
+
+  record GetPullRequestInput(RepositoryRef repository, Integer number) {}
+
+  record PullRequestDetailsResult(RepositoryRef repository, PullRequestDetails pullRequest) {}
+
+  record PullRequestDetails(
+      PullRequestSummary summary,
+      String body,
+      List<LabelInfo> labels,
+      List<UserInfo> assignees,
+      List<UserInfo> requestedReviewers,
+      List<TeamInfo> requestedTeams,
+      MilestoneInfo milestone,
+      MergeInfo merge,
+      Boolean maintainerCanModify,
+      String mergeCommitSha) {}
+
+  record LabelInfo(String name, String color, String description) {}
+
+  record UserInfo(Long id, String login, String htmlUrl, String avatarUrl) {}
+
+  record TeamInfo(Long id, String slug, String name, String description) {}
+
+  record MilestoneInfo(Integer number, String title, String state, Instant dueOn, String description) {}
+
+  record MergeInfo(Boolean mergeable, String mergeableState, Boolean draft) {}
+
+  record GetPullRequestDiffInput(RepositoryRef repository, Integer number, Long maxBytes) {}
+
+  record PullRequestDiffResult(RepositoryRef repository, String headSha, String diff, boolean truncated) {}
+
+  record ListPullRequestCommentsInput(
+      RepositoryRef repository, Integer number, Integer issueCommentLimit, Integer reviewCommentLimit) {}
+
+  record PullRequestIssueComment(
+      long id,
+      String body,
+      UserInfo author,
+      Instant createdAt,
+      Instant updatedAt,
+      String htmlUrl) {}
+
+  record PullRequestReviewComment(
+      long id,
+      String body,
+      String diffHunk,
+      UserInfo author,
+      String path,
+      Integer position,
+      Integer originalPosition,
+      Integer startLine,
+      Integer line,
+      String side,
+      Instant createdAt,
+      Instant updatedAt,
+      String htmlUrl) {}
+
+  record PullRequestCommentsResult(
+      RepositoryRef repository,
+      List<PullRequestIssueComment> issueComments,
+      List<PullRequestReviewComment> reviewComments,
+      boolean issueCommentsTruncated,
+      boolean reviewCommentsTruncated) {}
+
+  record ListPullRequestChecksInput(
+      RepositoryRef repository, Integer number, Integer checkRunLimit, Integer statusLimit) {}
+
+  record CheckRunInfo(
+      long id,
+      String name,
+      String status,
+      String conclusion,
+      String externalId,
+      String appSlug,
+      String appName,
+      String htmlUrl,
+      String detailsUrl,
+      Instant startedAt,
+      Instant completedAt) {}
+
+  record CommitStatusInfo(
+      long id,
+      String context,
+      String state,
+      String description,
+      String targetUrl,
+      UserInfo creator,
+      Instant createdAt,
+      Instant updatedAt) {}
+
+  record PullRequestChecksResult(
+      RepositoryRef repository,
+      int pullRequestNumber,
+      String headSha,
+      String overallStatus,
+      List<CheckRunInfo> checkRuns,
+      List<CommitStatusInfo> statuses,
+      boolean checkRunsTruncated,
+      boolean statusesTruncated) {}
+
   record ListRepositoryTreeInput(
       RepositoryRef repository, String path, Boolean recursive, Integer maxDepth, Integer maxEntries) {}
 
@@ -348,6 +1103,32 @@ class GitHubRepositoryService {
       String contentBase64,
       String textContent) {}
 
+  private record PullRequestListData(List<PullRequestSummary> pullRequests, boolean truncated) {}
+
+  private record PullRequestDetailsData(PullRequestDetails pullRequest) {}
+
+  private record PullRequestDiffData(String ref, String diff, boolean truncated) {}
+
+  private record PullRequestCommentsData(
+      List<PullRequestIssueComment> issueComments,
+      List<PullRequestReviewComment> reviewComments,
+      boolean truncatedIssue,
+      boolean truncatedReview) {}
+
+  private record PullRequestChecksData(
+      int pullRequestNumber,
+      String headSha,
+      String overallStatus,
+      List<CheckRunInfo> checkRuns,
+      List<CommitStatusInfo> statuses,
+      boolean truncatedCheckRuns,
+      boolean truncatedStatuses) {}
+
+  @FunctionalInterface
+  private interface IOSupplier<T> {
+    T get() throws IOException;
+  }
+
   private record TreeData(RepositoryRef repository, String resolvedRef, List<TreeEntry> entries, boolean truncated) {}
 
   private record FileData(RepositoryRef repository, String ref, RepositoryFile file) {}
@@ -365,4 +1146,6 @@ class GitHubRepositoryService {
       return Instant.now().isAfter(expiresAt);
     }
   }
+
+  private record TruncatedValue(String value, boolean truncated) {}
 }
