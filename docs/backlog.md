@@ -756,7 +756,7 @@
 - [x] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
 - [x] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
 - [x] Упростить токен-менеджер до работы с PAT без JWT/installation токенов.
-- [ ] Зафиксировать контракт MCP payload'ов (`repository{owner,name}`, `ref`, `requestId`, `metadata`, `pullRequest{number}`, `location`), добавить валидацию и javadoc.
+
 
 ### Backend & LLM
 - [ ] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
@@ -805,3 +805,17 @@
 - [ ] Подготовить сценарии для аналитиков/разработчиков: быстрый start guide, список поддерживаемых инструментов и ограничения по объёму данных.
 - [ ] Документировать контракт payload'ов (`repository/ref/requestId/pullRequest/location`), ограничения (только github.com, без fallback) и требования к токенам.
 - [ ] Добавить раздел про логи, метрики, ротацию PAT и восстановление после rate-limit.
+
+## Wave 18 — Универсализация MCP-инструментов
+### Backend
+- [ ] Ослабить зависимость `McpToolBindingService` от каталога: разрешить выполнение инструментов, которые отсутствуют в `ToolDefinitionRepository`, если MCP-провайдер вернул валидный `ToolCallback`.
+- [ ] Перенести логику подстановки `query`/`messages`/доп. полей из Java-кода в метаданные схемы/overrides, избавиться от `if`-веток по конкретным названиям инструментов.
+- [ ] Удалить специальную нормализацию/обогащение payload для Perplexity (`perplexity_search`, `perplexity_research`) из `McpToolBindingService`, заменить на конфигурируемые overrides на стороне схемы.
+- [ ] Поддержать произвольные транспорты MCP (например, WebSocket/SSE) через конфигурацию, а не жёсткий whitelist `http-stream`/`stdio`.
+- [ ] Разрешить API задавать собственный `query` и не отбрасывать его в `QueryOverridingToolCallback`, оставить только защиту от `locale`.
+- [ ] Смягчить GitHub-валидацию: логировать проблемы payload'а, но не блокировать вызовы при наличии дополнительных полей и необязательных секций.
+- [ ] Перестать требовать непустой `userQuery` для резолва инструментов, корректно обрабатывать action-инструменты без текстового запроса.
+
+### Docs & Enablement
+- [ ] Обновить разделы MCP в архитектурной документации: описать новый механизм кастомизации payload'ов, поддержку дополнительных транспортов и правила overrides.
+- [ ] Зафиксировать изменения в Wave 18 changelog: свобода выбора инструментов из API, расширяемые транспорты, мягкая валидация GitHub payload'ов.
