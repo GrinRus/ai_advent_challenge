@@ -759,7 +759,7 @@
 
 
 ### Backend & LLM
-- [ ] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
+- [x] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
 - [ ] Запускать `github-analysis-flow` через существующий flow-оркестратор: шаги получают контекст резолвера, вызывают GitHub MCP (tree/file/diff) и агрегируют статические проверки + LLM summary/риски.
 - [ ] Добавить flow/agent pipeline `github-analysis-flow`: старт по URL, шаги «fetch tree», «prefetch files», «LLM repo summary», «LLM risk scoring», «generate recommendations», сохранение результатов и structured payload.
 - [ ] Добавить пайплайн анализа pull request: сбор diff/metadata через GitHub MCP, подготовка промптов, генерация рекомендаций LLM и вычисление сигналов (компоненты, TODO, риски).
@@ -769,7 +769,7 @@
 - [ ] Дополнить `McpToolBindingService` кастомизацией payload для GitHub: разбор URL, заполнение `repository/ref/pullRequest`, генерация `requestId`, ручная сборка unified diff (`diff --git`/`@@`).
 - [ ] Кешировать tree/diff/метаданные GitHub в `sharedContext` (раздел `githubCache`), переиспользовать между шагами вместо повторных запросов.
 - [ ] Определить канонический payload для LLM анализа: список файлов с diff (unified), агрегированные метрики, summary вводных и сигналов, сохранить схему в shared context и документации.
-- [ ] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
+- [x] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
 
 ### Frontend & UX
 - [ ] Обновить панель MCP: отдельный блок для GitHub сервера с полем ввода ссылки/репо, поддержкой выбора ветки/PR и стартом `github-analysis-flow`.

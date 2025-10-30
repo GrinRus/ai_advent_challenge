@@ -42,6 +42,7 @@ import com.aiadvent.backend.flow.service.payload.FlowPayloadMapper;
 import com.aiadvent.backend.flow.session.model.FlowLaunchParameters;
 import com.aiadvent.backend.flow.session.model.FlowOverrides;
 import com.aiadvent.backend.flow.session.model.FlowSharedContext;
+import com.aiadvent.backend.flow.github.GitHubResolverService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -72,6 +73,7 @@ class AgentOrchestratorServiceTest {
   @Mock private FlowInteractionService flowInteractionService;
   @Mock private JobQueuePort jobQueuePort;
   @Mock private FlowTelemetryService telemetry;
+  @Mock private GitHubResolverService gitHubResolverService;
 
   private AgentOrchestratorService orchestratorService;
   private ObjectMapper objectMapper;
@@ -86,6 +88,8 @@ class AgentOrchestratorServiceTest {
     MockitoAnnotations.openMocks(this);
     objectMapper = new ObjectMapper();
     flowPayloadMapper = new FlowPayloadMapper(objectMapper);
+    when(gitHubResolverService.supportsStep(any())).thenReturn(false);
+    when(gitHubResolverService.deferInteractionCreation(any())).thenReturn(false);
 
     orchestratorService =
         new AgentOrchestratorService(
@@ -101,7 +105,8 @@ class AgentOrchestratorServiceTest {
             jobQueuePort,
             objectMapper,
             telemetry,
-            flowPayloadMapper);
+            flowPayloadMapper,
+            gitHubResolverService);
 
     definition =
         new FlowDefinition(
@@ -210,7 +215,8 @@ class AgentOrchestratorServiceTest {
                 "validator-system",
                 List.of("snapshot-1"),
                 "user message body",
-                List.of()));
+                List.of(),
+                null));
 
     FlowSession persistedSession =
         new FlowSession(definition, definition.getVersion(), FlowSessionStatus.RUNNING, 1L, 0L);

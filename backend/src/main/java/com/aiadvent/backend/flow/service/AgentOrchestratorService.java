@@ -11,6 +11,9 @@ import com.aiadvent.backend.flow.config.MemoryReadConfig;
 import com.aiadvent.backend.flow.config.MemoryWriteConfig;
 import com.aiadvent.backend.flow.config.MemoryWriteMode;
 import com.aiadvent.backend.flow.config.FlowInteractionConfig;
+import com.aiadvent.backend.flow.github.GitHubResolverPayload;
+import com.aiadvent.backend.flow.github.GitHubResolverService;
+import com.aiadvent.backend.flow.github.GitHubResolverStatus;
 import com.aiadvent.backend.flow.execution.model.FlowEventPayload;
 import com.aiadvent.backend.flow.execution.model.FlowStepInputPayload;
 import com.aiadvent.backend.flow.execution.model.FlowStepOutputPayload;
@@ -79,6 +82,7 @@ public class AgentOrchestratorService {
   private final ObjectMapper objectMapper;
   private final FlowTelemetryService telemetry;
   private final FlowPayloadMapper flowPayloadMapper;
+  private final GitHubResolverService gitHubResolverService;
 
   public AgentOrchestratorService(
       FlowDefinitionService flowDefinitionService,
@@ -93,7 +97,8 @@ public class AgentOrchestratorService {
       JobQueuePort jobQueuePort,
       ObjectMapper objectMapper,
       FlowTelemetryService telemetry,
-      FlowPayloadMapper flowPayloadMapper) {
+      FlowPayloadMapper flowPayloadMapper,
+      GitHubResolverService gitHubResolverService) {
     this.flowDefinitionService = flowDefinitionService;
     this.flowBlueprintCompiler = flowBlueprintCompiler;
     this.flowSessionRepository = flowSessionRepository;
@@ -107,6 +112,7 @@ public class AgentOrchestratorService {
     this.objectMapper = objectMapper;
     this.telemetry = telemetry;
     this.flowPayloadMapper = flowPayloadMapper;
+    this.gitHubResolverService = gitHubResolverService;
   }
 
   @Transactional
@@ -201,6 +207,7 @@ public class AgentOrchestratorService {
     FlowDefinitionDocument definitionDocument =
         flowBlueprintCompiler.compile(session.getFlowDefinition());
     FlowStepConfig stepConfig = definitionDocument.step(payload.stepId());
+    boolean isGitHubResolverStep = gitHubResolverService.supportsStep(stepConfig.id());
 
     AgentVersion agentVersion =
         agentVersionRepository
@@ -211,7 +218,8 @@ public class AgentOrchestratorService {
                     "Agent version " + stepConfig.agentVersionId() + " is not found"));
 
     FlowInteractionConfig interactionConfig = stepConfig.interaction();
-    if (interactionConfig != null) {
+    if (interactionConfig != null
+        && !(isGitHubResolverStep && gitHubResolverService.deferInteractionCreation(stepConfig.id()))) {
       FlowInteractionRequest interactionRequest =
           flowInteractionService.ensureRequest(session, stepExecution, interactionConfig, agentVersion);
       if (interactionRequest.getStatus() == FlowInteractionStatus.PENDING) {
@@ -267,7 +275,29 @@ public class AgentOrchestratorService {
 
       AgentInvocationResult result = agentInvocationService.invoke(request);
 
+      GitHubResolverPayload resolverPayload = null;
+      if (isGitHubResolverStep) {
+        resolverPayload = gitHubResolverService.parsePayload(result.content());
+        if (resolverPayload.status() == GitHubResolverStatus.INVALID
+            || resolverPayload.status() == GitHubResolverStatus.UNSUPPORTED) {
+          throw new IllegalStateException("GitHub resolver could not determine target entity");
+        }
+        result = gitHubResolverService.withStructuredContent(result, resolverPayload);
+      }
+
       JsonNode stepOutput = applyAgentResult(stepExecution, result, session, agentVersion, stepConfig);
+
+      if (isGitHubResolverStep && resolverPayload != null) {
+        if (resolverPayload.status() == GitHubResolverStatus.NEEDS_CLARIFICATION) {
+          if (interactionConfig == null) {
+            throw new IllegalStateException(
+                "GitHub resolver step requires interaction configuration for clarification flow");
+          }
+          flowInteractionService.ensureRequest(session, stepExecution, interactionConfig, agentVersion);
+          enterUserInputWait(job, session, stepExecution);
+          return;
+        }
+      }
 
       FlowStepTransitions transitions = stepConfig.transitions();
 
@@ -716,6 +746,25 @@ public class AgentOrchestratorService {
     }
     if (hasRequestData) {
       node.set("request", requestNode);
+    }
+    JsonNode structured = result.structuredContent();
+    if (structured != null && !structured.isNull() && !structured.isMissingNode()) {
+      node.set("structured", structured.deepCopy());
+      if (!node.has("status") && structured.has("status")) {
+        node.put("status", structured.path("status").asText());
+      }
+      if (structured.has("githubTarget")) {
+        node.set("githubTarget", structured.get("githubTarget").deepCopy());
+      }
+      if (structured.has("clarificationPrompt")) {
+        node.put("clarificationPrompt", structured.path("clarificationPrompt").asText());
+      }
+      if (structured.has("clarificationReason")) {
+        node.put("clarificationReason", structured.path("clarificationReason").asText());
+      }
+      if (structured.has("missingFields") && !node.has("missingFields")) {
+        node.set("missingFields", structured.get("missingFields").deepCopy());
+      }
     }
     return node;
   }
