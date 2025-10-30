@@ -3,7 +3,5 @@ spring:
     banner-mode: off
 
 logging:
-  pattern:
-    console: ''
   level:
-    root: WARN
+    root: DEBUG

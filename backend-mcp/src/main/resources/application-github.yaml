@@ -38,5 +38,3 @@ github:
     tree-max-entries: ${GITHUB_TREE_MAX_ENTRIES:500}
     file-max-size-bytes: ${GITHUB_FILE_MAX_SIZE_BYTES:524288}
     user-agent: ${GITHUB_USER_AGENT:AI Advent GitHub MCP/0.1}
-
-logging.level.root: debug
