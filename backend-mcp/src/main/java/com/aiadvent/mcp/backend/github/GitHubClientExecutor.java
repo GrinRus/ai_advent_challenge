@@ -26,7 +26,7 @@ class GitHubClientExecutor {
     Objects.requireNonNull(operation, "operation");
     String token = tokenManager.currentToken();
     try {
-      GitHub client = clientFactory.createInstallationClient(token);
+      GitHub client = clientFactory.createPatClient(token);
       return operation.apply(client);
     } catch (IOException ex) {
       throw new GitHubClientException("Failed to execute GitHub API call", ex);

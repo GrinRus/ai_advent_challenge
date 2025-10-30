@@ -19,18 +19,11 @@ class GitHubClientFactory {
     this.properties = Objects.requireNonNull(properties, "properties");
   }
 
-  GitHub createInstallationClient(String installationToken) throws IOException {
-    if (!StringUtils.hasText(installationToken)) {
-      throw new IllegalArgumentException("installationToken must not be blank");
+  GitHub createPatClient(String personalAccessToken) throws IOException {
+    if (!StringUtils.hasText(personalAccessToken)) {
+      throw new IllegalArgumentException("personalAccessToken must not be blank");
     }
-    return configure(newBuilder()).withOAuthToken(installationToken.trim()).build();
-  }
-
-  GitHub createAppClient(String jwtToken) throws IOException {
-    if (!StringUtils.hasText(jwtToken)) {
-      throw new IllegalArgumentException("jwtToken must not be blank");
-    }
-    return configure(newBuilder()).withJwtToken(jwtToken.trim()).build();
+    return configure(newBuilder()).withOAuthToken(personalAccessToken.trim()).build();
   }
 
   private GitHubBuilder newBuilder() {

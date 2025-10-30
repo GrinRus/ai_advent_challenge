@@ -747,7 +747,7 @@
 ## Wave 17 — GitHub MCP интеграция
 ### MCP Server
 - [x] Реализовать GitHub MCP сервер в `backend-mcp`: настроить пат-токен, клиент GitHub REST/GraphQL, конфигурацию профилей и health endpoints на базе `org.kohsuke:github-api` (актуальная стабильная версия 1.330, перед внедрением перепроверить).
-- [x] Настроить получение GitHub App installation token: генерация JWT из `GITHUB_PRIVATE_KEY`, вызов `GHAppInstallation#createToken()`, кеширование и ротация короткоживущих токенов.
+- [x] Настроить аутентификацию GitHub MCP через Personal Access Token (scopes `repo`, `read:org`, `read:checks`) и обновить конфигурацию.
 - [x] Добавить методы `github.list_repository_tree` и `github.read_file`: выбор репозитория/ветки, выдача структуры и содержимого файлов с лимитами, кешированием и нормализацией кодировок.
 - [x] Добавить инструменты `github.list_pull_requests`, `github.get_pull_request`, `github.get_pull_request_diff`, `github.list_pull_request_comments`, `github.list_pull_request_checks`: поддержать фильтры, отдачу diff/metadata, комментарии и статусы проверок.
 - [x] Реализовать инструменты `github.create_pull_request_comment`, `github.create_pull_request_review` и `github.submit_pull_request_review`: публикация комментариев, выставление `APPROVE`/`REQUEST_CHANGES`, обработка rate limit и идемпотентности.
@@ -755,7 +755,7 @@
 - [x] Добавить профиль `github` в `McpApplication`, компонент-скан пакета GitHub и `@ConfigurationProperties` для GitHub API (базовый `https://api.github.com`, таймауты, headers).
 - [x] Создать конфигурацию `application-github.yaml`: MCP server (endpoint `/mcp`, keep-alive), параметры токен-менеджера (lifetime, cache TTL) и инструкции/description.
 - [x] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
-- [x] Реализовать сервис генерации JWT из Base64-приватного ключа, получение installation token, кеширование и ротацию (только github.com).
+- [x] Упростить токен-менеджер до работы с PAT без JWT/installation токенов.
 - [ ] Зафиксировать контракт MCP payload'ов (`repository{owner,name}`, `ref`, `requestId`, `metadata`, `pullRequest{number}`, `location`), добавить валидацию и javadoc.
 
 ### Backend & LLM
@@ -786,7 +786,7 @@
 
 ### Tests & QA
 - [ ] Покрыть GitHub MCP unit/integration тестами: handshake, tree/file чтение, pull request инструменты (list/get/diff/comments/checks) и действия (create comment/review/submit) с mock GitHub API.
-- [ ] Протестировать управление токенами: генерация JWT из `.env`, получение installation token, кеширование и ротация.
+- [ ] Протестировать управление PAT: корректное чтение из секретов, обновление без рестарта и обработка просроченного токена.
 - [ ] Unit/интеграционные тесты стартового резолвера: валидные репо/PR ссылки, невалидные входы, ветка WAITING_USER_INPUT и запись `githubTarget` в shared context.
 - [ ] Добавить backend-тесты `github-analysis-flow`: сценарии по ссылке на репо/ветку/PR, корректность шагов, агрегирование LLM summary/рисков, идемпотентность по URL и переиспользование данных из shared context.
 - [ ] Добавить проверки логирования и обработки rate limit: unit тесты для логгера/ретраев, negative-case (403, абьюз лимит).
@@ -804,4 +804,4 @@
 - [ ] Обновить `docs/guides/mcp-operators.md`/`docs/infra.md` описанием GitHub MCP, требуемых прав и сценариев использования.
 - [ ] Подготовить сценарии для аналитиков/разработчиков: быстрый start guide, список поддерживаемых инструментов и ограничения по объёму данных.
 - [ ] Документировать контракт payload'ов (`repository/ref/requestId/pullRequest/location`), ограничения (только github.com, без fallback) и требования к токенам.
-- [ ] Добавить раздел про логи, метрики, ротацию ключей GitHub App и восстановление после rate-limit.
+- [ ] Добавить раздел про логи, метрики, ротацию PAT и восстановление после rate-limit.
