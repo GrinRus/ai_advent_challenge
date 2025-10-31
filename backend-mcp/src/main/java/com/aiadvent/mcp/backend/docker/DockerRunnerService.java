@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -23,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -83,8 +85,8 @@ public class DockerRunnerService {
     List<String> tasks = sanitizeList(input.tasks(), List.of("test"));
     List<String> gradleArgs = sanitizeList(input.arguments(), List.of());
 
-    boolean hasProjectWrapper = Files.isRegularFile(projectAbsolute.resolve("gradlew"));
-    boolean hasRootWrapper = Files.isRegularFile(workspacePath.resolve("gradlew"));
+    boolean hasProjectWrapper = ensureGradleWrapperExecutable(projectAbsolute.resolve("gradlew"));
+    boolean hasRootWrapper = ensureGradleWrapperExecutable(workspacePath.resolve("gradlew"));
 
     MountConfiguration mountConfig = prepareMountConfiguration(workspace);
     Path containerWorkspaceRoot = mountConfig.containerWorkspaceRoot();
@@ -317,6 +319,34 @@ public class DockerRunnerService {
       merged.put("GRADLE_USER_HOME", gradleUserHome);
     }
     return merged;
+  }
+
+  private boolean ensureGradleWrapperExecutable(Path candidate) {
+    if (!Files.isRegularFile(candidate)) {
+      return false;
+    }
+    try {
+      if (Files.isExecutable(candidate)) {
+        return true;
+      }
+      try {
+        Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(candidate);
+        if (!permissions.contains(PosixFilePermission.OWNER_EXECUTE)) {
+          permissions.add(PosixFilePermission.OWNER_EXECUTE);
+          permissions.add(PosixFilePermission.GROUP_EXECUTE);
+          permissions.add(PosixFilePermission.OTHERS_EXECUTE);
+          Files.setPosixFilePermissions(candidate, permissions);
+        }
+      } catch (UnsupportedOperationException ex) {
+        boolean updated = candidate.toFile().setExecutable(true, false);
+        if (!updated) {
+          log.warn("Failed to make gradlew executable at {}", candidate);
+        }
+      }
+    } catch (IOException ex) {
+      log.warn("Unable to adjust permissions for gradlew at {}: {}", candidate, ex.getMessage());
+    }
+    return Files.isExecutable(candidate);
   }
 
   private void validateWorkspacePath(Path workspacePath) {
