@@ -862,6 +862,7 @@
 - [x] Подготовить Docker-образ `aiadvent/mcp-gradle-runner` (каталог `backend-mcp/docker/`): слои JDK 21, Gradle 8.x, утилиты диагностики, entrypoint-скрипт, публикация через CI.
 - [x] Добавить потоковое чтение stdout/stderr (chunked события MCP), обрезку логов по размеру и маскирование секретов; управление lifecycle workspace оставить за `TempWorkspaceService` (cleanup по TTL).
 - [x] Поддержать параметр `projectPath` (относительный путь внутри workspace) и валидацию: runner должен запускать Gradle из выбранного каталога, а при отсутствии пути — использовать root проекта, определённый fetch-инструментом (если единственный).
+- [ ] Написать интеграционный тест `DockerMcpApplicationTests`: поднять временный workspace с Gradle-проектом, выполнить `docker_gradle_runner`, убедиться в корректной передаче логов, статуса и таймаутов.
 
 ### Backend Integration
 - [x] Зарегистрировать новые инструменты в основном backend (`McpCatalogService`, `McpToolBindingService`): выдать им уникальные codes, добавить детальные описания прямо в Spring MCP-аннотациях (назначение, вход/выход, ограничения) и схемы входа/выхода, разрешить выбор через UI/flows.
