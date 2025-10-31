@@ -139,6 +139,13 @@ public class DockerRunnerService {
     }
 
     Map<String, String> env = mergeEnvs(input.env(), mountConfig.gradleUserHome());
+    env.forEach(
+        (key, value) -> {
+          if (StringUtils.hasText(key) && value != null) {
+            dockerCommand.add("-e");
+            dockerCommand.add(key + "=" + value);
+          }
+        });
     Instant startedAt = Instant.now();
     Timer.Sample sample = Timer.start(meterRegistry);
     ProcessResult result;
@@ -197,21 +204,6 @@ public class DockerRunnerService {
     if (properties.getMemoryLimitGb() > 0) {
       dockerCommand.add("--memory");
       dockerCommand.add(String.format(Locale.ROOT, "%.1fg", properties.getMemoryLimitGb()));
-    }
-
-    for (Map.Entry<String, String> entry : properties.getDefaultEnv().entrySet()) {
-      dockerCommand.add("-e");
-      dockerCommand.add(entry.getKey() + "=" + entry.getValue());
-    }
-
-    Map<String, String> requestEnv = input.env();
-    if (requestEnv != null) {
-      for (Map.Entry<String, String> entry : requestEnv.entrySet()) {
-        if (StringUtils.hasText(entry.getKey()) && entry.getValue() != null) {
-          dockerCommand.add("-e");
-          dockerCommand.add(entry.getKey() + "=" + entry.getValue());
-        }
-      }
     }
 
     dockerCommand.add("-w");
