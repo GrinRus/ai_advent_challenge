@@ -18,4 +18,3 @@ out/
 .env
 .env.open-ai
 .env.z-ai
-data/
