@@ -83,16 +83,45 @@ public class DockerRunnerService {
     List<String> tasks = sanitizeList(input.tasks(), List.of("test"));
     List<String> gradleArgs = sanitizeList(input.arguments(), List.of());
 
-    boolean hasWrapper = Files.exists(projectAbsolute.resolve("gradlew"));
-    String runnerExecutable = hasWrapper ? "./gradlew" : "gradle";
-    List<String> command = new ArrayList<>();
-    command.add(runnerExecutable);
-    if (!gradleArgs.isEmpty()) {
-      command.addAll(gradleArgs);
-    }
-    command.addAll(tasks);
+    boolean hasProjectWrapper = Files.isRegularFile(projectAbsolute.resolve("gradlew"));
+    boolean hasRootWrapper = Files.isRegularFile(workspacePath.resolve("gradlew"));
 
-    List<String> dockerCommand = buildDockerCommand(workspacePath, projectPath, command, input);
+    String workDir = StringUtils.hasText(projectPath) ? "/workspace/" + projectPath : "/workspace";
+    List<String> command = new ArrayList<>();
+    String runnerExecutable;
+    if (hasProjectWrapper) {
+      runnerExecutable = "./gradlew";
+      command.add(runnerExecutable);
+      if (!gradleArgs.isEmpty()) {
+        command.addAll(gradleArgs);
+      }
+      command.addAll(tasks);
+    } else if (hasRootWrapper) {
+      runnerExecutable = "./gradlew";
+      workDir = "/workspace";
+      command.add(runnerExecutable);
+      if (StringUtils.hasText(projectPath)) {
+        command.add("-p");
+        command.add(projectPath);
+      }
+      if (!gradleArgs.isEmpty()) {
+        command.addAll(gradleArgs);
+      }
+      command.addAll(tasks);
+    } else {
+      runnerExecutable = "gradle";
+      command.add(runnerExecutable);
+      if (StringUtils.hasText(projectPath)) {
+        command.add("-p");
+        command.add(projectPath);
+      }
+      if (!gradleArgs.isEmpty()) {
+        command.addAll(gradleArgs);
+      }
+      command.addAll(tasks);
+    }
+
+    List<String> dockerCommand = buildDockerCommand(workspacePath, workDir, command, input);
 
     Map<String, String> env = mergeEnvs(input.env());
     Instant startedAt = Instant.now();
@@ -131,10 +160,7 @@ public class DockerRunnerService {
   }
 
   private List<String> buildDockerCommand(
-      Path workspacePath,
-      @Nullable String projectPath,
-      List<String> gradleCommand,
-      DockerGradleRunInput input) {
+      Path workspacePath, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
     List<String> dockerCommand = new ArrayList<>();
     dockerCommand.add(properties.getDockerBinary());
     dockerCommand.add("run");
@@ -178,10 +204,6 @@ public class DockerRunnerService {
       }
     }
 
-    String workDir = "/workspace";
-    if (StringUtils.hasText(projectPath)) {
-      workDir = workDir + "/" + projectPath;
-    }
     dockerCommand.add("-w");
     dockerCommand.add(workDir);
 
