@@ -851,18 +851,18 @@
 - [x] Возвращать из инструмента расширенный ответ: `workspaceId`, абсолютный путь, размер выгрузки, время скачивания, commit SHA, список ключевых файлов; фиксировать события/метрики (`download_time_ms`, `download_size_bytes`, ошибки таймаута/лимита`).
 
 ### Workspace Inspector Tool
-- [ ] Создать отдельный MCP-инструмент `workspace_directory_inspector` (в GitHub MCP-сервере): вход — `workspaceId`, опциональные фильтры (glob-паттерны, глубина, типы файлов), выход — список директорий/файлов с метаданными (`path`, `type`, `size`, `detectedProjectType`, `hasGradleWrapper` и т.д.).
-- [ ] Реализовать сервис обхода workspace: защищённая навигация внутри `/var/tmp/aiadvent/mcp-workspaces/{id}`, фильтрация по glob/regex, определение Gradle-проектов (`settings.gradle`, `build.gradle`, `gradlew`), детектирование других типов (Maven, npm и т.п.) без привязки к Gradle.
-- [ ] Возвращать детализированный ответ: массив найденных элементов, флаги (`containsMultipleGradleProjects`, `recommendedProjectPath`), предупреждения (превышение глубины/количества результатов), время выполнения. Логировать метрики (`inspection_time_ms`, количество элементов, ошибки доступа).
+- [x] Создать отдельный MCP-инструмент `workspace_directory_inspector` (в GitHub MCP-сервере): вход — `workspaceId`, опциональные фильтры (glob-паттерны, глубина, типы файлов), выход — список директорий/файлов с метаданными (`path`, `type`, `size`, `detectedProjectType`, `hasGradleWrapper` и т.д.).
+- [x] Реализовать сервис обхода workspace: защищённая навигация внутри `/var/tmp/aiadvent/mcp-workspaces/{id}`, фильтрация по glob/regex, определение Gradle-проектов (`settings.gradle`, `build.gradle`, `gradlew`), детектирование других типов (Maven, npm и т.п.) без привязки к Gradle.
+- [x] Возвращать детализированный ответ: массив найденных элементов, флаги (`containsMultipleGradleProjects`, `recommendedProjectPath`), предупреждения (превышение глубины/количества результатов), время выполнения. Логировать метрики (`inspection_time_ms`, количество элементов, ошибки доступа).
 - [ ] Обновить документацию и каталоги MCP: описать инструмент, привести примеры запросов (поиск Gradle, поиск произвольных файлов), уточнить порядок использования (fetch → inspect → docker run) для много-репозиторных сценариев.
 
 ### Docker Runner Tool
-- [ ] Поднять отдельный MCP-сервер `docker-runner`, зарегистрировать на нём инструмент `docker_gradle_runner` и описать схему запроса/ответа (workspaceId/path, tasks, env, таймауты, exitCode, stdout/stderr, артефакты).
-- [ ] Реализовать инструмент: принимать workspace из GitHub fetcher, проверять принадлежность каталога `/var/tmp/aiadvent/mcp-workspaces/{id}`, формировать команду `docker run --rm -v <workspace>:/workspace -w /workspace <image> ./gradlew <tasks>` с fallback на `gradle` при отсутствии wrapper, возвращать статус + логи.
-- [ ] Настроить упаковку workspace: монтирование временного каталога на контейнер (`-v tempDir:/workspace`), выделенный volume для Gradle cache (`-v /var/tmp/aiadvent/gradle-cache:/gradle-cache`), конфиг `GRADLE_USER_HOME`, лимиты по CPU/RAM/диску и таймаут выполнения.
-- [ ] Подготовить Docker-образ `aiadvent/mcp-gradle-runner` (каталог `backend-mcp/docker/`): слои JDK 21, Gradle 8.x, утилиты диагностики, entrypoint-скрипт, публикация через CI.
-- [ ] Добавить потоковое чтение stdout/stderr (chunked события MCP), обрезку логов по размеру и маскирование секретов; управление lifecycle workspace оставить за `TempWorkspaceService` (cleanup по TTL).
-- [ ] Поддержать параметр `projectPath` (относительный путь внутри workspace) и валидацию: runner должен запускать Gradle из выбранного каталога, а при отсутствии пути — использовать root проекта, определённый fetch-инструментом (если единственный).
+- [x] Поднять отдельный MCP-сервер `docker-runner`, зарегистрировать на нём инструмент `docker_gradle_runner` и описать схему запроса/ответа (workspaceId/path, tasks, env, таймауты, exitCode, stdout/stderr, артефакты).
+- [x] Реализовать инструмент: принимать workspace из GitHub fetcher, проверять принадлежность каталога `/var/tmp/aiadvent/mcp-workspaces/{id}`, формировать команду `docker run --rm -v <workspace>:/workspace -w /workspace <image> ./gradlew <tasks>` с fallback на `gradle` при отсутствии wrapper, возвращать статус + логи.
+- [x] Настроить упаковку workspace: монтирование временного каталога на контейнер (`-v tempDir:/workspace`), выделенный volume для Gradle cache (`-v /var/tmp/aiadvent/gradle-cache:/gradle-cache`), конфиг `GRADLE_USER_HOME`, лимиты по CPU/RAM/диску и таймаут выполнения.
+- [x] Подготовить Docker-образ `aiadvent/mcp-gradle-runner` (каталог `backend-mcp/docker/`): слои JDK 21, Gradle 8.x, утилиты диагностики, entrypoint-скрипт, публикация через CI.
+- [x] Добавить потоковое чтение stdout/stderr (chunked события MCP), обрезку логов по размеру и маскирование секретов; управление lifecycle workspace оставить за `TempWorkspaceService` (cleanup по TTL).
+- [x] Поддержать параметр `projectPath` (относительный путь внутри workspace) и валидацию: runner должен запускать Gradle из выбранного каталога, а при отсутствии пути — использовать root проекта, определённый fetch-инструментом (если единственный).
 
 ### Backend Integration
 - [ ] Зарегистрировать новые инструменты в основном backend (`McpCatalogService`, `McpToolBindingService`): выдать им уникальные codes, добавить детальные описания прямо в Spring MCP-аннотациях (назначение, вход/выход, ограничения) и схемы входа/выхода, разрешить выбор через UI/flows.

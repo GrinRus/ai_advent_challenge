@@ -4,6 +4,7 @@ import com.aiadvent.mcp.backend.config.AgentOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
+import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,7 +18,8 @@ import org.springframework.context.annotation.Profile;
   McpApplication.InsightConfig.class,
   McpApplication.FlowOpsConfig.class,
   McpApplication.AgentOpsConfig.class,
-  McpApplication.GitHubConfig.class
+  McpApplication.GitHubConfig.class,
+  McpApplication.DockerRunnerConfig.class
 })
 public class McpApplication {
 
@@ -60,6 +62,15 @@ public class McpApplication {
     })
     @EnableConfigurationProperties(GitHubBackendProperties.class)
     public class GitHubConfig {
+    }
+
+    @Configuration
+    @Profile("docker")
+    @ComponentScan(basePackages = {
+            "com.aiadvent.mcp.backend.docker", "com.aiadvent.mcp.backend.config"
+    })
+    @EnableConfigurationProperties(DockerRunnerProperties.class)
+    public class DockerRunnerConfig {
     }
 
 }
