@@ -141,7 +141,7 @@ services:
     ports:
       - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
     volumes:
-      - docker_runner_workspaces:/var/tmp/aiadvent/mcp-workspaces
+      - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -178,8 +178,8 @@ services:
       - "${DOCKER_MCP_HTTP_PORT:-7095}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - docker_runner_workspaces:/var/tmp/aiadvent/mcp-workspaces
-      - docker_runner_gradle_cache:/var/tmp/aiadvent/gradle-cache
+      - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
+      - /var/tmp/aiadvent/gradle-cache:/var/tmp/aiadvent/gradle-cache
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -192,5 +192,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  docker_runner_workspaces:
-  docker_runner_gradle_cache:
