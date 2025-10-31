@@ -151,6 +151,14 @@ services:
       timeout: 10s
       retries: 3
 
+  mcp-gradle-runner-builder:
+    build:
+      context: ./backend-mcp/docker/gradle-runner
+    image: aiadvent/mcp-gradle-runner:latest
+    container_name: ai-advent-mcp-gradle-runner-builder
+    command: ["sleep", "infinity"]
+    profiles: ["builder"]
+
   docker-runner-mcp:
     build:
       context: ./backend-mcp
