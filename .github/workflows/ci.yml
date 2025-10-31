@@ -80,6 +80,7 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             git fetch --all --prune
             git pull --ff-only
+            docker compose --profile builder build --pull mcp-gradle-runner-builder
             docker compose down --remove-orphans || true
             docker compose build --pull
             docker compose up -d --remove-orphans
