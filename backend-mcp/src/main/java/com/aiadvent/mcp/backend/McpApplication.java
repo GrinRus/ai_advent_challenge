@@ -5,6 +5,7 @@ import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
+import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -67,9 +68,11 @@ public class McpApplication {
     @Configuration
     @Profile("docker")
     @ComponentScan(basePackages = {
-            "com.aiadvent.mcp.backend.docker", "com.aiadvent.mcp.backend.config"
+            "com.aiadvent.mcp.backend.docker",
+            "com.aiadvent.mcp.backend.config"
     })
-    @EnableConfigurationProperties(DockerRunnerProperties.class)
+    @EnableConfigurationProperties({DockerRunnerProperties.class, GitHubBackendProperties.class})
+    @Import(TempWorkspaceService.class)
     public class DockerRunnerConfig {
     }
 
