@@ -2,6 +2,7 @@ package com.aiadvent.mcp.backend.docker;
 
 import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunInput;
 import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunResult;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -64,12 +65,12 @@ public class DockerRunnerTools {
   }
 
   public record DockerGradleRunnerRequest(
-      String workspaceId,
-      String projectPath,
-      List<String> tasks,
-      List<String> arguments,
-      Map<String, String> env,
-      Integer timeoutSeconds) {}
+      @JsonProperty("workspaceId") String workspaceId,
+      @JsonProperty("projectPath") String projectPath,
+      @JsonProperty("tasks") List<String> tasks,
+      @JsonProperty("arguments") List<String> arguments,
+      @JsonProperty("env") Map<String, String> env,
+      @JsonProperty("timeoutSeconds") Integer timeoutSeconds) {}
 
   public record DockerGradleRunnerResponse(
       String workspaceId,
