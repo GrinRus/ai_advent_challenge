@@ -850,6 +850,7 @@
 - [ ] Обновить `AgentOrchestratorService`/flow сценарии: обеспечить доступ к обоим инструментам, прокидывать `requestId`/workspace между вызовами и описать порядок использования в подсказках LLM.
 
 ### Agents & Flow
+- [ ] Создать специализированного агента `repo-fetcher`, оборачивающего `github_repository_fetch`: системная подсказка описывает необходимые входные параметры (repo URL, ref, strategy), ожидаемые артефакты (`workspaceId`, метаданные) и ошибки.
 - [ ] Создать специализированного агента `gradle-test-runner`, который оборачивает только `docker_gradle_runner`: системная подсказка описывает входные аргументы (workspaceId/projectPath/tasks/env), валидацию данных и формат ответа.
 - [ ] Создать агента `workspace-navigator`, отвечающего за вызовы `workspace_directory_inspector` и помощь пользователю в выборе `projectPath` (вопросы для уточнения, вывод списка найденных проектов).
 - [ ] Сконструировать новый flow `github-gradle-test-flow` со свободным вводом: сбор параметров (repo/ref/tasks), последовательный запуск инструментов (`github_repository_fetch` → `workspace_directory_inspector` → `docker_gradle_runner`) и отображение итогового отчёта.
