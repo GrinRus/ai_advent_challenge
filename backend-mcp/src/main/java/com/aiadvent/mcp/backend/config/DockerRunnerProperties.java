@@ -16,6 +16,8 @@ public class DockerRunnerProperties {
   private String workspaceVolume;
   private String gradleCachePath = "/var/tmp/aiadvent/gradle-cache";
   private String gradleCacheVolume;
+  private boolean volumesFromSelf = true;
+  private List<String> additionalVolumesFrom = new ArrayList<>();
   private Duration timeout = Duration.ofMinutes(15);
   private long maxLogBytes = 512 * 1024;
   private boolean enableNetwork = false;
@@ -130,5 +132,21 @@ public class DockerRunnerProperties {
 
   public void setGradleCacheVolume(String gradleCacheVolume) {
     this.gradleCacheVolume = gradleCacheVolume;
+  }
+
+  public boolean isVolumesFromSelf() {
+    return volumesFromSelf;
+  }
+
+  public void setVolumesFromSelf(boolean volumesFromSelf) {
+    this.volumesFromSelf = volumesFromSelf;
+  }
+
+  public List<String> getAdditionalVolumesFrom() {
+    return additionalVolumesFrom;
+  }
+
+  public void setAdditionalVolumesFrom(List<String> additionalVolumesFrom) {
+    this.additionalVolumesFrom = additionalVolumesFrom != null ? new ArrayList<>(additionalVolumesFrom) : new ArrayList<>();
   }
 }

@@ -36,6 +36,7 @@ docker:
     timeout: ${DOCKER_RUNNER_TIMEOUT:PT15M}
     max-log-bytes: ${DOCKER_RUNNER_MAX_LOG_BYTES:524288}
     enable-network: ${DOCKER_RUNNER_ENABLE_NETWORK:false}
+    volumes-from-self: ${DOCKER_RUNNER_VOLUMES_FROM_SELF:true}
     default-args: ${DOCKER_RUNNER_DEFAULT_ARGS:}
     default-env:
       GRADLE_USER_HOME: ${DOCKER_RUNNER_GRADLE_USER_HOME:/gradle-cache}

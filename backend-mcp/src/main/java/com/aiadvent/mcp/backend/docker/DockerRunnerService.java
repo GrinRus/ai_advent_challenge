@@ -86,8 +86,8 @@ public class DockerRunnerService {
     boolean hasProjectWrapper = Files.isRegularFile(projectAbsolute.resolve("gradlew"));
     boolean hasRootWrapper = Files.isRegularFile(workspacePath.resolve("gradlew"));
 
-    DockerMountSpec mountSpec = createDockerMountSpec(workspace);
-    Path containerWorkspaceRoot = mountSpec.containerWorkspaceRoot();
+    MountConfiguration mountConfig = prepareMountConfiguration(workspace);
+    Path containerWorkspaceRoot = mountConfig.containerWorkspaceRoot();
     Path containerProjectPath =
         StringUtils.hasText(projectPath)
             ? containerWorkspaceRoot.resolve(projectPath)
@@ -127,9 +127,16 @@ public class DockerRunnerService {
       command.addAll(tasks);
     }
 
-    List<String> dockerCommand = buildDockerCommand(mountSpec, workDir, command, input);
+    List<String> dockerCommand = buildDockerCommand(mountConfig, workDir, command, input);
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "docker.gradle_runner invoking docker command: workspaceId={}, projectPath={}, command={}",
+          workspaceId,
+          projectPath,
+          String.join(" ", dockerCommand));
+    }
 
-    Map<String, String> env = mergeEnvs(input.env());
+    Map<String, String> env = mergeEnvs(input.env(), mountConfig.gradleUserHome());
     Instant startedAt = Instant.now();
     Timer.Sample sample = Timer.start(meterRegistry);
     ProcessResult result;
@@ -166,13 +173,15 @@ public class DockerRunnerService {
   }
 
   private List<String> buildDockerCommand(
-      DockerMountSpec mountSpec, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
+      MountConfiguration mountConfig, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
     List<String> dockerCommand = new ArrayList<>();
     dockerCommand.add(properties.getDockerBinary());
     dockerCommand.add("run");
     dockerCommand.add("--rm");
 
-    dockerCommand.addAll(mountSpec.dockerArgs());
+    appendVolumesFrom(dockerCommand);
+
+    dockerCommand.addAll(mountConfig.dockerArgs());
 
     if (!properties.isEnableNetwork()) {
       dockerCommand.add("--network");
@@ -212,37 +221,54 @@ public class DockerRunnerService {
     return dockerCommand;
   }
 
-  private DockerMountSpec createDockerMountSpec(TempWorkspaceService.Workspace workspace) {
+  private MountConfiguration prepareMountConfiguration(TempWorkspaceService.Workspace workspace) {
     List<String> args = new ArrayList<>();
-    String workspaceTargetBase = "/workspace";
     String workspaceId = workspace.workspaceId();
     if (!StringUtils.hasText(workspaceId)) {
       throw new IllegalArgumentException("workspaceId must not be blank");
     }
-    Path containerWorkspaceRoot;
+    Path normalizedWorkspace = workspace.path().toAbsolutePath().normalize();
+    Path containerWorkspaceRoot = normalizedWorkspace;
+    String gradleUserHome = properties.getGradleCachePath();
+
     String workspaceVolume = properties.getWorkspaceVolume();
     if (StringUtils.hasText(workspaceVolume)) {
+      String workspaceTargetBase = "/workspace";
       args.add("--mount");
       args.add("type=volume,source=" + workspaceVolume + ",target=" + workspaceTargetBase);
       containerWorkspaceRoot = Path.of(workspaceTargetBase, workspaceId);
-    } else {
-      Path normalizedWorkspace = workspace.path().toAbsolutePath().normalize();
+    } else if (!properties.isVolumesFromSelf()) {
+      String workspaceTargetBase = "/workspace";
       args.add("-v");
       args.add(normalizedWorkspace + ":" + workspaceTargetBase);
       containerWorkspaceRoot = Path.of(workspaceTargetBase);
     }
 
-    String cacheTarget = "/gradle-cache";
     String gradleCacheVolume = properties.getGradleCacheVolume();
+    String gradleCachePath = properties.getGradleCachePath();
     if (StringUtils.hasText(gradleCacheVolume)) {
+      String cacheTarget = "/gradle-cache";
       args.add("--mount");
       args.add("type=volume,source=" + gradleCacheVolume + ",target=" + cacheTarget);
-    } else if (StringUtils.hasText(properties.getGradleCachePath())) {
-      args.add("-v");
-      args.add(properties.getGradleCachePath() + ":" + cacheTarget);
+      gradleUserHome = cacheTarget;
+    } else if (!properties.isVolumesFromSelf()) {
+      String cacheTarget = "/gradle-cache";
+      if (StringUtils.hasText(gradleCachePath)) {
+        args.add("-v");
+        args.add(Path.of(gradleCachePath).toAbsolutePath().normalize() + ":" + cacheTarget);
+        gradleUserHome = cacheTarget;
+      } else {
+        gradleUserHome = cacheTarget;
+      }
+    } else if (!StringUtils.hasText(gradleUserHome)) {
+      gradleUserHome = "/gradle-cache";
     }
 
-    return new DockerMountSpec(List.copyOf(args), containerWorkspaceRoot);
+    if (gradleUserHome == null) {
+      gradleUserHome = "/gradle-cache";
+    }
+
+    return new MountConfiguration(List.copyOf(args), containerWorkspaceRoot, gradleUserHome);
   }
 
   private List<String> sanitizeList(@Nullable List<String> values, List<String> defaults) {
@@ -256,7 +282,28 @@ public class DockerRunnerService {
         .collect(Collectors.toCollection(ArrayList::new));
   }
 
-  private Map<String, String> mergeEnvs(@Nullable Map<String, String> requestEnv) {
+  private void appendVolumesFrom(List<String> dockerCommand) {
+    if (properties.isVolumesFromSelf()) {
+      String selfContainer = System.getenv("HOSTNAME");
+      if (StringUtils.hasText(selfContainer)) {
+        dockerCommand.add("--volumes-from");
+        dockerCommand.add(selfContainer);
+      } else {
+        log.warn("HOSTNAME is not set; skipping --volumes-from for current container");
+      }
+    }
+    List<String> additional = properties.getAdditionalVolumesFrom();
+    if (additional != null) {
+      for (String candidate : additional) {
+        if (StringUtils.hasText(candidate)) {
+          dockerCommand.add("--volumes-from");
+          dockerCommand.add(candidate.trim());
+        }
+      }
+    }
+  }
+
+  private Map<String, String> mergeEnvs(@Nullable Map<String, String> requestEnv, String gradleUserHome) {
     Map<String, String> merged = new LinkedHashMap<>(properties.getDefaultEnv());
     if (requestEnv != null) {
       requestEnv.forEach(
@@ -265,6 +312,9 @@ public class DockerRunnerService {
               merged.put(key, value);
             }
           });
+    }
+    if (StringUtils.hasText(gradleUserHome)) {
+      merged.put("GRADLE_USER_HOME", gradleUserHome);
     }
     return merged;
   }
@@ -422,5 +472,5 @@ public class DockerRunnerService {
     }
   }
 
-  private record DockerMountSpec(List<String> dockerArgs, Path containerWorkspaceRoot) {}
+  private record MountConfiguration(List<String> dockerArgs, Path containerWorkspaceRoot, String gradleUserHome) {}
 }
