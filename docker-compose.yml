@@ -38,6 +38,8 @@ services:
         condition: service_healthy
       github-mcp:
         condition: service_healthy
+      docker-runner-mcp:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -46,6 +48,7 @@ services:
       FLOW_OPS_MCP_HTTP_BASE_URL: ${FLOW_OPS_MCP_HTTP_BASE_URL:-http://flow-ops-mcp:8080}
       INSIGHT_MCP_HTTP_BASE_URL: ${INSIGHT_MCP_HTTP_BASE_URL:-http://insight-mcp:8080}
       GITHUB_MCP_HTTP_BASE_URL: ${GITHUB_MCP_HTTP_BASE_URL:-http://github-mcp:8080}
+      DOCKER_MCP_HTTP_BASE_URL: ${DOCKER_MCP_HTTP_BASE_URL:-http://docker-runner-mcp:8080}
     ports:
       - "8080:8080"
 
@@ -146,6 +149,38 @@ services:
       timeout: 10s
       retries: 3
 
+  docker-runner-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/docker-runner-mcp:latest
+    container_name: ai-advent-docker-runner-mcp
+    env_file:
+      - .env
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
+      SPRING_PROFILES_ACTIVE: docker
+      DOCKER_RUNNER_WORKSPACE_ROOT: ${DOCKER_RUNNER_WORKSPACE_ROOT:-/var/tmp/aiadvent/mcp-workspaces}
+      DOCKER_RUNNER_GRADLE_CACHE_PATH: ${DOCKER_RUNNER_GRADLE_CACHE_PATH:-/var/tmp/aiadvent/gradle-cache}
+      DOCKER_RUNNER_ENABLE_NETWORK: ${DOCKER_RUNNER_ENABLE_NETWORK:-false}
+      DOCKER_RUNNER_IMAGE: ${DOCKER_RUNNER_IMAGE:-aiadvent/mcp-gradle-runner:latest}
+      DOCKER_RUNNER_TIMEOUT: ${DOCKER_RUNNER_TIMEOUT:-PT15M}
+    ports:
+      - "${DOCKER_MCP_HTTP_PORT:-7095}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - docker_runner_workspaces:/var/tmp/aiadvent/mcp-workspaces
+      - docker_runner_gradle_cache:/var/tmp/aiadvent/gradle-cache
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f McpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:
+  docker_runner_workspaces:
+  docker_runner_gradle_cache:
