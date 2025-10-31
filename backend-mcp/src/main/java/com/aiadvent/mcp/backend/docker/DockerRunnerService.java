@@ -89,14 +89,7 @@ public class DockerRunnerService {
     String workDir = StringUtils.hasText(projectPath) ? "/workspace/" + projectPath : "/workspace";
     List<String> command = new ArrayList<>();
     String runnerExecutable;
-    if (hasProjectWrapper) {
-      runnerExecutable = "./gradlew";
-      command.add(runnerExecutable);
-      if (!gradleArgs.isEmpty()) {
-        command.addAll(gradleArgs);
-      }
-      command.addAll(tasks);
-    } else if (hasRootWrapper) {
+    if (hasRootWrapper) {
       runnerExecutable = "./gradlew";
       workDir = "/workspace";
       command.add(runnerExecutable);
@@ -104,6 +97,13 @@ public class DockerRunnerService {
         command.add("-p");
         command.add(projectPath);
       }
+      if (!gradleArgs.isEmpty()) {
+        command.addAll(gradleArgs);
+      }
+      command.addAll(tasks);
+    } else if (hasProjectWrapper) {
+      runnerExecutable = "./gradlew";
+      command.add(runnerExecutable);
       if (!gradleArgs.isEmpty()) {
         command.addAll(gradleArgs);
       }
