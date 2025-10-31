@@ -140,6 +140,8 @@ services:
       GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
     ports:
       - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
+    volumes:
+      - docker_runner_workspaces:/var/tmp/aiadvent/mcp-workspaces
     stdin_open: true
     tty: true
     restart: unless-stopped
