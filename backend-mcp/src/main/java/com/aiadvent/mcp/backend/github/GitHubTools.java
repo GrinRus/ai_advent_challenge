@@ -1,14 +1,18 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckRunInfo;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckoutStrategy;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommentType;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitStatusInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestCommentInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestCommentResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestDiffInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestChecksInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestCommentsInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestsInput;
@@ -38,6 +42,7 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TeamInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntry;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntryType;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.UserInfo;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,6 +86,38 @@ class GitHubTools {
         result.resolvedRef(),
         result.truncated(),
         result.entries().stream().map(this::toTreeNode).toList());
+  }
+
+  @Tool(
+      name = "github_repository_fetch",
+      description =
+          "Скачивает репозиторий в изолированное workspace-хранилище. Принимает repository{owner,name,ref?}, "
+              + "необязательный requestId для трассировки и параметры options: strategy (ARCHIVE_ONLY|ARCHIVE_WITH_FALLBACK_CLONE|CLONE_WITH_SUBMODULES), "
+              + "shallowClone (по умолчанию true), includeSubmodules, cloneTimeout/ archiveTimeout (Duration ISO-8601), "
+              + "archiveSizeLimit (байты) и detectKeyFiles. Возвращает workspaceId, абсолютный путь, "
+              + "resolvedRef, commitSha, размеры скачивания и список ключевых файлов.")
+  GitHubRepositoryFetchResponse fetchRepository(GitHubRepositoryFetchRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    GitFetchOptions options = toFetchOptions(request.options());
+    FetchRepositoryResult result =
+        repositoryService.fetchRepository(
+            new FetchRepositoryInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                options,
+                request.requestId()));
+    return new GitHubRepositoryFetchResponse(
+        toRepositoryInfo(result.repository()),
+        result.workspaceId(),
+        result.workspacePath().toString(),
+        result.resolvedRef(),
+        result.commitSha(),
+        result.downloadedBytes(),
+        result.workspaceSizeBytes(),
+        result.downloadDuration() != null ? result.downloadDuration().toMillis() : 0L,
+        result.strategy().name().toLowerCase(Locale.ROOT),
+        result.keyFiles(),
+        result.fetchedAt());
   }
 
   @Tool(
@@ -325,6 +362,20 @@ class GitHubTools {
         Instant.now());
   }
 
+  private GitFetchOptions toFetchOptions(GitHubRepositoryFetchOptions options) {
+    if (options == null) {
+      return new GitFetchOptions(null, null, null, null, null, null, null);
+    }
+    return new GitFetchOptions(
+        options.strategy(),
+        options.shallowClone(),
+        options.includeSubmodules(),
+        options.cloneTimeout(),
+        options.archiveTimeout(),
+        options.archiveSizeLimit(),
+        options.detectKeyFiles());
+  }
+
   private RepositoryInfo toRepositoryInfo(RepositoryRef ref) {
     return new RepositoryInfo(ref.owner(), ref.name(), ref.ref());
   }
@@ -385,6 +436,32 @@ class GitHubTools {
     }
     return new GitHubPullRequestReview(info.id(), info.state(), info.htmlUrl(), info.submittedAt());
   }
+
+  record GitHubRepositoryFetchRequest(
+      RepositoryInput repository, String requestId, GitHubRepositoryFetchOptions options)
+      implements RepositoryRequest {}
+
+  record GitHubRepositoryFetchOptions(
+      CheckoutStrategy strategy,
+      Boolean shallowClone,
+      Boolean includeSubmodules,
+      Duration cloneTimeout,
+      Duration archiveTimeout,
+      Long archiveSizeLimit,
+      Boolean detectKeyFiles) {}
+
+  record GitHubRepositoryFetchResponse(
+      RepositoryInfo repository,
+      String workspaceId,
+      String workspacePath,
+      String resolvedRef,
+      String commitSha,
+      long downloadedBytes,
+      long workspaceSizeBytes,
+      long downloadTimeMs,
+      String strategy,
+      List<String> keyFiles,
+      Instant fetchedAt) {}
 
   record RepositoryInfo(String owner, String name, String ref) {}
 

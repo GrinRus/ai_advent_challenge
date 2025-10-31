@@ -1,10 +1,21 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
+import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -12,6 +23,11 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +41,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import org.kohsuke.github.GHCheckRun;
 import org.kohsuke.github.GHCommit;
 import org.kohsuke.github.GHCommitStatus;
@@ -43,16 +64,17 @@ import org.kohsuke.github.GHPullRequestReviewComment;
 import org.kohsuke.github.GHPullRequestReviewCommentBuilder;
 import org.kohsuke.github.GHPullRequestReviewEvent;
 import org.kohsuke.github.GHPullRequestReviewState;
-import org.kohsuke.github.HttpException;
 import org.kohsuke.github.GHRef;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GHTeam;
 import org.kohsuke.github.GHTree;
 import org.kohsuke.github.GHTreeEntry;
 import org.kohsuke.github.GHUser;
+import org.kohsuke.github.HttpException;
 import org.kohsuke.github.PagedIterable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -74,14 +96,42 @@ class GitHubRepositoryService {
 
   private final GitHubClientExecutor executor;
   private final GitHubBackendProperties properties;
+  private final TempWorkspaceService workspaceService;
+  private final GitHubTokenManager tokenManager;
+  private final MeterRegistry meterRegistry;
+  private final Timer fetchTimer;
+  private final Counter fetchSuccessCounter;
+  private final Counter fetchFailureCounter;
+  private final DistributionSummary downloadSizeSummary;
+  private final DistributionSummary workspaceSizeSummary;
 
   private final Map<String, CachedTree> treeCache = new ConcurrentHashMap<>();
   private final Map<String, CachedFile> fileCache = new ConcurrentHashMap<>();
 
   GitHubRepositoryService(
-      GitHubClientExecutor executor, GitHubBackendProperties properties) {
+      GitHubClientExecutor executor,
+      GitHubBackendProperties properties,
+      TempWorkspaceService workspaceService,
+      GitHubTokenManager tokenManager,
+      @Nullable MeterRegistry meterRegistry) {
     this.executor = Objects.requireNonNull(executor, "executor");
     this.properties = Objects.requireNonNull(properties, "properties");
+    this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
+    this.tokenManager = Objects.requireNonNull(tokenManager, "tokenManager");
+    MeterRegistry registry = meterRegistry;
+    if (registry == null) {
+      registry = new SimpleMeterRegistry();
+    }
+    this.meterRegistry = registry;
+    this.fetchTimer = this.meterRegistry.timer("github_repository_fetch_duration");
+    this.fetchSuccessCounter =
+        this.meterRegistry.counter("github_repository_fetch_success_total");
+    this.fetchFailureCounter =
+        this.meterRegistry.counter("github_repository_fetch_failure_total");
+    this.downloadSizeSummary =
+        this.meterRegistry.summary("github_repository_fetch_download_bytes");
+    this.workspaceSizeSummary =
+        this.meterRegistry.summary("github_repository_fetch_workspace_bytes");
   }
 
   ListRepositoryTreeResult listRepositoryTree(ListRepositoryTreeInput input) {
@@ -110,6 +160,56 @@ class GitHubRepositoryService {
 
     FileData data = loadFile(repository, normalizedPath);
     return new ReadFileResult(repository, data.ref(), data.file());
+  }
+
+  FetchRepositoryResult fetchRepository(FetchRepositoryInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    NormalizedFetchOptions options = normalizeFetchOptions(repository, input.options());
+    String requestId = StringUtils.hasText(input.requestId()) ? input.requestId().trim() : null;
+
+    TempWorkspaceService.Workspace workspace =
+        workspaceService.createWorkspace(
+            new TempWorkspaceService.CreateWorkspaceRequest(
+                repository.fullName(), repository.ref(), requestId));
+
+    Instant startedAt = Instant.now();
+    try {
+      FetchExecutionOutcome outcome = performFetch(repository, workspace, options);
+      long workspaceSize = calculateWorkspaceSize(workspace.path());
+      workspaceService.ensureWithinLimit(workspaceSize);
+      List<String> keyFiles =
+          options.detectKeyFiles() ? collectKeyFiles(workspace.path()) : List.of();
+      TempWorkspaceService.Workspace updated =
+          workspaceService.updateWorkspace(
+              workspace.workspaceId(), workspaceSize, outcome.commitSha(), keyFiles);
+      Duration duration = Duration.between(startedAt, outcome.completedAt());
+      fetchTimer.record(duration);
+      fetchSuccessCounter.increment();
+      if (outcome.downloadedBytes() > 0) {
+        downloadSizeSummary.record((double) outcome.downloadedBytes());
+      }
+      if (workspaceSize > 0) {
+        workspaceSizeSummary.record((double) workspaceSize);
+      }
+      return new FetchRepositoryResult(
+          repository,
+          updated.workspaceId(),
+          updated.path(),
+          outcome.resolvedRef(),
+          outcome.commitSha(),
+          outcome.downloadedBytes(),
+          workspaceSize,
+          duration,
+          outcome.strategy(),
+          keyFiles,
+          outcome.completedAt());
+    } catch (RuntimeException ex) {
+      fetchFailureCounter.increment();
+      fetchTimer.record(Duration.between(startedAt, Instant.now()));
+      workspaceService.deleteWorkspace(workspace.workspaceId());
+      throw ex;
+    }
   }
 
   ListPullRequestsResult listPullRequests(ListPullRequestsInput input) {
@@ -1345,6 +1445,550 @@ class GitHubRepositoryService {
       return Base64.getDecoder().decode(payload);
     }
     return payload.getBytes(StandardCharsets.UTF_8);
+  }
+
+  private NormalizedFetchOptions normalizeFetchOptions(
+      RepositoryRef repository, @Nullable GitFetchOptions options) {
+    CheckoutStrategy strategy =
+        options != null && options.strategy() != null
+            ? options.strategy()
+            : CheckoutStrategy.ARCHIVE_WITH_FALLBACK_CLONE;
+    boolean includeSubmodules =
+        options != null && Boolean.TRUE.equals(options.includeSubmodules());
+    boolean shallowClone = options == null || !Boolean.FALSE.equals(options.shallowClone());
+    Duration cloneTimeout =
+        options != null && options.cloneTimeout() != null
+            ? effectiveDuration(options.cloneTimeout(), Duration.ofMinutes(10))
+            : Duration.ofMinutes(10);
+    Duration archiveTimeout =
+        options != null && options.archiveTimeout() != null
+            ? effectiveDuration(options.archiveTimeout(), properties.getArchiveDownloadTimeout())
+            : Optional.ofNullable(properties.getArchiveDownloadTimeout())
+                .orElse(Duration.ofMinutes(2));
+    long archiveSizeLimit =
+        options != null && options.archiveSizeLimit() != null && options.archiveSizeLimit() > 0
+            ? options.archiveSizeLimit()
+            : Optional.ofNullable(properties.getArchiveMaxSizeBytes()).orElse(512L * 1024 * 1024);
+    boolean detectKeyFiles =
+        options == null || !Boolean.FALSE.equals(options.detectKeyFiles());
+
+    if (strategy == CheckoutStrategy.CLONE_WITH_SUBMODULES) {
+      includeSubmodules = true;
+      shallowClone = false;
+    }
+    if (repository != null && isCommitSha(repository.ref())) {
+      shallowClone = false;
+    }
+    return new NormalizedFetchOptions(
+        strategy, shallowClone, includeSubmodules, cloneTimeout, archiveTimeout, archiveSizeLimit, detectKeyFiles);
+  }
+
+  private boolean isCommitSha(@Nullable String ref) {
+    if (!StringUtils.hasText(ref)) {
+      return false;
+    }
+    return ref.trim().matches("(?i)[0-9a-f]{40}");
+  }
+
+  private FetchExecutionOutcome performFetch(
+      RepositoryRef repository,
+      TempWorkspaceService.Workspace workspace,
+      NormalizedFetchOptions options) {
+    CheckoutStrategy strategy = options.strategy();
+    if (strategy == CheckoutStrategy.ARCHIVE_ONLY
+        || strategy == CheckoutStrategy.ARCHIVE_WITH_FALLBACK_CLONE) {
+      try {
+        return executor.execute(
+            github ->
+                downloadRepositoryArchive(github, repository, workspace, options, strategy));
+      } catch (ArchiveDownloadException ex) {
+        if (strategy == CheckoutStrategy.ARCHIVE_ONLY) {
+          throw new GitHubClientException(
+              "Archive fetch failed for %s: %s"
+                  .formatted(repository.fullName(), ex.getMessage()),
+              ex);
+        }
+        log.info(
+            "Archive fetch for {} ({}) failed, falling back to git clone: {}",
+            repository.fullName(),
+            repository.ref(),
+            ex.getMessage());
+        emptyDirectory(workspace.path());
+      } catch (GitHubClientException ex) {
+        if (strategy == CheckoutStrategy.ARCHIVE_ONLY) {
+          throw ex;
+        }
+        log.info(
+            "Archive fetch for {} ({}) failed, falling back to git clone: {}",
+            repository.fullName(),
+            repository.ref(),
+            ex.getMessage());
+        emptyDirectory(workspace.path());
+      }
+    }
+    return cloneRepository(repository, workspace, options);
+  }
+
+  private FetchExecutionOutcome downloadRepositoryArchive(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      TempWorkspaceService.Workspace workspace,
+      NormalizedFetchOptions options,
+      CheckoutStrategy requestedStrategy) {
+    try {
+      GHRepository repo = github.getRepository(repository.fullName());
+      String ref = repository.ref();
+      String commitSha = resolveCommitSha(repo, ref);
+      emptyDirectory(workspace.path());
+      long downloadedBytes =
+          repo.readZip(
+              stream ->
+                  extractZipArchive(
+                      stream,
+                      workspace.path(),
+                      options.archiveSizeLimit(),
+                      workspaceService.getSizeLimitBytes()),
+              ref);
+      Instant completedAt = Instant.now();
+      return new FetchExecutionOutcome(
+          requestedStrategy, commitSha, commitSha, downloadedBytes, completedAt);
+    } catch (ArchiveDownloadException ex) {
+      throw ex;
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to download repository archive for %s".formatted(repository.fullName()), ex);
+    }
+  }
+
+  private FetchExecutionOutcome cloneRepository(
+      RepositoryRef repository,
+      TempWorkspaceService.Workspace workspace,
+      NormalizedFetchOptions options) {
+    Path workspacePath = workspace.path();
+    Path root = workspacePath.getParent();
+    if (root == null) {
+      throw new GitHubClientException(
+          "Workspace path has no parent directory: " + workspacePath);
+    }
+    emptyDirectory(workspacePath);
+    String token = tokenManager.currentToken();
+    String authHeader = authorizationHeader(token);
+    String branchName = extractBranchName(repository.ref());
+
+    List<String> command = new ArrayList<>();
+    command.add("git");
+    command.add("clone");
+    if (options.shallowClone()) {
+      command.add("--depth=1");
+    }
+    if (options.includeSubmodules()) {
+      command.add("--recurse-submodules");
+    }
+    if (StringUtils.hasText(branchName) && !isCommitSha(repository.ref())) {
+      command.add("--branch");
+      command.add(branchName);
+    }
+    command.add(buildCloneUrl(repository));
+    command.add(workspacePath.getFileName().toString());
+
+    ProcessBuilder builder = new ProcessBuilder(command);
+    builder.directory(root.toFile());
+    builder.redirectErrorStream(true);
+    builder.environment().put("GIT_TERMINAL_PROMPT", "0");
+    builder.environment().putIfAbsent("LC_ALL", "C");
+    builder.environment().put("GIT_HTTP_EXTRAHEADER", authHeader);
+
+    ProcessResult cloneResult = runProcess(builder, options.cloneTimeout());
+    if (cloneResult.exitCode() != 0) {
+      throw new GitHubClientException(
+          "git clone failed: " + sanitizeProcessOutput(cloneResult.output(), token));
+    }
+
+    String ref = repository.ref();
+    Duration gitTimeout = options.cloneTimeout();
+    if (isCommitSha(ref)) {
+      runGitCommand(
+          workspacePath, gitTimeout, authHeader, token, "git", "fetch", "origin", ref);
+      runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "checkout", ref);
+    } else if (StringUtils.hasText(ref) && ref.startsWith("refs/")) {
+      String target = normalizeGitRef(ref);
+      if (StringUtils.hasText(target)) {
+        runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "checkout", target);
+      }
+    }
+
+    ProcessResult headResult =
+        runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
+    String commitSha = headResult.output().trim();
+    Instant completedAt = Instant.now();
+    CheckoutStrategy applied =
+        options.strategy() == CheckoutStrategy.CLONE_WITH_SUBMODULES
+            ? CheckoutStrategy.CLONE_WITH_SUBMODULES
+            : CheckoutStrategy.ARCHIVE_WITH_FALLBACK_CLONE;
+    return new FetchExecutionOutcome(applied, commitSha, commitSha, 0L, completedAt);
+  }
+
+  private long extractZipArchive(
+      InputStream stream,
+      Path workspacePath,
+      long archiveSizeLimit,
+      long workspaceSizeLimit) {
+    byte[] buffer = new byte[8192];
+    long written = 0L;
+    String rootPrefix = null;
+    try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(stream))) {
+      ZipEntry entry;
+      while ((entry = zip.getNextEntry()) != null) {
+        String rawName = entry.getName();
+        if (!StringUtils.hasText(rawName)) {
+          continue;
+        }
+        String normalizedName = rawName.replace('\\', '/');
+        if (rootPrefix == null) {
+          int slashIndex = normalizedName.indexOf('/');
+          rootPrefix = slashIndex >= 0 ? normalizedName.substring(0, slashIndex + 1) : "";
+        }
+        String relativeName = stripRoot(normalizedName, rootPrefix);
+        if (!StringUtils.hasText(relativeName)) {
+          continue;
+        }
+        if (relativeName.contains("..")) {
+          throw new ArchiveDownloadException(
+              "Archive entry contains illegal path traversal: " + relativeName);
+        }
+        Path target = workspacePath.resolve(relativeName).normalize();
+        ensurePathWithin(workspacePath, target);
+        if (entry.isDirectory()) {
+          Files.createDirectories(target);
+          continue;
+        }
+        Files.createDirectories(target.getParent());
+        try (OutputStream out = Files.newOutputStream(target)) {
+          int read;
+          while ((read = zip.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+            written += read;
+            if (archiveSizeLimit > 0 && written > archiveSizeLimit) {
+              throw new ArchiveDownloadException(
+                  "Archive extracted size exceeds configured limit %d bytes"
+                      .formatted(archiveSizeLimit));
+            }
+            if (workspaceSizeLimit > 0 && written > workspaceSizeLimit) {
+              throw new ArchiveDownloadException(
+                  "Workspace size exceeds configured limit %d bytes"
+                      .formatted(workspaceSizeLimit));
+            }
+          }
+        }
+        try {
+          if (entry.getLastModifiedTime() != null) {
+            Files.setLastModifiedTime(target, entry.getLastModifiedTime());
+          }
+        } catch (Exception ex) {
+          log.debug("Unable to apply mtime for {}: {}", target, ex.getMessage());
+        }
+      }
+    } catch (ArchiveDownloadException ex) {
+      throw ex;
+    } catch (IOException ex) {
+      throw new ArchiveDownloadException("Failed to extract repository archive", ex);
+    }
+    return written;
+  }
+
+  private void ensurePathWithin(Path root, Path target) {
+    Path normalizedRoot = root.toAbsolutePath().normalize();
+    Path normalizedTarget = target.toAbsolutePath().normalize();
+    if (!normalizedTarget.startsWith(normalizedRoot)) {
+      throw new ArchiveDownloadException(
+          "Archive entry resolved outside workspace root: " + normalizedTarget);
+    }
+  }
+
+  private String stripRoot(String entryName, String rootPrefix) {
+    String result = entryName;
+    while (result.startsWith("/")) {
+      result = result.substring(1);
+    }
+    if (StringUtils.hasText(rootPrefix) && result.startsWith(rootPrefix)) {
+      result = result.substring(rootPrefix.length());
+    }
+    return result;
+  }
+
+  private ProcessResult runGitCommand(
+      Path workdir,
+      Duration timeout,
+      String authHeader,
+      String token,
+      String... command) {
+    ProcessBuilder builder = new ProcessBuilder(command);
+    builder.directory(workdir.toFile());
+    builder.redirectErrorStream(true);
+    builder.environment().put("GIT_TERMINAL_PROMPT", "0");
+    builder.environment().putIfAbsent("LC_ALL", "C");
+    if (StringUtils.hasText(authHeader)) {
+      builder.environment().put("GIT_HTTP_EXTRAHEADER", authHeader);
+    }
+    ProcessResult result = runProcess(builder, timeout);
+    if (result.exitCode() != 0) {
+      throw new GitHubClientException(
+          "%s failed: %s"
+              .formatted(String.join(" ", command), sanitizeProcessOutput(result.output(), token)));
+    }
+    return result;
+  }
+
+  private ProcessResult runProcess(ProcessBuilder builder, Duration timeout) {
+    Duration effectiveTimeout =
+        timeout != null && !timeout.isNegative() && !timeout.isZero()
+            ? timeout
+            : Duration.ofMinutes(5);
+    try {
+      Process process = builder.start();
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
+      Thread reader =
+          new Thread(
+              () -> {
+                try (InputStream in = process.getInputStream()) {
+                  in.transferTo(output);
+                } catch (IOException ex) {
+                  log.debug("Failed to read process output: {}", ex.getMessage());
+                }
+              },
+              "github-fetch-process");
+      reader.setDaemon(true);
+      reader.start();
+      boolean finished =
+          process.waitFor(effectiveTimeout.toMillis(), TimeUnit.MILLISECONDS);
+      if (!finished) {
+        process.destroyForcibly();
+        reader.join(TimeUnit.SECONDS.toMillis(5));
+        throw new GitHubClientException(
+            "Command %s timed out after %d seconds"
+                .formatted(String.join(" ", builder.command()), effectiveTimeout.toSeconds()));
+      }
+      reader.join(TimeUnit.SECONDS.toMillis(5));
+      return new ProcessResult(process.exitValue(), output.toString(StandardCharsets.UTF_8));
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to start command " + String.join(" ", builder.command()), ex);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      throw new GitHubClientException("Command interrupted", ex);
+    }
+  }
+
+  private String authorizationHeader(String token) {
+    if (!StringUtils.hasText(token)) {
+      return "";
+    }
+    String credentials = "x-access-token:" + token;
+    String encoded = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+    return "Authorization: Basic " + encoded;
+  }
+
+  private String sanitizeProcessOutput(String output, String token) {
+    if (output == null) {
+      return "";
+    }
+    String sanitized = output;
+    if (StringUtils.hasText(token)) {
+      sanitized = sanitized.replace(token, "****");
+      String encoded =
+          Base64.getEncoder()
+              .encodeToString(("x-access-token:" + token).getBytes(StandardCharsets.UTF_8));
+      sanitized = sanitized.replace(encoded, "****");
+    }
+    return sanitized.trim();
+  }
+
+  private String extractBranchName(String ref) {
+    if (!StringUtils.hasText(ref)) {
+      return null;
+    }
+    String trimmed = ref.trim();
+    if (trimmed.startsWith("refs/heads/")) {
+      return trimmed.substring("refs/heads/".length());
+    }
+    if (trimmed.startsWith("heads/")) {
+      return trimmed.substring("heads/".length());
+    }
+    if (trimmed.startsWith("refs/tags/")) {
+      return trimmed.substring("refs/".length());
+    }
+    if (trimmed.startsWith("tags/")) {
+      return trimmed;
+    }
+    if (isCommitSha(trimmed)) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  private String normalizeGitRef(String ref) {
+    if (!StringUtils.hasText(ref)) {
+      return null;
+    }
+    String trimmed = ref.trim();
+    if (trimmed.startsWith("refs/heads/")) {
+      return trimmed.substring("refs/heads/".length());
+    }
+    if (trimmed.startsWith("refs/tags/")) {
+      return "tags/" + trimmed.substring("refs/tags/".length());
+    }
+    if (trimmed.startsWith("heads/") || trimmed.startsWith("tags/")) {
+      return trimmed;
+    }
+    return trimmed;
+  }
+
+  private String buildCloneUrl(RepositoryRef repository) {
+    String baseUrl = properties.getBaseUrl();
+    if (!StringUtils.hasText(baseUrl) || baseUrl.contains("api.github.com")) {
+      return "https://github.com/" + repository.fullName() + ".git";
+    }
+    String sanitized = baseUrl.trim();
+    if (sanitized.endsWith("/")) {
+      sanitized = sanitized.substring(0, sanitized.length() - 1);
+    }
+    if (sanitized.endsWith("/api/v3")) {
+      sanitized = sanitized.substring(0, sanitized.length() - "/api/v3".length());
+    }
+    if (!sanitized.endsWith("/")) {
+      sanitized = sanitized + "/";
+    }
+    return sanitized + repository.fullName() + ".git";
+  }
+
+  private void emptyDirectory(Path directory) {
+    try {
+      if (Files.exists(directory)) {
+        Files.walkFileTree(
+            directory,
+            new SimpleFileVisitor<>() {
+              @Override
+              public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                  throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+              }
+
+              @Override
+              public FileVisitResult postVisitDirectory(Path dir, IOException exc)
+                  throws IOException {
+                if (!dir.equals(directory)) {
+                  Files.deleteIfExists(dir);
+                }
+                return FileVisitResult.CONTINUE;
+              }
+            });
+      }
+      Files.createDirectories(directory);
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to prepare workspace directory " + directory, ex);
+    }
+  }
+
+  private long calculateWorkspaceSize(Path workspacePath) {
+    final long[] size = {0L};
+    try {
+      Files.walkFileTree(
+          workspacePath,
+          new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                throws IOException {
+              size[0] += attrs.size();
+              return FileVisitResult.CONTINUE;
+            }
+          });
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to calculate workspace size for " + workspacePath, ex);
+    }
+    return size[0];
+  }
+
+  private List<String> collectKeyFiles(Path workspacePath) {
+    try (Stream<Path> stream = Files.list(workspacePath)) {
+      return stream
+          .filter(path -> !".".equals(path.getFileName().toString()))
+          .filter(path -> !".git".equals(path.getFileName().toString()))
+          .map(path -> workspacePath.relativize(path).toString())
+          .sorted()
+          .limit(25)
+          .toList();
+    } catch (IOException ex) {
+      throw new GitHubClientException(
+          "Failed to inspect workspace directory " + workspacePath, ex);
+    }
+  }
+
+  private Duration effectiveDuration(Duration candidate, Duration fallback) {
+    if (candidate == null || candidate.isZero() || candidate.isNegative()) {
+      return fallback != null ? fallback : Duration.ofMinutes(1);
+    }
+    return candidate;
+  }
+
+  record FetchRepositoryInput(RepositoryRef repository, GitFetchOptions options, String requestId) {}
+
+  record FetchRepositoryResult(
+      RepositoryRef repository,
+      String workspaceId,
+      Path workspacePath,
+      String resolvedRef,
+      String commitSha,
+      long downloadedBytes,
+      long workspaceSizeBytes,
+      Duration downloadDuration,
+      CheckoutStrategy strategy,
+      List<String> keyFiles,
+      Instant fetchedAt) {}
+
+  record GitFetchOptions(
+      CheckoutStrategy strategy,
+      Boolean shallowClone,
+      Boolean includeSubmodules,
+      Duration cloneTimeout,
+      Duration archiveTimeout,
+      Long archiveSizeLimit,
+      Boolean detectKeyFiles) {}
+
+  enum CheckoutStrategy {
+    ARCHIVE_ONLY,
+    ARCHIVE_WITH_FALLBACK_CLONE,
+    CLONE_WITH_SUBMODULES
+  }
+
+  private record NormalizedFetchOptions(
+      CheckoutStrategy strategy,
+      boolean shallowClone,
+      boolean includeSubmodules,
+      Duration cloneTimeout,
+      Duration archiveTimeout,
+      long archiveSizeLimit,
+      boolean detectKeyFiles) {}
+
+  private record FetchExecutionOutcome(
+      CheckoutStrategy strategy,
+      String resolvedRef,
+      String commitSha,
+      long downloadedBytes,
+      Instant completedAt) {}
+
+  private record ProcessResult(int exitCode, String output) {}
+
+  private static class ArchiveDownloadException extends RuntimeException {
+    ArchiveDownloadException(String message) {
+      super(message);
+    }
+
+    ArchiveDownloadException(String message, Throwable cause) {
+      super(message, cause);
+    }
   }
 
   private RepositoryRef normalizeRepository(RepositoryRef repo) {

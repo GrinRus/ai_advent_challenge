@@ -16,6 +16,12 @@ public class GitHubBackendProperties {
   private Integer treeMaxEntries = 500;
   private Long fileMaxSizeBytes = 512 * 1024L;
   private String userAgent = "AI Advent GitHub MCP/0.1";
+  private String workspaceRoot = "/var/tmp/aiadvent/mcp-workspaces";
+  private Duration workspaceTtl = Duration.ofHours(24);
+  private Duration workspaceCleanupInterval = Duration.ofMinutes(15);
+  private Long workspaceMaxSizeBytes = 2L * 1024 * 1024 * 1024;
+  private Long archiveMaxSizeBytes = 512L * 1024 * 1024;
+  private Duration archiveDownloadTimeout = Duration.ofMinutes(2);
 
   public String getBaseUrl() {
     return baseUrl;
@@ -95,5 +101,53 @@ public class GitHubBackendProperties {
 
   public void setUserAgent(String userAgent) {
     this.userAgent = userAgent;
+  }
+
+  public String getWorkspaceRoot() {
+    return workspaceRoot;
+  }
+
+  public void setWorkspaceRoot(String workspaceRoot) {
+    this.workspaceRoot = workspaceRoot;
+  }
+
+  public Duration getWorkspaceTtl() {
+    return workspaceTtl;
+  }
+
+  public void setWorkspaceTtl(Duration workspaceTtl) {
+    this.workspaceTtl = workspaceTtl;
+  }
+
+  public Duration getWorkspaceCleanupInterval() {
+    return workspaceCleanupInterval;
+  }
+
+  public void setWorkspaceCleanupInterval(Duration workspaceCleanupInterval) {
+    this.workspaceCleanupInterval = workspaceCleanupInterval;
+  }
+
+  public Long getWorkspaceMaxSizeBytes() {
+    return workspaceMaxSizeBytes;
+  }
+
+  public void setWorkspaceMaxSizeBytes(Long workspaceMaxSizeBytes) {
+    this.workspaceMaxSizeBytes = workspaceMaxSizeBytes;
+  }
+
+  public Long getArchiveMaxSizeBytes() {
+    return archiveMaxSizeBytes;
+  }
+
+  public void setArchiveMaxSizeBytes(Long archiveMaxSizeBytes) {
+    this.archiveMaxSizeBytes = archiveMaxSizeBytes;
+  }
+
+  public Duration getArchiveDownloadTimeout() {
+    return archiveDownloadTimeout;
+  }
+
+  public void setArchiveDownloadTimeout(Duration archiveDownloadTimeout) {
+    this.archiveDownloadTimeout = archiveDownloadTimeout;
   }
 }
