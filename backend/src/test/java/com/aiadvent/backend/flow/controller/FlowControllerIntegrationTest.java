@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.aiadvent.backend.flow.TestAgentInvocationOptionsFactory;
+import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.api.FlowEventDto;
 import com.aiadvent.backend.flow.api.FlowStartResponse;
 import com.aiadvent.backend.flow.domain.AgentDefinition;
@@ -440,6 +441,63 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(completed.getCurrentStepId()).isEqualTo("finish");
   }
 
+  @Test
+  void githubGradleTestFlowRunsToCompletion() throws Exception {
+    AgentVersion fetchAgent =
+        persistAgent(
+            "repo-fetcher-test",
+            optionsWithToolBindings(List.of(toolBinding("github.repository_fetch"))));
+    AgentVersion navigatorAgent =
+        persistAgent(
+            "workspace-navigator-test",
+            optionsWithToolBindings(List.of(toolBinding("github.workspace_directory_inspector"))));
+    AgentVersion gradleAgent =
+        persistAgent(
+            "gradle-test-runner-test",
+            optionsWithToolBindings(List.of(toolBinding("docker.gradle_runner"))));
+
+    FlowDefinition definition =
+        persistGithubGradleTestFlow(
+            fetchAgent.getId(), navigatorAgent.getId(), gradleAgent.getId());
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenReturn(successfulInvocation("Fetch complete"))
+        .thenReturn(successfulInvocation("Inspection complete"))
+        .thenReturn(successfulInvocation("Gradle execution complete"));
+
+    ObjectNode request = objectMapper.createObjectNode();
+    ObjectNode parameters = request.putObject("parameters");
+    parameters.put("repositoryUrl", "https://github.com/example/project");
+    parameters.put("ref", "main");
+    parameters.putArray("tasks").add("test");
+
+    FlowStartResponse startResponse =
+        startFlow(definition.getId(), objectMapper.writeValueAsString(request));
+
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+
+    FlowSession session =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.COMPLETED);
+
+    Mockito.verify(agentInvocationService, Mockito.times(3)).invoke(Mockito.any());
+
+    MvcResult snapshotResult =
+        mockMvc
+            .perform(get("/api/flows/" + startResponse.sessionId() + "/snapshot"))
+            .andExpect(status().isOk())
+            .andReturn();
+    FlowStatusResponse statusResponse =
+        objectMapper.readValue(snapshotResult.getResponse().getContentAsString(), FlowStatusResponse.class);
+    long completedSteps =
+        statusResponse.events().stream()
+            .filter(event -> event.type() == FlowEventType.STEP_COMPLETED)
+            .count();
+    assertThat(completedSteps).isEqualTo(3);
+  }
+
   private FlowStartResponse startFlow(UUID flowId, String body) throws Exception {
     var requestBuilder =
         post("/api/flows/" + flowId + "/start").contentType(MediaType.APPLICATION_JSON);
@@ -449,6 +507,46 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     MvcResult result = mockMvc.perform(requestBuilder).andExpect(status().isOk()).andReturn();
     return objectMapper.readValue(result.getResponse().getContentAsString(), FlowStartResponse.class);
+  }
+
+  private AgentInvocationResult successfulInvocation(String output) {
+    return new AgentInvocationResult(
+        output,
+        new UsageCostEstimate(
+            1,
+            1,
+            2,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            "USD",
+            com.aiadvent.backend.chat.provider.model.UsageSource.NATIVE),
+        List.of(),
+        null,
+        null,
+        null,
+        List.of(),
+        null,
+        List.of(),
+        null);
+  }
+
+  private AgentInvocationOptions optionsWithToolBindings(
+      List<AgentInvocationOptions.ToolBinding> bindings) {
+    AgentInvocationOptions base = TestAgentInvocationOptionsFactory.minimal();
+    return new AgentInvocationOptions(
+        base.provider(),
+        base.prompt(),
+        base.memoryPolicy(),
+        base.retryPolicy(),
+        base.advisorSettings(),
+        new AgentInvocationOptions.Tooling(bindings),
+        base.costProfile());
+  }
+
+  private AgentInvocationOptions.ToolBinding toolBinding(String toolCode) {
+    return new AgentInvocationOptions.ToolBinding(
+        toolCode, 1, AgentInvocationOptions.ExecutionMode.AUTO, null, null);
   }
 
   private AgentVersion persistAgent() {
@@ -463,6 +561,22 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
             "openai",
             "gpt-4o-mini");
     version.setInvocationOptions(TestAgentInvocationOptionsFactory.minimal());
+    return agentVersionRepository.save(version);
+  }
+
+  private AgentVersion persistAgent(
+      String identifier, AgentInvocationOptions invocationOptions) {
+    AgentDefinition definition = new AgentDefinition(identifier, identifier, null, true);
+    agentDefinitionRepository.save(definition);
+    AgentVersion version =
+        new AgentVersion(
+            definition,
+            1,
+            AgentVersionStatus.PUBLISHED,
+            com.aiadvent.backend.chat.config.ChatProviderType.OPENAI,
+            "openai",
+            "gpt-4o-mini");
+    version.setInvocationOptions(invocationOptions);
     return agentVersionRepository.save(version);
   }
 
@@ -532,6 +646,43 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
 
     FlowDefinition definition =
         new FlowDefinition("fallback-flow", 1, FlowDefinitionStatus.PUBLISHED, true, toBlueprint(root));
+    return flowDefinitionRepository.save(definition);
+  }
+
+  private FlowDefinition persistGithubGradleTestFlow(
+      UUID fetchAgentVersion, UUID inspectorAgentVersion, UUID runnerAgentVersion) {
+    ObjectNode root = objectMapper.createObjectNode();
+    root.put("startStepId", "fetch_workspace");
+    ArrayNode steps = root.putArray("steps");
+
+    ObjectNode fetchStep = steps.addObject();
+    fetchStep.put("id", "fetch_workspace");
+    fetchStep.put("name", "Fetch workspace");
+    fetchStep.put("agentVersionId", fetchAgentVersion.toString());
+    fetchStep.put("prompt", "Prepare workspace for testing");
+    fetchStep.putObject("transitions").putObject("onSuccess").put("next", "inspect_workspace");
+
+    ObjectNode inspectStep = steps.addObject();
+    inspectStep.put("id", "inspect_workspace");
+    inspectStep.put("name", "Inspect workspace");
+    inspectStep.put("agentVersionId", inspectorAgentVersion.toString());
+    inspectStep.put("prompt", "Suggest Gradle project path");
+    inspectStep.putObject("transitions").putObject("onSuccess").put("next", "run_gradle_tests");
+
+    ObjectNode runStep = steps.addObject();
+    runStep.put("id", "run_gradle_tests");
+    runStep.put("name", "Run Gradle tests");
+    runStep.put("agentVersionId", runnerAgentVersion.toString());
+    runStep.put("prompt", "Execute Gradle tasks in Docker");
+    runStep.putObject("transitions").putObject("onSuccess").put("complete", true);
+
+    FlowDefinition definition =
+        new FlowDefinition(
+            "github-gradle-test-flow",
+            1,
+            FlowDefinitionStatus.PUBLISHED,
+            true,
+            toBlueprint(root));
     return flowDefinitionRepository.save(definition);
   }
 
