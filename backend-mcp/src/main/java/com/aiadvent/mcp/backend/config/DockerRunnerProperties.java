@@ -13,7 +13,9 @@ public class DockerRunnerProperties {
   private String dockerBinary = "docker";
   private String image = "aiadvent/mcp-gradle-runner:latest";
   private String workspaceRoot = "/var/tmp/aiadvent/mcp-workspaces";
+  private String workspaceVolume;
   private String gradleCachePath = "/var/tmp/aiadvent/gradle-cache";
+  private String gradleCacheVolume;
   private Duration timeout = Duration.ofMinutes(15);
   private long maxLogBytes = 512 * 1024;
   private boolean enableNetwork = false;
@@ -113,5 +115,20 @@ public class DockerRunnerProperties {
   public Path workspaceRootPath() {
     return Path.of(workspaceRoot);
   }
-}
 
+  public String getWorkspaceVolume() {
+    return workspaceVolume;
+  }
+
+  public void setWorkspaceVolume(String workspaceVolume) {
+    this.workspaceVolume = workspaceVolume;
+  }
+
+  public String getGradleCacheVolume() {
+    return gradleCacheVolume;
+  }
+
+  public void setGradleCacheVolume(String gradleCacheVolume) {
+    this.gradleCacheVolume = gradleCacheVolume;
+  }
+}

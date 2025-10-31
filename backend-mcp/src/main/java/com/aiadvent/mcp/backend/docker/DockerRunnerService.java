@@ -86,7 +86,13 @@ public class DockerRunnerService {
     boolean hasProjectWrapper = Files.isRegularFile(projectAbsolute.resolve("gradlew"));
     boolean hasRootWrapper = Files.isRegularFile(workspacePath.resolve("gradlew"));
 
-    String workDir = StringUtils.hasText(projectPath) ? "/workspace/" + projectPath : "/workspace";
+    DockerMountSpec mountSpec = createDockerMountSpec(workspace);
+    Path containerWorkspaceRoot = mountSpec.containerWorkspaceRoot();
+    Path containerProjectPath =
+        StringUtils.hasText(projectPath)
+            ? containerWorkspaceRoot.resolve(projectPath)
+            : containerWorkspaceRoot;
+    String workDir = containerProjectPath.toString();
     List<String> command = new ArrayList<>();
     String runnerExecutable;
     if (hasProjectWrapper) {
@@ -98,7 +104,7 @@ public class DockerRunnerService {
       command.addAll(tasks);
     } else if (hasRootWrapper) {
       runnerExecutable = "./gradlew";
-      workDir = "/workspace";
+      workDir = containerWorkspaceRoot.toString();
       command.add(runnerExecutable);
       if (StringUtils.hasText(projectPath)) {
         command.add("-p");
@@ -121,7 +127,7 @@ public class DockerRunnerService {
       command.addAll(tasks);
     }
 
-    List<String> dockerCommand = buildDockerCommand(workspacePath, workDir, command, input);
+    List<String> dockerCommand = buildDockerCommand(mountSpec, workDir, command, input);
 
     Map<String, String> env = mergeEnvs(input.env());
     Instant startedAt = Instant.now();
@@ -160,20 +166,13 @@ public class DockerRunnerService {
   }
 
   private List<String> buildDockerCommand(
-      Path workspacePath, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
+      DockerMountSpec mountSpec, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
     List<String> dockerCommand = new ArrayList<>();
     dockerCommand.add(properties.getDockerBinary());
     dockerCommand.add("run");
     dockerCommand.add("--rm");
 
-    dockerCommand.add("-v");
-    dockerCommand.add(workspacePath.toAbsolutePath().normalize() + ":/workspace");
-
-    dockerCommand.add("-v");
-    dockerCommand.add(properties.getGradleCachePath() + ":/gradle-cache");
-
-    dockerCommand.add("-e");
-    dockerCommand.add("GRADLE_USER_HOME=/gradle-cache");
+    dockerCommand.addAll(mountSpec.dockerArgs());
 
     if (!properties.isEnableNetwork()) {
       dockerCommand.add("--network");
@@ -211,6 +210,39 @@ public class DockerRunnerService {
     dockerCommand.add(properties.getImage());
     dockerCommand.addAll(gradleCommand);
     return dockerCommand;
+  }
+
+  private DockerMountSpec createDockerMountSpec(TempWorkspaceService.Workspace workspace) {
+    List<String> args = new ArrayList<>();
+    String workspaceTargetBase = "/workspace";
+    String workspaceId = workspace.workspaceId();
+    if (!StringUtils.hasText(workspaceId)) {
+      throw new IllegalArgumentException("workspaceId must not be blank");
+    }
+    Path containerWorkspaceRoot;
+    String workspaceVolume = properties.getWorkspaceVolume();
+    if (StringUtils.hasText(workspaceVolume)) {
+      args.add("--mount");
+      args.add("type=volume,source=" + workspaceVolume + ",target=" + workspaceTargetBase);
+      containerWorkspaceRoot = Path.of(workspaceTargetBase, workspaceId);
+    } else {
+      Path normalizedWorkspace = workspace.path().toAbsolutePath().normalize();
+      args.add("-v");
+      args.add(normalizedWorkspace + ":" + workspaceTargetBase);
+      containerWorkspaceRoot = Path.of(workspaceTargetBase);
+    }
+
+    String cacheTarget = "/gradle-cache";
+    String gradleCacheVolume = properties.getGradleCacheVolume();
+    if (StringUtils.hasText(gradleCacheVolume)) {
+      args.add("--mount");
+      args.add("type=volume,source=" + gradleCacheVolume + ",target=" + cacheTarget);
+    } else if (StringUtils.hasText(properties.getGradleCachePath())) {
+      args.add("-v");
+      args.add(properties.getGradleCachePath() + ":" + cacheTarget);
+    }
+
+    return new DockerMountSpec(List.copyOf(args), containerWorkspaceRoot);
   }
 
   private List<String> sanitizeList(@Nullable List<String> values, List<String> defaults) {
@@ -389,4 +421,6 @@ public class DockerRunnerService {
       super(message, cause);
     }
   }
+
+  private record DockerMountSpec(List<String> dockerArgs, Path containerWorkspaceRoot) {}
 }
