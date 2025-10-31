@@ -29,19 +29,20 @@ public class DockerRunnerTools {
               + "tasks — список целей Gradle, arguments — дополнительные аргументы (например, --info). "
               + "env задаёт переменные окружения (карта имя → значение). timeoutSeconds ограничивает время выполнения. "
               + "Ответ содержит exitCode, статус success/failed, dockerCommand, stdout/stderr (в чанках) и длительность.")
-  DockerGradleRunnerResponse runGradle(DockerGradleRunnerRequest request) {
-    if (request == null || !StringUtils.hasText(request.workspaceId())) {
+  DockerGradleRunnerResponse runGradle(
+      @JsonProperty("workspaceId") String workspaceId,
+      @JsonProperty("projectPath") String projectPath,
+      @JsonProperty("tasks") List<String> tasks,
+      @JsonProperty("arguments") List<String> arguments,
+      @JsonProperty("env") Map<String, String> env,
+      @JsonProperty("timeoutSeconds") Integer timeoutSeconds) {
+    if (!StringUtils.hasText(workspaceId)) {
       throw new IllegalArgumentException("workspaceId must not be blank");
     }
     DockerGradleRunResult result =
         dockerRunnerService.runGradle(
             new DockerGradleRunInput(
-                request.workspaceId(),
-                request.projectPath(),
-                request.tasks(),
-                request.arguments(),
-                request.env(),
-                toDuration(request.timeoutSeconds())));
+                workspaceId, projectPath, tasks, arguments, env, toDuration(timeoutSeconds)));
 
     return new DockerGradleRunnerResponse(
         result.workspaceId(),
@@ -63,14 +64,6 @@ public class DockerRunnerTools {
     }
     return Duration.ofSeconds(timeoutSeconds.longValue());
   }
-
-  public record DockerGradleRunnerRequest(
-      @JsonProperty("workspaceId") String workspaceId,
-      @JsonProperty("projectPath") String projectPath,
-      @JsonProperty("tasks") List<String> tasks,
-      @JsonProperty("arguments") List<String> arguments,
-      @JsonProperty("env") Map<String, String> env,
-      @JsonProperty("timeoutSeconds") Integer timeoutSeconds) {}
 
   public record DockerGradleRunnerResponse(
       String workspaceId,
