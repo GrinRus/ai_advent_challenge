@@ -21,7 +21,7 @@ public class DockerRunnerTools {
   }
 
   @Tool(
-      name = "docker_gradle_runner",
+      name = "docker.gradle_runner",
       description =
           "Запускает Gradle-задачи внутри Docker-образа. Требует workspaceId (из github_repository_fetch). "
               + "Параметр projectPath указывает относительный путь к проекту в workspace (необязательно). "
@@ -84,4 +84,3 @@ public class DockerRunnerTools {
       Instant startedAt,
       Instant finishedAt) {}
 }
-

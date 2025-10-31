@@ -97,7 +97,7 @@ class GitHubTools {
   }
 
   @Tool(
-      name = "github_repository_fetch",
+      name = "github.repository_fetch",
       description =
           "Скачивает репозиторий в изолированное workspace-хранилище. Принимает repository{owner,name,ref?}, "
               + "необязательный requestId для трассировки и параметры options: strategy (ARCHIVE_ONLY|ARCHIVE_WITH_FALLBACK_CLONE|CLONE_WITH_SUBMODULES), "
@@ -129,7 +129,7 @@ class GitHubTools {
   }
 
   @Tool(
-      name = "workspace_directory_inspector",
+      name = "github.workspace_directory_inspector",
       description =
           "Инспектирует workspace, созданный GitHub fetch-инструментом. Требует workspaceId."
               + " Поддерживает фильтры includeGlobs/excludeGlobs (glob-паттерны), maxDepth (по умолчанию 4),"

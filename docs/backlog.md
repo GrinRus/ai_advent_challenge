@@ -868,11 +868,11 @@
 - [ ] Зарегистрировать новые инструменты в основном backend (`McpCatalogService`, `McpToolBindingService`): выдать им уникальные codes, добавить детальные описания прямо в Spring MCP-аннотациях (назначение, вход/выход, ограничения) и схемы входа/выхода, разрешить выбор через UI/flows.
 - [ ] Обновить `AgentOrchestratorService`/flow сценарии: обеспечить доступ к обоим инструментам, прокидывать `requestId`/workspace между вызовами и описать порядок использования в подсказках LLM.
 
-### Agents & Flow
-- [ ] Создать специализированного агента `repo-fetcher`, оборачивающего `github_repository_fetch`: системная подсказка описывает необходимые входные параметры (repo URL, ref, strategy), ожидаемые артефакты (`workspaceId`, метаданные) и ошибки.
-- [ ] Создать специализированного агента `gradle-test-runner`, который оборачивает только `docker_gradle_runner`: системная подсказка описывает входные аргументы (workspaceId/projectPath/tasks/env), валидацию данных и формат ответа.
-- [ ] Создать агента `workspace-navigator`, отвечающего за вызовы `workspace_directory_inspector` и помощь пользователю в выборе `projectPath` (вопросы для уточнения, вывод списка найденных проектов).
-- [ ] Сконструировать новый flow `github-gradle-test-flow` со свободным вводом: сбор параметров (repo/ref/tasks), последовательный запуск инструментов (`github_repository_fetch` → `workspace_directory_inspector` → `docker_gradle_runner`) и отображение итогового отчёта.
+-### Agents & Flow
+- [x] Создать специализированного агента `repo-fetcher`, оборачивающего `github_repository_fetch`: системная подсказка описывает необходимые входные параметры (repo URL, ref, strategy), ожидаемые артефакты (`workspaceId`, метаданные) и ошибки.
+- [x] Создать специализированного агента `gradle-test-runner`, который оборачивает только `docker_gradle_runner`: системная подсказка описывает входные аргументы (workspaceId/projectPath/tasks/env), валидацию данных и формат ответа.
+- [x] Создать агента `workspace-navigator`, отвечающего за вызовы `workspace_directory_inspector` и помощь пользователю в выборе `projectPath` (вопросы для уточнения, вывод списка найденных проектов).
+- [x] Сконструировать новый flow `github-gradle-test-flow` со свободным вводом: сбор параметров (repo/ref/tasks), последовательный запуск инструментов (`github_repository_fetch` → `workspace_directory_inspector` → `docker_gradle_runner`) и отображение итогового отчёта.
 - [ ] Обновить UI/DTO Flow каталога: добавить описание нового flow, форму для ввода repo/ref/tasks/optional projectPath, подсказки по выбору инструмента/агента.
 - [ ] Написать e2e сценарий flow: пользователь вводит repo/ref, flow вызывает инструменты в нужном порядке, отображаются промежуточные статусы и финальный отчёт.
 - [ ] Документировать использование агентов и flow в `docs/guides/mcp-operators.md`: примеры диалогов, порядок вызовов, ограничения и рекомендации.

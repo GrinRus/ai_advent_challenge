@@ -2188,3 +2188,484 @@ databaseChangeLog:
               FROM resolver_version_id
               WHERE NOT EXISTS (
                 SELECT 1 FROM flow_definition WHERE name = 'github-analysis-flow');
+  - changeSet:
+      id: 0101-seed-github-gradle-test-flow
+      author: codex
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('github.repository_fetch', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "repository": {
+                       "type": "object",
+                       "description": "Target repository (owner/name/ref).",
+                       "properties": {
+                         "owner": {"type": "string"},
+                         "name": {"type": "string"},
+                         "ref": {"type": "string"}
+                       },
+                       "required": ["owner","name"]
+                     },
+                     "requestId": {"type": "string","description": "Optional correlation identifier."},
+                     "options": {
+                       "type": "object",
+                       "properties": {
+                         "strategy": {"type": "string","enum": ["ARCHIVE_ONLY","ARCHIVE_WITH_FALLBACK_CLONE","CLONE_WITH_SUBMODULES"]},
+                         "shallowClone": {"type": "boolean"},
+                         "includeSubmodules": {"type": "boolean"},
+                         "cloneTimeout": {"type": "string","description":"ISO-8601 duration"},
+                         "archiveTimeout": {"type": "string","description":"ISO-8601 duration"},
+                         "archiveSizeLimit": {"type": "integer","minimum": 1},
+                         "detectKeyFiles": {"type": "boolean"}
+                       }
+                     }
+                   },
+                   "required": ["repository"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type": "string"},
+                     "workspacePath": {"type": "string"},
+                     "resolvedRef": {"type": "string"},
+                     "commitSha": {"type": "string"},
+                     "downloadedBytes": {"type": "integer","minimum": 0},
+                     "workspaceSizeBytes": {"type": "integer","minimum": 0},
+                     "downloadTimeMs": {"type": "integer","minimum": 0},
+                     "strategy": {"type": "string"},
+                     "keyFiles": {"type": "array","items":{"type":"string"}},
+                     "fetchedAt": {"type": "string","format":"date-time"}
+                   },
+                   "required": ["workspaceId","workspacePath","commitSha","strategy"]
+                 }$$::jsonb,
+                 'checksum-github.repository_fetch-v1', '[]'::jsonb, 'github', 'github.repository_fetch', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('github.workspace_directory_inspector', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type": "string"},
+                     "includeGlobs": {"type": "array","items":{"type":"string"}},
+                     "excludeGlobs": {"type": "array","items":{"type":"string"}},
+                     "maxDepth": {"type": "integer","minimum":1,"maximum":20},
+                     "maxResults": {"type": "integer","minimum":1,"maximum":2000},
+                     "includeTypes": {"type":"array","items":{"type":"string","enum":["FILE","DIRECTORY"]}},
+                     "includeHidden": {"type":"boolean"},
+                     "detectProjects": {"type":"boolean"}
+                   },
+                   "required": ["workspaceId"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type": "string"},
+                     "workspacePath": {"type": "string"},
+                     "items": {
+                       "type": "array",
+                       "items": {
+                         "type": "object",
+                         "properties": {
+                           "path": {"type":"string"},
+                           "type": {"type":"string"},
+                           "sizeBytes": {"type":"integer","minimum":0},
+                           "hidden": {"type":"boolean"},
+                           "symlink": {"type":"boolean"},
+                           "executable": {"type":"boolean"},
+                           "lastModified": {"type":"string","format":"date-time"},
+                           "projectTypes": {"type":"array","items":{"type":"string"}},
+                           "hasGradleWrapper": {"type":"boolean"}
+                         },
+                         "required": ["path","type"]
+                       }
+                     },
+                     "truncated": {"type":"boolean"},
+                     "warnings": {"type":"array","items":{"type":"string"}},
+                     "containsMultipleGradleProjects": {"type":"boolean"},
+                     "recommendedProjectPath": {"type":"string"},
+                     "totalMatches": {"type":"integer","minimum":0},
+                     "durationMs": {"type":"integer","minimum":0},
+                     "inspectedAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["workspaceId","items","truncated"]
+                 }$$::jsonb,
+                 'checksum-github.workspace_directory_inspector-v1', '[]'::jsonb, 'github', 'github.workspace_directory_inspector', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('docker.gradle_runner', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type":"string"},
+                     "projectPath": {"type":"string"},
+                     "tasks": {"type":"array","items":{"type":"string"}},
+                     "arguments": {"type":"array","items":{"type":"string"}},
+                     "env": {"type":"object","additionalProperties":{"type":"string"}},
+                     "timeoutSeconds": {"type":"integer","minimum":1}
+                   },
+                   "required": ["workspaceId"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type":"string"},
+                     "projectPath": {"type":"string"},
+                     "runnerExecutable": {"type":"string"},
+                     "dockerCommand": {"type":"array","items":{"type":"string"}},
+                     "exitCode": {"type":"integer"},
+                     "status": {"type":"string"},
+                     "stdout": {"type":"array","items":{"type":"string"}},
+                     "stderr": {"type":"array","items":{"type":"string"}},
+                     "durationMs": {"type":"integer","minimum":0},
+                     "startedAt": {"type":"string","format":"date-time"},
+                     "finishedAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["workspaceId","runnerExecutable","exitCode","status"]
+                 }$$::jsonb,
+                 'checksum-docker.gradle_runner-v1', '[]'::jsonb, 'docker', 'docker.gradle_runner', 'http-stream', 'docker')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('github.repository_fetch', 'GitHub · Repository fetch', 'Загружает репозиторий в локальный workspace и возвращает метаданные для последующей инспекции.', 'github', 'MANUAL', '["github","workspace"]'::jsonb, '["github-read"]'::jsonb, 'GitHub REST API (PAT).', NULL, 180000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.repository_fetch' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('github.workspace_directory_inspector', 'GitHub · Workspace inspector', 'Просматривает скачанный workspace, определяет Gradle-проекты и рекомендует projectPath.', 'github', 'MANUAL', '["github","workspace"]'::jsonb, '["github-read"]'::jsonb, 'Локальный workspace, подготовленный GitHub fetch.', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.workspace_directory_inspector' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('docker.gradle_runner', 'Docker · Gradle runner', 'Запускает Gradle в изолированном Docker-окружении с кэшем и лимитами ресурсов.', 'docker', 'MANUAL', '["gradle","tests"]'::jsonb, '["ci-run"]'::jsonb, 'Контейнер aiadvent/mcp-gradle-runner.', NULL, 900000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'docker.gradle_runner' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              WITH repo_def AS (
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+                VALUES (
+                  gen_random_uuid(),
+                  'repo-fetcher',
+                  'Repo Fetcher Agent',
+                  'LLM-агент, который валидирует параметры GitHub и вызывает инструмент github.repository_fetch.',
+                  true,
+                  'seed',
+                  'seed',
+                  now(),
+                  now())
+                ON CONFLICT (identifier) DO NOTHING
+                RETURNING id
+              ),
+              repo_def_id AS (
+                SELECT id FROM repo_def
+                UNION
+                SELECT id FROM agent_definition WHERE identifier = 'repo-fetcher'
+              ),
+              repo_version_insert AS (
+                INSERT INTO agent_version (
+                  id,
+                  agent_definition_id,
+                  version,
+                  status,
+                  provider_type,
+                  provider_id,
+                  model_id,
+                  system_prompt,
+                  agent_invocation_options,
+                  sync_only,
+                  max_tokens,
+                  created_by,
+                  updated_by,
+                  created_at,
+                  published_at)
+                SELECT
+                  gen_random_uuid(),
+                  repo_def_id.id,
+                  1,
+                  'PUBLISHED',
+                  'OPENAI',
+                  'openai',
+                  'gpt-4o-mini',
+                  'You ingest launch parameters and conversation history to prepare a repository for Gradle testing. Verify owner/name/ref data, infer it from URLs when needed, and call the github.repository_fetch tool exactly once. Respond with compact JSON: {"status":"READY","workspaceId":..,"commitSha":..,"notes":..}. Surface actionable validation errors in {"status":"ERROR","message":..}.',
+                  $${
+                    "provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},
+                    "prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.1,"topP":0.8,"maxOutputTokens":900}},
+                    "memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":180,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},
+                    "retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},
+                    "advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},
+                    "tooling":{"bindings":[{"toolCode":"github.repository_fetch","schemaVersion":1,"executionMode":"AUTO"}]},
+                    "costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}
+                  }$$::jsonb,
+                  true,
+                  900,
+                  'seed',
+                  'seed',
+                  now(),
+                  now()
+                FROM repo_def_id
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM agent_version av WHERE av.agent_definition_id = repo_def_id.id AND av.version = 1)
+                RETURNING id, agent_definition_id
+              ),
+              repo_version_id AS (
+                SELECT id, agent_definition_id FROM repo_version_insert
+                UNION
+                SELECT id, agent_definition_id
+                FROM agent_version
+                WHERE agent_definition_id = (SELECT id FROM repo_def_id LIMIT 1)
+                  AND version = 1
+              ),
+              navigator_def AS (
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+                VALUES (
+                  gen_random_uuid(),
+                  'workspace-navigator',
+                  'Workspace Navigator Agent',
+                  'LLM-агент, использующий workspace инспектор для подбора projectPath и Gradle модулей.',
+                  true,
+                  'seed',
+                  'seed',
+                  now(),
+                  now())
+                ON CONFLICT (identifier) DO NOTHING
+                RETURNING id
+              ),
+              navigator_def_id AS (
+                SELECT id FROM navigator_def
+                UNION
+                SELECT id FROM agent_definition WHERE identifier = 'workspace-navigator'
+              ),
+              navigator_version_insert AS (
+                INSERT INTO agent_version (
+                  id,
+                  agent_definition_id,
+                  version,
+                  status,
+                  provider_type,
+                  provider_id,
+                  model_id,
+                  system_prompt,
+                  agent_invocation_options,
+                  sync_only,
+                  max_tokens,
+                  created_by,
+                  updated_by,
+                  created_at,
+                  published_at)
+                SELECT
+                  gen_random_uuid(),
+                  navigator_def_id.id,
+                  1,
+                  'PUBLISHED',
+                  'OPENAI',
+                  'openai',
+                  'gpt-4o-mini',
+                  'You help select the Gradle project path. Use workspace metadata (workspaceId, key files) and call github.workspace_directory_inspector when additional structure is required. Output {"status":"READY","projectPath":..,"recommendations":[...]} or {"status":"CLARIFY","message":..}.',
+                  $${
+                    "provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},
+                    "prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.15,"topP":0.85,"maxOutputTokens":850}},
+                    "memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":180,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},
+                    "retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},
+                    "advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},
+                    "tooling":{"bindings":[{"toolCode":"github.workspace_directory_inspector","schemaVersion":1,"executionMode":"AUTO"}]},
+                    "costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}
+                  }$$::jsonb,
+                  true,
+                  850,
+                  'seed',
+                  'seed',
+                  now(),
+                  now()
+                FROM navigator_def_id
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM agent_version av WHERE av.agent_definition_id = navigator_def_id.id AND av.version = 1)
+                RETURNING id, agent_definition_id
+              ),
+              navigator_version_id AS (
+                SELECT id, agent_definition_id FROM navigator_version_insert
+                UNION
+                SELECT id, agent_definition_id
+                FROM agent_version
+                WHERE agent_definition_id = (SELECT id FROM navigator_def_id LIMIT 1)
+                  AND version = 1
+              ),
+              gradle_def AS (
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+                VALUES (
+                  gen_random_uuid(),
+                  'gradle-test-runner',
+                  'Gradle Test Runner Agent',
+                  'LLM-агент, который оркестрирует запуск docker.gradle_runner и интерпретирует результаты.',
+                  true,
+                  'seed',
+                  'seed',
+                  now(),
+                  now())
+                ON CONFLICT (identifier) DO NOTHING
+                RETURNING id
+              ),
+              gradle_def_id AS (
+                SELECT id FROM gradle_def
+                UNION
+                SELECT id FROM agent_definition WHERE identifier = 'gradle-test-runner'
+              ),
+              gradle_version_insert AS (
+                INSERT INTO agent_version (
+                  id,
+                  agent_definition_id,
+                  version,
+                  status,
+                  provider_type,
+                  provider_id,
+                  model_id,
+                  system_prompt,
+                  agent_invocation_options,
+                  sync_only,
+                  max_tokens,
+                  created_by,
+                  updated_by,
+                  created_at,
+                  published_at)
+                SELECT
+                  gen_random_uuid(),
+                  gradle_def_id.id,
+                  1,
+                  'PUBLISHED',
+                  'OPENAI',
+                  'openai',
+                  'gpt-4o-mini',
+                  'You execute Gradle tasks inside Docker. Consume workspaceId, projectPath, tasks, and env hints. Call docker.gradle_runner exactly once, retry only on transient errors, and summarise the outcome as {"status":"PASSED"|"FAILED","exitCode":..,"summary":..}. Include failing tasks and tail of logs when useful.',
+                  $${
+                    "provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},
+                    "prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.05,"topP":0.8,"maxOutputTokens":900}},
+                    "memoryPolicy":{"channels":["shared","conversation"],"retentionDays":7,"maxEntries":120,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},
+                    "retryPolicy":{"maxAttempts":2,"initialDelayMs":500,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":90000,"overallDeadlineMs":240000,"jitterMs":200},
+                    "advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},
+                    "tooling":{"bindings":[{"toolCode":"docker.gradle_runner","schemaVersion":1,"executionMode":"AUTO"}]},
+                    "costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}
+                  }$$::jsonb,
+                  true,
+                  900,
+                  'seed',
+                  'seed',
+                  now(),
+                  now()
+                FROM gradle_def_id
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM agent_version av WHERE av.agent_definition_id = gradle_def_id.id AND av.version = 1)
+                RETURNING id, agent_definition_id
+              ),
+              gradle_version_id AS (
+                SELECT id, agent_definition_id FROM gradle_version_insert
+                UNION
+                SELECT id, agent_definition_id
+                FROM agent_version
+                WHERE agent_definition_id = (SELECT id FROM gradle_def_id LIMIT 1)
+                  AND version = 1
+              )
+              INSERT INTO flow_definition (
+                id,
+                name,
+                version,
+                status,
+                definition,
+                is_active,
+                description,
+                updated_by,
+                created_at,
+                updated_at,
+                published_at,
+                blueprint_schema_version)
+              SELECT
+                gen_random_uuid(),
+                'github-gradle-test-flow',
+                1,
+                'PUBLISHED',
+                jsonb_build_object(
+                  'schemaVersion', 1,
+                  'metadata', jsonb_build_object(
+                    'title', 'GitHub Gradle Test Flow',
+                    'description', 'Скачивает репозиторий, предлагает projectPath и запускает Gradle-тесты в Docker.'),
+                  'syncOnly', true,
+                  'startStepId', 'fetch_workspace',
+                  'launchParameters', jsonb_build_array(
+                    jsonb_build_object('name','repositoryUrl','label','GitHub URL','type','string','required', true),
+                    jsonb_build_object('name','ref','label','Branch / Tag / SHA','type','string','required', false),
+                    jsonb_build_object('name','tasks','label','Gradle tasks','type','array','itemType','string','required', false),
+                    jsonb_build_object('name','projectPath','label','Project path','type','string','required', false),
+                    jsonb_build_object('name','gradleArgs','label','Extra Gradle arguments','type','array','itemType','string','required', false)
+                  ),
+                  'memory', jsonb_build_object('shared', jsonb_build_object('enabled', true)),
+                  'steps', jsonb_build_array(
+                    jsonb_build_object(
+                      'id','fetch_workspace',
+                      'name','Fetch workspace',
+                      'agentVersionId', (SELECT id::text FROM repo_version_id LIMIT 1),
+                      'prompt',
+                        $$Use launch parameters (repositoryUrl, ref, tasks, projectPath, gradleArgs) and conversation context to validate GitHub coordinates. Parse owner/name/ref from URLs when necessary, prefer explicit ref parameter, and call github.repository_fetch exactly once. Record key metadata in the response JSON and summary lines for operators.$$,
+                      'overrides', jsonb_build_object('temperature', 0.05, 'maxTokens', 750),
+                      'memoryReads', jsonb_build_array(
+                        jsonb_build_object('channel','shared','limit',15),
+                        jsonb_build_object('channel','conversation','limit',10)),
+                      'memoryWrites', jsonb_build_array(
+                        jsonb_build_object('channel','shared','mode','AGENT_OUTPUT'),
+                        jsonb_build_object('channel','conversation','mode','AGENT_OUTPUT')),
+                      'transitions', jsonb_build_object(
+                        'onSuccess', jsonb_build_object('next','inspect_workspace')),
+                      'maxAttempts', 2),
+                    jsonb_build_object(
+                      'id','inspect_workspace',
+                      'name','Inspect workspace',
+                      'agentVersionId', (SELECT id::text FROM navigator_version_id LIMIT 1),
+                      'prompt',
+                        $$Analyse repo metadata and Gradle task intent. If projectPath is not supplied or ambiguous, call github.workspace_directory_inspector to list modules, then recommend the best projectPath and additional notes. Respect user-provided projectPath when valid.$$,
+                      'overrides', jsonb_build_object('temperature', 0.15, 'maxTokens', 700),
+                      'memoryReads', jsonb_build_array(
+                        jsonb_build_object('channel','shared','limit',15),
+                        jsonb_build_object('channel','conversation','limit',15)),
+                      'memoryWrites', jsonb_build_array(
+                        jsonb_build_object('channel','shared','mode','AGENT_OUTPUT'),
+                        jsonb_build_object('channel','conversation','mode','AGENT_OUTPUT')),
+                      'transitions', jsonb_build_object(
+                        'onSuccess', jsonb_build_object('next','run_gradle_tests')),
+                      'maxAttempts', 2),
+                    jsonb_build_object(
+                      'id','run_gradle_tests',
+                      'name','Run Gradle tests',
+                      'agentVersionId', (SELECT id::text FROM gradle_version_id LIMIT 1),
+                      'prompt',
+                        $$Launch docker.gradle_runner with the confirmed workspaceId, projectPath, and Gradle tasks. Default to the first recommended task list when none provided. Summarize exit code, failing tasks, and link to any artefacts. Provide actionable advice when execution fails.$$,
+                      'overrides', jsonb_build_object('temperature', 0.05, 'maxTokens', 900),
+                      'memoryReads', jsonb_build_array(
+                        jsonb_build_object('channel','shared','limit',15),
+                        jsonb_build_object('channel','conversation','limit',20)),
+                      'memoryWrites', jsonb_build_array(
+                        jsonb_build_object('channel','shared','mode','AGENT_OUTPUT'),
+                        jsonb_build_object('channel','conversation','mode','AGENT_OUTPUT')),
+                      'transitions', jsonb_build_object(
+                        'onSuccess', jsonb_build_object('complete', true)),
+                      'maxAttempts', 2)
+                  )
+                ),
+                true,
+                'GitHub Gradle orchestration flow',
+                'seed',
+                now(),
+                now(),
+                now(),
+                1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM flow_definition WHERE name = 'github-gradle-test-flow');
