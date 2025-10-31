@@ -15,6 +15,10 @@ RUN ./gradlew --no-daemon bootJar
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV SPRING_MAIN_BANNER_MODE=off \
     JAVA_OPTS="" \
     AGENT_OPS_BACKEND_BASE_URL=http://backend:8080 \
