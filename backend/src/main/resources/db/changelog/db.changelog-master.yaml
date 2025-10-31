@@ -2035,3 +2035,156 @@ databaseChangeLog:
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.create_pull_request_review' AND version = 1)),
                 ('github.submit_pull_request_review', 'GitHub · Submit pull request review', 'Отправляет существующее ревью pull request с выбранным действием.', 'github', 'MANUAL', '["github","pull-request","reviews"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.submit_pull_request_review' AND version = 1));
+  - changeSet:
+      id: 0100-seed-github-analysis-flow
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              WITH resolver_def AS (
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+                VALUES (
+                  gen_random_uuid(),
+                  'github-target-resolver',
+                  'GitHub Target Resolver',
+                  'Determines GitHub repository or pull request targets and normalises owner/name/ref information.',
+                  true,
+                  'seed',
+                  'seed',
+                  now(),
+                  now())
+                ON CONFLICT (identifier) DO NOTHING
+                RETURNING id
+              ),
+              resolver_def_id AS (
+                SELECT id FROM resolver_def
+                UNION
+                SELECT id FROM agent_definition WHERE identifier = 'github-target-resolver'
+              ),
+              resolver_version_insert AS (
+                INSERT INTO agent_version (
+                  id,
+                  agent_definition_id,
+                  version,
+                  status,
+                  provider_type,
+                  provider_id,
+                  model_id,
+                  system_prompt,
+                  agent_invocation_options,
+                  sync_only,
+                  max_tokens,
+                  created_by,
+                  updated_by,
+                  created_at,
+                  published_at)
+                SELECT
+                  gen_random_uuid(),
+                  resolver_def_id.id,
+                  1,
+                  'PUBLISHED',
+                  'OPENAI',
+                  'openai',
+                  'gpt-4o-mini',
+                  'You are a GitHub intake assistant. Using the chat context, launch parameters, and optional interaction payload, determine whether the user wants to analyse a repository or a pull request. Always respond with valid JSON containing fields: status (RESOLVED | NEEDS_CLARIFICATION | UNSUPPORTED), githubTarget (object with type, owner, repository, ref, pullRequestNumber, headRef, baseRef, url), clarificationPrompt, clarificationReason, missingFields (array of strings). When the intent is ambiguous or required data is missing, set status to NEEDS_CLARIFICATION and explain which properties must be provided. Never emit free-form text or markdown.',
+                  '{"provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},"prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.05,"topP":0.85,"maxOutputTokens":800}},"memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":120,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},"retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},"advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},"tooling":{"bindings":[]},"costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}}'::jsonb,
+                  true,
+                  900,
+                  'seed',
+                  'seed',
+                  now(),
+                  now()
+                FROM resolver_def_id
+                WHERE NOT EXISTS (
+                  SELECT 1
+                  FROM agent_version av
+                  WHERE av.agent_definition_id = resolver_def_id.id
+                    AND av.version = 1)
+                RETURNING id, agent_definition_id
+              ),
+              resolver_version_id AS (
+                SELECT id, agent_definition_id FROM resolver_version_insert
+                UNION
+                SELECT id, agent_definition_id
+                FROM agent_version
+                WHERE agent_definition_id = (SELECT id FROM resolver_def_id LIMIT 1)
+                  AND version = 1
+              )
+              INSERT INTO flow_definition (
+                id,
+                name,
+                version,
+                status,
+                definition,
+                is_active,
+                description,
+                updated_by,
+                created_at,
+                updated_at,
+                published_at,
+                blueprint_schema_version)
+              SELECT
+                gen_random_uuid(),
+                'github-analysis-flow',
+                1,
+                'PUBLISHED',
+                jsonb_build_object(
+                  'schemaVersion', 1,
+                  'metadata', jsonb_build_object(
+                    'title', 'GitHub Analysis Flow',
+                    'description', 'Resolves GitHub URLs into repository or pull request targets and prepares analysis context.'),
+                  'startStepId', 'github_resolve_target',
+                  'syncOnly', true,
+                  'launchParameters', jsonb_build_array(
+                    jsonb_build_object('name','githubUrl','label','GitHub URL','type','string','required', false)
+                  ),
+                  'memory', jsonb_build_object('shared', jsonb_build_object('enabled', true)),
+                  'steps', jsonb_build_array(
+                    jsonb_build_object(
+                      'id','github_resolve_target',
+                      'name','Resolve GitHub Target',
+                      'agentVersionId', resolver_version_id.id::text,
+                      'prompt',
+                        $$Analyse the conversation and optional interaction payload to determine the GitHub resource the user wants to inspect. When you can resolve an owner, repository name, and target type, return status=RESOLVED with githubTarget fields: type ("REPOSITORY" or "PULL_REQUEST"), owner, repository, ref (branch, tag, or commit), pullRequestNumber (for PR), headRef/baseRef when available, and url. If information is missing or ambiguous, respond with status=NEEDS_CLARIFICATION and populate clarificationPrompt, clarificationReason, and missingFields describing what to ask the user. Never include conversational prose or markdown, only the JSON object.$$,
+                      'overrides', jsonb_build_object('temperature', 0.05, 'maxTokens', 750),
+                      'interaction', jsonb_build_object(
+                        'type', 'INPUT_FORM',
+                        'title', 'Уточнение GitHub цели',
+                        'description', 'Уточните ссылку, ветку или номер pull request, если их нельзя определить автоматически.',
+                        'payloadSchema', jsonb_build_object(
+                          'type', 'object',
+                          'properties', jsonb_build_object(
+                            'githubUrl', jsonb_build_object(
+                              'type', 'string',
+                              'format', 'textarea',
+                              'description', 'Полная ссылка на репозиторий или pull request.'),
+                            'branch', jsonb_build_object(
+                              'type', 'string',
+                              'description', 'Имя ветки или SHA, если требуется уточнение.'),
+                            'pullRequestNumber', jsonb_build_object(
+                              'type', 'integer',
+                              'minimum', 1,
+                              'description', 'Номер pull request, если анализируется PR.')))),
+                      'memoryReads', jsonb_build_array(
+                        jsonb_build_object('channel','shared','limit',10),
+                        jsonb_build_object('channel','conversation','limit',15)),
+                      'memoryWrites', jsonb_build_array(
+                        jsonb_build_object('channel','shared','mode','AGENT_OUTPUT'),
+                        jsonb_build_object('channel','conversation','mode','AGENT_OUTPUT')),
+                      'transitions', jsonb_build_object(
+                        'onSuccess', jsonb_build_object('complete', true)),
+                      'maxAttempts', 2))
+                ),
+                true,
+                'GitHub analysis orchestrator',
+                'seed',
+                now(),
+                now(),
+                now(),
+                1
+              FROM resolver_version_id
+              WHERE NOT EXISTS (
+                SELECT 1 FROM flow_definition WHERE name = 'github-analysis-flow');

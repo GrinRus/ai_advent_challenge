@@ -572,7 +572,6 @@
 - [x] Flow execution payloads: добавить `FlowStepInputPayload`, `FlowStepOutputPayload`, `UsageCostPayload` и `FlowEventPayload` + mapper-сервис (`FlowPayloadMapper`), переписать `AgentOrchestratorService`/`FlowStatusService`/`FlowEventRepository`.
 - [x] Тесты конвертеров/mapper'ов: покрыть round-trip сериализацию и схемы дефолтов (JUnit).
 
-
 **Финальный подход Backend:** берём *Value Object + Converter* как базовый слой типизации и сразу выносим сериализацию в mapper-сервисы (`FlowPayloadMapper`, `AgentOptionsMapper`). Генерацию DTO из схем планируем после стабилизации моделей, но текущий rollout от неё не зависит.
 ### Frontend
 - [x] Уточнить типы в `frontend/src/lib/apiClient.ts`: вместо `unknown` описать структуры `defaultOptions`, `toolBindings`, `costProfile`, `launchParameters`, `sharedContext`, `FlowEvent.payload` и др.
@@ -725,7 +724,6 @@
 - [x] Обновить API-клиент: поддержать новые поля (инструменты MCP, статусы доступности, capability hints) в DTO чата и агентов, кешировать выбор на время сессии.
 - [x] Интегрировать SSE-поток/периодический polling health: обновление UI-индикаторов и отключение недоступных MCP-инструментов в режиме реального времени.
 
-### Tests & QA
 - [x] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
 - [x] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
 - [x] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
@@ -738,7 +736,6 @@
 - [ ] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
 - [x] Обновить `docker-compose.yml` и деплой пайплайны под HTTP MCP: выделить порты для `agent-ops`/`flow-ops`/`insight`, прокинуть `*_MCP_HTTP_BASE_URL` и `*_MCP_TRANSPORT`, перенастроить healthcheck на HTTP эндпоинты и убрать STDIO wrapper'ы/переменные.
 
-### Docs & Enablement
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
 - [x] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
 - [x] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
@@ -757,54 +754,18 @@
 - [x] Подключить `org.kohsuke:github-api` и нужные HTTP/ratelimit зависимости в `backend-mcp/build.gradle`, зафиксировать версию и возможные exclude.
 - [x] Упростить токен-менеджер до работы с PAT без JWT/installation токенов.
 
-
 ### Backend & LLM
-- [ ] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
-- [ ] Запускать `github-analysis-flow` через существующий flow-оркестратор: шаги получают контекст резолвера, вызывают GitHub MCP (tree/file/diff) и агрегируют статические проверки + LLM summary/риски.
-- [ ] Добавить flow/agent pipeline `github-analysis-flow`: старт по URL, шаги «fetch tree», «prefetch files», «LLM repo summary», «LLM risk scoring», «generate recommendations», сохранение результатов и structured payload.
-- [ ] Добавить пайплайн анализа pull request: сбор diff/metadata через GitHub MCP, подготовка промптов, генерация рекомендаций LLM и вычисление сигналов (компоненты, TODO, риски).
-- [ ] Обновить `AgentInvocationService`/flow сценарии для вызова GitHub MCP методов, маршрутизации ссылок (репо vs PR) и последующей обработки результатов LLM.
-- [ ] Настроить кеширование и ограничение объёмов при подготовке контекста для LLM, логирование и метрики использования анализа.
-- [ ] Сохранение результатов анализа: summary, список рисков, ссылки на затронутые файлы, интерактивные комментарии; обеспечить повторный запуск и идемпотентность по URL/PR номеру.
-- [ ] Дополнить `McpToolBindingService` кастомизацией payload для GitHub: разбор URL, заполнение `repository/ref/pullRequest`, генерация `requestId`, ручная сборка unified diff (`diff --git`/`@@`).
-- [ ] Кешировать tree/diff/метаданные GitHub в `sharedContext` (раздел `githubCache`), переиспользовать между шагами вместо повторных запросов.
-- [ ] Определить канонический payload для LLM анализа: список файлов с diff (unified), агрегированные метрики, summary вводных и сигналов, сохранить схему в shared context и документации.
-- [ ] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
-
-### Frontend & UX
-- [ ] Обновить панель MCP: отдельный блок для GitHub сервера с полем ввода ссылки/репо, поддержкой выбора ветки/PR и стартом `github-analysis-flow`.
-- [ ] В чате отобразить прогресс `github-analysis-flow`: шаги (fetch tree → анализ → рекомендации), статусы/ошибки, подсказки по retry и кнопку перезапуска, чтобы не переключаться на FlowSessions при запуске анализа через чат.
-- [ ] Карточка результата: summary, риски, рекомендации, список файлов (с подчёркиванием изменённых), ссылки на PR/комментарии, действия approve/request changes.
-- [ ] Управление комментариями/ревью: предпросмотр, inline-редактирование, статус отправки (`pending`, `commented`, `approved`/`changes_requested`).
-- [ ] Расширить API-клиент/DTO: payload `github-analysis-flow` (summary, risks, recommendations, files, metrics, links), статусы review и step-by-step прогресс.
-- [ ] Дополнить SSE health-индикатор GitHub MCP, показать degraded state и подсказки при rate limit/ошибках токена.
+- [x] Реализовать стартовый агент/шаг flow для резолва GitHub URL (repo/branch/PR): через LLM определяет намерение пользователя, валидирует контракт следующего агентa, при необходимости запрашивает уточнение (WAITING_USER_INPUT), парсит ссылку, нормализует owner/repo/ref, определяет тип цели (repo vs PR) и записывает `githubTarget` в `sharedContext.current`.
+- [x] Обновить Liquibase: зарегистрировать сервер `github`, инструменты и flow `github-analysis-flow` с capability hints.
 
 ### Security & Governance
 - [x] Задокументировать процесс выпуска Personal Access Token (scopes `repo`, `read:org`, `read:checks`), владельцев и SLA ротации (GitHub App больше не используется).
 - [x] Настроить хранение PAT в `.env`/секретах `docker-compose`/CI, описать процедуру ротации и оповещения.
-- [ ] Добавить детализированные логи (без отдельного аудита) для действий MCP: вызовы методов, создание комментариев, approve/request changes, обработка rate limit.
-
-### Tests & QA
-- [ ] Покрыть GitHub MCP unit/integration тестами: handshake, tree/file чтение, pull request инструменты (list/get/diff/comments/checks) и действия (create comment/review/submit) с mock GitHub API.
-- [ ] Протестировать управление PAT: корректное чтение из секретов, обновление без рестарта и обработка просроченного токена.
-- [ ] Unit/интеграционные тесты стартового резолвера: валидные репо/PR ссылки, невалидные входы, ветка WAITING_USER_INPUT и запись `githubTarget` в shared context.
-- [ ] Добавить backend-тесты `github-analysis-flow`: сценарии по ссылке на репо/ветку/PR, корректность шагов, агрегирование LLM summary/рисков, идемпотентность по URL и переиспользование данных из shared context.
-- [ ] Добавить проверки логирования и обработки rate limit: unit тесты для логгера/ретраев, negative-case (403, абьюз лимит).
-- [ ] Добавить e2e сценарии: запуск анализа из чата, отображение прогресса/статусов шагов, подсказки по retry, публикация комментария и approve/request changes через GitHub MCP.
-- [ ] Обновить unit/интеграционные тесты каталога и binding: ожидать сервер `github`, проверять sanitize и статусы доступности.
-- [ ] Unit-тесты ручной сборки unified diff: заголовки `diff --git`, `index`, `@@` соответствуют patch'ам GitHub API.
-- [ ] Тесты SSE/health-индикатора: degraded state для GitHub MCP (rate limit, токен), корректные подсказки в UI.
 
 ### Infrastructure & Ops
 - [x] Добавить переменные окружения GitHub (`GITHUB_PAT`) в `.env` / `.env.example` и прокинуть их в `docker-compose.yml`.
 - [x] Добавить сервис GitHub MCP в `docker-compose.yml`: образ `backend-mcp`, `SPRING_PROFILES_ACTIVE=github`, порт, токены из `.env`, healthcheck по аналогии с остальными MCP.
 - [x] Дополнить документацию/README: сборка образа GitHub MCP, запуск `docker compose up github-mcp`, переменные окружения, логирование.
-
-### Docs & Enablement
-- [ ] Обновить `docs/guides/mcp-operators.md`/`docs/infra.md` описанием GitHub MCP, требуемых прав и сценариев использования.
-- [ ] Подготовить сценарии для аналитиков/разработчиков: быстрый start guide, список поддерживаемых инструментов и ограничения по объёму данных.
-- [ ] Документировать контракт payload'ов (`repository/ref/requestId/pullRequest/location`), ограничения (только github.com, без fallback) и требования к токенам.
-- [ ] Добавить раздел про логи, метрики, ротацию PAT и восстановление после rate-limit.
 
 ## Wave 18 — Универсализация MCP-инструментов
 ### Backend
@@ -819,3 +780,39 @@
 ### Docs & Enablement
 - [ ] Обновить разделы MCP в архитектурной документации: описать новый механизм кастомизации payload'ов, поддержку дополнительных транспортов и правила overrides.
 - [ ] Зафиксировать изменения в Wave 18 changelog: свобода выбора инструментов из API, расширяемые транспорты, мягкая валидация GitHub payload'ов.
+
+## Wave 19 — GitHub MCP анализ и покрытие
+### Backend & LLM
+- [ ] Запускать `github-analysis-flow` через существующий flow-оркестратор: шаги получают контекст резолвера, вызывают GitHub MCP (tree/file/diff) и агрегируют статические проверки + LLM summary/риски.
+- [ ] Добавить flow/agent pipeline `github-analysis-flow`: старт по URL, шаги «fetch tree», «prefetch files», «LLM repo summary», «LLM risk scoring», «generate recommendations», сохранение результатов и structured payload.
+- [ ] Добавить пайплайн анализа pull request: сбор diff/metadata через GitHub MCP, подготовка промптов, генерация рекомендаций LLM и вычисление сигналов (компоненты, TODO, риски).
+- [ ] Обновить `AgentInvocationService`/flow сценарии для вызова GitHub MCP методов, маршрутизации ссылок (репо vs PR) и последующей обработки результатов LLM.
+- [ ] Определить канонический payload для LLM анализа: список файлов с diff (unified), агрегированные метрики, summary вводных и сигналов, сохранить схему в shared context и документации.
+
+### Security & Governance
+- [ ] Добавить детализированные логи (без отдельного аудита) для действий MCP: вызовы методов, создание комментариев, approve/request changes, обработка rate limit.
+
+### Tests & QA
+- [ ] Покрыть GitHub MCP unit/integration тестами: handshake, tree/file чтение, pull request инструменты (list/get/diff/comments/checks) и действия (create comment/review/submit) с mock GitHub API.
+- [ ] Протестировать управление PAT: корректное чтение из секретов, обновление без рестарта и обработка просроченного токена.
+- [ ] Unit/интеграционные тесты стартового резолвера: валидные репо/PR ссылки, невалидные входы, ветка WAITING_USER_INPUT и запись `githubTarget` в shared context.
+- [ ] Добавить backend-тесты `github-analysis-flow`: сценарии по ссылке на репо/ветку/PR, корректность шагов, агрегирование LLM summary/рисков, идемпотентность по URL и переиспользование данных из shared context.
+- [ ] Обновить unit/интеграционные тесты каталога и binding: ожидать сервер `github`, проверять sanitize и статусы доступности.
+- [ ] Unit-тесты ручной сборки unified diff: заголовки `diff --git`, `index`, `@@` соответствуют patch'ам GitHub API.
+
+### Docs & Enablement
+- [ ] Обновить `docs/guides/mcp-operators.md`/`docs/infra.md` описанием GitHub MCP, требуемых прав и сценариев использования.
+- [ ] Документировать контракт payload'ов (`repository/ref/requestId/pullRequest/location`), ограничения (только github.com, без fallback) и требования к токенам.
+
+
+## Wave 20 — UX для GitHub Analysis Flow
+### Backend & LLM
+- [ ] Дополнить `McpToolBindingService` кастомизацией payload для GitHub: разбор URL, заполнение `repository/ref/pullRequest`, генерация `requestId`, ручная сборка unified diff (`diff --git`/`@@`).
+- [ ] Сохранение результатов анализа: summary, список рисков, ссылки на затронутые файлы, интерактивные комментарии; обеспечить повторный запуск и идемпотентность по URL/PR номеру.
+
+### Frontend & UX
+- [ ] Обновить панель MCP: отдельный блок для GitHub сервера с полем ввода ссылки/репо, поддержкой выбора ветки/PR и стартом `github-analysis-flow`.
+- [ ] В чате отобразить прогресс `github-analysis-flow`: шаги (fetch tree → анализ → рекомендации), статусы/ошибки, подсказки по retry и кнопку перезапуска, чтобы не переключаться на FlowSessions при запуске анализа через чат.
+- [ ] Карточка результата: summary, риски, рекомендации, список файлов (с подчёркиванием изменённых), ссылки на PR/комментарии, действия approve/request changes.
+- [ ] Расширить API-клиент/DTO: payload `github-analysis-flow` (summary, risks, recommendations, files, metrics, links), статусы review и step-by-step прогресс.
+- [ ] Добавить e2e сценарии: запуск анализа из чата, отображение прогресса/статусов шагов, подсказки по retry, публикация комментария и approve/request changes через GitHub MCP.

@@ -520,6 +520,7 @@ class GitHubRepositoryService {
 
     return executor.execute(
         github -> {
+          String commitId = safeTrim(input.commitId());
           try {
             GHRepository repo = github.getRepository(repository.fullName());
             GHPullRequest pr = repo.getPullRequest(number);
@@ -535,9 +536,14 @@ class GitHubRepositoryService {
             }
 
             GHPullRequestReviewBuilder builder = pr.createReview();
-            if (StringUtils.hasText(input.commitId())) {
-              builder.commitId(input.commitId().trim());
+            if (!StringUtils.hasText(commitId)) {
+              commitId = safeTrim(pr.getHead() != null ? pr.getHead().getSha() : null);
             }
+            if (!StringUtils.hasText(commitId)) {
+              throw new IllegalStateException(
+                  "Unable to resolve commit id for pull request review creation");
+            }
+            builder.commitId(commitId);
             if (StringUtils.hasText(body)) {
               builder.body(body);
             }

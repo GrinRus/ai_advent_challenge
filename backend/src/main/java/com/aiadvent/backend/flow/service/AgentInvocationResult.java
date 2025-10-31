@@ -4,6 +4,7 @@ import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.flow.domain.FlowMemoryVersion;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 
 public record AgentInvocationResult(
@@ -15,4 +16,5 @@ public record AgentInvocationResult(
     String systemPrompt,
     List<String> memorySnapshots,
     String userMessage,
-    List<String> selectedToolCodes) {}
+    List<String> selectedToolCodes,
+    JsonNode structuredContent) {}

@@ -202,7 +202,8 @@ public class AgentInvocationService {
           agentVersion.getSystemPrompt(),
           memoryMessages,
           userMessage,
-          resolvedToolCodes);
+          resolvedToolCodes,
+          null);
 
     } catch (RuntimeException ex) {
       logAttemptFailure(retryContext, flowSession.getId(), selection.providerId(), ex);
