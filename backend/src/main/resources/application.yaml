@@ -24,7 +24,7 @@ spring:
       client:
         enabled: ${PERPLEXITY_MCP_ENABLED:true}
         name: perplexity-mcp-client
-        request-timeout: ${PERPLEXITY_TIMEOUT_MS:120s}
+        request-timeout: 600s
         type: SYNC
         toolcallback:
           enabled: true
