@@ -825,7 +825,7 @@
 - [ ] Обновить конфигурацию Spring AI MCP так, чтобы инструменты регистрировались как отдельные entries (`github_repository_fetch`, `docker_gradle_runner`), избегая общих конфигурационных бинов и связывания.
 
 ### GitHub Integration Tool
-- [ ] Расширить `GitHubRepositoryService`/`GitHubTools` и зарегистрировать самостоятельный MCP-инструмент `github_repository_fetch`: вход — repo/ref/checkout strategy, выход — ссылка на подготовленный архив/каталог в локальном storage.
+- [ ] Расширить `GitHubRepositoryService`/`GitHubTools` и зарегистрировать самостоятельный MCP-инструмент `github_repository_fetch` в том же GitHub MCP-сервере, что и текущие интеграции: вход — repo/ref/checkout strategy, выход — ссылка на подготовленный архив/каталог в локальном storage.
 - [ ] Добавить ограничители для GitHub-интеграции (максимальный размер архива, таймаут загрузки, маскирование токена) и метки источника (`repo/ref`) с хранением в промежуточном хранилище (например, `TempWorkspaceService`).
 - [ ] Реализовать `TempWorkspaceService`, который создаёт изолированные временные директории (`Files.createTempDirectory` с префиксом, ограничением размера и TTL), хранит метаданные (`workspaceId`, `repo/ref`), использует общий tmp root (`/var/tmp/aiadvent/mcp-workspaces`) и гарантирует очистку после завершения или по расписанию.
 
