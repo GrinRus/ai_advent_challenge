@@ -2669,3 +2669,47 @@ databaseChangeLog:
                 1
               WHERE NOT EXISTS (
                 SELECT 1 FROM flow_definition WHERE name = 'github-gradle-test-flow');
+  - changeSet:
+      id: 0102-add-workspace-read-file-tool
+      author: codex
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('workspace.read_file', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type":"string"},
+                     "path": {"type":"string"},
+                     "maxBytes": {"type":"integer","minimum":1,"maximum":2097152}
+                   },
+                   "required": ["workspaceId","path"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "workspaceId": {"type":"string"},
+                     "path": {"type":"string"},
+                     "sizeBytes": {"type":"integer","minimum":0},
+                     "truncated": {"type":"boolean"},
+                     "binary": {"type":"boolean"},
+                     "encoding": {"type":"string"},
+                     "content": {"type":"string"},
+                     "base64Content": {"type":"string"},
+                     "readAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["workspaceId","path","sizeBytes","truncated","binary","readAt"]
+                 }$$::jsonb,
+                 'checksum-workspace.read_file-v1', '[]'::jsonb, 'github', 'workspace.read_file', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('workspace.read_file', 'Workspace · Read file', 'Читает содержимое файлов из локального workspace, подготовленного GitHub MCP.', 'github', 'MANUAL', '["github","workspace"]'::jsonb, '["github-read"]'::jsonb, 'Локальный workspace, полученный через github.repository_fetch.', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'workspace.read_file' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
