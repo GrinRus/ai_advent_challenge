@@ -9,8 +9,7 @@ import org.springframework.context.annotation.Configuration;
 class GitHubToolConfiguration {
 
   @Bean
-  ToolCallbackProvider githubToolCallbackProvider(GitHubTools tools) {
-    return MethodToolCallbackProvider.builder().toolObjects(tools).build();
+  ToolCallbackProvider githubToolCallbackProvider(GitHubTools tools, GitHubWorkspaceTools workspaceTools) {
+    return MethodToolCallbackProvider.builder().toolObjects(tools, workspaceTools).build();
   }
 }
-

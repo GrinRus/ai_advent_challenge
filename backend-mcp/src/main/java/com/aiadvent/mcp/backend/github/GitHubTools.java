@@ -1,18 +1,14 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckRunInfo;
-import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckoutStrategy;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommentType;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitStatusInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestCommentInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestCommentResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewResult;
-import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryInput;
-import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestDiffInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestInput;
-import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestChecksInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestCommentsInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestsInput;
@@ -40,14 +36,10 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.SubmitPullRequest
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.SubmitPullRequestReviewResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TeamInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntry;
-import com.aiadvent.mcp.backend.github.GitHubRepositoryService.TreeEntryType;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.UserInfo;
-import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
-import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -59,14 +51,9 @@ import org.springframework.util.StringUtils;
 class GitHubTools {
 
   private final GitHubRepositoryService repositoryService;
-  private final WorkspaceInspectorService workspaceInspectorService;
 
-  GitHubTools(
-      GitHubRepositoryService repositoryService,
-      WorkspaceInspectorService workspaceInspectorService) {
+  GitHubTools(GitHubRepositoryService repositoryService) {
     this.repositoryService = Objects.requireNonNull(repositoryService, "repositoryService");
-    this.workspaceInspectorService =
-        Objects.requireNonNull(workspaceInspectorService, "workspaceInspectorService");
   }
 
   @Tool(
@@ -94,76 +81,6 @@ class GitHubTools {
         result.resolvedRef(),
         result.truncated(),
         result.entries().stream().map(this::toTreeNode).toList());
-  }
-
-  @Tool(
-      name = "github.repository_fetch",
-      description =
-          "Скачивает репозиторий в изолированное workspace-хранилище. Принимает repository{owner,name,ref?}, "
-              + "необязательный requestId для трассировки и параметры options: strategy (ARCHIVE_ONLY|ARCHIVE_WITH_FALLBACK_CLONE|CLONE_WITH_SUBMODULES), "
-              + "shallowClone (по умолчанию true), includeSubmodules, cloneTimeout/ archiveTimeout (Duration ISO-8601), "
-              + "archiveSizeLimit (байты) и detectKeyFiles. Возвращает workspaceId, абсолютный путь, "
-              + "resolvedRef, commitSha, размеры скачивания и список ключевых файлов.")
-  GitHubRepositoryFetchResponse fetchRepository(GitHubRepositoryFetchRequest request) {
-    RepositoryInput repositoryInput = requireRepository(request);
-    GitFetchOptions options = toFetchOptions(request.options());
-    FetchRepositoryResult result =
-        repositoryService.fetchRepository(
-            new FetchRepositoryInput(
-                new RepositoryRef(
-                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
-                options,
-                request.requestId()));
-    return new GitHubRepositoryFetchResponse(
-        toRepositoryInfo(result.repository()),
-        result.workspaceId(),
-        result.workspacePath().toString(),
-        result.resolvedRef(),
-        result.commitSha(),
-        result.downloadedBytes(),
-        result.workspaceSizeBytes(),
-        result.downloadDuration() != null ? result.downloadDuration().toMillis() : 0L,
-        result.strategy().name().toLowerCase(Locale.ROOT),
-        result.keyFiles(),
-        result.fetchedAt());
-  }
-
-  @Tool(
-      name = "github.workspace_directory_inspector",
-      description =
-          "Инспектирует workspace, созданный GitHub fetch-инструментом. Требует workspaceId."
-              + " Поддерживает фильтры includeGlobs/excludeGlobs (glob-паттерны), maxDepth (по умолчанию 4),"
-              + " maxResults (по умолчанию 400, верхний предел 2000), includeTypes ([FILE,DIRECTORY]),"
-              + " флаг includeHidden и detectProjects. Возвращает список элементов с типом, размером,"
-              + " признаками проекта (Gradle/Maven/NPM), наличием gradlew, а также рекомендации по projectPath.")
-  WorkspaceDirectoryInspectorResponse inspectWorkspace(WorkspaceDirectoryInspectorRequest request) {
-    if (request == null || !StringUtils.hasText(request.workspaceId())) {
-      throw new IllegalArgumentException("workspaceId must not be blank");
-    }
-    EnumSet<WorkspaceItemType> types = resolveTypes(request.includeTypes());
-    WorkspaceInspectorService.InspectWorkspaceResult result =
-        workspaceInspectorService.inspectWorkspace(
-            new WorkspaceInspectorService.InspectWorkspaceRequest(
-                request.workspaceId(),
-                request.includeGlobs(),
-                request.excludeGlobs(),
-                request.maxDepth(),
-                request.maxResults(),
-                types,
-                request.includeHidden(),
-                request.detectProjects()));
-
-    return new WorkspaceDirectoryInspectorResponse(
-        result.workspaceId(),
-        result.workspacePath().toString(),
-        result.items().stream().map(this::toWorkspaceEntry).toList(),
-        result.truncated(),
-        result.warnings(),
-        result.containsMultipleGradleProjects(),
-        result.recommendedProjectPath(),
-        result.totalMatches(),
-        result.duration().toMillis(),
-        result.inspectedAt());
   }
 
   @Tool(
@@ -408,38 +325,6 @@ class GitHubTools {
         Instant.now());
   }
 
-  private GitFetchOptions toFetchOptions(GitHubRepositoryFetchOptions options) {
-    if (options == null) {
-      return new GitFetchOptions(null, null, null, null, null, null, null);
-    }
-    return new GitFetchOptions(
-        options.strategy(),
-        options.shallowClone(),
-        options.includeSubmodules(),
-        options.cloneTimeout(),
-        options.archiveTimeout(),
-        options.archiveSizeLimit(),
-        options.detectKeyFiles());
-  }
-
-  private EnumSet<WorkspaceItemType> resolveTypes(List<String> includeTypes) {
-    if (includeTypes == null || includeTypes.isEmpty()) {
-      return null;
-    }
-    EnumSet<WorkspaceItemType> resolved = EnumSet.noneOf(WorkspaceItemType.class);
-    for (String type : includeTypes) {
-      if (!StringUtils.hasText(type)) {
-        continue;
-      }
-      try {
-        resolved.add(WorkspaceItemType.valueOf(type.trim().toUpperCase(Locale.ROOT)));
-      } catch (IllegalArgumentException ex) {
-        // ignore unknown type
-      }
-    }
-    return resolved.isEmpty() ? null : resolved;
-  }
-
   private RepositoryInfo toRepositoryInfo(RepositoryRef ref) {
     return new RepositoryInfo(ref.owner(), ref.name(), ref.ref());
   }
@@ -457,20 +342,6 @@ class GitHubTools {
         file.downloadUrl(),
         file.contentBase64(),
         file.textContent());
-  }
-
-  private WorkspaceDirectoryEntry toWorkspaceEntry(
-      WorkspaceInspectorService.WorkspaceItem item) {
-    return new WorkspaceDirectoryEntry(
-        item.path(),
-        item.type().name().toLowerCase(Locale.ROOT),
-        item.sizeBytes(),
-        item.hidden(),
-        item.symlink(),
-        item.executable(),
-        item.lastModified(),
-        item.projectTypes(),
-        item.hasGradleWrapper());
   }
 
   private RepositoryInput requireRepository(RepositoryRequest request) {
@@ -514,65 +385,6 @@ class GitHubTools {
     }
     return new GitHubPullRequestReview(info.id(), info.state(), info.htmlUrl(), info.submittedAt());
   }
-
-  record GitHubRepositoryFetchRequest(
-      RepositoryInput repository, String requestId, GitHubRepositoryFetchOptions options)
-      implements RepositoryRequest {}
-
-  record GitHubRepositoryFetchOptions(
-      CheckoutStrategy strategy,
-      Boolean shallowClone,
-      Boolean includeSubmodules,
-      Duration cloneTimeout,
-      Duration archiveTimeout,
-      Long archiveSizeLimit,
-      Boolean detectKeyFiles) {}
-
-  record GitHubRepositoryFetchResponse(
-      RepositoryInfo repository,
-      String workspaceId,
-      String workspacePath,
-      String resolvedRef,
-      String commitSha,
-      long downloadedBytes,
-      long workspaceSizeBytes,
-      long downloadTimeMs,
-      String strategy,
-      List<String> keyFiles,
-      Instant fetchedAt) {}
-
-  record WorkspaceDirectoryInspectorRequest(
-      String workspaceId,
-      List<String> includeGlobs,
-      List<String> excludeGlobs,
-      Integer maxDepth,
-      Integer maxResults,
-      List<String> includeTypes,
-      Boolean includeHidden,
-      Boolean detectProjects) {}
-
-  record WorkspaceDirectoryInspectorResponse(
-      String workspaceId,
-      String workspacePath,
-      List<WorkspaceDirectoryEntry> items,
-      boolean truncated,
-      List<String> warnings,
-      boolean containsMultipleGradleProjects,
-      String recommendedProjectPath,
-      int totalMatches,
-      long durationMs,
-      Instant inspectedAt) {}
-
-  record WorkspaceDirectoryEntry(
-      String path,
-      String type,
-      long sizeBytes,
-      boolean hidden,
-      boolean symlink,
-      boolean executable,
-      Instant lastModified,
-      List<String> projectTypes,
-      boolean hasGradleWrapper) {}
 
   record RepositoryInfo(String owner, String name, String ref) {}
 

@@ -79,7 +79,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
-class GitHubRepositoryService {
+public class GitHubRepositoryService {
 
   private static final Logger log = LoggerFactory.getLogger(GitHubRepositoryService.class);
   private static final int DEFAULT_PR_PAGE_LIMIT = 20;
