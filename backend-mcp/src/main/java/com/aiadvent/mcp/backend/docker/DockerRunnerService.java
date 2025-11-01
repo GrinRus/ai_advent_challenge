@@ -129,7 +129,8 @@ public class DockerRunnerService {
       command.addAll(tasks);
     }
 
-    List<String> dockerCommand = buildDockerCommand(mountConfig, workDir, command, input);
+    Map<String, String> env = mergeEnvs(input.env(), mountConfig.gradleUserHome());
+    List<String> dockerCommand = buildDockerCommand(mountConfig, workDir, command, input, env);
     if (log.isDebugEnabled()) {
       log.debug(
           "docker.gradle_runner invoking docker command: workspaceId={}, projectPath={}, command={}",
@@ -137,15 +138,6 @@ public class DockerRunnerService {
           projectPath,
           String.join(" ", dockerCommand));
     }
-
-    Map<String, String> env = mergeEnvs(input.env(), mountConfig.gradleUserHome());
-    env.forEach(
-        (key, value) -> {
-          if (StringUtils.hasText(key) && value != null) {
-            dockerCommand.add("-e");
-            dockerCommand.add(key + "=" + value);
-          }
-        });
     Instant startedAt = Instant.now();
     Timer.Sample sample = Timer.start(meterRegistry);
     ProcessResult result;
@@ -182,7 +174,11 @@ public class DockerRunnerService {
   }
 
   private List<String> buildDockerCommand(
-      MountConfiguration mountConfig, String workDir, List<String> gradleCommand, DockerGradleRunInput input) {
+      MountConfiguration mountConfig,
+      String workDir,
+      List<String> gradleCommand,
+      DockerGradleRunInput input,
+      Map<String, String> env) {
     List<String> dockerCommand = new ArrayList<>();
     dockerCommand.add(properties.getDockerBinary());
     dockerCommand.add("run");
@@ -205,6 +201,14 @@ public class DockerRunnerService {
       dockerCommand.add("--memory");
       dockerCommand.add(String.format(Locale.ROOT, "%.1fg", properties.getMemoryLimitGb()));
     }
+
+    env.forEach(
+        (key, value) -> {
+          if (StringUtils.hasText(key) && value != null) {
+            dockerCommand.add("-e");
+            dockerCommand.add(key + "=" + value);
+          }
+        });
 
     dockerCommand.add("-w");
     dockerCommand.add(workDir);
