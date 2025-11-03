@@ -1,0 +1,37 @@
+server:
+  port: ${REPO_ANALYSIS_MCP_HTTP_PORT:${SERVER_PORT:8080}}
+
+spring:
+  ai:
+    mcp:
+      server:
+        enabled: true
+        stdio: false
+        protocol: STREAMABLE
+        name: repo-analysis-mcp
+        version: 0.1.0
+        type: SYNC
+        annotation-scanner:
+          enabled: false
+        instructions: |
+          Repo Analysis MCP осуществляет офлайн-обход скачанного workspace, поставляя сегменты кода и агрегируя находки.
+          Перед работой убедитесь, что репозиторий загружен через github.repository_fetch, и используйте единый analysisId для всей сессии.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+      streamable-http:
+        mcp-endpoint: /mcp
+        keep-alive-interval: 30s
+
+repo:
+  analysis:
+    state-root: ${REPO_ANALYSIS_STATE_ROOT:${TMPDIR:${TEMP:/tmp}}/aiadvent/mcp/repo-analysis}
+    max-depth: ${REPO_ANALYSIS_MAX_DEPTH:8}
+    max-file-bytes: ${REPO_ANALYSIS_MAX_FILE_BYTES:524288}
+    segment-max-bytes: ${REPO_ANALYSIS_SEGMENT_MAX_BYTES:65536}
+    include-hidden: ${REPO_ANALYSIS_INCLUDE_HIDDEN:false}
+    follow-symlinks: ${REPO_ANALYSIS_FOLLOW_SYMLINKS:false}
+    exclude-directories: ${REPO_ANALYSIS_EXCLUDE_DIRS:.git,node_modules,build,dist,out,target,.idea,.gradle}
+    exclude-extensions: ${REPO_ANALYSIS_EXCLUDE_EXTS:png,jpg,jpeg,gif,bmp,ico,class,exe,dll,so,dylib,lock,zip,jar,war,mp4,mp3,ogg,avi,mov,pdf,bin}

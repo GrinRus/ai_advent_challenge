@@ -2713,3 +2713,256 @@ databaseChangeLog:
                 ('workspace.read_file', 'Workspace · Read file', 'Читает содержимое файлов из локального workspace, подготовленного GitHub MCP.', 'github', 'MANUAL', '["github","workspace"]'::jsonb, '["github-read"]'::jsonb, 'Локальный workspace, полученный через github.repository_fetch.', NULL, 60000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'workspace.read_file' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
+  - changeSet:
+      id: 0103-integrate-repo-analysis-mcp
+      author: codex
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo_analysis.scan_next_segment', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "projectPath": {"type":"string"},
+                     "reset": {"type":"boolean"},
+                     "maxBytes": {"type":"integer","minimum":1,"maximum":262144},
+                     "configOverrides": {
+                       "type": "object",
+                       "properties": {
+                         "maxDepth": {"type":"integer","minimum":1,"maximum":32},
+                         "maxFileBytes": {"type":"integer","minimum":1024,"maximum":10485760},
+                         "segmentMaxBytes": {"type":"integer","minimum":2048,"maximum":262144},
+                         "includeHidden": {"type":"boolean"},
+                         "includeExtensions": {"type":"array","items":{"type":"string"}},
+                         "excludeExtensions": {"type":"array","items":{"type":"string"}},
+                         "excludeDirectories": {"type":"array","items":{"type":"string"}}
+                       }
+                     }
+                   },
+                   "required": ["analysisId","workspaceId"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "projectPath": {"type":"string"},
+                     "completed": {"type":"boolean"},
+                     "segment": {
+                       "type": ["object","null"],
+                       "properties": {
+                         "key": {"type":"string"},
+                         "path": {"type":"string"},
+                         "segmentIndex": {"type":"integer","minimum":1},
+                         "totalSegments": {"type":"integer","minimum":1},
+                         "startLine": {"type":"integer","minimum":1},
+                         "endLine": {"type":"integer","minimum":1},
+                         "bytes": {"type":"integer","minimum":0},
+                         "truncated": {"type":"boolean"},
+                         "content": {"type":"string"},
+                         "summary": {"type":"string"},
+                         "readAt": {"type":"string","format":"date-time"}
+                       },
+                       "required": ["key","path","segmentIndex","totalSegments","startLine","endLine","bytes","truncated","content","summary","readAt"]
+                     },
+                     "remainingSegments": {"type":"integer","minimum":0},
+                     "processedSegments": {"type":"integer","minimum":0},
+                     "warnings": {"type":"array","items":{"type":"string"}},
+                     "skippedFiles": {"type":"array","items":{"type":"string"}},
+                     "generatedAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["analysisId","workspaceId","completed","remainingSegments","processedSegments","warnings","skippedFiles","generatedAt"]
+                 }$$::jsonb,
+                 'checksum-repo_analysis.scan_next_segment-v1', '[]'::jsonb, 'repo-analysis', 'repo_analysis.scan_next_segment', 'http-stream', 'repo-analysis')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo_analysis.aggregate_findings', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "findings": {
+                       "type":"array",
+                       "items": {
+                         "type":"object",
+                         "properties": {
+                           "path": {"type":"string"},
+                           "line": {"type":"integer","minimum":1},
+                           "endLine": {"type":"integer","minimum":1},
+                           "title": {"type":"string"},
+                           "summary": {"type":"string"},
+                           "severity": {"type":"string"},
+                           "tags": {"type":"array","items":{"type":"string"}},
+                           "score": {"type":"number"}
+                         },
+                         "required": ["path"]
+                       }
+                     }
+                   },
+                   "required": ["analysisId","workspaceId"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "totalFindings": {"type":"integer","minimum":0},
+                     "newFindings": {"type":"integer","minimum":0},
+                     "files": {
+                       "type":"array",
+                       "items": {
+                         "type":"object",
+                         "properties": {
+                           "path": {"type":"string"},
+                           "findingCount": {"type":"integer","minimum":0},
+                           "worstSeverity": {"type":"string"},
+                           "score": {"type":"number"},
+                           "tags": {"type":"array","items":{"type":"string"}},
+                           "highlights": {"type":"array","items":{"type":"string"}}
+                         },
+                         "required": ["path","findingCount","worstSeverity","score","tags","highlights"]
+                       }
+                     },
+                     "aggregatedAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["analysisId","workspaceId","totalFindings","newFindings","files","aggregatedAt"]
+                 }$$::jsonb,
+                 'checksum-repo_analysis.aggregate_findings-v1', '[]'::jsonb, 'repo-analysis', 'repo_analysis.aggregate_findings', 'http-stream', 'repo-analysis')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo_analysis.list_hotspots', 1,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "limit": {"type":"integer","minimum":1,"maximum":200},
+                     "includeDetails": {"type":"boolean"}
+                   },
+                   "required": ["analysisId","workspaceId"]
+                 }$$::jsonb,
+                 $${
+                   "type": "object",
+                   "properties": {
+                     "analysisId": {"type":"string"},
+                     "workspaceId": {"type":"string"},
+                     "hotspots": {
+                       "type":"array",
+                       "items": {
+                         "type":"object",
+                         "properties": {
+                           "path": {"type":"string"},
+                           "severity": {"type":"string"},
+                           "findingCount": {"type":"integer","minimum":0},
+                           "score": {"type":"number"},
+                           "highlights": {"type":"array","items":{"type":"string"}},
+                           "tags": {"type":"array","items":{"type":"string"}}
+                         },
+                         "required": ["path","severity","findingCount","score","highlights","tags"]
+                       }
+                     },
+                     "generatedAt": {"type":"string","format":"date-time"}
+                   },
+                   "required": ["analysisId","workspaceId","hotspots","generatedAt"]
+                 }$$::jsonb,
+                 'checksum-repo_analysis.list_hotspots-v1', '[]'::jsonb, 'repo-analysis', 'repo_analysis.list_hotspots', 'http-stream', 'repo-analysis')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo_analysis.scan_next_segment', 'Repo Analysis · Scan segment', 'Считывает следующий сегмент кода из локального workspace с учётом лимитов и исключений.', 'repo-analysis', 'MANUAL', '["analysis","workspace"]'::jsonb, '["workspace-read"]'::jsonb, 'Локальный workspace, подготовленный GitHub MCP.', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo_analysis.scan_next_segment' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo_analysis.aggregate_findings', 'Repo Analysis · Aggregate findings', 'Принимает результаты анализа и строит агрегированную статистику по файлам и тегам.', 'repo-analysis', 'MANUAL', '["analysis","workspace"]'::jsonb, '["workspace-read"]'::jsonb, 'Локальный workspace, подготовленный GitHub MCP.', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo_analysis.aggregate_findings' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo_analysis.list_hotspots', 'Repo Analysis · List hotspots', 'Возвращает приоритетные файлы и области риска по накопленным находкам.', 'repo-analysis', 'MANUAL', '["analysis","workspace"]'::jsonb, '["workspace-read"]'::jsonb, 'Локальный workspace, подготовленный GitHub MCP.', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo_analysis.list_hotspots' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              WITH analysis_def AS (
+                INSERT INTO agent_definition (id, identifier, display_name, description, is_active, created_by, updated_by, created_at, updated_at)
+                VALUES (
+                  gen_random_uuid(),
+                  'github-analysis-runner',
+                  'GitHub Analysis Runner Agent',
+                  'LLM-агент, который оркестрирует repo_analysis MCP: итеративный скан файлов, агрегирование находок и построение hotspots.',
+                  true,
+                  'seed',
+                  'seed',
+                  now(),
+                  now())
+                ON CONFLICT (identifier) DO NOTHING
+                RETURNING id
+              ),
+              analysis_def_id AS (
+                SELECT id FROM analysis_def
+                UNION
+                SELECT id FROM agent_definition WHERE identifier = 'github-analysis-runner'
+              )
+              INSERT INTO agent_version (
+                id,
+                agent_definition_id,
+                version,
+                status,
+                provider_type,
+                provider_id,
+                model_id,
+                system_prompt,
+                agent_invocation_options,
+                sync_only,
+                max_tokens,
+                created_by,
+                updated_by,
+                created_at,
+                published_at)
+              SELECT
+                gen_random_uuid(),
+                analysis_def_id.id,
+                1,
+                'PUBLISHED',
+                'OPENAI',
+                'openai',
+                'gpt-4o-mini',
+                'You orchestrate offline repository analysis over a prepared workspace. Validate analysisId/workspaceId/projectPath, resume existing runs via reset when asked, and iterate repo_analysis.scan_next_segment until completed. Summarize critical code fragments, request follow-up scans when useful, and consolidate observations through repo_analysis.aggregate_findings. Use repo_analysis.list_hotspots with includeDetails=true to surface the top risk files. workspace.read_file is available for targeted excerpts. Always return compact JSON like {"status":"COMPLETED","analysisId":..,"summary":..,"hotspots":[...],"warnings":[...]} or {"status":"ERROR","message":..}.',
+                $${
+                  "provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},
+                  "prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.15,"topP":0.85,"maxOutputTokens":900}},
+                  "memoryPolicy":{"channels":["shared","conversation"],"retentionDays":14,"maxEntries":160,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},
+                  "retryPolicy":{"maxAttempts":3,"initialDelayMs":250,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":45000,"overallDeadlineMs":120000,"jitterMs":150},
+                  "advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},
+                  "tooling":{"bindings":[
+                    {"toolCode":"repo_analysis.scan_next_segment","schemaVersion":1,"executionMode":"AUTO"},
+                    {"toolCode":"repo_analysis.aggregate_findings","schemaVersion":1,"executionMode":"AUTO"},
+                    {"toolCode":"repo_analysis.list_hotspots","schemaVersion":1,"executionMode":"AUTO"},
+                    {"toolCode":"workspace.read_file","schemaVersion":1,"executionMode":"AUTO"}
+                  ]},
+                  "costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}
+                }$$::jsonb,
+                true,
+                900,
+                'seed',
+                'seed',
+                now(),
+                now()
+              FROM analysis_def_id
+              WHERE NOT EXISTS (
+                SELECT 1 FROM agent_version av WHERE av.agent_definition_id = analysis_def_id.id AND av.version = 1);

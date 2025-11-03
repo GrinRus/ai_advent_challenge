@@ -54,6 +54,9 @@ spring:
             docker:
               url: ${DOCKER_MCP_HTTP_BASE_URL:http://localhost:7095}
               endpoint: ${DOCKER_MCP_HTTP_ENDPOINT:/mcp}
+            repo-analysis:
+              url: ${REPO_ANALYSIS_MCP_HTTP_BASE_URL:http://localhost:7096}
+              endpoint: ${REPO_ANALYSIS_MCP_HTTP_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -363,6 +366,11 @@ app:
           description: "Контейнеризированный запуск Gradle-тестов в изолированном окружении."
           tags: ["ci", "gradle"]
           security-policy: "internal-change-managed"
+        repo-analysis:
+          display-name: "Repo Analysis MCP"
+          description: "Анализ локального workspace: скан сегментов, агрегация находок и hotspots."
+          tags: ["analysis", "workspace"]
+          security-policy: "internal-readonly"
 
   flow:
     api:
