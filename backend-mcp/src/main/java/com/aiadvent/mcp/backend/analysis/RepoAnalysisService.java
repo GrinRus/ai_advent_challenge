@@ -172,12 +172,21 @@ public class RepoAnalysisService {
     Lock lock = locks.computeIfAbsent(analysisId, key -> new ReentrantLock());
     lock.lock();
     try {
-      RepoAnalysisState state =
-          stateStore
-              .load(analysisId)
-              .orElseThrow(() -> new IllegalArgumentException("Unknown analysisId: " + analysisId));
+      Optional<RepoAnalysisState> optionalState = stateStore.load(analysisId);
+      if (optionalState.isEmpty()) {
+        log.debug("Aggregate request for unknown analysisId {}: returning empty response", analysisId);
+        return new AggregateFindingsResponse(
+            analysisId, request.workspaceId(), 0, 0, List.of(), Instant.now());
+      }
+      RepoAnalysisState state = optionalState.get();
       if (!Objects.equals(state.getWorkspaceId(), request.workspaceId())) {
-        throw new IllegalArgumentException("Workspace mismatch for analysis: " + analysisId);
+        log.warn(
+            "Workspace mismatch for analysis {} (expected {}, got {}) - returning empty response",
+            analysisId,
+            state.getWorkspaceId(),
+            request.workspaceId());
+        return new AggregateFindingsResponse(
+            analysisId, request.workspaceId(), 0, 0, List.of(), Instant.now());
       }
 
       int newFindings = appendFindings(state, request.findings());
@@ -203,12 +212,19 @@ public class RepoAnalysisService {
     Lock lock = locks.computeIfAbsent(analysisId, key -> new ReentrantLock());
     lock.lock();
     try {
-      RepoAnalysisState state =
-          stateStore
-              .load(analysisId)
-              .orElseThrow(() -> new IllegalArgumentException("Unknown analysisId: " + analysisId));
+      Optional<RepoAnalysisState> optionalState = stateStore.load(analysisId);
+      if (optionalState.isEmpty()) {
+        log.debug("Hotspot request for unknown analysisId {}: returning empty list", analysisId);
+        return new ListHotspotsResponse(analysisId, request.workspaceId(), List.of(), Instant.now());
+      }
+      RepoAnalysisState state = optionalState.get();
       if (!Objects.equals(state.getWorkspaceId(), request.workspaceId())) {
-        throw new IllegalArgumentException("Workspace mismatch for analysis: " + analysisId);
+        log.warn(
+            "Workspace mismatch for analysis {} (expected {}, got {}) - returning empty hotspot list",
+            analysisId,
+            state.getWorkspaceId(),
+            request.workspaceId());
+        return new ListHotspotsResponse(analysisId, request.workspaceId(), List.of(), Instant.now());
       }
       int limit = Optional.ofNullable(request.limit()).filter(value -> value > 0).orElse(10);
       boolean includeDetails = Boolean.TRUE.equals(request.includeDetails());
