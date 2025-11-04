@@ -909,16 +909,25 @@
 Цель: завершить MCP-экосистему для assisted coding и полного цикла работы с GitHub поверх локального workspace.
 
 ### MCP Coding Assistant
-- [ ] Провести desk-research через Perplexity: собрать существующие MCP/AGI-инструменты для генерации патчей, оценить возможность прямой интеграции (API, лицензия).
-- [ ] Подготовить RFC по выбранной стратегии: reuse стороннего MCP или разработка собственного (`code_patch_mcp`), описать UX, ограничения и безопасность.
-- [ ] Реализовать proof-of-concept инструмента (`generate_patch`, `review_patch`, `apply_patch_preview`) с поддержкой dry-run и аннотаций к diff.
-- [ ] Настроить guardrails: лимиты на размер правок, валидация компиляции (через существующие Docker runners) и ручное подтверждение оператором.
+- [ ] Провести desk-research через Perplexity: собрать существующие MCP/AGI-инструменты для генерации патчей, оценить API/лицензии, зафиксировать reuse-кандидаты.
+- [ ] Подготовить RFC по стратегии (`reuse` vs `собственный code_patch_mcp`): целевой UX (чат/flow), ответственность сервисов, требования безопасности и отката.
+- [ ] Поднять профиль `coding` в `backend-mcp`: `@ComponentScan` + `@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить docker-compose сервис.
+- [ ] Реализовать `CodingAssistantService`: операции `generate_patch`, `review_patch`, `apply_patch_preview` поверх `WorkspaceAccessService`, с лимитами на размер diff и проверкой путей.
+- [ ] Интегрировать проверку компиляции через `DockerRunnerService.runGradle` (fallback на `gradle`), маскировать секреты, логировать метрики (`coding_patch_attempt_total` и т.п.).
+- [ ] Вернуть результаты с аннотациями (modified files, конфликтные hunks, оценка риска), поддержать `dry-run` и preview режима.
+- [ ] Обновить MCP-каталог: зарегистрировать `ToolCallbackProvider` с `@Tool` методами, добавить записи в Liquibase (`tool_schema_version`/`tool_definition`) и `app.mcp.catalog`.
+- [ ] Подключить инструменты в backend (chat/flow): описать tool bindings, обновить конфиг `app.chat.research.tools`, добавить manual подтверждение для apply.
+- [ ] Написать unit/integration тесты: генерация патча, превью, проверка компиляции, негативные сценарии (выход за лимит, неверный workspaceId).
+- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): как запускать `coding-mcp`, лимиты, шаги подтверждения и контроль доступа.
 
 ### GitHub MCP Expansion
-- [ ] Расширить `github_mcp`: добавить инструменты `create_branch`, `commit_changes`, `push_branch`, `open_pull_request`, `set_pr_status`, `raise_veto`.
-- [ ] Интегрировать аутентификацию под сервисные аккаунты, логирование аудита (кто/когда/какой репо), защиту операций веток и обработку конфликтов/force-push запретов.
-- [ ] Настроить end-to-end тесты на sandbox-репозитории: успешное создание PR, конфликт мерджа, отклонение PR через вето и повторный запуск с фиксом.
-- [ ] Обновить документацию (`docs/guides/mcp-operators.md`, `docs/infra.md`): описать новые сценарии, ограничения PAT/SSH и чек-лист по безопасному использованию.
+- [ ] Расширить `GitHubRepositoryService`: методы `createBranch`, `commitChanges`, `pushBranch`, `openPullRequest`, `setPrStatus`, `raiseVeto` (через GitHub API/JGit + workspace проверки).
+- [ ] Добавить `GitHubActionsTools`/расширить `GitHubTools` `@Tool`-методами: валидировать входные данные, возвращать структурированные ответы (SHA, ссылки, статусы).
+- [ ] Настроить защиту операций: проверка force-push, whitelisted веток, лимиты на размер архивов, маскирование токенов, аудит (метрики + структурированное логирование).
+- [ ] Обновить каталог инструментов: Liquibase записи, `app.mcp.catalog`, привязка tool codes в backend (flow/chat) с execution-mode `MANUAL`.
+- [ ] E2E тесты на sandbox репозитории: happy path (ветка → коммит → push → PR → статус), конфликт/force-push запрет, veto-флоу.
+- [ ] Unit тесты: сериализация запросов, обработка ошибок GitHub API, rollback workspace при исключениях.
+- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): требования к PAT/SSH, чек-лист безопасного использования, примеры JSON вызовов, работа с sandbox репо.
 
 ## Wave 25 — Переезд Docker MCP на docker-java/Testcontainers Foundation
 ### Подготовка и согласование
