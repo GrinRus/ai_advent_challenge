@@ -408,6 +408,7 @@ app:
       secret-token: ${TELEGRAM_BOT_WEBHOOK_SECRET:}
       connection-timeout: ${TELEGRAM_BOT_WEBHOOK_TIMEOUT:PT10S}
     allowed-updates: ${TELEGRAM_BOT_ALLOWED_UPDATES:message,callback_query}
+    allowed-user-ids: ${TELEGRAM_BOT_ALLOWED_USER_IDS:}
     stt:
       enabled: ${TELEGRAM_STT_ENABLED:true}
       model: ${TELEGRAM_STT_MODEL:gpt-4o-mini-transcribe}

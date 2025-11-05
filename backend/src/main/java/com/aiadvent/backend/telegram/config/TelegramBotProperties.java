@@ -23,6 +23,8 @@ public class TelegramBotProperties {
   private final List<String> allowedUpdates =
       new ArrayList<>(List.of("message", "callback_query"));
 
+  private final List<Long> allowedUserIds = new ArrayList<>();
+
   public boolean isEnabled() {
     return enabled;
   }
@@ -41,6 +43,10 @@ public class TelegramBotProperties {
 
   public List<String> getAllowedUpdates() {
     return allowedUpdates;
+  }
+
+  public List<Long> getAllowedUserIds() {
+    return allowedUserIds;
   }
 
   public Stt getStt() {

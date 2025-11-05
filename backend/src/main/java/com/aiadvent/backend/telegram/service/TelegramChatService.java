@@ -53,6 +53,7 @@ import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.File;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -152,6 +153,14 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     long chatId = message.getChatId();
+
+    if (!isUserAllowed(message.getFrom())) {
+      log.warn(
+          "Rejecting message from unauthorized Telegram user {}",
+          message.getFrom() != null ? message.getFrom().getId() : null);
+      sendText(chatId, "Этот бот доступен только авторизованным пользователям.");
+      return;
+    }
 
     if (message.getVoice() != null) {
       handleVoiceMessage(chatId, message.getVoice());
@@ -292,6 +301,20 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     long chatId = callbackQuery.getMessage() != null ? callbackQuery.getMessage().getChatId() : -1L;
+    if (!isUserAllowed(callbackQuery.getFrom())) {
+      log.warn(
+          "Rejecting callback {} from unauthorized Telegram user {}",
+          callbackQuery.getId(),
+          callbackQuery.getFrom() != null ? callbackQuery.getFrom().getId() : null);
+      try {
+        respondToCallback(
+            callbackQuery.getId(), "Этот бот доступен только авторизованным пользователям.", true);
+      } catch (TelegramApiException ex) {
+        log.debug("Failed to acknowledge unauthorized callback {}", callbackQuery.getId(), ex);
+      }
+      return;
+    }
+
     String data = callbackQuery.getData();
 
     try {
@@ -934,6 +957,16 @@ public class TelegramChatService implements TelegramUpdateHandler {
       return "ogg";
     }
     return normalized;
+  }
+
+  private boolean isUserAllowed(User user) {
+    if (CollectionUtils.isEmpty(properties.getAllowedUserIds())) {
+      return true;
+    }
+    if (user == null || user.getId() == null) {
+      return false;
+    }
+    return properties.getAllowedUserIds().contains(user.getId());
   }
 
   private String transcribeAudio(DownloadedAudio audio) {
