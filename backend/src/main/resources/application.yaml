@@ -7,7 +7,7 @@ spring:
   http:
     client:
       connect-timeout: ${HTTP_CLIENT_CONNECT_TIMEOUT:PT45S}
-      read-timeout: ${HTTP_CLIENT_READ_TIMEOUT:PT4M}
+      read-timeout: ${HTTP_CLIENT_READ_TIMEOUT:PT10M}
   ai:
     tools:
       observations:
@@ -61,7 +61,7 @@ spring:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       client:
-        read-timeout: ${OPENAI_CLIENT_READ_TIMEOUT:${HTTP_CLIENT_READ_TIMEOUT:PT4M}}
+        read-timeout: ${OPENAI_CLIENT_READ_TIMEOUT:${HTTP_CLIENT_READ_TIMEOUT:PT10M}}
       chat:
         options:
           model: ${OPENAI_DEFAULT_MODEL:gpt-4o-mini}
@@ -74,7 +74,7 @@ spring:
       api-key: ${ZHIPU_API_KEY:demo-zhipu-key}
       base-url: ${ZHIPU_BASE_URL:https://api.z.ai}
       client:
-        read-timeout: ${ZHIPU_CLIENT_READ_TIMEOUT:${HTTP_CLIENT_READ_TIMEOUT:PT4M}}
+        read-timeout: ${ZHIPU_CLIENT_READ_TIMEOUT:${HTTP_CLIENT_READ_TIMEOUT:PT10M}}
       chat:
         completions-path: ${ZHIPU_COMPLETIONS_PATH:/api/paas/v4/chat/completions}
         options:
