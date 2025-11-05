@@ -6,10 +6,12 @@ import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
+import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -39,28 +41,44 @@ public class TelegramChatService implements TelegramUpdateHandler {
 
   private static final String CALLBACK_MENU_MAIN = "menu:main";
   private static final String CALLBACK_MENU_PROVIDERS = "menu:providers";
-  private static final String CALLBACK_MENU_MODE = "menu:mode";
   private static final String CALLBACK_MENU_MODELS = "menu:models:";
+  private static final String CALLBACK_MENU_MODE = "menu:mode";
+  private static final String CALLBACK_MENU_TOOLS = "menu:tools";
+  private static final String CALLBACK_MENU_SAMPLING = "menu:sampling";
+
   private static final String CALLBACK_SET_PROVIDER = "set-provider:";
   private static final String CALLBACK_SET_MODEL = "set-model:";
   private static final String CALLBACK_SET_MODE = "set-mode:";
+  private static final String CALLBACK_TOGGLE_TOOL = "toggle-tool:";
+  private static final String CALLBACK_CLEAR_TOOLS = "tools:clear";
+  private static final String CALLBACK_SET_TEMP = "sampling:temp:";
+  private static final String CALLBACK_SET_TOP_P = "sampling:topp:";
+  private static final String CALLBACK_SET_MAX = "sampling:max:";
+  private static final String CALLBACK_RESET_SAMPLING = "sampling:reset";
   private static final String CALLBACK_NEW_DIALOG = "action:new";
+
+  private static final List<Double> TEMPERATURE_OPTIONS = List.of(0.1, 0.3, 0.7, 1.0);
+  private static final List<Double> TOP_P_OPTIONS = List.of(0.5, 0.8, 1.0);
+  private static final List<Integer> MAX_TOKENS_OPTIONS = List.of(512, 1024, 2048);
 
   private static final String DEFAULT_MODE = "default";
 
   private final TelegramWebhookBotAdapter webhookBot;
   private final SyncChatService syncChatService;
   private final ChatProviderService chatProviderService;
+  private final ChatResearchToolBindingService researchToolBindingService;
   private final TelegramChatStateStore stateStore;
 
   public TelegramChatService(
       TelegramWebhookBotAdapter webhookBot,
       SyncChatService syncChatService,
       ChatProviderService chatProviderService,
+      ChatResearchToolBindingService researchToolBindingService,
       TelegramChatStateStore stateStore) {
     this.webhookBot = webhookBot;
     this.syncChatService = syncChatService;
     this.chatProviderService = chatProviderService;
+    this.researchToolBindingService = researchToolBindingService;
     this.stateStore = stateStore;
   }
 
@@ -110,7 +128,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   }
 
   private void processCommand(long chatId, String rawCommand) {
-    String command = rawCommand != null ? rawCommand.trim().toLowerCase() : "";
+    String command = rawCommand != null ? rawCommand.trim().toLowerCase(Locale.ROOT) : "";
     switch (command) {
       case COMMAND_START -> {
         stateStore.reset(chatId);
@@ -124,7 +142,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
         sendMainMenu(chatId, state);
       }
       case COMMAND_NEW -> {
-        stateStore.compute(chatId, () -> ensureState(chatId), TelegramChatState::resetSession);
+        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::resetSession);
         sendText(chatId, "Начинаем новый диалог. Чем могу помочь?");
       }
       case COMMAND_MENU -> sendMainMenu(chatId, ensureState(chatId));
@@ -143,9 +161,9 @@ public class TelegramChatService implements TelegramUpdateHandler {
             UUID nextSessionId = result.context().sessionId();
             stateStore.compute(
                 chatId,
-                () -> state,
+                () -> createDefaultState(chatId),
                 current ->
-                    current == null ? state : current.withSessionId(nextSessionId));
+                    (current != null ? current : state).withSessionId(nextSessionId));
 
             if (result.context().newSession()) {
               sendText(
@@ -181,9 +199,11 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     List<String> toolCodes =
-        CollectionUtils.isEmpty(state.requestedToolCodes())
-            ? null
-            : List.copyOf(state.requestedToolCodes());
+        state.interactionMode().equalsIgnoreCase("research")
+            ? (CollectionUtils.isEmpty(state.requestedToolCodes())
+                ? null
+                : List.copyOf(state.requestedToolCodes()))
+            : null;
 
     return new ChatSyncRequest(
         state.sessionId(),
@@ -222,17 +242,38 @@ public class TelegramChatService implements TelegramUpdateHandler {
         sendProvidersMenu(chatId);
         respondToCallback(callbackQuery.getId(), null, false);
       } else if (data.startsWith(CALLBACK_MENU_MODELS)) {
-        String providerId = data.substring(CALLBACK_MENU_MODELS.length());
-        sendModelMenu(chatId, providerId);
+        sendModelMenu(chatId, data.substring(CALLBACK_MENU_MODELS.length()));
         respondToCallback(callbackQuery.getId(), null, false);
       } else if (CALLBACK_MENU_MODE.equals(data)) {
         sendModeMenu(chatId);
         respondToCallback(callbackQuery.getId(), null, false);
+      } else if (CALLBACK_MENU_TOOLS.equals(data)) {
+        sendToolsMenu(chatId, ensureState(chatId));
+        respondToCallback(callbackQuery.getId(), null, false);
+      } else if (CALLBACK_MENU_SAMPLING.equals(data)) {
+        sendSamplingMenu(chatId, ensureState(chatId));
+        respondToCallback(callbackQuery.getId(), null, false);
+      } else if (data.startsWith(CALLBACK_TOGGLE_TOOL)) {
+        handleToolToggle(chatId, data.substring(CALLBACK_TOGGLE_TOOL.length()), callbackQuery.getId());
+      } else if (CALLBACK_CLEAR_TOOLS.equals(data)) {
+        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::clearToolCodes);
+        respondToCallback(callbackQuery.getId(), "Инструменты сброшены", false);
+        sendToolsMenu(chatId, ensureState(chatId));
+      } else if (data.startsWith(CALLBACK_SET_TEMP)) {
+        handleSamplingUpdate(chatId, parseDouble(data.substring(CALLBACK_SET_TEMP.length())), null, null, callbackQuery.getId());
+      } else if (data.startsWith(CALLBACK_SET_TOP_P)) {
+        handleSamplingUpdate(chatId, null, parseDouble(data.substring(CALLBACK_SET_TOP_P.length())), null, callbackQuery.getId());
+      } else if (data.startsWith(CALLBACK_SET_MAX)) {
+        handleSamplingUpdate(chatId, null, null, parseInteger(data.substring(CALLBACK_SET_MAX.length())), callbackQuery.getId());
+      } else if (CALLBACK_RESET_SAMPLING.equals(data)) {
+        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::resetSamplingOverrides);
+        respondToCallback(callbackQuery.getId(), "Параметры sampling сброшены", false);
+        sendSamplingMenu(chatId, ensureState(chatId));
       } else if (CALLBACK_MENU_MAIN.equals(data)) {
         sendMainMenu(chatId, ensureState(chatId));
         respondToCallback(callbackQuery.getId(), null, false);
       } else if (CALLBACK_NEW_DIALOG.equals(data)) {
-        stateStore.compute(chatId, () -> ensureState(chatId), TelegramChatState::resetSession);
+        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::resetSession);
         respondToCallback(callbackQuery.getId(), "Диалог сброшен", false);
         sendMainMenu(chatId, ensureState(chatId));
       } else {
@@ -327,29 +368,65 @@ public class TelegramChatService implements TelegramUpdateHandler {
                         .callbackData(CALLBACK_MENU_MODE)
                         .build(),
                     InlineKeyboardButton.builder()
+                        .text("Инструменты")
+                        .callbackData(CALLBACK_MENU_TOOLS)
+                        .build()),
+                List.of(
+                    InlineKeyboardButton.builder()
+                        .text("Sampling")
+                        .callbackData(CALLBACK_MENU_SAMPLING)
+                        .build(),
+                    InlineKeyboardButton.builder()
                         .text("Новый диалог")
                         .callbackData(CALLBACK_NEW_DIALOG)
                         .build())));
 
-    String summary =
-        "Текущие настройки:\n"
-            + "• Провайдер: "
-            + state.providerId()
-            + '\n'
-            + "• Модель: "
-            + state.modelId()
-            + '\n'
-            + "• Режим: "
-            + (state.interactionMode().equalsIgnoreCase("research") ? "research" : "default");
-    if (state.sessionId() != null) {
-      summary += "\n• sessionId: " + state.sessionId();
+    StringBuilder summary =
+        new StringBuilder("Текущие настройки:\n")
+            .append("• Провайдер: ")
+            .append(state.providerId())
+            .append('\n')
+            .append("• Модель: ")
+            .append(state.modelId())
+            .append('\n')
+            .append("• Режим: ")
+            .append(state.interactionMode().equalsIgnoreCase("research") ? "research" : "default")
+            .append('\n');
+
+    if (!state.requestedToolCodes().isEmpty()) {
+      summary.append("• Инструменты: ")
+          .append(String.join(", ", state.requestedToolCodes()))
+          .append('\n');
+    } else {
+      summary.append("• Инструменты: не выбраны\n");
     }
 
-    sendMessage(chatId, summary, markup);
+    if (state.hasSamplingOverrides()) {
+      summary
+          .append("• Sampling: temp=")
+          .append(formatDouble(state.temperatureOverride()))
+          .append(", topP=")
+          .append(formatDouble(state.topPOverride()))
+          .append(", maxTokens=")
+          .append(state.maxTokensOverride() != null ? state.maxTokensOverride() : "—");
+    } else {
+      summary.append("• Sampling: по умолчанию");
+    }
+
+    if (state.sessionId() != null) {
+      summary.append("\n• sessionId: ").append(state.sessionId());
+    }
+
+    sendMessage(chatId, summary.toString(), markup);
   }
 
   private void sendProvidersMenu(long chatId) {
     Map<String, ChatProvidersProperties.Provider> providers = chatProviderService.providers();
+    if (providers.isEmpty()) {
+      sendText(chatId, "Доступные провайдеры не найдены.");
+      return;
+    }
+
     List<List<InlineKeyboardButton>> rows = new ArrayList<>();
     providers.forEach(
         (id, provider) ->
@@ -359,12 +436,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
                         .text(provider.getDisplayName() != null ? provider.getDisplayName() : id)
                         .callbackData(CALLBACK_SET_PROVIDER + id)
                         .build())));
-    rows.add(
-        List.of(
-            InlineKeyboardButton.builder()
-                .text("← Назад")
-                .callbackData(CALLBACK_MENU_MAIN)
-                .build()));
+    rows.add(backButtonRow());
 
     sendMessage(chatId, "Выберите провайдера:", new InlineKeyboardMarkup(rows));
   }
@@ -393,12 +465,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
                             .build()));
               }
             });
-    rows.add(
-        List.of(
-            InlineKeyboardButton.builder()
-                .text("← Назад")
-                .callbackData(CALLBACK_MENU_MAIN)
-                .build()));
+    rows.add(backButtonRow());
 
     sendMessage(chatId, "Выберите модель для " + providerId + ":", new InlineKeyboardMarkup(rows));
   }
@@ -417,13 +484,111 @@ public class TelegramChatService implements TelegramUpdateHandler {
                         .text("Research (MCP)")
                         .callbackData(CALLBACK_SET_MODE + "research")
                         .build()),
-                List.of(
-                    InlineKeyboardButton.builder()
-                        .text("← Назад")
-                        .callbackData(CALLBACK_MENU_MAIN)
-                        .build())));
+                backButtonRow()));
 
     sendMessage(chatId, "Выберите режим работы:", markup);
+  }
+
+  private void sendToolsMenu(long chatId, TelegramChatState state) {
+    List<String> toolCodes = researchToolBindingService.availableToolCodes();
+    if (toolCodes.isEmpty()) {
+      sendText(chatId, "Инструменты не сконфигурированы. Проверьте настройки backend.");
+      return;
+    }
+
+    List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+    for (String code : toolCodes) {
+      boolean enabled = state.hasToolCode(code);
+      rows.add(
+          List.of(
+              InlineKeyboardButton.builder()
+                  .text((enabled ? "✅ " : "▫️ ") + code)
+                  .callbackData(CALLBACK_TOGGLE_TOOL + code)
+                  .build()));
+    }
+    rows.add(
+        List.of(
+            InlineKeyboardButton.builder()
+                .text("Очистить")
+                .callbackData(CALLBACK_CLEAR_TOOLS)
+                .build()));
+    rows.add(backButtonRow());
+
+    String hint =
+        state.interactionMode().equalsIgnoreCase("research")
+            ? "Выберите инструменты для режима research."
+            : "Инструменты активируются только в режиме research."
+                + "\nСмените режим через главное меню.";
+
+    sendMessage(chatId, hint, new InlineKeyboardMarkup(rows));
+  }
+
+  private void sendSamplingMenu(long chatId, TelegramChatState state) {
+    ChatProvidersProperties.Provider providerConfig =
+        chatProviderService.provider(state.providerId());
+    ChatProvidersProperties.Model modelConfig =
+        chatProviderService.model(state.providerId(), state.modelId());
+
+    List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+    List<InlineKeyboardButton> tempRow = new ArrayList<>();
+    for (Double value : TEMPERATURE_OPTIONS) {
+      tempRow.add(
+          InlineKeyboardButton.builder()
+              .text(labelForOption("T", value, state.temperatureOverride()))
+              .callbackData(CALLBACK_SET_TEMP + value)
+              .build());
+    }
+    rows.add(tempRow);
+
+    List<InlineKeyboardButton> topRow = new ArrayList<>();
+    for (Double value : TOP_P_OPTIONS) {
+      topRow.add(
+          InlineKeyboardButton.builder()
+              .text(labelForOption("P", value, state.topPOverride()))
+              .callbackData(CALLBACK_SET_TOP_P + value)
+              .build());
+    }
+    rows.add(topRow);
+
+    List<InlineKeyboardButton> maxRow = new ArrayList<>();
+    for (Integer value : MAX_TOKENS_OPTIONS) {
+      maxRow.add(
+          InlineKeyboardButton.builder()
+              .text(labelForOption("M", value, state.maxTokensOverride()))
+              .callbackData(CALLBACK_SET_MAX + value)
+              .build());
+    }
+    rows.add(maxRow);
+
+    rows.add(
+        List.of(
+            InlineKeyboardButton.builder()
+                .text("Сбросить")
+                .callbackData(CALLBACK_RESET_SAMPLING)
+                .build()));
+    rows.add(backButtonRow());
+
+    StringBuilder text =
+        new StringBuilder("Sampling overrides:\n")
+            .append("• Temperature: ")
+            .append(state.temperatureOverride() != null ? state.temperatureOverride() : "по умолчанию")
+            .append(" (default: ")
+            .append(providerConfig.getTemperature() != null ? providerConfig.getTemperature() : "—")
+            .append(")\n")
+            .append("• TopP: ")
+            .append(state.topPOverride() != null ? state.topPOverride() : "по умолчанию")
+            .append(" (default: ")
+            .append(providerConfig.getTopP() != null ? providerConfig.getTopP() : "—")
+            .append(")\n")
+            .append("• Max tokens: ")
+            .append(state.maxTokensOverride() != null ? state.maxTokensOverride() : "по умолчанию")
+            .append(" (default: ")
+            .append(providerConfig.getMaxTokens() != null ? providerConfig.getMaxTokens() :
+                  (modelConfig.getMaxOutputTokens() != null ? modelConfig.getMaxOutputTokens() : "—"))
+            .append(")");
+
+    sendMessage(chatId, text.toString(), new InlineKeyboardMarkup(rows));
   }
 
   private void handleProviderSelection(long chatId, String providerId, String callbackId)
@@ -477,14 +642,50 @@ public class TelegramChatService implements TelegramUpdateHandler {
     ChatInteractionMode mode = ChatInteractionMode.from(rawMode);
     stateStore.compute(
         chatId,
-        () -> ensureState(chatId).withInteractionMode(mode.name().toLowerCase()),
+        () -> createDefaultState(chatId),
         current ->
-            (current != null ? current : ensureState(chatId))
-                .withInteractionMode(mode.name().toLowerCase())
+            (current != null ? current : createDefaultState(chatId))
+                .withInteractionMode(mode.name().toLowerCase(Locale.ROOT))
                 .resetSession());
 
     respondToCallback(callbackId, "Режим обновлён", false);
     sendMainMenu(chatId, ensureState(chatId));
+  }
+
+  private void handleToolToggle(long chatId, String toolCode, String callbackId)
+      throws TelegramApiException {
+    stateStore.compute(
+        chatId,
+        () -> createDefaultState(chatId),
+        current ->
+            (current != null ? current : createDefaultState(chatId))
+                .toggleToolCode(toolCode)
+                .resetSession());
+
+    respondToCallback(callbackId, null, false);
+    sendToolsMenu(chatId, ensureState(chatId));
+  }
+
+  private void handleSamplingUpdate(
+      long chatId,
+      Double newTemperature,
+      Double newTopP,
+      Integer newMaxTokens,
+      String callbackId)
+      throws TelegramApiException {
+    stateStore.compute(
+        chatId,
+        () -> createDefaultState(chatId),
+        current -> {
+          TelegramChatState base = current != null ? current : createDefaultState(chatId);
+          Double temperature = newTemperature != null ? newTemperature : base.temperatureOverride();
+          Double topP = newTopP != null ? newTopP : base.topPOverride();
+          Integer maxTokens = newMaxTokens != null ? newMaxTokens : base.maxTokensOverride();
+          return base.withSamplingOverrides(temperature, topP, maxTokens).resetSession();
+        });
+
+    respondToCallback(callbackId, "Параметр обновлён", false);
+    sendSamplingMenu(chatId, ensureState(chatId));
   }
 
   private void respondToCallback(String callbackId, String message, boolean alert)
@@ -495,5 +696,45 @@ public class TelegramChatService implements TelegramUpdateHandler {
       builder.text(message);
     }
     webhookBot.execute(builder.build());
+  }
+
+  private List<InlineKeyboardButton> backButtonRow() {
+    return List.of(
+        InlineKeyboardButton.builder().text("← Назад").callbackData(CALLBACK_MENU_MAIN).build());
+  }
+
+  private String labelForOption(String prefix, Double value, Double current) {
+    boolean active = current != null && Math.abs(current - value) < 1e-9;
+    return (active ? "✅ " : "▫️ ") + prefix + "=" + formatDouble(value);
+  }
+
+  private String labelForOption(String prefix, Integer value, Integer current) {
+    boolean active = current != null && current.equals(value);
+    return (active ? "✅ " : "▫️ ") + prefix + "=" + value;
+  }
+
+  private String formatDouble(Double value) {
+    if (value == null) {
+      return "—";
+    }
+    String formatted = String.format(Locale.US, "%.2f", value);
+    formatted = formatted.replaceAll("0+$", "").replaceAll("\\.$", "");
+    return formatted;
+  }
+
+  private Double parseDouble(String raw) {
+    try {
+      return Double.valueOf(raw);
+    } catch (NumberFormatException ex) {
+      return null;
+    }
+  }
+
+  private Integer parseInteger(String raw) {
+    try {
+      return Integer.valueOf(raw);
+    } catch (NumberFormatException ex) {
+      return null;
+    }
   }
 }

@@ -49,6 +49,13 @@ public class ChatResearchToolBindingService {
     this.hasConfiguredPrompt = hasText(systemPrompt) || hasText(structuredAdvice);
   }
 
+  public List<String> availableToolCodes() {
+    if (configuredBindings.isEmpty()) {
+      return List.of();
+    }
+    return List.copyOf(configuredBindings.keySet());
+  }
+
   public ResearchContext resolve(ChatInteractionMode mode, String userQuery) {
     return resolve(mode, userQuery, null);
   }
