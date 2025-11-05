@@ -279,11 +279,9 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     List<String> toolCodes =
-        state.interactionMode().equalsIgnoreCase("research")
-            ? (CollectionUtils.isEmpty(state.requestedToolCodes())
-                ? null
-                : List.copyOf(state.requestedToolCodes()))
-            : null;
+        CollectionUtils.isEmpty(state.requestedToolCodes())
+            ? null
+            : List.copyOf(state.requestedToolCodes());
 
     return new ChatSyncRequest(
         state.sessionId(),
@@ -701,12 +699,12 @@ public class TelegramChatService implements TelegramUpdateHandler {
                 .build()));
     rows.add(backButtonRow());
 
-    String hint =
-        state.interactionMode().equalsIgnoreCase("research")
-            ? "Выберите инструменты для режима research."
-            : "Инструменты активируются только в режиме research.\nСмените режим через главное меню.";
+    StringBuilder hint = new StringBuilder("Выберите инструменты, которые будут подключены к запросу.");
+    if (!state.interactionMode().equalsIgnoreCase("research")) {
+      hint.append("\nРежим research добавляет структурированный ответ, но не обязателен для инструментов.");
+    }
 
-    sendMessage(chatId, hint, new InlineKeyboardMarkup(rows));
+    sendMessage(chatId, hint.toString(), new InlineKeyboardMarkup(rows));
   }
 
   private void sendSamplingMenu(long chatId, TelegramChatState state) {

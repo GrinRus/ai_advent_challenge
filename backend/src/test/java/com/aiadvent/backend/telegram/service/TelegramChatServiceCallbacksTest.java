@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -187,6 +188,48 @@ class TelegramChatServiceCallbacksTest {
 
     verify(webhookBot).execute(any(AnswerCallbackQuery.class));
     verify(webhookBot, atLeastOnce()).execute(any(SendMessage.class));
+  }
+
+  @Test
+  void textMessageUsesSelectedToolsRegardlessOfMode() throws Exception {
+    when(researchToolBindingService.availableToolCodes()).thenReturn(List.of("agent-ops"));
+
+    AtomicReference<ChatSyncRequest> capturedRequest = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    when(syncChatService.sync(any()))
+        .thenAnswer(
+            invocation -> {
+              ChatSyncRequest request = invocation.getArgument(0);
+              capturedRequest.set(request);
+              latch.countDown();
+              return new SyncChatResult(
+                  new ConversationContext(UUID.randomUUID(), true, UUID.randomUUID()),
+                  new ChatSyncResponse(
+                      UUID.randomUUID(),
+                      "Ответ",
+                      new StructuredSyncProvider("OPENAI", "gpt-4o-mini"),
+                      List.of("agent-ops"),
+                      null,
+                      new StructuredSyncUsageStats(5, 7, 12),
+                      new UsageCostDetails(
+                          new BigDecimal("0.0001"),
+                          new BigDecimal("0.0002"),
+                          new BigDecimal("0.0003"),
+                          "USD"),
+                      30L,
+                      Instant.now()));
+            });
+
+    service.handle(callbackUpdate("toggle-tool:agent-ops"));
+
+    service.handle(textUpdate("Запрос через голос"));
+
+    assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
+    ChatSyncRequest request = capturedRequest.get();
+    assertThat(request).isNotNull();
+    assertThat(request.mode()).isEqualTo("default");
+    assertThat(request.requestedToolCodes()).containsExactly("agent-ops");
   }
 
   @Test

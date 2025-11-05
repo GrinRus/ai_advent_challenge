@@ -96,8 +96,9 @@ public class ChatResearchToolBindingService {
             .filter(ChatResearchToolBindingService::hasText)
             .toList();
 
-    String prompt = hasConfiguredPrompt ? systemPrompt : null;
-    String advice = hasConfiguredPrompt ? structuredAdvice : null;
+    boolean researchMode = mode != null && mode.isResearch();
+    String prompt = researchMode && hasConfiguredPrompt ? systemPrompt : null;
+    String advice = researchMode && hasConfiguredPrompt ? structuredAdvice : null;
     return new ResearchContext(prompt, advice, callbacks, toolCodes);
   }
 
