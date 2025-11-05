@@ -18,6 +18,8 @@ public class TelegramBotProperties {
 
   @NotNull private final Webhook webhook = new Webhook();
 
+  @NotNull private final Stt stt = new Stt();
+
   private final List<String> allowedUpdates =
       new ArrayList<>(List.of("message", "callback_query"));
 
@@ -39,6 +41,10 @@ public class TelegramBotProperties {
 
   public List<String> getAllowedUpdates() {
     return allowedUpdates;
+  }
+
+  public Stt getStt() {
+    return stt;
   }
 
   public static class Credentials {
@@ -104,6 +110,49 @@ public class TelegramBotProperties {
 
     public void setConnectionTimeout(Duration connectionTimeout) {
       this.connectionTimeout = connectionTimeout;
+    }
+  }
+
+  public static class Stt {
+
+    private boolean enabled = true;
+
+    private String model = "gpt-4o-mini-transcribe";
+
+    private String fallbackModel;
+
+    private String language = "ru";
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public String getModel() {
+      return model;
+    }
+
+    public void setModel(String model) {
+      this.model = model;
+    }
+
+    public String getFallbackModel() {
+      return fallbackModel;
+    }
+
+    public void setFallbackModel(String fallbackModel) {
+      this.fallbackModel = fallbackModel;
+    }
+
+    public String getLanguage() {
+      return language;
+    }
+
+    public void setLanguage(String language) {
+      this.language = language;
     }
   }
 }

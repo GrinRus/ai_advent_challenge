@@ -12,6 +12,7 @@ import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
+import com.aiadvent.backend.telegram.config.TelegramBotProperties;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -27,15 +28,26 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.audio.transcription.AudioTranscriptionPrompt;
+import org.springframework.ai.audio.transcription.AudioTranscriptionResponse;
+import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
+import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
+import org.telegram.telegrambots.meta.api.objects.File;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.Voice;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -81,6 +93,9 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private final ChatProviderService chatProviderService;
   private final ChatResearchToolBindingService researchToolBindingService;
   private final TelegramChatStateStore stateStore;
+  private final TelegramBotProperties properties;
+  private final OpenAiAudioTranscriptionModel transcriptionModel;
+  private final WebClient telegramFileClient;
 
   private final ExecutorService executor = Executors.newCachedThreadPool();
   private final Map<Long, PendingRequest> activeRequests = new ConcurrentHashMap<>();
@@ -90,12 +105,18 @@ public class TelegramChatService implements TelegramUpdateHandler {
       SyncChatService syncChatService,
       ChatProviderService chatProviderService,
       ChatResearchToolBindingService researchToolBindingService,
-      TelegramChatStateStore stateStore) {
+      TelegramChatStateStore stateStore,
+      TelegramBotProperties properties,
+      OpenAiAudioTranscriptionModel transcriptionModel,
+      WebClient.Builder webClientBuilder) {
     this.webhookBot = webhookBot;
     this.syncChatService = syncChatService;
     this.chatProviderService = chatProviderService;
     this.researchToolBindingService = researchToolBindingService;
     this.stateStore = stateStore;
+    this.properties = properties;
+    this.transcriptionModel = transcriptionModel;
+    this.telegramFileClient = webClientBuilder.build();
   }
 
   @Override
@@ -123,6 +144,11 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     long chatId = message.getChatId();
+
+    if (message.getVoice() != null) {
+      handleVoiceMessage(chatId, message.getVoice());
+      return;
+    }
 
     if (message.isCommand()) {
       processCommand(chatId, message.getText());
@@ -796,6 +822,117 @@ public class TelegramChatService implements TelegramUpdateHandler {
     sendSamplingMenu(chatId, ensureState(chatId));
   }
 
+  private void handleVoiceMessage(long chatId, Voice voice) {
+    if (!properties.getStt().isEnabled()) {
+      sendText(chatId, "Голосовые сообщения отключены настройками.");
+      return;
+    }
+    if (voice == null) {
+      return;
+    }
+    try {
+      DownloadedAudio audio = fetchVoiceFile(voice);
+      if (audio == null || audio.data().length == 0) {
+        sendText(chatId, "Не удалось загрузить голосовое сообщение.");
+        return;
+      }
+      String transcript = transcribeAudio(audio);
+      if (!StringUtils.hasText(transcript)) {
+        sendText(chatId, "Не удалось распознать голосовое сообщение.");
+        return;
+      }
+      String normalized = transcript.trim();
+      sendText(chatId, "🎤 " + normalized);
+      processUserPrompt(chatId, normalized);
+    } catch (Exception ex) {
+      log.error("Failed to process voice message for chat {}: {}", chatId, ex.getMessage());
+      sendText(chatId, "Не удалось обработать голосовое сообщение. Попробуйте снова.");
+    }
+  }
+
+  private DownloadedAudio fetchVoiceFile(Voice voice) throws TelegramApiException {
+    GetFile getFile = new GetFile(voice.getFileId());
+    File telegramFile = webhookBot.execute(getFile);
+    String filePath = telegramFile != null ? telegramFile.getFilePath() : null;
+    if (!StringUtils.hasText(filePath)) {
+      return null;
+    }
+    String token = properties.getBot().getToken();
+    if (!StringUtils.hasText(token)) {
+      throw new IllegalStateException("Telegram bot token is not configured");
+    }
+    byte[] bytes;
+    try {
+      bytes =
+          telegramFileClient
+              .get()
+              .uri("https://api.telegram.org/file/bot{token}/{path}", token, filePath)
+              .retrieve()
+              .bodyToMono(byte[].class)
+              .block();
+    } catch (WebClientResponseException ex) {
+      log.warn("Failed to download Telegram file {}: {}", filePath, ex.getMessage());
+      return null;
+    } catch (RuntimeException ex) {
+      log.warn("Failed to download Telegram file {}", filePath, ex);
+      return null;
+    }
+    if (bytes == null || bytes.length == 0) {
+      return null;
+    }
+    String baseName = voice.getFileUniqueId() != null ? voice.getFileUniqueId() : voice.getFileId();
+    String extension = "oga";
+    int dot = filePath.lastIndexOf('.');
+    if (dot > 0 && dot < filePath.length() - 1) {
+      extension = filePath.substring(dot + 1);
+    }
+    String filename = baseName + "." + extension;
+    return new DownloadedAudio(bytes, filename);
+  }
+
+  private String transcribeAudio(DownloadedAudio audio) {
+    if (audio == null || audio.data().length == 0) {
+      return null;
+    }
+    String primaryModel = properties.getStt().getModel();
+    String fallbackModel = properties.getStt().getFallbackModel();
+
+    String transcript = transcribeWithModel(audio, primaryModel);
+    if (!StringUtils.hasText(transcript) && StringUtils.hasText(fallbackModel)) {
+      log.debug("Primary STT model {} failed, trying fallback {}", primaryModel, fallbackModel);
+      transcript = transcribeWithModel(audio, fallbackModel);
+    }
+    return transcript;
+  }
+
+  private String transcribeWithModel(DownloadedAudio audio, String modelId) {
+    if (!StringUtils.hasText(modelId)) {
+      return null;
+    }
+    try {
+      Resource resource =
+          new ByteArrayResource(audio.data()) {
+            @Override
+            public String getFilename() {
+              return audio.filename();
+            }
+          };
+      OpenAiAudioTranscriptionOptions options = new OpenAiAudioTranscriptionOptions();
+      options.setModel(modelId);
+      if (StringUtils.hasText(properties.getStt().getLanguage())) {
+        options.setLanguage(properties.getStt().getLanguage());
+      }
+      AudioTranscriptionPrompt prompt = new AudioTranscriptionPrompt(resource, options);
+      AudioTranscriptionResponse response = transcriptionModel.call(prompt);
+      if (response != null && response.getResult() != null) {
+        return response.getResult().getOutput();
+      }
+    } catch (Exception ex) {
+      log.warn("Transcription with model {} failed: {}", modelId, ex.getMessage());
+    }
+    return null;
+  }
+
   private void sendDetails(long chatId, TelegramChatState state, ChatSyncResponse response) {
     StringBuilder builder = new StringBuilder("Детали последнего ответа:\n");
     builder
@@ -910,6 +1047,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private String formatModelDescriptor(TelegramChatState state) {
     return state.providerId() + "/" + state.modelId();
   }
+
+  private record DownloadedAudio(byte[] data, String filename) {}
 
   private static final class PendingRequest {
     final String prompt;

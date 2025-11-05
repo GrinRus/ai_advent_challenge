@@ -34,6 +34,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
 - Креды бота: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.
 - Webhook URL и путь: `TELEGRAM_BOT_WEBHOOK_URL` (публичный HTTPS) и `TELEGRAM_BOT_WEBHOOK_PATH` (локальный путь, по умолчанию `/telegram/update`).
 - Дополнительные параметры webhook: `TELEGRAM_BOT_WEBHOOK_SECRET`, `TELEGRAM_BOT_WEBHOOK_TIMEOUT` (таймаут соединения при регистрации).
+- Распознавание голоса: `TELEGRAM_STT_ENABLED` (`true`/`false`), `TELEGRAM_STT_MODEL` (например, `gpt-4o-mini-transcribe`), `TELEGRAM_STT_FALLBACK_MODEL` (опционально, например, `whisper-1`), `TELEGRAM_STT_LANGUAGE` (ISO-код языка, дефолт `ru`).
 - Список типов апдейтов: `TELEGRAM_BOT_ALLOWED_UPDATES` (через запятую, дефолт `message,callback_query`).
 
 Состояние выбора модели, sampling и MCP пока хранится в памяти процесса бота; миграция в Redis запланирована в отдельных задачах Wave 27.
