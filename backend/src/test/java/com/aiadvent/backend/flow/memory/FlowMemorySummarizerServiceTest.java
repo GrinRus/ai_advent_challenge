@@ -200,7 +200,7 @@ class FlowMemorySummarizerServiceTest {
     assertThat(saved.getMetadata()).isNotNull();
     assertThat(saved.getMetadata().get("schemaVersion").asInt()).isEqualTo(1);
     assertThat(saved.getMetadata().get("summary").asBoolean()).isTrue();
-    assertThat(meterRegistry.find("flow_summary_runs_total").counter().count()).isEqualTo(1d);
+    awaitCounter("flow_summary_runs_total", 1d);
   }
 
   @Test
