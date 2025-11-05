@@ -1,5 +1,6 @@
 package com.aiadvent.backend.telegram.service;
 
+import com.aiadvent.backend.chat.api.ChatSyncResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,9 @@ public record TelegramChatState(
     Double topPOverride,
     Integer maxTokensOverride,
     List<String> requestedToolCodes,
-    Instant updatedAt) {
+    Instant updatedAt,
+    String lastPrompt,
+    ChatSyncResponse lastResponse) {
 
   public static TelegramChatState create(long chatId, String providerId, String modelId) {
     return new TelegramChatState(
@@ -29,7 +32,9 @@ public record TelegramChatState(
         null,
         null,
         List.of(),
-        Instant.now());
+        Instant.now(),
+        null,
+        null);
   }
 
   public TelegramChatState withSessionId(UUID nextSessionId) {
@@ -43,7 +48,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState resetSession() {
@@ -57,7 +64,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState withInteractionMode(String mode) {
@@ -72,7 +81,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState withProviderAndModel(String provider, String model) {
@@ -86,7 +97,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState withRequestedToolCodes(List<String> toolCodes) {
@@ -104,7 +117,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         sanitized,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState withSamplingOverrides(
@@ -119,7 +134,9 @@ public record TelegramChatState(
         topP,
         maxTokens,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public TelegramChatState toggleToolCode(String code) {
@@ -143,7 +160,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         List.copyOf(updated),
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public boolean hasToolCode(String code) {
@@ -168,7 +187,9 @@ public record TelegramChatState(
         topPOverride,
         maxTokensOverride,
         List.of(),
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
   }
 
   public boolean hasSamplingOverrides() {
@@ -189,6 +210,43 @@ public record TelegramChatState(
         null,
         null,
         requestedToolCodes,
-        Instant.now());
+        Instant.now(),
+        lastPrompt,
+        lastResponse);
+  }
+
+  public TelegramChatState withLastResult(String prompt, ChatSyncResponse response) {
+    return new TelegramChatState(
+        chatId,
+        sessionId,
+        providerId,
+        modelId,
+        interactionMode,
+        temperatureOverride,
+        topPOverride,
+        maxTokensOverride,
+        requestedToolCodes,
+        Instant.now(),
+        prompt,
+        response);
+  }
+
+  public TelegramChatState clearLastResult() {
+    if (lastPrompt == null && lastResponse == null) {
+      return this;
+    }
+    return new TelegramChatState(
+        chatId,
+        sessionId,
+        providerId,
+        modelId,
+        interactionMode,
+        temperatureOverride,
+        topPOverride,
+        maxTokensOverride,
+        requestedToolCodes,
+        Instant.now(),
+        null,
+        null);
   }
 }
