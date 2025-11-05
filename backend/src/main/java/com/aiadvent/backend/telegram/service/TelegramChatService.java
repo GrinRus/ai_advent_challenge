@@ -4,6 +4,8 @@ import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.ChatSyncResponse;
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
+import com.aiadvent.backend.chat.api.StructuredSyncAnswer;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
@@ -15,6 +17,7 @@ import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +37,7 @@ import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -81,6 +85,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private static final String CALLBACK_STOP = "action:stop";
   private static final String CALLBACK_REPEAT = "action:repeat";
   private static final String CALLBACK_SHOW_DETAILS = "result:details";
+  private static final String CALLBACK_SHOW_STRUCTURED = "result:structured";
 
   private static final List<Double> TEMPERATURE_OPTIONS = List.of(0.1, 0.3, 0.7, 1.0);
   private static final List<Double> TOP_P_OPTIONS = List.of(0.5, 0.8, 1.0);
@@ -107,7 +112,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
       ChatResearchToolBindingService researchToolBindingService,
       TelegramChatStateStore stateStore,
       TelegramBotProperties properties,
-      OpenAiAudioTranscriptionModel transcriptionModel,
+      ObjectProvider<OpenAiAudioTranscriptionModel> transcriptionModelProvider,
       WebClient.Builder webClientBuilder) {
     this.webhookBot = webhookBot;
     this.syncChatService = syncChatService;
@@ -115,7 +120,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     this.researchToolBindingService = researchToolBindingService;
     this.stateStore = stateStore;
     this.properties = properties;
-    this.transcriptionModel = transcriptionModel;
+    this.transcriptionModel = transcriptionModelProvider.getIfAvailable();
     this.telegramFileClient = webClientBuilder.build();
   }
 
@@ -307,6 +312,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
         }
       } else if (data.startsWith(CALLBACK_SET_MODE)) {
         handleModeSelection(chatId, data.substring(CALLBACK_SET_MODE.length()), callbackQuery.getId());
+      } else if (CALLBACK_SHOW_STRUCTURED.equals(data)) {
+        handleShowStructured(chatId, callbackQuery.getId());
       } else if (CALLBACK_MENU_PROVIDERS.equals(data)) {
         sendProvidersMenu(chatId);
         respondToCallback(callbackQuery.getId(), null, false);
@@ -396,6 +403,17 @@ public class TelegramChatService implements TelegramUpdateHandler {
     sendDetails(chatId, state, response);
   }
 
+  private void handleShowStructured(long chatId, String callbackId) throws TelegramApiException {
+    TelegramChatState state = ensureState(chatId);
+    ChatSyncResponse response = state.lastResponse();
+    if (response == null || response.structured() == null) {
+      respondToCallback(callbackId, "Структурированного ответа нет", true);
+      return;
+    }
+    respondToCallback(callbackId, null, false);
+    sendStructuredCard(chatId, response.structured());
+  }
+
   private TelegramChatState ensureState(long chatId) {
     return stateStore.getOrCreate(chatId, () -> createDefaultState(chatId));
   }
@@ -463,23 +481,33 @@ public class TelegramChatService implements TelegramUpdateHandler {
       builder.append('\n').append("• Задержка: ").append(response.latencyMs()).append(" мс");
     }
 
-    InlineKeyboardMarkup markup =
-        new InlineKeyboardMarkup(
-            List.of(
-                List.of(
-                    InlineKeyboardButton.builder()
-                        .text("Подробнее")
-                        .callbackData(CALLBACK_SHOW_DETAILS)
-                        .build()),
-                List.of(
-                    InlineKeyboardButton.builder()
-                        .text("Повторить")
-                        .callbackData(CALLBACK_REPEAT)
-                        .build(),
-                    InlineKeyboardButton.builder()
-                        .text("Меню")
-                        .callbackData(CALLBACK_MENU_MAIN)
-                        .build())));
+    List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+    if (hasStructuredAnswer(response)) {
+      rows.add(
+          List.of(
+              InlineKeyboardButton.builder()
+                  .text("Структура")
+                  .callbackData(CALLBACK_SHOW_STRUCTURED)
+                  .build()));
+    }
+    rows.add(
+        List.of(
+            InlineKeyboardButton.builder()
+                .text("Подробнее")
+                .callbackData(CALLBACK_SHOW_DETAILS)
+                .build()));
+    rows.add(
+        List.of(
+            InlineKeyboardButton.builder()
+                .text("Повторить")
+                .callbackData(CALLBACK_REPEAT)
+                .build(),
+            InlineKeyboardButton.builder()
+                .text("Меню")
+                .callbackData(CALLBACK_MENU_MAIN)
+                .build()));
+
+    InlineKeyboardMarkup markup = new InlineKeyboardMarkup(rows);
 
     sendMessage(chatId, builder.toString(), markup);
   }
@@ -827,6 +855,10 @@ public class TelegramChatService implements TelegramUpdateHandler {
       sendText(chatId, "Голосовые сообщения отключены настройками.");
       return;
     }
+    if (transcriptionModel == null) {
+      sendText(chatId, "STT модель недоступна. Проверьте конфигурацию сервера.");
+      return;
+    }
     if (voice == null) {
       return;
     }
@@ -978,6 +1010,15 @@ public class TelegramChatService implements TelegramUpdateHandler {
     return value.stripTrailingZeros().toPlainString();
   }
 
+  private String formatPercent(BigDecimal value) {
+    if (value == null) {
+      return "—";
+    }
+    BigDecimal percent = value.multiply(BigDecimal.valueOf(100));
+    percent = percent.setScale(0, RoundingMode.HALF_UP);
+    return percent.toPlainString() + "%";
+  }
+
   private boolean hasValue(BigDecimal value) {
     return value != null && value.signum() != 0;
   }
@@ -1046,6 +1087,58 @@ public class TelegramChatService implements TelegramUpdateHandler {
 
   private String formatModelDescriptor(TelegramChatState state) {
     return state.providerId() + "/" + state.modelId();
+  }
+
+  private boolean hasStructuredAnswer(ChatSyncResponse response) {
+    StructuredSyncResponse structured = response.structured();
+    if (structured == null || structured.answer() == null) {
+      return false;
+    }
+    StructuredSyncAnswer answer = structured.answer();
+    return StringUtils.hasText(answer.summary())
+        || (answer.items() != null && !answer.items().isEmpty());
+  }
+
+  private void sendStructuredCard(long chatId, StructuredSyncResponse structured) {
+    if (structured == null || structured.answer() == null) {
+      sendText(chatId, "Структурированный ответ отсутствует.");
+      return;
+    }
+
+    StructuredSyncAnswer answer = structured.answer();
+    StringBuilder builder = new StringBuilder("🔎 Структурированный ответ:\n");
+    if (StringUtils.hasText(answer.summary())) {
+      builder.append(answer.summary().trim()).append("\n\n");
+    }
+
+    if (answer.items() != null && !answer.items().isEmpty()) {
+      int limit = Math.min(answer.items().size(), 5);
+      for (int i = 0; i < limit; i++) {
+        var item = answer.items().get(i);
+        String title = StringUtils.hasText(item.title()) ? item.title().trim() : "Без заголовка";
+        builder.append("• ").append(title);
+        if (item.tags() != null && !item.tags().isEmpty()) {
+          builder.append(" (" + String.join(", ", item.tags()) + ")");
+        }
+        builder.append('\n');
+        if (StringUtils.hasText(item.details())) {
+          builder.append("  – ").append(item.details().trim()).append('\n');
+        }
+      }
+      if (answer.items().size() > limit) {
+        builder.append("… и ещё ")
+            .append(answer.items().size() - limit)
+            .append(" пунктов\n");
+      }
+    } else {
+      builder.append("(Элементы отсутствуют)\n");
+    }
+
+    if (answer.confidence() != null) {
+      builder.append("\nДоверие: ").append(formatPercent(answer.confidence()));
+    }
+
+    sendMessage(chatId, builder.toString().trim(), new InlineKeyboardMarkup(List.of(backButtonRow())));
   }
 
   private record DownloadedAudio(byte[] data, String filename) {}
