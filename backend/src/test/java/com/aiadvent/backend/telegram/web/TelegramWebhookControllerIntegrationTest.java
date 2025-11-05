@@ -63,6 +63,14 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
   TelegramChatStateStore.class,
   TelegramWebhookControllerIntegrationTest.TelegramTestConfig.class
 })
+@TestPropertySource(
+    properties = {
+      "app.telegram.enabled=true",
+      "app.telegram.bot.token=test-token",
+      "app.telegram.bot.username=test_bot",
+      "app.telegram.webhook.external-url=https://example.com/telegram",
+      "app.telegram.webhook.secret-token=test-secret"
+    })
 class TelegramWebhookControllerIntegrationTest {
 
   private static final long CHAT_ID = 123456789L;

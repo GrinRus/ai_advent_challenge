@@ -38,6 +38,7 @@ import org.springframework.ai.openai.OpenAiAudioTranscriptionOptions;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -57,6 +58,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 @Component
+@ConditionalOnProperty(prefix = "app.telegram", name = "enabled", havingValue = "true")
 public class TelegramChatService implements TelegramUpdateHandler {
 
   private static final Logger log = LoggerFactory.getLogger(TelegramChatService.class);

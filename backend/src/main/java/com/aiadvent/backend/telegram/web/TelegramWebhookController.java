@@ -4,6 +4,7 @@ import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.objects.Update;
 
 @RestController
+@ConditionalOnProperty(prefix = "app.telegram", name = "enabled", havingValue = "true")
 @RequestMapping("${app.telegram.webhook.path:/telegram/update}")
 public class TelegramWebhookController {
 
