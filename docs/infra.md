@@ -29,6 +29,16 @@ docker compose up --build
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
 
+## Telegram бот
+- Управление включением: `TELEGRAM_BOT_ENABLED` (`true`/`false`, по умолчанию выключен).
+- Креды бота: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.
+- Режим доставки: `TELEGRAM_BOT_MODE` (`LONG_POLLING` или `WEBHOOK`; пока что обе ветки используют long polling до реализации webhook-приёмника).
+- Параметры long polling: `TELEGRAM_BOT_POLLING_LIMIT` (1–100), `TELEGRAM_BOT_POLLING_TIMEOUT` (`PT30S` по умолчанию).
+- Параметры webhook (зарезервированы): `TELEGRAM_BOT_WEBHOOK_URL`, `TELEGRAM_BOT_WEBHOOK_PATH`, `TELEGRAM_BOT_WEBHOOK_SECRET`, `TELEGRAM_BOT_WEBHOOK_TIMEOUT`.
+- Список типов апдейтов: `TELEGRAM_BOT_ALLOWED_UPDATES` (через запятую, дефолт `message,callback_query`).
+
+Состояние выбора модели, sampling и MCP пока хранится в памяти процесса бота; миграция в Redis запланирована в отдельных задачах Wave 27.
+
 ### Запуск GitHub MCP отдельно
 GitHub MCP упакован в тот же образ, что и остальные MCP, и запускается с профилем `github`. Для локального тестирования достаточно:
 
