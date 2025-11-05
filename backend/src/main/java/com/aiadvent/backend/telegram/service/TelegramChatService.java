@@ -39,6 +39,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -108,7 +109,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private final Map<Long, PendingRequest> activeRequests = new ConcurrentHashMap<>();
 
   public TelegramChatService(
-      TelegramWebhookBotAdapter webhookBot,
+      @Lazy TelegramWebhookBotAdapter webhookBot,
       SyncChatService syncChatService,
       ChatProviderService chatProviderService,
       ChatResearchToolBindingService researchToolBindingService,
