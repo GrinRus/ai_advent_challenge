@@ -1,31 +1,29 @@
 package com.aiadvent.backend.telegram.bot;
 
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
-import com.aiadvent.backend.telegram.config.TelegramBotProperties.Mode;
+import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
-import org.telegram.telegrambots.meta.TelegramBotsApi;
+import org.springframework.util.StringUtils;
+import org.telegram.telegrambots.meta.api.methods.updates.DeleteWebhook;
+import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import org.telegram.telegrambots.meta.generics.BotSession;
-import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
 public class TelegramBotLifecycle implements SmartLifecycle {
 
   private static final Logger log = LoggerFactory.getLogger(TelegramBotLifecycle.class);
 
   private final TelegramBotProperties properties;
-  private final TelegramLongPollingBotAdapter longPollingBot;
+  private final TelegramWebhookBotAdapter webhookBot;
 
   private volatile boolean running;
-  private BotSession botSession;
 
   public TelegramBotLifecycle(
-      TelegramBotProperties properties,
-      TelegramLongPollingBotAdapter longPollingBot) {
+      TelegramBotProperties properties, TelegramWebhookBotAdapter webhookBot) {
     this.properties = Objects.requireNonNull(properties, "properties");
-    this.longPollingBot = Objects.requireNonNull(longPollingBot, "longPollingBot");
+    this.webhookBot = Objects.requireNonNull(webhookBot, "webhookBot");
   }
 
   @Override
@@ -35,13 +33,9 @@ public class TelegramBotLifecycle implements SmartLifecycle {
     }
 
     try {
-      Mode mode = properties.getMode();
-      if (mode == Mode.WEBHOOK) {
-        log.warn("Webhook mode is not fully supported yet; falling back to long polling.");
-      }
-      registerLongPollingBot();
+      registerWebhook();
       running = true;
-      log.info("Telegram bot registered in {} mode", mode);
+      log.info("Telegram webhook registered at {}", resolveWebhookUrl());
     } catch (TelegramApiException ex) {
       throw new IllegalStateException("Failed to register Telegram bot", ex);
     }
@@ -53,13 +47,11 @@ public class TelegramBotLifecycle implements SmartLifecycle {
       return;
     }
     try {
-      if (botSession != null) {
-        botSession.stop();
-      }
-      longPollingBot.onClosing();
+      webhookBot.execute(new DeleteWebhook());
+    } catch (TelegramApiException ex) {
+      log.warn("Failed to delete Telegram webhook: {}", ex.getMessage());
     } finally {
       running = false;
-      botSession = null;
     }
   }
 
@@ -68,8 +60,39 @@ public class TelegramBotLifecycle implements SmartLifecycle {
     return running;
   }
 
-  private void registerLongPollingBot() throws TelegramApiException {
-    TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
-    botSession = botsApi.registerBot(longPollingBot);
+  private void registerWebhook() throws TelegramApiException {
+    String webhookUrl = resolveWebhookUrl();
+    if (!StringUtils.hasText(webhookUrl)) {
+      throw new IllegalStateException("Webhook URL must be configured (app.telegram.webhook.external-url)");
+    }
+
+    SetWebhook.SetWebhookBuilder builder = SetWebhook.builder().url(webhookUrl);
+
+    List<String> allowedUpdates = properties.getAllowedUpdates();
+    if (allowedUpdates != null && !allowedUpdates.isEmpty()) {
+      builder.allowedUpdates(List.copyOf(allowedUpdates));
+    }
+
+    String secretToken = properties.getWebhook().getSecretToken();
+    if (StringUtils.hasText(secretToken)) {
+      builder.secretToken(secretToken);
+    }
+
+    webhookBot.setWebhook(builder.build());
+  }
+
+  private String resolveWebhookUrl() {
+    String externalUrl = properties.getWebhook().getExternalUrl();
+    String path = properties.getWebhook().getPath();
+    if (!StringUtils.hasText(externalUrl)) {
+      return null;
+    }
+    if (!StringUtils.hasText(path)) {
+      return externalUrl;
+    }
+    if (externalUrl.endsWith("/")) {
+      return path.startsWith("/") ? externalUrl + path.substring(1) : externalUrl + path;
+    }
+    return path.startsWith("/") ? externalUrl + path : externalUrl + '/' + path;
   }
 }

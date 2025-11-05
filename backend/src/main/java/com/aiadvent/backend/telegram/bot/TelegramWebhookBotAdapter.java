@@ -3,6 +3,7 @@ package com.aiadvent.backend.telegram.bot;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
 import com.aiadvent.backend.telegram.service.TelegramUpdateHandler;
 import java.util.Objects;
+import org.telegram.telegrambots.bots.DefaultBotOptions;
 import org.telegram.telegrambots.bots.TelegramWebhookBot;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -13,7 +14,10 @@ public class TelegramWebhookBotAdapter extends TelegramWebhookBot {
   private final TelegramUpdateHandler updateHandler;
 
   public TelegramWebhookBotAdapter(
-      TelegramBotProperties properties, TelegramUpdateHandler updateHandler) {
+      DefaultBotOptions options,
+      TelegramBotProperties properties,
+      TelegramUpdateHandler updateHandler) {
+    super(options);
     this.properties = Objects.requireNonNull(properties, "properties");
     this.updateHandler = Objects.requireNonNull(updateHandler, "updateHandler");
   }

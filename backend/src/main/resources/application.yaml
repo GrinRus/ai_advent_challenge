@@ -399,13 +399,9 @@ app:
 
   telegram:
     enabled: ${TELEGRAM_BOT_ENABLED:false}
-    mode: ${TELEGRAM_BOT_MODE:LONG_POLLING}
     bot:
       token: ${TELEGRAM_BOT_TOKEN:}
       username: ${TELEGRAM_BOT_USERNAME:}
-    polling:
-      limit: ${TELEGRAM_BOT_POLLING_LIMIT:100}
-      timeout: ${TELEGRAM_BOT_POLLING_TIMEOUT:PT30S}
     webhook:
       external-url: ${TELEGRAM_BOT_WEBHOOK_URL:}
       path: ${TELEGRAM_BOT_WEBHOOK_PATH:/telegram/update}
