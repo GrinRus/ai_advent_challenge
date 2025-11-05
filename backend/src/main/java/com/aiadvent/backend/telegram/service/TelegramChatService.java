@@ -921,8 +921,19 @@ public class TelegramChatService implements TelegramUpdateHandler {
     if (dot > 0 && dot < filePath.length() - 1) {
       extension = filePath.substring(dot + 1);
     }
-    String filename = baseName + "." + extension;
+    String filename = baseName + "." + normalizeAudioExtension(extension);
     return new DownloadedAudio(bytes, filename);
+  }
+
+  private String normalizeAudioExtension(String extension) {
+    if (!StringUtils.hasText(extension)) {
+      return "ogg";
+    }
+    String normalized = extension.toLowerCase(Locale.ROOT);
+    if ("oga".equals(normalized)) {
+      return "ogg";
+    }
+    return normalized;
   }
 
   private String transcribeAudio(DownloadedAudio audio) {
