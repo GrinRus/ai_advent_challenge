@@ -8,6 +8,9 @@ spring:
     client:
       connect-timeout: ${HTTP_CLIENT_CONNECT_TIMEOUT:PT45S}
       read-timeout: ${HTTP_CLIENT_READ_TIMEOUT:PT10M}
+    reactiveclient:
+      connect-timeout: ${HTTP_REACTIVE_CLIENT_CONNECT_TIMEOUT:${HTTP_CLIENT_CONNECT_TIMEOUT:PT45S}}
+      read-timeout: ${HTTP_REACTIVE_CLIENT_READ_TIMEOUT:${HTTP_CLIENT_READ_TIMEOUT:PT10M}}
   ai:
     tools:
       observations:

@@ -24,6 +24,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
 @EnableConfigurationProperties({ChatProvidersProperties.class, ChatResearchProperties.class})
@@ -39,6 +41,8 @@ public class ChatProviderConfiguration {
       ChatProvidersProperties properties,
       ObjectProvider<OpenAiApi> openAiApiProvider,
       ObjectProvider<ZhiPuAiApi> zhiPuAiApiProvider,
+      ObjectProvider<RestClient.Builder> restClientBuilderProvider,
+      ObjectProvider<WebClient.Builder> webClientBuilderProvider,
       MessageChatMemoryAdvisor chatMemoryAdvisor,
       ChatLoggingSupport chatLoggingSupport,
       ObjectProvider<SyncMcpToolCallbackProvider> mcpToolCallbackProvider) {
@@ -65,6 +69,16 @@ public class ChatProviderConfiguration {
               if (StringUtils.hasText(providerConfig.getEmbeddingsPath())) {
                 builder.embeddingsPath(providerConfig.getEmbeddingsPath());
               }
+              RestClient.Builder restClientBuilder =
+                  restClientBuilderProvider.getIfAvailable(RestClient::builder);
+              if (restClientBuilder != null) {
+                builder.restClientBuilder(restClientBuilder);
+              }
+              WebClient.Builder webClientBuilder =
+                  webClientBuilderProvider.getIfAvailable(WebClient::builder);
+              if (webClientBuilder != null) {
+                builder.webClientBuilder(webClientBuilder);
+              }
               openAiApi = builder.build();
             }
             adapters.add(
@@ -90,6 +104,16 @@ public class ChatProviderConfiguration {
               }
               if (StringUtils.hasText(providerConfig.getEmbeddingsPath())) {
                 builder.embeddingsPath(providerConfig.getEmbeddingsPath());
+              }
+              RestClient.Builder restClientBuilder =
+                  restClientBuilderProvider.getIfAvailable(RestClient::builder);
+              if (restClientBuilder != null) {
+                builder.restClientBuilder(restClientBuilder);
+              }
+              WebClient.Builder webClientBuilder =
+                  webClientBuilderProvider.getIfAvailable(WebClient::builder);
+              if (webClientBuilder != null) {
+                builder.webClientBuilder(webClientBuilder);
               }
               zhiPuAiApi = builder.build();
             }
