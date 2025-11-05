@@ -1,6 +1,5 @@
 package com.aiadvent.backend.telegram.config;
 
-import com.aiadvent.backend.telegram.bot.TelegramBotLifecycle;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.service.TelegramUpdateHandler;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -28,13 +27,5 @@ public class TelegramBotConfiguration {
       TelegramBotProperties properties,
       TelegramUpdateHandler updateHandler) {
     return new TelegramWebhookBotAdapter(telegramBotOptions, properties, updateHandler);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  public TelegramBotLifecycle telegramBotLifecycle(
-      TelegramBotProperties properties,
-      TelegramWebhookBotAdapter webhookBot) {
-    return new TelegramBotLifecycle(properties, webhookBot);
   }
 }
