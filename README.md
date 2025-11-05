@@ -7,9 +7,24 @@ AI Advent Challenge — инициативный проект по развит�
 - `docs/backlog.md` — дорожная карта и волны задач.
 - `docs/architecture/` — архитектура backend, frontend и интеграции с LLM.
 - `docs/infra.md` — инфраструктура, окружения и CI/CD.
+- `docs/guides/telegram-bot.md` — UX, команды и настройки Telegram-бота.
 - `docs/processes.md` — соглашения по разработке и тестированию.
 - `docs/CONTRIBUTING.md` — чек-лист по поддержке документации.
 - `docs/faq.md` — часто задаваемые вопросы.
+
+## Telegram бот (Wave 27)
+
+- Настройки окружения перечислены в `docs/infra.md` (`TELEGRAM_*`). Быстрый старт:
+  ```bash
+  export TELEGRAM_BOT_TOKEN=...            # токен из BotFather
+  export TELEGRAM_BOT_USERNAME=ai_advent_bot
+  export TELEGRAM_BOT_WEBHOOK_URL=https://<domain>/telegram/update
+  export TELEGRAM_BOT_WEBHOOK_SECRET=<случайная-строка>
+  docker compose up --build backend
+  ```
+- После запуска выполните `POST /api/telegram/webhook/register` (планируется автоматизация) либо используйте BotFather для задания webhook.
+- Команды `/start`, `/new`, `/menu`, голосовые сообщения и inline-меню описаны в `docs/guides/telegram-bot.md`.
+- STT использует OpenAI Omni (`gpt-4o-mini-transcribe`) с опциональным fallback (`TELEGRAM_STT_FALLBACK_MODEL`).
 
 ## LLM-провайдеры
 
