@@ -158,7 +158,12 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
             .accept(MediaType.TEXT_EVENT_STREAM)
             .bodyValue(
                 new ChatStreamRequest(
-                    null, "Invoke alternate provider", "alternate", "alt-model-pro", null, null))
+                    null,
+                    "Invoke alternate provider",
+                    "alternate",
+                    "alt-model-pro",
+                    null,
+                    null))
             .exchange()
             .expectStatus()
             .isOk()

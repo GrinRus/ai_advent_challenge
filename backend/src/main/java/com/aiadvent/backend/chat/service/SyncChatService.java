@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -110,8 +111,11 @@ public class SyncChatService extends AbstractSyncService {
     }
 
     String userPrompt = sanitizeMessage(request.message());
+    Map<String, JsonNode> overridesByTool =
+        request.requestOverridesByTool() != null ? request.requestOverridesByTool() : Map.of();
     ResearchContext researchContext =
-        researchToolBindingService.resolve(mode, userPrompt, request.requestedToolCodes());
+        researchToolBindingService.resolve(
+            mode, userPrompt, request.requestedToolCodes(), overridesByTool);
 
     if (log.isDebugEnabled() && researchContext.hasCallbacks()) {
       log.debug(

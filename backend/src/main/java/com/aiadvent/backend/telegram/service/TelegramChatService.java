@@ -224,8 +224,9 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     TelegramChatState state = ensureState(chatId);
-    ChatSyncRequest request = buildSyncRequest(state, prompt);
     long userReference = userId != null ? userId : chatId;
+    Map<String, JsonNode> overridePayloads = resolveTelegramOverrides(state, userReference);
+    ChatSyncRequest request = buildSyncRequest(state, prompt, overridePayloads);
 
     PendingRequest pending = new PendingRequest(prompt);
     activeRequests.put(chatId, pending);
@@ -235,31 +236,26 @@ public class TelegramChatService implements TelegramUpdateHandler {
         CompletableFuture.runAsync(
             () -> {
               try {
-                Map<String, JsonNode> overridePayloads =
-                    resolveTelegramOverrides(state, userReference);
-                try (AutoCloseable ignored =
-                    researchToolBindingService.withRequestOverrides(overridePayloads)) {
-                  SyncChatService.SyncChatResult result = syncChatService.sync(request);
-                  if (pending.cancelled.get()) {
-                    log.debug("Skipping response for chat {} because request was cancelled", chatId);
-                    return;
-                  }
-
-                  UUID nextSessionId = result.context().sessionId();
-                  TelegramChatState updatedState =
-                      stateStore.compute(
-                          chatId,
-                          () -> createDefaultState(chatId).withLastResult(prompt, result.response()),
-                          current -> {
-                            TelegramChatState base =
-                                current != null ? current : createDefaultState(chatId);
-                            TelegramChatState withSession = base.withSessionId(nextSessionId);
-                            return withSession.withLastResult(prompt, result.response());
-                          });
-
-                  sendText(chatId, sanitizeResponse(result.response().content()));
-                  sendMetadataSummary(chatId, updatedState, result.response());
+                SyncChatService.SyncChatResult result = syncChatService.sync(request);
+                if (pending.cancelled.get()) {
+                  log.debug("Skipping response for chat {} because request was cancelled", chatId);
+                  return;
                 }
+
+                UUID nextSessionId = result.context().sessionId();
+                TelegramChatState updatedState =
+                    stateStore.compute(
+                        chatId,
+                        () -> createDefaultState(chatId).withLastResult(prompt, result.response()),
+                        current -> {
+                          TelegramChatState base =
+                              current != null ? current : createDefaultState(chatId);
+                          TelegramChatState withSession = base.withSessionId(nextSessionId);
+                          return withSession.withLastResult(prompt, result.response());
+                        });
+
+                sendText(chatId, sanitizeResponse(result.response().content()));
+                sendMetadataSummary(chatId, updatedState, result.response());
               } catch (ResponseStatusException apiError) {
                 if (!pending.cancelled.get()) {
                   log.warn("LLM request failed: {}", apiError.getMessage());
@@ -283,7 +279,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
     pending.future = future;
   }
 
-  private ChatSyncRequest buildSyncRequest(TelegramChatState state, String prompt) {
+  private ChatSyncRequest buildSyncRequest(
+      TelegramChatState state, String prompt, Map<String, JsonNode> requestOverrides) {
     ChatStreamRequestOptions options = null;
     if (state.hasSamplingOverrides()) {
       options =
@@ -319,11 +316,12 @@ public class TelegramChatService implements TelegramUpdateHandler {
         state.modelId(),
         resolvedMode,
         toolCodes,
+        requestOverrides != null && !requestOverrides.isEmpty() ? Map.copyOf(requestOverrides) : null,
         options);
   }
 
   private Map<String, JsonNode> resolveTelegramOverrides(TelegramChatState state, long userReference) {
-    if (state == null || !state.hasNamespace("notes")) {
+    if (state == null) {
       return Map.of();
     }
     String referenceValue = Long.toString(userReference);

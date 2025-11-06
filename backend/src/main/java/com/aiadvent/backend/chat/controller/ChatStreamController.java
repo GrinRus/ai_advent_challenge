@@ -16,8 +16,10 @@ import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
 import com.aiadvent.backend.chat.service.ChatService;
 import com.aiadvent.backend.chat.service.ConversationContext;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.Valid;
 import java.io.IOException;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
@@ -78,8 +80,11 @@ public class ChatStreamController {
 
     ChatInteractionMode mode = ChatInteractionMode.from(request.mode());
     String sanitizedMessage = sanitizeMessage(request.message());
+    Map<String, JsonNode> overridesByTool =
+        request.requestOverridesByTool() != null ? request.requestOverridesByTool() : Map.of();
     ResearchContext researchContext =
-        researchToolBindingService.resolve(mode, sanitizedMessage, request.requestedToolCodes());
+        researchToolBindingService.resolve(
+            mode, sanitizedMessage, request.requestedToolCodes(), overridesByTool);
 
     ConversationContext context =
         chatService.registerUserMessage(

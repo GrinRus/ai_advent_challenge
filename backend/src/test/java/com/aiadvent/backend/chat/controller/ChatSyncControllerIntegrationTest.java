@@ -187,6 +187,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
             "gpt-4o-mini",
             "research",
             List.of("perplexity_search"),
+            null,
             null);
 
     MvcResult result =
@@ -223,6 +224,7 @@ class ChatSyncControllerIntegrationTest extends PostgresTestContainer {
             "gpt-4o-mini",
             "research",
             List.of(),
+            null,
             null);
 
     MvcResult result =

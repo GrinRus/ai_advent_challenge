@@ -19,6 +19,7 @@ import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.chat.service.SyncChatService.SyncChatResult;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -307,6 +308,45 @@ class TelegramChatServiceCallbacksTest {
     service.handle(callbackUpdate("action:repeat"));
 
     verify(syncChatService, timeout(1000)).sync(any(ChatSyncRequest.class));
+  }
+
+  @Test
+  void userPromptIncludesNotesOverridesInRequest() throws Exception {
+    AtomicReference<ChatSyncRequest> capturedRequest = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    when(syncChatService.sync(any()))
+        .thenAnswer(
+            invocation -> {
+              ChatSyncRequest request = invocation.getArgument(0);
+              capturedRequest.set(request);
+              latch.countDown();
+              return new SyncChatResult(
+                  new ConversationContext(UUID.randomUUID(), true, UUID.randomUUID()),
+                  new ChatSyncResponse(
+                      UUID.randomUUID(),
+                      "Готово",
+                      new StructuredSyncProvider("OPENAI", "gpt-4o-mini"),
+                      null,
+                      null,
+                      new StructuredSyncUsageStats(1, 1, 2),
+                      new UsageCostDetails(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "USD"),
+                      20L,
+                      Instant.now()));
+            });
+
+    service.handle(textUpdate("Сохрани заметку"));
+
+    assertThat(latch.await(1, TimeUnit.SECONDS)).isTrue();
+    ChatSyncRequest request = capturedRequest.get();
+    assertThat(request).isNotNull();
+    Map<String, JsonNode> overrides = request.requestOverridesByTool();
+    assertThat(overrides).isNotNull();
+    assertThat(overrides.get("notes.save_note").path("userNamespace").asText()).isEqualTo("telegram");
+    assertThat(overrides.get("notes.save_note").path("userReference").asText()).isEqualTo("100");
+    assertThat(overrides.get("notes.save_note").path("sourceChannel").asText()).isEqualTo("telegram");
+    assertThat(overrides.get("notes.search_similar").path("userNamespace").asText()).isEqualTo("telegram");
+    assertThat(overrides.get("notes.search_similar").path("userReference").asText()).isEqualTo("100");
   }
 
   @Test

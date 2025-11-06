@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.util.CollectionUtils;
 import org.slf4j.Logger;
@@ -130,8 +131,11 @@ public class StructuredSyncService extends AbstractSyncService {
         chatProviderService.buildStructuredOptions(selection, overrides, outputConverter);
 
     String sanitizedPrompt = sanitizeUserPrompt(request.message());
+    Map<String, JsonNode> overridesByTool =
+        request.requestOverridesByTool() != null ? request.requestOverridesByTool() : Map.of();
     ResearchContext researchContext =
-        researchToolBindingService.resolve(mode, sanitizedPrompt, request.requestedToolCodes());
+        researchToolBindingService.resolve(
+            mode, sanitizedPrompt, request.requestedToolCodes(), overridesByTool);
 
     String systemInstruction =
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());

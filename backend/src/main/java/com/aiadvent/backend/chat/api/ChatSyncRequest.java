@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -38,6 +40,10 @@ public record ChatSyncRequest(
         String mode,
     @Schema(description = "Explicit tool codes to request from MCP servers (case-insensitive).")
         List<String> requestedToolCodes,
+    @Schema(
+            description =
+                "Optional per-tool overrides that will be merged into the MCP payloads before invocation.")
+        Map<String, JsonNode> requestOverridesByTool,
     @Schema(description = "Optional overrides for sampling parameters.") @Valid ChatStreamRequestOptions options) {
 
   public ChatSyncRequest(
@@ -47,6 +53,6 @@ public record ChatSyncRequest(
       String model,
       String mode,
       @Valid ChatStreamRequestOptions options) {
-    this(sessionId, message, provider, model, mode, null, options);
+    this(sessionId, message, provider, model, mode, null, null, options);
   }
 }

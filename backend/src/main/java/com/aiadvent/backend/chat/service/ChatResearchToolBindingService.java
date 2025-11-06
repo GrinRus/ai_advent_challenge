@@ -35,7 +35,6 @@ public class ChatResearchToolBindingService {
   private final String structuredAdvice;
   private final boolean hasConfiguredPrompt;
   private final List<String> disabledToolNamespaces;
-  private final ThreadLocal<Map<String, JsonNode>> requestOverrideContext = new ThreadLocal<>();
 
   public ChatResearchToolBindingService(
       McpToolBindingService mcpToolBindingService,
@@ -149,11 +148,19 @@ public class ChatResearchToolBindingService {
   }
 
   public ResearchContext resolve(ChatInteractionMode mode, String userQuery) {
-    return resolve(mode, userQuery, null);
+    return resolve(mode, userQuery, null, Map.of());
   }
 
   public ResearchContext resolve(
       ChatInteractionMode mode, String userQuery, List<String> requestedToolCodes) {
+    return resolve(mode, userQuery, requestedToolCodes, Map.of());
+  }
+
+  public ResearchContext resolve(
+      ChatInteractionMode mode,
+      String userQuery,
+      List<String> requestedToolCodes,
+      Map<String, JsonNode> requestOverrides) {
     if (!hasText(userQuery)) {
       return ResearchContext.empty();
     }
@@ -174,7 +181,7 @@ public class ChatResearchToolBindingService {
 
     List<McpToolBindingService.ResolvedTool> resolvedTools =
         mcpToolBindingService.resolveCallbacks(
-            bindings, userQuery, selectionCodes, currentRequestOverrides());
+            bindings, userQuery, selectionCodes, normalizeOverrideMap(requestOverrides));
 
     if (resolvedTools.isEmpty()) {
       return ResearchContext.empty();
@@ -208,16 +215,6 @@ public class ChatResearchToolBindingService {
       // fall back to plain text if parsing fails
     }
     return Optional.empty();
-  }
-
-  public AutoCloseable withRequestOverrides(Map<String, JsonNode> overrides) {
-    Map<String, JsonNode> previous = requestOverrideContext.get();
-    if (overrides == null || overrides.isEmpty()) {
-      requestOverrideContext.remove();
-    } else {
-      requestOverrideContext.set(Map.copyOf(overrides));
-    }
-    return new OverrideScope(previous);
   }
 
   private AgentInvocationOptions.ToolBinding buildBinding(String code) {
@@ -301,11 +298,6 @@ public class ChatResearchToolBindingService {
     return isDisabledToolCode(code, disabledToolNamespaces);
   }
 
-  private Map<String, JsonNode> currentRequestOverrides() {
-    Map<String, JsonNode> overrides = requestOverrideContext.get();
-    return overrides != null ? overrides : Collections.emptyMap();
-  }
-
   private static boolean isDisabledToolCode(String code, List<String> disabledNamespaces) {
     if (!hasText(code) || disabledNamespaces == null || disabledNamespaces.isEmpty()) {
       return false;
@@ -367,26 +359,18 @@ public class ChatResearchToolBindingService {
     return hasText(namespace) ? namespace.trim().toLowerCase(Locale.ROOT) : null;
   }
 
-  private final class OverrideScope implements AutoCloseable {
-    private final Map<String, JsonNode> previousOverrides;
-    private boolean closed;
-
-    private OverrideScope(Map<String, JsonNode> previousOverrides) {
-      this.previousOverrides = previousOverrides;
-      this.closed = false;
+  private Map<String, JsonNode> normalizeOverrideMap(Map<String, JsonNode> overrides) {
+    if (overrides == null || overrides.isEmpty()) {
+      return Map.of();
     }
-
-    @Override
-    public void close() {
-      if (closed) {
-        return;
-      }
-      if (previousOverrides == null) {
-        requestOverrideContext.remove();
-      } else {
-        requestOverrideContext.set(previousOverrides);
-      }
-      closed = true;
-    }
+    Map<String, JsonNode> normalized = new LinkedHashMap<>();
+    overrides.forEach(
+        (code, node) -> {
+          String normalizedCode = normalizeCode(code);
+          if (hasText(normalizedCode) && node != null && !node.isNull()) {
+            normalized.put(normalizedCode, node);
+          }
+        });
+    return normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
   }
 }

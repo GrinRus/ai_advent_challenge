@@ -25,7 +25,7 @@ class ChatResearchToolBindingServiceTest {
 
   @SuppressWarnings("unchecked")
   @Test
-  void withRequestOverridesPropagatesOverridesToMcpResolution() throws Exception {
+  void resolvePropagatesOverridesToMcpResolution() throws Exception {
     McpToolBindingService mcpToolBindingService = mock(McpToolBindingService.class);
     ToolDefinitionRepository toolDefinitionRepository = mock(ToolDefinitionRepository.class);
     ChatResearchProperties properties = new ChatResearchProperties();
@@ -45,9 +45,11 @@ class ChatResearchToolBindingServiceTest {
     Map<String, JsonNode> overrides =
         Map.of("notes.save_note", mapper.createObjectNode().put("userNamespace", "telegram"));
 
-    try (AutoCloseable ignored = service.withRequestOverrides(overrides)) {
-      service.resolve(ChatInteractionMode.RESEARCH, "collect notes", List.of("notes.save_note"));
-    }
+    service.resolve(
+        ChatInteractionMode.RESEARCH,
+        "collect notes",
+        List.of("notes.save_note"),
+        overrides);
 
     ArgumentCaptor<Map<String, JsonNode>> captor = ArgumentCaptor.forClass(Map.class);
     verify(mcpToolBindingService)

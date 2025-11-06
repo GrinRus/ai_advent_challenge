@@ -95,7 +95,8 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     StubChatClientState.setTokens(List.of("partial ", "answer"));
     StubChatClientState.setUsage(12, 18, 30);
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Hello model", null, null, null, null);
+    ChatStreamRequest request =
+        new ChatStreamRequest(null, "Hello model", null, null, null, null);
 
     List<ChatStreamEvent> events = performChatStream(request);
 
@@ -194,7 +195,8 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   @Test
   void streamRejectsModelsWithoutStreamingSupport() throws Exception {
     ChatStreamRequest request =
-        new ChatStreamRequest(null, "No streaming", "alternate", "alt-model-sync-only", null, null);
+        new ChatStreamRequest(
+            null, "No streaming", "alternate", "alt-model-sync-only", null, null);
 
     mockMvc
         .perform(
@@ -341,7 +343,8 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
   void streamFallsBackToProviderDefaultsWhenOverridesMissing() throws Exception {
     StubChatClientState.setTokens(List.of("default response"));
 
-    ChatStreamRequest request = new ChatStreamRequest(null, "Use defaults", null, null, null, null);
+    ChatStreamRequest request =
+        new ChatStreamRequest(null, "Use defaults", null, null, null, null);
 
     performChatStream(request);
 
