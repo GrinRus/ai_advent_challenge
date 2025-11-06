@@ -345,8 +345,10 @@ class TelegramChatServiceCallbacksTest {
     assertThat(overrides.get("notes.save_note").path("userNamespace").asText()).isEqualTo("telegram");
     assertThat(overrides.get("notes.save_note").path("userReference").asText()).isEqualTo("100");
     assertThat(overrides.get("notes.save_note").path("sourceChannel").asText()).isEqualTo("telegram");
+    assertThat(overrides.get("notessave_note").path("userReference").asText()).isEqualTo("100");
     assertThat(overrides.get("notes.search_similar").path("userNamespace").asText()).isEqualTo("telegram");
     assertThat(overrides.get("notes.search_similar").path("userReference").asText()).isEqualTo("100");
+    assertThat(overrides.get("notessearch_similar").path("userReference").asText()).isEqualTo("100");
   }
 
   @Test

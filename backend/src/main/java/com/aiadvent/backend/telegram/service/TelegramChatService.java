@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -325,14 +326,20 @@ public class TelegramChatService implements TelegramUpdateHandler {
       return Map.of();
     }
     String referenceValue = Long.toString(userReference);
-    ObjectNode saveNoteOverrides = objectMapper.createObjectNode();
-    saveNoteOverrides.put("userNamespace", "telegram");
-    saveNoteOverrides.put("userReference", referenceValue);
-    saveNoteOverrides.put("sourceChannel", "telegram");
-    ObjectNode searchOverrides = saveNoteOverrides.deepCopy();
-    return Map.of(
-        "notes.save_note", saveNoteOverrides,
-        "notes.search_similar", searchOverrides);
+    ObjectNode base = objectMapper.createObjectNode();
+    base.put("userNamespace", "telegram");
+    base.put("userReference", referenceValue);
+    base.put("sourceChannel", "telegram");
+
+    ObjectNode saveNoteOverrides = base.deepCopy();
+    ObjectNode searchOverrides = base.deepCopy();
+
+    Map<String, JsonNode> overrides = new LinkedHashMap<>();
+    overrides.put("notes.save_note", saveNoteOverrides);
+    overrides.put("notessave_note", saveNoteOverrides.deepCopy());
+    overrides.put("notes.search_similar", searchOverrides);
+    overrides.put("notessearch_similar", searchOverrides.deepCopy());
+    return overrides;
   }
 
   private void handleCallback(CallbackQuery callbackQuery) {
