@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,9 +75,7 @@ final class QueryOverridingToolCallback implements ToolCallback {
 
   private String rewrite(String toolInput) {
     ObjectNode payload = parsePayload(toolInput);
-    if (overrides.size() > 0) {
-      payload.setAll(overrides.deepCopy());
-    }
+    applyOverrides(payload);
     payload.remove("locale");
     payloadCustomizer.accept(payload);
     try {
@@ -84,6 +85,26 @@ final class QueryOverridingToolCallback implements ToolCallback {
           "Failed to serialize MCP tool payload for '%s'"
               .formatted(delegate.getToolDefinition().name()),
           exception);
+    }
+  }
+
+  private void applyOverrides(ObjectNode payload) {
+    if (overrides.size() == 0) {
+      return;
+    }
+
+    List<Map.Entry<String, JsonNode>> entries = new ArrayList<>();
+    overrides.fields().forEachRemaining(entry -> entries.add(Map.entry(entry.getKey(), entry.getValue())));
+
+    for (Map.Entry<String, JsonNode> entry : entries) {
+      payload.set(entry.getKey(), entry.getValue().deepCopy());
+    }
+
+    JsonNode inputNode = payload.get("input");
+    if (inputNode instanceof ObjectNode inputObject) {
+      for (Map.Entry<String, JsonNode> entry : entries) {
+        inputObject.set(entry.getKey(), entry.getValue().deepCopy());
+      }
     }
   }
 
