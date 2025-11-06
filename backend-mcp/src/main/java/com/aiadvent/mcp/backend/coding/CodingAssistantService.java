@@ -153,7 +153,13 @@ class CodingAssistantService {
       List<String> recommendations = List.of("Перегенерировать патч перед ревью.");
       List<String> nextSteps = List.of("Повторно вызвать generate_patch и затем review_patch.");
       return new ReviewPatchResponse(
-          patch.patchId(), "blocked", findings, recommendations, nextSteps);
+          patch.patchId(),
+          "blocked",
+          findings,
+          recommendations,
+          nextSteps,
+          patch.annotations(),
+          patch.usage());
     }
 
     Set<String> diffFiles = extractDiffFiles(patch.diff());
@@ -162,15 +168,16 @@ class CodingAssistantService {
     List<String> findings = new ArrayList<>();
     List<String> testingRecommendations = new ArrayList<>();
     List<String> nextSteps = new ArrayList<>();
+    List<String> riskAnnotations = new ArrayList<>();
 
     if (focuses.contains(ReviewFocus.RISKS)) {
-      analyzeRisks(patch, diffFiles, findings, nextSteps);
+      analyzeRisks(patch, diffFiles, findings, riskAnnotations, nextSteps);
     }
     if (focuses.contains(ReviewFocus.TESTS)) {
-      analyzeTests(patch, diffFiles, findings, testingRecommendations, nextSteps);
+      analyzeTests(patch, diffFiles, findings, testingRecommendations, riskAnnotations, nextSteps);
     }
     if (focuses.contains(ReviewFocus.MIGRATION)) {
-      analyzeMigrations(diffFiles, findings, nextSteps);
+      analyzeMigrations(diffFiles, findings, riskAnnotations, nextSteps);
     }
 
     if (findings.isEmpty()) {
@@ -194,8 +201,11 @@ class CodingAssistantService {
       nextSteps.add("Подтвердить dry-run и подготовку к публикации.");
     }
 
+    PatchAnnotations annotations =
+        new PatchAnnotations(new ArrayList<>(diffFiles), riskAnnotations, List.of());
+
     return new ReviewPatchResponse(
-        patch.patchId(), status, findings, testingRecommendations, nextSteps);
+        patch.patchId(), status, findings, testingRecommendations, nextSteps, annotations, patch.usage());
   }
 
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
@@ -231,12 +241,16 @@ class CodingAssistantService {
     List<String> warnings = new ArrayList<>();
     if (checkResult.exitCode() != 0) {
       warnings.add("git apply --check завершился с ошибкой: " + checkResult.stderr());
+      PatchAnnotations failureAnnotations =
+          new PatchAnnotations(List.of(), List.of("dry-run aborted"), List.of(checkResult.stderr()));
       return new ApplyPatchPreviewResponse(
           patch.patchId(),
           patch.workspaceId(),
           false,
-          new Preview("Патч не применён: обнаружены конфликты.", warnings),
+          new Preview("Патч не применён: обнаружены конфликты.", warnings, "failed", List.of(), List.of()),
           new GradleResult(false, null, 0, "not_executed", List.of()),
+          failureAnnotations,
+          patch.usage(),
           Map.of("gitApplyCheck", "failed"),
           Instant.now());
     }
@@ -262,12 +276,22 @@ class CodingAssistantService {
                 "-");
         if (applyResult.exitCode() != 0) {
           warnings.add("git apply завершился с ошибкой: " + applyResult.stderr());
+          PatchAnnotations errorAnnotations =
+              new PatchAnnotations(
+                  List.of(), List.of("dry-run aborted"), List.of(applyResult.stderr()));
           return new ApplyPatchPreviewResponse(
               patch.patchId(),
               patch.workspaceId(),
               false,
-              new Preview("Патч не применён: git apply завершился с ошибкой.", warnings),
+              new Preview(
+                  "Патч не применён: git apply завершился с ошибкой.",
+                  warnings,
+                  "failed",
+                  List.of(),
+                  List.of("Исправьте конфликт и повторите dry-run.")),
               gradleResult,
+              errorAnnotations,
+              patch.usage(),
               metrics,
               Instant.now());
         }
@@ -313,18 +337,27 @@ class CodingAssistantService {
     }
 
     List<String> previewWarnings = new ArrayList<>(warnings);
-    if (StringUtils.hasText(diffNameStatus)) {
-      previewWarnings.add("Изменённые файлы:\n" + diffNameStatus.strip());
-    }
+    List<String> modifiedFiles = extractFilesTouched(diffNameStatus);
     String previewSummary =
         dryRun
             ? (StringUtils.hasText(diffStat)
                 ? "Патч применён в preview. Статистика:\n" + diffStat.strip()
                 : "Патч применён в preview.")
             : "Dry-run пропущен по запросу.";
-
+    String dryRunStatus =
+        dryRun
+            ? (gradleResult.executed() && gradleResult.exitCode() == 0 ? "applied" : "applied_with_warnings")
+            : "skipped";
+    List<String> recommendations = new ArrayList<>();
+    if (dryRun && gradleResult.executed() && gradleResult.exitCode() == 0 && warnings.isEmpty()) {
+      recommendations.add("Можно переходить к публикации изменений.");
+    } else if (dryRun && (!warnings.isEmpty() || gradleResult.exitCode() != 0)) {
+      recommendations.add("Проанализировать предупреждения и повторить dry-run после исправлений.");
+    } else {
+      recommendations.add("Рассмотреть запуск dry-run перед публикацией.");
+    }
     Preview preview =
-        new Preview(previewSummary, previewWarnings);
+        new Preview(previewSummary, previewWarnings, dryRunStatus, modifiedFiles, recommendations);
 
     metrics.put("durationMs", Duration.between(started, Instant.now()).toMillis());
 
@@ -336,12 +369,24 @@ class CodingAssistantService {
         !warnings.isEmpty(),
         gradleResult.status());
 
+    List<String> riskHints = new ArrayList<>();
+    if (!warnings.isEmpty()) {
+      riskHints.addAll(warnings);
+    }
+    if (gradleResult.executed() && gradleResult.exitCode() != 0) {
+      riskHints.add("Docker runner вернул код " + gradleResult.exitCode());
+    }
+    PatchAnnotations previewAnnotations =
+        new PatchAnnotations(modifiedFiles, riskHints, dryRun ? List.of() : List.of("dry-run skipped"));
+
     return new ApplyPatchPreviewResponse(
         patch.patchId(),
         patch.workspaceId(),
         dryRun && warnings.isEmpty(),
         preview,
         gradleResult,
+        previewAnnotations,
+        patch.usage(),
         metrics,
         Instant.now());
   }
@@ -728,17 +773,27 @@ class CodingAssistantService {
   }
 
   private void analyzeRisks(
-      CodingPatch patch, Set<String> diffFiles, List<String> findings, List<String> nextSteps) {
+      CodingPatch patch,
+      Set<String> diffFiles,
+      List<String> findings,
+      List<String> riskAnnotations,
+      List<String> nextSteps) {
     if (diffFiles.stream().anyMatch(this::isBuildFile)) {
-      findings.add("Изменяются build/config файлы — требуется ручная проверка зависимостей.");
+      String message = "Изменяются build/config файлы — требуется ручная проверка зависимостей.";
+      findings.add(message);
+      riskAnnotations.add(message);
       nextSteps.add("Проверить сборку и прогнать smoke-тесты после применения.");
     }
     if (diffFiles.stream().anyMatch(path -> path.contains("Security") || path.contains("Auth"))) {
-      findings.add("Затронуты security/auth файлы — убедитесь в корректности права доступа.");
+      String message = "Затронуты security/auth файлы — убедитесь в корректности права доступа.";
+      findings.add(message);
+      riskAnnotations.add(message);
       nextSteps.add("Планируется ручной аудит изменений безопасности.");
     }
     if (patch.diff().contains("TODO") || patch.diff().contains("FIXME")) {
-      findings.add("Diff содержит TODO/FIXME — возможно, требуется доработка перед merge.");
+      String message = "Diff содержит TODO/FIXME — возможно, требуется доработка перед merge.";
+      findings.add(message);
+      riskAnnotations.add(message);
       nextSteps.add("Удалить временные пометки и задокументировать решения.");
     }
   }
@@ -748,10 +803,13 @@ class CodingAssistantService {
       Set<String> diffFiles,
       List<String> findings,
       List<String> testingRecommendations,
+      List<String> riskAnnotations,
       List<String> nextSteps) {
     boolean touchesTests = diffFiles.stream().anyMatch(this::isTestFile);
     if (!touchesTests) {
-      findings.add("Не обнаружены изменения в тестах — стоит добавить покрытие.");
+      String message = "Не обнаружены изменения в тестах — стоит добавить покрытие.";
+      findings.add(message);
+      riskAnnotations.add(message);
       testingRecommendations.add("Добавить тесты, покрывающие изменения.");
       nextSteps.add("Подготовить и запустить релевантные unit/integration тесты.");
     }
@@ -760,12 +818,18 @@ class CodingAssistantService {
     }
   }
 
-  private void analyzeMigrations(Set<String> diffFiles, List<String> findings, List<String> nextSteps) {
+  private void analyzeMigrations(
+      Set<String> diffFiles,
+      List<String> findings,
+      List<String> riskAnnotations,
+      List<String> nextSteps) {
     boolean touchesMigrations =
         diffFiles.stream()
             .anyMatch(path -> path.toLowerCase().contains("migration") || path.contains("db/migrate"));
     if (touchesMigrations) {
-      findings.add("Изменения затрагивают миграции — требуется проверить порядок применения.");
+      String message = "Изменения затрагивают миграции — требуется проверить порядок применения.";
+      findings.add(message);
+      riskAnnotations.add(message);
       nextSteps.add("Согласовать миграции и выполнить dry-run базы данных.");
     }
   }
@@ -827,12 +891,19 @@ class CodingAssistantService {
       String status,
       List<String> findings,
       List<String> testingRecommendations,
-      List<String> nextSteps) {}
+      List<String> nextSteps,
+      PatchAnnotations annotations,
+      PatchUsage usage) {}
 
   record ApplyPatchPreviewRequest(
       String workspaceId, String patchId, List<String> commands, Boolean dryRun, String timeout) {}
 
-  record Preview(String summary, List<String> warnings) {}
+  record Preview(
+      String summary,
+      List<String> warnings,
+      String dryRunStatus,
+      List<String> modifiedFiles,
+      List<String> recommendations) {}
 
   record GradleResult(
       boolean executed, String runner, int exitCode, String status, List<String> logs) {}
@@ -843,6 +914,8 @@ class CodingAssistantService {
       boolean applied,
       Preview preview,
       GradleResult gradle,
+      PatchAnnotations annotations,
+      PatchUsage usage,
       Map<String, Object> metrics,
       Instant completedAt) {}
 }
