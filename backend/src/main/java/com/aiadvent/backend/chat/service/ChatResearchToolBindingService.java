@@ -25,6 +25,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatResearchToolBindingService {
 
+  private static final List<String> DISABLED_TOOL_NAMESPACES = List.of("agent_ops", "flow_ops", "insight");
+
   private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
   private final ToolDefinitionRepository toolDefinitionRepository;
@@ -58,13 +60,16 @@ public class ChatResearchToolBindingService {
   public List<String> availableToolCodes() {
     LinkedHashSet<String> codes = new LinkedHashSet<>();
     if (!configuredBindings.isEmpty()) {
-      codes.addAll(configuredBindings.keySet());
+      configuredBindings.keySet().stream()
+          .filter(code -> !isDisabledToolCode(code))
+          .forEach(codes::add);
     }
     if (toolDefinitionRepository != null) {
       toolDefinitionRepository.findAllBySchemaVersionIsNotNull().stream()
           .map(ToolDefinition::getCode)
           .map(ChatResearchToolBindingService::normalizeCode)
           .filter(ChatResearchToolBindingService::hasText)
+          .filter(code -> !isDisabledToolCode(code))
           .sorted(Comparator.naturalOrder())
           .forEach(codes::add);
     }
@@ -179,7 +184,7 @@ public class ChatResearchToolBindingService {
     LinkedHashSet<String> normalized = new LinkedHashSet<>();
     for (String code : codes) {
       String normalizedCode = normalizeCode(code);
-      if (hasText(normalizedCode)) {
+      if (hasText(normalizedCode) && !isDisabledToolCode(normalizedCode)) {
         normalized.add(normalizedCode);
       }
     }
@@ -206,5 +211,35 @@ public class ChatResearchToolBindingService {
     public boolean hasStructuredAdvice() {
       return hasText(structuredAdvice);
     }
+  }
+
+  private static boolean isDisabledToolCode(String code) {
+    if (!hasText(code)) {
+      return false;
+    }
+    for (String namespace : DISABLED_TOOL_NAMESPACES) {
+      if (matchesNamespace(code, namespace)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean matchesNamespace(String code, String namespace) {
+    if (!hasText(namespace)) {
+      return false;
+    }
+    if (code.equals(namespace)) {
+      return true;
+    }
+    if (code.startsWith(namespace)) {
+      int length = namespace.length();
+      if (code.length() == length) {
+        return true;
+      }
+      char separator = code.charAt(length);
+      return separator == '.' || separator == '_' || separator == ':';
+    }
+    return false;
   }
 }
