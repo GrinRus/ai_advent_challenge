@@ -6,6 +6,7 @@ import com.aiadvent.backend.chat.config.ChatResearchProperties.ToolBindingProper
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.aiadvent.backend.flow.tool.domain.ToolDefinition;
 import com.aiadvent.backend.flow.tool.persistence.ToolDefinitionRepository;
+import com.aiadvent.backend.flow.tool.domain.ToolSchemaVersion;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 
@@ -71,6 +73,78 @@ public class ChatResearchToolBindingService {
           .forEach(codes::add);
     }
     return codes.isEmpty() ? List.of() : List.copyOf(codes);
+  }
+
+  public Map<String, List<String>> availableToolNamespaces() {
+    Map<String, LinkedHashSet<String>> grouped = new TreeMap<>();
+
+    if (toolDefinitionRepository != null) {
+      toolDefinitionRepository.findAllBySchemaVersionIsNotNull().stream()
+          .forEach(
+              definition -> {
+                String toolCode = normalizeCode(definition.getCode());
+                if (!isAllowedToolCode(toolCode)) {
+                  return;
+                }
+                ToolSchemaVersion schemaVersion = definition.getSchemaVersion();
+                String namespace = normalizeNamespace(schemaVersion);
+                if (!hasText(namespace)) {
+                  namespace = deriveNamespace(toolCode);
+                }
+                if (!hasText(namespace) || isDisabledToolCode(namespace)) {
+                  return;
+                }
+                grouped.computeIfAbsent(namespace, key -> new LinkedHashSet<>()).add(toolCode);
+              });
+    }
+
+    if (!configuredBindings.isEmpty()) {
+      configuredBindings
+          .values()
+          .forEach(
+              binding -> {
+                String toolCode = normalizeCode(binding.toolCode());
+                if (!isAllowedToolCode(toolCode)) {
+                  return;
+                }
+                String namespace = deriveNamespace(toolCode);
+                if (!hasText(namespace) || isDisabledToolCode(namespace)) {
+                  return;
+                }
+                grouped.computeIfAbsent(namespace, key -> new LinkedHashSet<>()).add(toolCode);
+              });
+    }
+
+    if (grouped.isEmpty()) {
+      return Map.of();
+    }
+
+    Map<String, List<String>> result = new LinkedHashMap<>();
+    grouped.forEach(
+        (namespace, codes) -> result.put(namespace, List.copyOf(codes)));
+    return Map.copyOf(result);
+  }
+
+  public List<String> resolveToolCodesForNamespaces(List<String> namespaces) {
+    if (namespaces == null || namespaces.isEmpty()) {
+      return List.of();
+    }
+    Map<String, List<String>> available = availableToolNamespaces();
+    if (available.isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<String> resolved = new LinkedHashSet<>();
+    for (String namespace : namespaces) {
+      String normalized = normalizeCode(namespace);
+      if (!hasText(normalized) || isDisabledToolCode(normalized)) {
+        continue;
+      }
+      List<String> codes = available.get(normalized);
+      if (codes != null && !codes.isEmpty()) {
+        resolved.addAll(codes);
+      }
+    }
+    return resolved.isEmpty() ? List.of() : List.copyOf(resolved);
   }
 
   public ResearchContext resolve(ChatInteractionMode mode, String userQuery) {
@@ -248,5 +322,32 @@ public class ChatResearchToolBindingService {
 
   private boolean isAllowedToolCode(String code) {
     return hasText(code) && !isDisabledToolCode(code);
+  }
+
+  private String deriveNamespace(String toolCode) {
+    if (!hasText(toolCode)) {
+      return null;
+    }
+    String normalized = toolCode.trim().toLowerCase(Locale.ROOT);
+    int dotIndex = normalized.indexOf('.');
+    if (dotIndex > 0) {
+      return normalized.substring(0, dotIndex);
+    }
+    int underscoreIndex = normalized.indexOf('_');
+    if (underscoreIndex > 0) {
+      return normalized.substring(0, underscoreIndex);
+    }
+    return normalized;
+  }
+
+  private String normalizeNamespace(ToolSchemaVersion schemaVersion) {
+    if (schemaVersion == null) {
+      return null;
+    }
+    return normalizeNamespace(schemaVersion.getMcpServer());
+  }
+
+  private String normalizeNamespace(String namespace) {
+    return hasText(namespace) ? namespace.trim().toLowerCase(Locale.ROOT) : null;
   }
 }

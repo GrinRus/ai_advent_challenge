@@ -22,6 +22,7 @@ import com.aiadvent.backend.telegram.config.TelegramBotProperties;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -174,17 +175,18 @@ class TelegramChatServiceCallbacksTest {
 
   @Test
   void toggleToolCallbackUpdatesToolList() throws Exception {
-    when(researchToolBindingService.availableToolCodes()).thenReturn(List.of("agent-ops", "insight"));
+    when(researchToolBindingService.availableToolNamespaces())
+        .thenReturn(Map.of("agent_ops", List.of("agent_ops.list_agents"), "insight", List.of("insight.fetch_metrics")));
 
     stateStore.compute(
         CHAT_ID,
         () -> TelegramChatState.create(CHAT_ID, "openai", "gpt-4o-mini"),
         current -> current.withInteractionMode("research"));
 
-    service.handle(callbackUpdate("toggle-tool:agent-ops"));
+    service.handle(callbackUpdate("toggle-tool:agent_ops"));
 
     TelegramChatState state = stateStore.find(CHAT_ID).orElseThrow();
-    assertThat(state.requestedToolCodes()).containsExactly("agent-ops");
+    assertThat(state.requestedToolNamespaces()).containsExactly("agent_ops");
 
     verify(webhookBot).execute(any(AnswerCallbackQuery.class));
     verify(webhookBot, atLeastOnce()).execute(any(SendMessage.class));
@@ -192,7 +194,10 @@ class TelegramChatServiceCallbacksTest {
 
   @Test
   void textMessageUsesSelectedToolsRegardlessOfMode() throws Exception {
-    when(researchToolBindingService.availableToolCodes()).thenReturn(List.of("agent-ops"));
+    when(researchToolBindingService.availableToolNamespaces())
+        .thenReturn(Map.of("agent_ops", List.of("agent_ops.list_agents")));
+    when(researchToolBindingService.resolveToolCodesForNamespaces(List.of("agent_ops")))
+        .thenReturn(List.of("agent_ops.list_agents"));
 
     AtomicReference<ChatSyncRequest> capturedRequest = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
@@ -209,7 +214,7 @@ class TelegramChatServiceCallbacksTest {
                       UUID.randomUUID(),
                       "Ответ",
                       new StructuredSyncProvider("OPENAI", "gpt-4o-mini"),
-                      List.of("agent-ops"),
+                      List.of("agent_ops.list_agents"),
                       null,
                       new StructuredSyncUsageStats(5, 7, 12),
                       new UsageCostDetails(
@@ -221,15 +226,15 @@ class TelegramChatServiceCallbacksTest {
                       Instant.now()));
             });
 
-    service.handle(callbackUpdate("toggle-tool:agent-ops"));
+    service.handle(callbackUpdate("toggle-tool:agent_ops"));
 
     service.handle(textUpdate("Запрос через голос"));
 
     assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
     ChatSyncRequest request = capturedRequest.get();
     assertThat(request).isNotNull();
-    assertThat(request.mode()).isEqualTo("default");
-    assertThat(request.requestedToolCodes()).containsExactly("agent-ops");
+    assertThat(request.mode()).isEqualTo("research");
+    assertThat(request.requestedToolCodes()).containsExactly("agent_ops.list_agents");
   }
 
   @Test

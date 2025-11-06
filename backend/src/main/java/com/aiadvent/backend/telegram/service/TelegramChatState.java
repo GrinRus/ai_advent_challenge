@@ -16,7 +16,7 @@ public record TelegramChatState(
     Double temperatureOverride,
     Double topPOverride,
     Integer maxTokensOverride,
-    List<String> requestedToolCodes,
+    List<String> requestedToolNamespaces,
     Instant updatedAt,
     String lastPrompt,
     ChatSyncResponse lastResponse) {
@@ -47,7 +47,7 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
@@ -63,7 +63,7 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
@@ -80,7 +80,7 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
@@ -96,17 +96,17 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
   }
 
-  public TelegramChatState withRequestedToolCodes(List<String> toolCodes) {
+  public TelegramChatState withRequestedNamespaces(List<String> namespaces) {
     List<String> sanitized =
-        toolCodes == null || toolCodes.isEmpty()
+        namespaces == null || namespaces.isEmpty()
             ? List.of()
-            : List.copyOf(new ArrayList<>(toolCodes));
+            : List.copyOf(new ArrayList<>(namespaces));
     return new TelegramChatState(
         chatId,
         sessionId,
@@ -133,18 +133,18 @@ public record TelegramChatState(
         temperature,
         topP,
         maxTokens,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
   }
 
-  public TelegramChatState toggleToolCode(String code) {
-    if (!StringUtils.hasText(code)) {
+  public TelegramChatState toggleNamespace(String namespace) {
+    if (!StringUtils.hasText(namespace)) {
       return this;
     }
-    String normalized = code.trim().toLowerCase();
-    List<String> updated = new ArrayList<>(requestedToolCodes);
+    String normalized = namespace.trim().toLowerCase();
+    List<String> updated = new ArrayList<>(requestedToolNamespaces);
     if (updated.stream().anyMatch(existing -> existing.equalsIgnoreCase(normalized))) {
       updated.removeIf(existing -> existing.equalsIgnoreCase(normalized));
     } else {
@@ -165,16 +165,17 @@ public record TelegramChatState(
         lastResponse);
   }
 
-  public boolean hasToolCode(String code) {
-    if (!StringUtils.hasText(code)) {
+  public boolean hasNamespace(String namespace) {
+    if (!StringUtils.hasText(namespace)) {
       return false;
     }
-    String normalized = code.trim().toLowerCase();
-    return requestedToolCodes.stream().anyMatch(existing -> existing.equalsIgnoreCase(normalized));
+    String normalized = namespace.trim().toLowerCase();
+    return requestedToolNamespaces.stream()
+        .anyMatch(existing -> existing.equalsIgnoreCase(normalized));
   }
 
-  public TelegramChatState clearToolCodes() {
-    if (requestedToolCodes.isEmpty()) {
+  public TelegramChatState clearNamespaces() {
+    if (requestedToolNamespaces.isEmpty()) {
       return this;
     }
     return new TelegramChatState(
@@ -209,7 +210,7 @@ public record TelegramChatState(
         null,
         null,
         null,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         lastPrompt,
         lastResponse);
@@ -225,7 +226,7 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         prompt,
         response);
@@ -244,7 +245,7 @@ public record TelegramChatState(
         temperatureOverride,
         topPOverride,
         maxTokensOverride,
-        requestedToolCodes,
+        requestedToolNamespaces,
         Instant.now(),
         null,
         null);

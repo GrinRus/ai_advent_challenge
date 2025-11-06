@@ -278,17 +278,33 @@ public class TelegramChatService implements TelegramUpdateHandler {
               state.temperatureOverride(), state.topPOverride(), state.maxTokensOverride());
     }
 
-    List<String> toolCodes =
-        CollectionUtils.isEmpty(state.requestedToolCodes())
-            ? null
-            : List.copyOf(state.requestedToolCodes());
+    List<String> namespaces = state.requestedToolNamespaces();
+    List<String> toolCodes = null;
+    boolean hasNamespaces = !CollectionUtils.isEmpty(namespaces);
+    if (hasNamespaces) {
+      List<String> resolved =
+          researchToolBindingService.resolveToolCodesForNamespaces(namespaces);
+      if (!CollectionUtils.isEmpty(resolved)) {
+        toolCodes = List.copyOf(resolved);
+      }
+    }
+    String resolvedMode = state.interactionMode();
+    if (hasNamespaces && CollectionUtils.isEmpty(toolCodes)) {
+      log.debug("No MCP tools resolved for namespaces {}", namespaces);
+    }
+    if (!CollectionUtils.isEmpty(toolCodes)) {
+      ChatInteractionMode currentMode = ChatInteractionMode.from(resolvedMode);
+      if (!currentMode.isResearch()) {
+        resolvedMode = ChatInteractionMode.RESEARCH.name().toLowerCase(Locale.ROOT);
+      }
+    }
 
     return new ChatSyncRequest(
         state.sessionId(),
         prompt,
         state.providerId(),
         state.modelId(),
-        state.interactionMode(),
+        resolvedMode,
         toolCodes,
         options);
   }
@@ -356,7 +372,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
       } else if (data.startsWith(CALLBACK_TOGGLE_TOOL)) {
         handleToolToggle(chatId, data.substring(CALLBACK_TOGGLE_TOOL.length()), callbackQuery.getId());
       } else if (CALLBACK_CLEAR_TOOLS.equals(data)) {
-        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::clearToolCodes);
+        stateStore.compute(chatId, () -> createDefaultState(chatId), TelegramChatState::clearNamespaces);
         respondToCallback(callbackQuery.getId(), "Инструменты сброшены", false);
         sendToolsMenu(chatId, ensureState(chatId));
       } else if (data.startsWith(CALLBACK_SET_TEMP)) {
@@ -497,8 +513,9 @@ public class TelegramChatService implements TelegramUpdateHandler {
             .append("• Режим: ")
             .append(state.interactionMode());
 
-    if (!state.requestedToolCodes().isEmpty()) {
-      builder.append('\n').append("• Инструменты: ").append(String.join(", ", state.requestedToolCodes()));
+    List<String> selectedNamespaces = state.requestedToolNamespaces();
+    if (!selectedNamespaces.isEmpty()) {
+      builder.append('\n').append("• MCP: ").append(String.join(", ", selectedNamespaces));
     }
 
     if (response.latencyMs() != null) {
@@ -579,10 +596,11 @@ public class TelegramChatService implements TelegramUpdateHandler {
             .append("• Режим: ")
             .append(state.interactionMode());
 
-    if (!state.requestedToolCodes().isEmpty()) {
-      summary.append('\n').append("• Инструменты: ").append(String.join(", ", state.requestedToolCodes()));
+    List<String> namespaces = state.requestedToolNamespaces();
+    if (!namespaces.isEmpty()) {
+      summary.append('\n').append("• MCP: ").append(String.join(", ", namespaces));
     } else {
-      summary.append('\n').append("• Инструменты: не выбраны");
+      summary.append('\n').append("• MCP: не выбраны");
     }
 
     if (state.hasSamplingOverrides()) {
@@ -675,22 +693,30 @@ public class TelegramChatService implements TelegramUpdateHandler {
   }
 
   private void sendToolsMenu(long chatId, TelegramChatState state) {
-    List<String> toolCodes = researchToolBindingService.availableToolCodes();
-    if (toolCodes.isEmpty()) {
-      sendText(chatId, "Инструменты не сконфигурированы. Проверьте настройки backend.");
+    Map<String, List<String>> namespaces = researchToolBindingService.availableToolNamespaces();
+    if (namespaces.isEmpty()) {
+      sendText(chatId, "MCP-сервера не найдены. Проверьте настройки backend.");
       return;
     }
 
     List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-    for (String code : toolCodes) {
-      boolean enabled = state.hasToolCode(code);
-      rows.add(
-          List.of(
-              InlineKeyboardButton.builder()
-                  .text((enabled ? "✅ " : "▫️ ") + code)
-                  .callbackData(CALLBACK_TOGGLE_TOOL + code)
-                  .build()));
-    }
+    namespaces.forEach(
+        (namespace, tools) -> {
+          boolean enabled = state.hasNamespace(namespace);
+          int toolCount = tools != null ? tools.size() : 0;
+          StringBuilder label = new StringBuilder(enabled ? "✅ " : "▫️ ");
+          label.append(namespace);
+          if (toolCount > 0) {
+            label.append(" (").append(toolCount).append(')');
+          }
+          rows.add(
+              List.of(
+                  InlineKeyboardButton.builder()
+                      .text(label.toString())
+                      .callbackData(CALLBACK_TOGGLE_TOOL + namespace)
+                      .build()));
+        });
+
     rows.add(
         List.of(
             InlineKeyboardButton.builder()
@@ -699,9 +725,10 @@ public class TelegramChatService implements TelegramUpdateHandler {
                 .build()));
     rows.add(backButtonRow());
 
-    StringBuilder hint = new StringBuilder("Выберите инструменты, которые будут подключены к запросу.");
+    StringBuilder hint =
+        new StringBuilder("Выберите MCP-сервера, которые будут подключены к запросу.");
     if (!state.interactionMode().equalsIgnoreCase("research")) {
-      hint.append("\nРежим research добавляет структурированный ответ, но не обязателен для инструментов.");
+      hint.append("\nРежим research будет выбран автоматически при активных MCP.");
     }
 
     sendMessage(chatId, hint.toString(), new InlineKeyboardMarkup(rows));
@@ -838,14 +865,21 @@ public class TelegramChatService implements TelegramUpdateHandler {
     sendMainMenu(chatId, ensureState(chatId));
   }
 
-  private void handleToolToggle(long chatId, String toolCode, String callbackId)
+  private void handleToolToggle(long chatId, String namespace, String callbackId)
       throws TelegramApiException {
+    String normalized =
+        namespace != null ? namespace.trim().toLowerCase(Locale.ROOT) : null;
+    Map<String, List<String>> available = researchToolBindingService.availableToolNamespaces();
+    if (!StringUtils.hasText(normalized) || !available.containsKey(normalized)) {
+      respondToCallback(callbackId, "MCP сервер недоступен", true);
+      return;
+    }
     stateStore.compute(
         chatId,
         () -> createDefaultState(chatId),
         current ->
             (current != null ? current : createDefaultState(chatId))
-                .toggleToolCode(toolCode)
+                .toggleNamespace(normalized)
                 .resetSession());
 
     respondToCallback(callbackId, null, false);
