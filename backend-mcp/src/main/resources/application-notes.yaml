@@ -27,6 +27,7 @@ spring:
         mcp-endpoint: /mcp
         keep-alive-interval: 30s
     openai:
+      enabled: true
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
       embedding:

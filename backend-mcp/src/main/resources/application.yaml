@@ -7,6 +7,9 @@ spring:
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
       - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
       - org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration
+  ai:
+    openai:
+      enabled: false
 
 logging:
   level:
