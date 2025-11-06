@@ -4,9 +4,9 @@ import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.api.ChatStreamRequestOptions;
 import com.aiadvent.backend.chat.api.ChatSyncRequest;
 import com.aiadvent.backend.chat.api.ChatSyncResponse;
-import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.StructuredSyncAnswer;
 import com.aiadvent.backend.chat.api.StructuredSyncUsageStats;
+import com.aiadvent.backend.chat.api.StructuredSyncResponse;
 import com.aiadvent.backend.chat.api.UsageCostDetails;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
@@ -15,6 +15,9 @@ import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -105,6 +108,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private final TelegramBotProperties properties;
   private final OpenAiAudioTranscriptionModel transcriptionModel;
   private final WebClient telegramFileClient;
+  private final ObjectMapper objectMapper;
 
   private final ExecutorService executor = Executors.newCachedThreadPool();
   private final Map<Long, PendingRequest> activeRequests = new ConcurrentHashMap<>();
@@ -117,7 +121,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
       TelegramChatStateStore stateStore,
       TelegramBotProperties properties,
       ObjectProvider<OpenAiAudioTranscriptionModel> transcriptionModelProvider,
-      WebClient.Builder webClientBuilder) {
+      WebClient.Builder webClientBuilder,
+      ObjectMapper objectMapper) {
     this.webhookBot = webhookBot;
     this.syncChatService = syncChatService;
     this.chatProviderService = chatProviderService;
@@ -126,6 +131,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     this.properties = properties;
     this.transcriptionModel = transcriptionModelProvider.getIfAvailable();
     this.telegramFileClient = webClientBuilder.build();
+    this.objectMapper = objectMapper;
   }
 
   @Override
@@ -163,7 +169,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
 
     if (message.getVoice() != null) {
-      handleVoiceMessage(chatId, message.getVoice());
+      handleVoiceMessage(chatId, message.getFrom(), message.getVoice());
       return;
     }
 
@@ -183,7 +189,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
       return;
     }
 
-    processUserPrompt(chatId, text.trim());
+    Long userId = message.getFrom() != null ? message.getFrom().getId() : null;
+    processUserPrompt(chatId, userId, text.trim());
   }
 
   private void processCommand(long chatId, String rawCommand) {
@@ -209,7 +216,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     }
   }
 
-  private void processUserPrompt(long chatId, String prompt) {
+  private void processUserPrompt(long chatId, Long userId, String prompt) {
     PendingRequest existing = activeRequests.get(chatId);
     if (existing != null && !existing.cancelled.get()) {
       sendText(chatId, "Уже выполняется запрос. Нажмите «Остановить» или дождитесь завершения.");
@@ -218,6 +225,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
 
     TelegramChatState state = ensureState(chatId);
     ChatSyncRequest request = buildSyncRequest(state, prompt);
+    long userReference = userId != null ? userId : chatId;
 
     PendingRequest pending = new PendingRequest(prompt);
     activeRequests.put(chatId, pending);
@@ -227,26 +235,31 @@ public class TelegramChatService implements TelegramUpdateHandler {
         CompletableFuture.runAsync(
             () -> {
               try {
-                SyncChatService.SyncChatResult result = syncChatService.sync(request);
-                if (pending.cancelled.get()) {
-                  log.debug("Skipping response for chat {} because request was cancelled", chatId);
-                  return;
+                Map<String, JsonNode> overridePayloads =
+                    resolveTelegramOverrides(state, userReference);
+                try (AutoCloseable ignored =
+                    researchToolBindingService.withRequestOverrides(overridePayloads)) {
+                  SyncChatService.SyncChatResult result = syncChatService.sync(request);
+                  if (pending.cancelled.get()) {
+                    log.debug("Skipping response for chat {} because request was cancelled", chatId);
+                    return;
+                  }
+
+                  UUID nextSessionId = result.context().sessionId();
+                  TelegramChatState updatedState =
+                      stateStore.compute(
+                          chatId,
+                          () -> createDefaultState(chatId).withLastResult(prompt, result.response()),
+                          current -> {
+                            TelegramChatState base =
+                                current != null ? current : createDefaultState(chatId);
+                            TelegramChatState withSession = base.withSessionId(nextSessionId);
+                            return withSession.withLastResult(prompt, result.response());
+                          });
+
+                  sendText(chatId, sanitizeResponse(result.response().content()));
+                  sendMetadataSummary(chatId, updatedState, result.response());
                 }
-
-                UUID nextSessionId = result.context().sessionId();
-                TelegramChatState updatedState =
-                    stateStore.compute(
-                        chatId,
-                        () -> createDefaultState(chatId).withLastResult(prompt, result.response()),
-                        current -> {
-                          TelegramChatState base =
-                              current != null ? current : createDefaultState(chatId);
-                          TelegramChatState withSession = base.withSessionId(nextSessionId);
-                          return withSession.withLastResult(prompt, result.response());
-                        });
-
-                sendText(chatId, sanitizeResponse(result.response().content()));
-                sendMetadataSummary(chatId, updatedState, result.response());
               } catch (ResponseStatusException apiError) {
                 if (!pending.cancelled.get()) {
                   log.warn("LLM request failed: {}", apiError.getMessage());
@@ -307,6 +320,21 @@ public class TelegramChatService implements TelegramUpdateHandler {
         resolvedMode,
         toolCodes,
         options);
+  }
+
+  private Map<String, JsonNode> resolveTelegramOverrides(TelegramChatState state, long userReference) {
+    if (state == null || !state.hasNamespace("notes")) {
+      return Map.of();
+    }
+    String referenceValue = Long.toString(userReference);
+    ObjectNode saveNoteOverrides = objectMapper.createObjectNode();
+    saveNoteOverrides.put("userNamespace", "telegram");
+    saveNoteOverrides.put("userReference", referenceValue);
+    saveNoteOverrides.put("sourceChannel", "telegram");
+    ObjectNode searchOverrides = saveNoteOverrides.deepCopy();
+    return Map.of(
+        "notes.save_note", saveNoteOverrides,
+        "notes.search_similar", searchOverrides);
   }
 
   private void handleCallback(CallbackQuery callbackQuery) {
@@ -429,7 +457,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
       return;
     }
     respondToCallback(callbackId, "Повторяем предыдущий запрос", false);
-    processUserPrompt(chatId, state.lastPrompt());
+    processUserPrompt(chatId, null, state.lastPrompt());
   }
 
   private void handleShowDetails(long chatId, String callbackId) throws TelegramApiException {
@@ -908,7 +936,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     sendSamplingMenu(chatId, ensureState(chatId));
   }
 
-  private void handleVoiceMessage(long chatId, Voice voice) {
+  private void handleVoiceMessage(long chatId, User from, Voice voice) {
     if (!properties.getStt().isEnabled()) {
       sendText(chatId, "Голосовые сообщения отключены настройками.");
       return;
@@ -933,7 +961,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
       }
       String normalized = transcript.trim();
       sendText(chatId, "🎤 " + normalized);
-      processUserPrompt(chatId, normalized);
+      Long userId = from != null ? from.getId() : null;
+      processUserPrompt(chatId, userId, normalized);
     } catch (Exception ex) {
       log.error("Failed to process voice message for chat {}: {}", chatId, ex.getMessage());
       sendText(chatId, "Не удалось обработать голосовое сообщение. Попробуйте снова.");

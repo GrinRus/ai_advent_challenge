@@ -35,6 +35,7 @@ public class ChatResearchToolBindingService {
   private final String structuredAdvice;
   private final boolean hasConfiguredPrompt;
   private final List<String> disabledToolNamespaces;
+  private final ThreadLocal<Map<String, JsonNode>> requestOverrideContext = new ThreadLocal<>();
 
   public ChatResearchToolBindingService(
       McpToolBindingService mcpToolBindingService,
@@ -173,7 +174,7 @@ public class ChatResearchToolBindingService {
 
     List<McpToolBindingService.ResolvedTool> resolvedTools =
         mcpToolBindingService.resolveCallbacks(
-            bindings, userQuery, selectionCodes, Collections.emptyMap());
+            bindings, userQuery, selectionCodes, currentRequestOverrides());
 
     if (resolvedTools.isEmpty()) {
       return ResearchContext.empty();
@@ -207,6 +208,16 @@ public class ChatResearchToolBindingService {
       // fall back to plain text if parsing fails
     }
     return Optional.empty();
+  }
+
+  public AutoCloseable withRequestOverrides(Map<String, JsonNode> overrides) {
+    Map<String, JsonNode> previous = requestOverrideContext.get();
+    if (overrides == null || overrides.isEmpty()) {
+      requestOverrideContext.remove();
+    } else {
+      requestOverrideContext.set(Map.copyOf(overrides));
+    }
+    return new OverrideScope(previous);
   }
 
   private AgentInvocationOptions.ToolBinding buildBinding(String code) {
@@ -290,6 +301,11 @@ public class ChatResearchToolBindingService {
     return isDisabledToolCode(code, disabledToolNamespaces);
   }
 
+  private Map<String, JsonNode> currentRequestOverrides() {
+    Map<String, JsonNode> overrides = requestOverrideContext.get();
+    return overrides != null ? overrides : Collections.emptyMap();
+  }
+
   private static boolean isDisabledToolCode(String code, List<String> disabledNamespaces) {
     if (!hasText(code) || disabledNamespaces == null || disabledNamespaces.isEmpty()) {
       return false;
@@ -349,5 +365,28 @@ public class ChatResearchToolBindingService {
 
   private String normalizeNamespace(String namespace) {
     return hasText(namespace) ? namespace.trim().toLowerCase(Locale.ROOT) : null;
+  }
+
+  private final class OverrideScope implements AutoCloseable {
+    private final Map<String, JsonNode> previousOverrides;
+    private boolean closed;
+
+    private OverrideScope(Map<String, JsonNode> previousOverrides) {
+      this.previousOverrides = previousOverrides;
+      this.closed = false;
+    }
+
+    @Override
+    public void close() {
+      if (closed) {
+        return;
+      }
+      if (previousOverrides == null) {
+        requestOverrideContext.remove();
+      } else {
+        requestOverrideContext.set(previousOverrides);
+      }
+      closed = true;
+    }
   }
 }

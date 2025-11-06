@@ -19,6 +19,7 @@ import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.chat.service.SyncChatService.SyncChatResult;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -95,7 +96,8 @@ class TelegramChatServiceCallbacksTest {
             stateStore,
             properties,
             transcriptionModelProvider,
-            webClientBuilder);
+            webClientBuilder,
+            new ObjectMapper());
 
     when(webhookBot.execute(any(SendMessage.class))).thenReturn(new Message());
     lenient().when(webhookBot.execute(any(AnswerCallbackQuery.class))).thenReturn(Boolean.TRUE);
