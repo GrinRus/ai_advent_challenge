@@ -3,34 +3,52 @@ package com.aiadvent.mcp.backend.coding;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayload;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
 class CodingAssistantService {
 
+  private static final Pattern DIFF_FILE_PATTERN =
+      Pattern.compile("^diff --git a/(.+) b/(.+)$", Pattern.MULTILINE);
+  private static final Pattern BINARY_FILES_PATTERN =
+      Pattern.compile("^Binary files .+ differ$", Pattern.MULTILINE);
+  private static final Pattern LITERAL_PATTERN =
+      Pattern.compile("^literal \\d+$", Pattern.MULTILINE);
+
   private final TempWorkspaceService workspaceService;
   private final CodingAssistantProperties properties;
   private final WorkspaceFileService workspaceFileService;
   private final PatchRegistry patchRegistry;
+  private final PatchGenerationService patchGenerationService;
 
   CodingAssistantService(
       TempWorkspaceService workspaceService,
       CodingAssistantProperties properties,
       WorkspaceFileService workspaceFileService,
-      PatchRegistry patchRegistry) {
+      PatchRegistry patchRegistry,
+      PatchGenerationService patchGenerationService) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.workspaceFileService =
         Objects.requireNonNull(workspaceFileService, "workspaceFileService");
     this.patchRegistry = Objects.requireNonNull(patchRegistry, "patchRegistry");
+    this.patchGenerationService =
+        Objects.requireNonNull(patchGenerationService, "patchGenerationService");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -41,40 +59,46 @@ class CodingAssistantService {
     if (!StringUtils.hasText(instructions)) {
       throw new IllegalArgumentException("instructions must not be blank");
     }
+    validateInstructionLength(instructions);
 
     workspaceService
         .findWorkspace(workspaceId)
         .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
 
     List<String> targetPaths = normalizePaths(request.targetPaths());
+    validatePathList(targetPaths, "targetPaths");
     List<String> forbiddenPaths = normalizePaths(request.forbiddenPaths());
-    validatePaths(targetPaths, forbiddenPaths);
+    validatePathList(forbiddenPaths, "forbiddenPaths");
+    ensureNoOverlap(targetPaths, forbiddenPaths);
 
-    List<ContextSnippet> snippets =
-        collectContext(workspaceId, normalizeContextFiles(request.contextFiles()));
+    List<ContextFile> normalizedContext = normalizeContextFiles(request.contextFiles());
+    List<ContextSnippet> snippets = collectContext(workspaceId, normalizedContext);
 
     String patchId = UUID.randomUUID().toString();
-    String summary = buildSummary(snippets);
-    PatchAnnotations annotations =
-        new PatchAnnotations(
-            snippets.stream().map(ContextSnippet::path).toList(),
-            List.of("Patch generation stub – implement LLM call"),
-            List.of());
+    PatchGenerationService.GenerationResult generation =
+        patchGenerationService.generate(
+            new PatchGenerationService.GeneratePatchCommand(
+                patchId, workspaceId, instructions, targetPaths, forbiddenPaths, snippets));
+
+    Set<String> diffFiles = validateDiff(generation.diff());
+    PatchAnnotations annotations = normalizeAnnotations(generation.annotations(), diffFiles);
+
     CodingPatch patch =
         patchRegistry.register(
             new PatchRegistry.NewPatch(
                 patchId,
                 workspaceId,
                 instructions,
-                summary,
-                "",
+                generation.summary(),
+                generation.diff(),
                 annotations,
-                PatchUsage.empty(),
-                false,
+                generation.usage() == null ? PatchUsage.empty() : generation.usage(),
+                generation.requiresManualReview(),
                 false,
                 targetPaths,
                 forbiddenPaths,
                 snippets));
+
     return new GeneratePatchResponse(
         patch.patchId(),
         patch.workspaceId(),
@@ -136,6 +160,14 @@ class CodingAssistantService {
     return sanitized;
   }
 
+  private void validateInstructionLength(String instructions) {
+    int max = properties.getMaxInstructionLength();
+    if (instructions.length() > max) {
+      throw new IllegalArgumentException(
+          "instructions exceeds max length of " + max + " characters");
+    }
+  }
+
   private List<String> normalizePaths(List<String> paths) {
     if (paths == null) {
       return List.of();
@@ -147,23 +179,13 @@ class CodingAssistantService {
         .toList();
   }
 
-  private List<ContextFile> normalizeContextFiles(List<ContextFile> contextFiles) {
-    if (contextFiles == null) {
-      return List.of();
+  private void validatePathList(List<String> paths, String fieldName) {
+    for (String path : paths) {
+      validateRelativePath(path, fieldName);
     }
-    return contextFiles.stream()
-        .filter(Objects::nonNull)
-        .map(
-            file ->
-                new ContextFile(
-                    file.path() == null ? "" : file.path().trim(),
-                    file.maxBytes()))
-        .filter(file -> StringUtils.hasText(file.path()))
-        .distinct()
-        .toList();
   }
 
-  private void validatePaths(List<String> targets, List<String> forbidden) {
+  private void ensureNoOverlap(List<String> targets, List<String> forbidden) {
     if (!targets.isEmpty() && !forbidden.isEmpty()) {
       for (String path : targets) {
         if (forbidden.contains(path)) {
@@ -172,6 +194,25 @@ class CodingAssistantService {
         }
       }
     }
+  }
+
+  private List<ContextFile> normalizeContextFiles(List<ContextFile> contextFiles) {
+    if (contextFiles == null) {
+      return List.of();
+    }
+    LinkedHashSet<ContextFile> sanitized = new LinkedHashSet<>();
+    for (ContextFile file : contextFiles) {
+      if (file == null) {
+        continue;
+      }
+      String path = file.path() == null ? "" : file.path().trim();
+      if (!StringUtils.hasText(path)) {
+        continue;
+      }
+      validateRelativePath(path, "contextFiles");
+      sanitized.add(new ContextFile(path, file.maxBytes()));
+    }
+    return List.copyOf(sanitized);
   }
 
   private List<ContextSnippet> collectContext(
@@ -201,12 +242,110 @@ class CodingAssistantService {
     return Math.min(requested, max);
   }
 
-  private String buildSummary(List<ContextSnippet> snippets) {
-    if (snippets.isEmpty()) {
-      return "Инструкция сохранена, генерация патча будет реализована позднее.";
+  private void validateRelativePath(String path, String fieldName) {
+    if (!StringUtils.hasText(path)) {
+      throw new IllegalArgumentException(fieldName + " must not contain blank values");
     }
-    return "Подготовлен контекст из файлов: "
-        + snippets.stream().map(ContextSnippet::path).toList();
+    if (path.indexOf('\0') >= 0) {
+      throw new IllegalArgumentException(fieldName + " contains illegal character: " + path);
+    }
+    String normalizedSlashes = path.replace('\\', '/');
+    if (normalizedSlashes.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "%s must be relative, got absolute path: %s".formatted(fieldName, path));
+    }
+    if (normalizedSlashes.startsWith("../")
+        || normalizedSlashes.contains("/../")
+        || normalizedSlashes.equals("..")) {
+      throw new IllegalArgumentException(
+          "%s must not traverse outside workspace: %s".formatted(fieldName, path));
+    }
+    if (normalizedSlashes.matches("^[A-Za-z]:.*")) {
+      throw new IllegalArgumentException(
+          "%s must be relative, got platform-specific absolute path: %s"
+              .formatted(fieldName, path));
+    }
+    try {
+      Path candidate = Path.of(path).normalize();
+      if (candidate.isAbsolute() || candidate.toString().equals("..")) {
+        throw new IllegalArgumentException(
+            "%s must not resolve outside workspace: %s".formatted(fieldName, path));
+      }
+      String candidateStr = candidate.toString().replace('\\', '/');
+      if (candidateStr.startsWith("../") || candidateStr.contains("/../")) {
+        throw new IllegalArgumentException(
+            "%s must not resolve outside workspace: %s".formatted(fieldName, path));
+      }
+    } catch (InvalidPathException ex) {
+      throw new IllegalArgumentException(
+          "%s contains invalid path component: %s".formatted(fieldName, path), ex);
+    }
+  }
+
+  private Set<String> validateDiff(String diff) {
+    if (!StringUtils.hasText(diff)) {
+      return Set.of();
+    }
+    byte[] diffBytes = diff.getBytes(StandardCharsets.UTF_8);
+    if (diffBytes.length > properties.getMaxDiffBytes()) {
+      throw new IllegalArgumentException(
+          "Generated diff exceeds maxDiffBytes limit: "
+              + diffBytes.length
+              + " > "
+              + properties.getMaxDiffBytes());
+    }
+    if (containsBinaryPatch(diff)) {
+      throw new IllegalArgumentException("Generated diff must not contain binary patches");
+    }
+    Set<String> diffFiles = extractDiffFiles(diff);
+    if (diffFiles.size() > properties.getMaxFilesPerPatch()) {
+      throw new IllegalArgumentException(
+          "Generated diff touches too many files: "
+              + diffFiles.size()
+              + " > "
+              + properties.getMaxFilesPerPatch());
+    }
+    diffFiles.forEach(path -> validateRelativePath(path, "diff files"));
+    return diffFiles;
+  }
+
+  private boolean containsBinaryPatch(String diff) {
+    return diff.contains("GIT binary patch")
+        || BINARY_FILES_PATTERN.matcher(diff).find()
+        || LITERAL_PATTERN.matcher(diff).find();
+  }
+
+  private Set<String> extractDiffFiles(String diff) {
+    Set<String> files = new LinkedHashSet<>();
+    Matcher matcher = DIFF_FILE_PATTERN.matcher(diff);
+    while (matcher.find()) {
+      String aPath = matcher.group(1);
+      String bPath = matcher.group(2);
+      String candidate =
+          "/dev/null".equals(bPath)
+              ? aPath
+              : ("/dev/null".equals(aPath) ? bPath : bPath);
+      if (StringUtils.hasText(candidate)) {
+        files.add(candidate.trim());
+      }
+    }
+    return files;
+  }
+
+  private PatchAnnotations normalizeAnnotations(
+      PatchAnnotations annotations, Set<String> diffFiles) {
+    List<String> files =
+        annotations == null
+            ? new ArrayList<>()
+            : new ArrayList<>(annotations.files());
+    diffFiles.stream().filter(path -> !files.contains(path)).forEach(files::add);
+
+    List<String> risks =
+        annotations == null ? new ArrayList<>() : new ArrayList<>(annotations.risks());
+    List<String> conflicts =
+        annotations == null ? new ArrayList<>() : new ArrayList<>(annotations.conflicts());
+
+    return new PatchAnnotations(files, risks, conflicts);
   }
 
   record GeneratePatchRequest(
