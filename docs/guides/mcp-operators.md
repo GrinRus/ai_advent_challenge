@@ -100,6 +100,8 @@ Tool: coding.generate_patch → coding.review_patch → coding.apply_patch_previ
 - `coding.generate_patch` принимает `workspaceId`, инструкции и, опционально, списки `targetPaths`, `forbiddenPaths`, `contextFiles`. Лимиты: дифф ≤ 256 КБ, ≤ 25 файлов, контекст ≤ 256 КБ на файл.
 - `coding.review_patch` подсвечивает риски, отсутствие тестов и миграции; результат содержит аннотации по файлам, рискам и конфликтам.
 - `coding.apply_patch_preview` помечен как `MANUAL`: в UI/Telegram инструмент запускается только после явного подтверждения оператора. Внутри выполняется `git apply --check`, временное применение diff, сбор `git diff --stat`, откат изменений и (по whitelisted командами) вызов Docker Gradle runner. Ответ возвращает список изменённых файлов, предупреждения, рекомендации и метрики.
+- `coding.list_patches` возвращает все активные патчи workspace: статус (`generated/applied/discarded`), флаги `requiresManualReview` и `hasDryRun`, аннотации и usage.
+- `coding.discard_patch` помечен как `MANUAL`: удаляет выбранный патч из реестра (обычно после публикации или при отказе от изменений).
 - Если dry-run завершился успешно, backend разблокирует GitHub write-инструменты (`create_branch` → `commit_workspace_diff` → `push_branch` → `open_pull_request`). При ошибках оператор получает список конфликтов/логов и может повторить генерацию патча.
 
 ## Безопасность

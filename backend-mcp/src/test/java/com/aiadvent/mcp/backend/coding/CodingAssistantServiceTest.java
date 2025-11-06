@@ -136,6 +136,47 @@ class CodingAssistantServiceTest {
   }
 
   @Test
+  void listPatchesReturnsSummaries(@TempDir Path workspaceDir) {
+    TestHarness harness = createHarness(workspaceDir);
+    CodingAssistantService.GeneratePatchResponse response =
+        harness.service.generatePatch(
+            new CodingAssistantService.GeneratePatchRequest(
+                "workspace-id", "Add controller", List.of(), List.of(), List.of()));
+
+    CodingAssistantService.ListPatchesResponse list =
+        harness.service.listPatches(new CodingAssistantService.ListPatchesRequest("workspace-id"));
+
+    assertEquals(1, list.patches().size());
+    CodingAssistantService.PatchSummary summary = list.patches().get(0);
+    assertEquals(response.patchId(), summary.patchId());
+    assertEquals("workspace-id", summary.workspaceId());
+    assertEquals("generated", summary.status());
+    assertFalse(summary.annotations().files().isEmpty());
+  }
+
+  @Test
+  void discardPatchRemovesEntry(@TempDir Path workspaceDir) {
+    TestHarness harness = createHarness(workspaceDir);
+    CodingAssistantService.GeneratePatchResponse response =
+        harness.service.generatePatch(
+            new CodingAssistantService.GeneratePatchRequest(
+                "workspace-id", "Cleanup temp files", List.of(), List.of(), List.of()));
+
+    CodingAssistantService.DiscardPatchResponse discard =
+        harness.service.discardPatch(
+            new CodingAssistantService.DiscardPatchRequest("workspace-id", response.patchId()));
+
+    assertEquals(response.patchId(), discard.patchId());
+    assertEquals("discarded", discard.patch().status());
+    assertTrue(
+        harness
+            .service
+            .listPatches(new CodingAssistantService.ListPatchesRequest("workspace-id"))
+            .patches()
+            .isEmpty());
+  }
+
+  @Test
   void applyPatchPreviewReportsConflictsWhenGitCheckFails(@TempDir Path workspaceDir)
       throws Exception {
     initGitRepository(workspaceDir);

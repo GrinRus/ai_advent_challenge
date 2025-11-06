@@ -925,7 +925,7 @@
 - [x] Подключить инструменты к backend (chat/flow): bindings, ручные подтверждения dry-run в UI/Telegram, разблокировка GitHub write-инструментов после подтверждения.
 - [x] Покрыть тестами: unit (валидации, Registry), интеграция (generate→review→apply с dry-run/timeout/invalid diff), smoke (apply без dry-run).
 - [x] Обновить документацию (`docs/guides/mcp-operators.md`, `docs/infra.md`): UX assisted coding, политика подтверждений, лимиты, troubleshooting.
-- [ ] (Post-MVP) Зафиксировать roadmap-пункты `coding.list_patches` / `coding.discard_patch` для диагностики активных патчей и ручного сброса.
+- [x] (Post-MVP) Зафиксировать roadmap-пункты `coding.list_patches` / `coding.discard_patch` для диагностики активных патчей и ручного сброса.
 
 ### GitHub MCP Expansion
 - [ ] Реализовать write-операции в `GitHubRepositoryService`:

@@ -2,6 +2,8 @@ package com.aiadvent.mcp.backend.coding;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -113,6 +115,59 @@ class PatchRegistry implements InitializingBean, DisposableBean {
   CodingPatch markDryRun(String workspaceId, String patchId, boolean hasDryRun) {
     return update(
         workspaceId, patchId, patch -> patch.withHasDryRun(hasDryRun));
+  }
+
+  List<CodingPatch> listByWorkspace(String workspaceId) {
+    String sanitizedWorkspaceId = sanitizeWorkspaceId(workspaceId);
+    Instant now = Instant.now();
+    List<CodingPatch> collected = new ArrayList<>();
+    for (Map.Entry<String, PatchHolder> entry : patches.entrySet()) {
+      PatchHolder holder = entry.getValue();
+      CodingPatch current = holder.get();
+      if (current == null) {
+        patches.remove(entry.getKey(), holder);
+        continue;
+      }
+      if (current.isExpired(now)) {
+        patches.remove(entry.getKey(), holder);
+        continue;
+      }
+      if (current.workspaceId().equals(sanitizedWorkspaceId)) {
+        CodingPatch refreshed = current.touch(now, ttl);
+        if (holder.compareAndSet(current, refreshed)) {
+          collected.add(refreshed);
+        }
+      }
+    }
+    collected.sort(Comparator.comparing(CodingPatch::createdAt));
+    return List.copyOf(collected);
+  }
+
+  Optional<CodingPatch> discard(String workspaceId, String patchId) {
+    String sanitizedWorkspaceId = sanitizeWorkspaceId(workspaceId);
+    String sanitizedPatchId = requirePatchId(patchId);
+    while (true) {
+      PatchHolder holder = patches.get(sanitizedPatchId);
+      if (holder == null) {
+        return Optional.empty();
+      }
+      CodingPatch current = holder.get();
+      if (current == null) {
+        patches.remove(sanitizedPatchId, holder);
+        continue;
+      }
+      if (!current.workspaceId().equals(sanitizedWorkspaceId)) {
+        throw new IllegalArgumentException(
+            "Patch %s does not belong to workspaceId %s"
+                .formatted(sanitizedPatchId, sanitizedWorkspaceId));
+      }
+      CodingPatch discarded = current.withStatus(PatchStatus.DISCARDED);
+      if (patches.remove(sanitizedPatchId, holder)) {
+        log.debug(
+            "Discarded patch {} for workspace {}", discarded.patchId(), discarded.workspaceId());
+        return Optional.of(discarded);
+      }
+    }
   }
 
   CodingPatch updateStatus(String workspaceId, String patchId, PatchStatus status) {

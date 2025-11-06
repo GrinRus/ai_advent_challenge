@@ -204,6 +204,12 @@ app:
         - code: coding.apply_patch_preview
           schema-version: 1
           execution-mode: MANUAL
+        - code: coding.list_patches
+          schema-version: 1
+          execution-mode: AUTO
+        - code: coding.discard_patch
+          schema-version: 1
+          execution-mode: MANUAL
       default-tool-codes:
         - perplexity_search
       disabled-tool-namespaces:

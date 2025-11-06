@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -391,12 +392,32 @@ class CodingAssistantService {
         Instant.now());
   }
 
+  ListPatchesResponse listPatches(ListPatchesRequest request) {
+    Objects.requireNonNull(request, "request");
+    String workspaceId = sanitizeWorkspaceId(request.workspaceId());
+    List<CodingPatch> patches = patchRegistry.listByWorkspace(workspaceId);
+    List<PatchSummary> summaries =
+        patches.stream().map(this::toSummary).collect(Collectors.toList());
+    return new ListPatchesResponse(List.copyOf(summaries));
+  }
+
+  DiscardPatchResponse discardPatch(DiscardPatchRequest request) {
+    Objects.requireNonNull(request, "request");
+    String workspaceId = sanitizeWorkspaceId(request.workspaceId());
+    String patchId = sanitizePatchId(request.patchId());
+    CodingPatch discarded =
+        patchRegistry
+            .discard(workspaceId, patchId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown patchId: " + patchId));
+    log.info(
+        "coding.discard_patch completed: patchId={}, workspaceId={}", discarded.patchId(), workspaceId);
+    return new DiscardPatchResponse(discarded.patchId(), toSummary(discarded), Instant.now());
+  }
+
   private CodingPatch requirePatch(String workspaceId, String patchId) {
     String sanitizedWorkspaceId = sanitizeWorkspaceId(workspaceId);
-    if (!StringUtils.hasText(patchId)) {
-      throw new IllegalArgumentException("patchId must not be blank");
-    }
-    return patchRegistry.get(sanitizedWorkspaceId, patchId);
+    String sanitizedPatchId = sanitizePatchId(patchId);
+    return patchRegistry.get(sanitizedWorkspaceId, sanitizedPatchId);
   }
 
   private String sanitizeWorkspaceId(String workspaceId) {
@@ -404,6 +425,14 @@ class CodingAssistantService {
         Optional.ofNullable(workspaceId).map(String::trim).orElse("");
     if (!StringUtils.hasText(sanitized)) {
       throw new IllegalArgumentException("workspaceId must not be blank");
+    }
+    return sanitized;
+  }
+
+  private String sanitizePatchId(String patchId) {
+    String sanitized = Optional.ofNullable(patchId).map(String::trim).orElse("");
+    if (!StringUtils.hasText(sanitized)) {
+      throw new IllegalArgumentException("patchId must not be blank");
     }
     return sanitized;
   }
@@ -488,6 +517,21 @@ class CodingAssistantService {
       return max;
     }
     return Math.min(requested, max);
+  }
+
+  private PatchSummary toSummary(CodingPatch patch) {
+    return new PatchSummary(
+        patch.patchId(),
+        patch.workspaceId(),
+        patch.status().name().toLowerCase(Locale.ROOT),
+        patch.summary(),
+        patch.requiresManualReview(),
+        patch.hasDryRun(),
+        patch.createdAt(),
+        patch.updatedAt(),
+        patch.expiresAt(),
+        patch.annotations(),
+        patch.usage());
   }
 
   private void validateRelativePath(String path, String fieldName) {
@@ -918,4 +962,29 @@ class CodingAssistantService {
       PatchUsage usage,
       Map<String, Object> metrics,
       Instant completedAt) {}
+
+  record ListPatchesRequest(String workspaceId) {}
+
+  record ListPatchesResponse(List<PatchSummary> patches) {
+    ListPatchesResponse {
+      patches = patches == null ? List.of() : List.copyOf(patches);
+    }
+  }
+
+  record PatchSummary(
+      String patchId,
+      String workspaceId,
+      String status,
+      String summary,
+      boolean requiresManualReview,
+      boolean hasDryRun,
+      Instant createdAt,
+      Instant updatedAt,
+      Instant expiresAt,
+      PatchAnnotations annotations,
+      PatchUsage usage) {}
+
+  record DiscardPatchRequest(String workspaceId, String patchId) {}
+
+  record DiscardPatchResponse(String patchId, PatchSummary patch, Instant discardedAt) {}
 }

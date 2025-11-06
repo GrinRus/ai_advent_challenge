@@ -14,8 +14,12 @@ spring:
         annotation-scanner:
           enabled: false
         instructions: |
-          Coding MCP предоставляет заглушечные инструменты для генерации, ревью и dry-run патчей.
-          На текущем этапе реализована каркасная логика без фактической модификации файлов.
+          Coding MCP предоставляет инструменты assisted coding поверх локального workspace:
+          • coding.generate_patch — подготовка diff и сохранение патча в реестре.
+          • coding.review_patch — эвристическое ревью (риски, тесты, миграции).
+          • coding.apply_patch_preview — ручной dry-run (git apply, Docker runner).
+          • coding.list_patches — получение списка активных патчей.
+          • coding.discard_patch — удаление патча из реестра.
         capabilities:
           tool: true
           resource: false
