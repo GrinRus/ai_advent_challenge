@@ -5,7 +5,10 @@ import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import org.springframework.context.annotation.Profile;
+
 @Configuration
+@Profile("docker")
 class DockerRunnerToolConfiguration {
 
   @Bean
@@ -13,4 +16,3 @@ class DockerRunnerToolConfiguration {
     return MethodToolCallbackProvider.builder().toolObjects(tools).build();
   }
 }
-
