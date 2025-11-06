@@ -323,7 +323,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   }
 
   private Map<String, JsonNode> resolveTelegramOverrides(TelegramChatState state, long userReference) {
-    if (state == null) {
+    if (state == null || !state.hasNamespace("notes")) {
       return Map.of();
     }
     String referenceValue = Long.toString(userReference);

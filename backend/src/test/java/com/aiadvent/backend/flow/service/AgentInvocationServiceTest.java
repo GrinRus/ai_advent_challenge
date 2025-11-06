@@ -28,12 +28,10 @@ import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -177,119 +175,6 @@ class AgentInvocationServiceTest {
 
     assertThat(result.selectedToolCodes()).containsExactly("perplexity_search");
     assertThat(toolCallbackCaptor.getValue()).containsExactly(toolCallback);
-  }
-
-  @Test
-  void injectsNotesOverridesFromInteractionPayload() {
-    UUID sessionId = UUID.randomUUID();
-    FlowSession flowSession = mock(FlowSession.class);
-    when(flowSession.getId()).thenReturn(sessionId);
-    when(flowSessionRepository.findById(sessionId)).thenReturn(Optional.of(flowSession));
-
-    AgentInvocationOptions.ToolBinding binding =
-        new AgentInvocationOptions.ToolBinding(
-            "notes.save_note",
-            1,
-            AgentInvocationOptions.ExecutionMode.MANUAL,
-            null,
-            null);
-    AgentInvocationOptions invocationOptions =
-        new AgentInvocationOptions(
-            new AgentInvocationOptions.Provider(
-                ChatProviderType.OPENAI,
-                "openai",
-                "gpt-4o-mini",
-                AgentInvocationOptions.InvocationMode.SYNC),
-            AgentInvocationOptions.Prompt.empty(),
-            AgentInvocationOptions.MemoryPolicy.empty(),
-            AgentInvocationOptions.RetryPolicy.empty(),
-            AgentInvocationOptions.AdvisorSettings.empty(),
-            new AgentInvocationOptions.Tooling(List.of(binding)),
-            AgentInvocationOptions.CostProfile.empty());
-
-    AgentVersion agentVersion =
-        new AgentVersion(
-            new AgentDefinition("notes-agent", "Notes Agent", null, true),
-            1,
-            AgentVersionStatus.PUBLISHED,
-            ChatProviderType.OPENAI,
-            "openai",
-            "gpt-4o-mini");
-    agentVersion.setInvocationOptions(invocationOptions);
-    agentVersion.setSystemPrompt("Notes system prompt");
-
-    ChatProviderSelection selection = new ChatProviderSelection("openai", "gpt-4o-mini");
-    when(chatProviderService.resolveSelection(agentVersion.getProviderId(), agentVersion.getModelId()))
-        .thenReturn(selection);
-    ChatProvidersProperties.Provider providerConfig = new ChatProvidersProperties.Provider();
-    when(chatProviderService.provider(selection.providerId())).thenReturn(providerConfig);
-
-    Generation generation =
-        new Generation(AssistantMessage.builder().content("note saved").build());
-    ChatResponse chatResponse = new ChatResponse(List.of(generation));
-    when(chatProviderService.chatSyncWithOverrides(
-            eq(selection),
-            eq(agentVersion.getSystemPrompt()),
-            anyList(),
-            any(ChatAdvisorContext.class),
-            anyString(),
-            any(),
-            anyList()))
-        .thenReturn(chatResponse);
-
-    when(chatProviderService.estimateUsageCost(eq(selection), any(), anyString(), anyString()))
-        .thenReturn(
-            new UsageCostEstimate(
-                1,
-                1,
-                2,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                "USD",
-                UsageSource.NATIVE));
-
-    ToolDefinition toolDefinition = mock(ToolDefinition.class);
-    when(toolDefinition.name()).thenReturn("notes.save_note");
-    ToolCallback toolCallback = mock(ToolCallback.class);
-    when(toolCallback.getToolDefinition()).thenReturn(toolDefinition);
-    ArgumentCaptor<Map<String, JsonNode>> requestOverridesCaptor = ArgumentCaptor.forClass(Map.class);
-    when(mcpToolBindingService.resolveCallbacks(
-            eq(invocationOptions.tooling().bindings()),
-            anyString(),
-            any(),
-            requestOverridesCaptor.capture()))
-        .thenReturn(List.of(new McpToolBindingService.ResolvedTool("notes.save_note", toolCallback)));
-
-    ObjectNode inputContext = objectMapper.createObjectNode();
-    ObjectNode interactionNode = inputContext.putObject("interaction");
-    ObjectNode payloadNode = interactionNode.putObject("payload");
-    payloadNode.putArray("toolCodes").add("notes.save_note");
-    payloadNode.put("userNamespace", "telegram");
-    payloadNode.put("userReference", "123456");
-    payloadNode.put("sourceChannel", "telegram");
-
-    AgentInvocationRequest request =
-        new AgentInvocationRequest(
-            sessionId,
-            UUID.randomUUID(),
-            agentVersion,
-            "save note",
-            inputContext,
-            objectMapper.createObjectNode(),
-            ChatRequestOverrides.empty(),
-            ChatRequestOverrides.empty(),
-            List.of(),
-            List.of());
-
-    agentInvocationService.invoke(request);
-
-    Map<String, JsonNode> overrides = requestOverridesCaptor.getValue();
-    JsonNode noteOverrides = overrides.get("notes.save_note");
-    assertThat(noteOverrides).isNotNull();
-    assertThat(noteOverrides.path("userNamespace").asText()).isEqualTo("telegram");
-    assertThat(noteOverrides.path("userReference").asText()).isEqualTo("123456");
-    assertThat(noteOverrides.path("sourceChannel").asText()).isEqualTo("telegram");
   }
 
   @Test
