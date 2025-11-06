@@ -71,7 +71,8 @@ class GitHubTools {
               + "\"path\": \"src\", \"recursive\": true, \"maxDepth\": 4, \"maxEntries\": 400}. "
               + "repository обязательно (owner/name, ref можно опустить — используется основная ветка). "
               + "path задаётся относительно корня; пустая строка означает весь репозиторий. recursive=true включает обход "
-              + "подкаталогов. maxDepth допустим в диапазоне 1-10. maxEntries ограничивает число элементов; при превышении "
+              + "подкаталогов. maxDepth допускается в диапазоне 1-10 (по умолчанию 3). maxEntries ограничивает число элементов "
+              + "(по умолчанию 500, верхний предел задаёт github.backend.tree-max-entries); при превышении "
               + "результат помечается truncated=true. resolvedRef в ответе содержит точный SHA дерева.")
   GitHubTreeResponse listRepositoryTree(GitHubTreeRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
@@ -100,7 +101,8 @@ class GitHubTools {
               + "\"state\": \"OPEN\", \"head\": \"user:branch\", \"base\": \"main\", \"limit\": 20, "
               + "\"sort\": \"UPDATED\", \"direction\": \"DESC\"}. "
               + "repository.owner/name обязательны; ref опционален (по умолчанию default branch). "
-              + "state принимает OPEN/CLOSED/ALL. head и base — фильтры веток. limit (1-50) режет размер ответа. "
+              + "state принимает OPEN/CLOSED/ALL (регистронезависимо). head и base — фильтры веток. limit (1-50, по умолчанию 20) "
+              + "режет размер ответа. "
               + "sort: CREATED/UPDATED/POPULARITY/LONG_RUNNING, direction: ASC/DESC. "
               + "Если лимит достигнут, ответ содержит truncated=true.")
   GitHubPullRequestsResponse listPullRequests(GitHubListPullRequestsRequest request) {
@@ -172,7 +174,7 @@ class GitHubTools {
           "Собирает issue- и review-комментарии для PR. Пример запроса: "
               + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"number\": 123, "
               + "\"issueCommentLimit\": 50, \"reviewCommentLimit\": 200}. number (>0) обязателен. "
-              + "Лимиты 0-200; значение 0 отключает соответствующий список. В ответе issueComments содержат id/body/author/url, "
+              + "Лимиты 0-200 (по умолчанию 50); значение 0 отключает соответствующий список. В ответе issueComments содержат id/body/author/url, "
               + "reviewComments дополнительно дают diffHunk, path, line/startLine/endLine, position, side. "
               + "Флаги issueCommentsTruncated/reviewCommentsTruncated сигнализируют о срезе лимита.")
   GitHubPullRequestCommentsResponse listPullRequestComments(GitHubListPullRequestCommentsRequest request) {
@@ -200,7 +202,7 @@ class GitHubTools {
           "Возвращает check runs и commit statuses для head SHA PR. Запрос: "
               + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"number\": 123, "
               + "\"checkRunLimit\": 100, \"statusLimit\": 50}. number (>0) обязателен. "
-              + "Лимиты 0-200 управляют объёмом; 0 означает отключить соответствующий список. "
+              + "Лимиты 0-200 (по умолчанию 50) управляют объёмом; 0 означает отключить соответствующий список. "
               + "Ответ включает overallStatus, headSha, массивы checkRuns/statuses и флаги truncated для каждого массива.")
   GitHubPullRequestChecksResponse listPullRequestChecks(GitHubListPullRequestChecksRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
@@ -232,6 +234,7 @@ class GitHubTools {
               + "\"baseBranch\": \"main\", \"title\": \"Add feature\", \"body\": \"Описание\", "
               + "\"reviewers\": [\"user1\"], \"teamReviewers\": [\"team-alpha\"], \"draft\": false}. "
               + "repository.owner/name, headBranch, baseBranch и title обязательны. body опционален. "
+              + "Названия веток валидируются (запрещены пробелы, '..', завершающие '/'), headBranch не может совпадать с baseBranch. "
               + "reviewers/teamReviewers — массивы логинов пользователей и команд. draft=true создаёт черновик.")
   GitHubOpenPullRequestResponse openPullRequest(GitHubOpenPullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
@@ -419,7 +422,7 @@ class GitHubTools {
       description =
           "Читает blob из репозитория. Запрос: {\"repository\": {\"owner\": \"...\", \"name\": \"...\", \"ref\": \"refs/heads/main\"}, "
               + "\"path\": \"docs/README.md\"}. repository и path обязательны; path должен быть относительным и непустым. "
-              + "Ответ возвращает resolvedRef (SHA коммита), метаданные (sha,size,encoding,downloadUrl) и содержимое "
+              + "Размер файла ограничен github.backend.file-max-size-bytes (по умолчанию 512 КБ). Ответ возвращает resolvedRef (SHA коммита), метаданные (sha,size,encoding,downloadUrl) и содержимое "
               + "в base64 и текстовом виде (textContent доступен, если файл не бинарный)."
   GitHubFileResponse readFile(GitHubFileRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);

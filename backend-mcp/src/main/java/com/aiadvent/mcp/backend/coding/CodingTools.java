@@ -30,9 +30,10 @@ class CodingTools {
           "Создаёт черновой diff по инструкциям оператора и регистрирует патч. Ожидает JSON-объект вида\n"
               + "{\"workspaceId\": \"...\", \"instructions\": \"...\", \"targetPaths\": [\"src/App.java\"], "
               + "\"forbiddenPaths\": [...], \"contextFiles\": [{\"path\": \"README.md\", \"maxBytes\": 20480}]}. "
-              + "Поля workspaceId и instructions обязательны, инструкции должны быть непустыми. Пути указываются "
-              + "относительно корня workspace и не могут ссылаться на каталоги (contextFiles читает только файлы). "
-              + "targetPaths помогает сфокусировать генерацию, forbiddenPaths блокирует затрагивание файлов. Чтобы "
+              + "Поля workspaceId и instructions обязательны, инструкции должны быть непустыми. Инструкции триммируются, "
+              + "длина ограничена 4000 символами. Пути указываются относительно корня workspace и не могут ссылаться на "
+              + "каталоги (contextFiles читает только файлы). targetPaths помогает сфокусировать генерацию, forbiddenPaths "
+              + "блокирует затрагивание файлов; списки не должны пересекаться. Чтобы "
               + "создать новый файл, добавьте путь в targetPaths и опишите содержимое во instructions - diff будет "
               + "включать блок с new file. Пример запроса: {\"workspaceId\": \"notes-1\", \"instructions\": \"добавь README\", "
               + "\"targetPaths\": [\"docs/README.md\"], \"contextFiles\": [{\"path\": \"docs/index.md\"}]}.")
@@ -58,7 +59,8 @@ class CodingTools {
           "Применяет патч в preview-режиме: git apply --check, git apply, git diff и опциональный запуск gradle-команд в "
               + "Docker. Тело запроса {\"workspaceId\": \"...\", \"patchId\": \"...\", \"commands\": [\"./gradlew test\"], "
               + "\"dryRun\": true, \"timeout\": \"PT15M\"}. workspaceId и patchId обязательны. По умолчанию dryRun=true, "
-              + "timeout подразумевает ISO 8601 duration. Команды поддерживают только gradle/./gradlew. После успешного "
+              + "timeout подразумевает ISO 8601 duration (дефолт 10 минут). Выполняется только первая непустая команда; "
+              + "поддерживаются runner'ы gradle/./gradlew, команды без задач пропускаются. После успешного "
               + "прогона diff откатывается, а метаданные dry-run обновляются в реестре. Пример запроса: {\"workspaceId\": "
               + "\"notes-1\", \"patchId\": \"abc123\", \"commands\": [\"./gradlew test\"], \"dryRun\": true}.")
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
