@@ -38,6 +38,8 @@ services:
         condition: service_healthy
       github-mcp:
         condition: service_healthy
+      coding-mcp:
+        condition: service_healthy
       docker-runner-mcp:
         condition: service_healthy
       repo-analysis-mcp:
@@ -52,6 +54,7 @@ services:
       FLOW_OPS_MCP_HTTP_BASE_URL: ${FLOW_OPS_MCP_HTTP_BASE_URL:-http://flow-ops-mcp:8080}
       INSIGHT_MCP_HTTP_BASE_URL: ${INSIGHT_MCP_HTTP_BASE_URL:-http://insight-mcp:8080}
       GITHUB_MCP_HTTP_BASE_URL: ${GITHUB_MCP_HTTP_BASE_URL:-http://github-mcp:8080}
+      CODING_MCP_HTTP_BASE_URL: ${CODING_MCP_HTTP_BASE_URL:-http://coding-mcp:8080}
       DOCKER_MCP_HTTP_BASE_URL: ${DOCKER_MCP_HTTP_BASE_URL:-http://docker-runner-mcp:8080}
       REPO_ANALYSIS_MCP_HTTP_BASE_URL: ${REPO_ANALYSIS_MCP_HTTP_BASE_URL:-http://repo-analysis-mcp:8080}
       NOTES_MCP_HTTP_BASE_URL: ${NOTES_MCP_HTTP_BASE_URL:-http://notes-mcp:8080}
@@ -157,6 +160,27 @@ services:
       - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
     volumes:
       - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f McpApplication >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  coding-mcp:
+    build:
+      context: ./backend-mcp
+    image: ai-advent/coding-mcp:latest
+    container_name: ai-advent-coding-mcp
+    env_file:
+      - .env
+    environment:
+      SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
+      SPRING_PROFILES_ACTIVE: coding
+    ports:
+      - "${CODING_MCP_HTTP_PORT:-7098}:8080"
     stdin_open: true
     tty: true
     restart: unless-stopped

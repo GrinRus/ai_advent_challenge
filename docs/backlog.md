@@ -909,9 +909,21 @@
 Цель: завершить MCP-экосистему для assisted coding и полного цикла работы с GitHub поверх локального workspace.
 
 ### MCP Coding Assistant
- - [x] Провести desk-research через Perplexity: собрать MCP/AGI-инструменты патч-генерации, оценить API/лицензии, подготовить shortlist reuse-кандидатов и зафиксировать ограничения.
- - [x] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
-- [ ] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
+- [x] Провести desk-research через Perplexity: собрать MCP/AGI-инструменты патч-генерации, оценить API/лицензии, подготовить shortlist reuse-кандидатов и зафиксировать ограничения.
+- [x] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
+- [x] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
+- [ ] Детально описать новые MCP-инструменты:
+  - `coding.generate_patch` — ввод: `workspaceId`, инструкции, целевые/исключённые пути, список контекстных файлов; вывод: `patchId`, summary, аннотации (список файлов, рисков, конфликтов), usage.
+  - `coding.review_patch` — ввод: `workspaceId`, `patchId`, набор фокусов (risks/tests/migration); вывод: статус, находки, рекомендации по тестам, следующие шаги.
+  - `coding.apply_patch_preview` — ввод: `workspaceId`, `patchId`, whitelist команд, флаг `dryRun`, `timeout`; вывод: флаг применения, превью diff/конфликтов, результат Gradle (executed/exitCode/logs), метрики.
+  - `coding.discard_patch` — ввод: `workspaceId`, `patchId`; действие: удаляет патч из registry, возвращает итоговый статус и метки времени (реализовать после MVP).
+  - `coding.list_patches` — ввод: `workspaceId`; вывод: список активных патчей с `patchId`, `createdAt`, статусом (`generated|applied|discarded`), признаком наличия dry-run (запланировано после MVP).
+  - `github.create_branch` — ввод: `workspaceId`, `repository{owner,name,ref}`, `branchName`, `sourceSha`; вывод: подтверждение создания ветки, `commitSha`, список ключевых файлов.
+  - `github.commit_workspace_diff` — ввод: `workspaceId`, `branchName`, автор (имя/email), сообщение; вывод: `commitSha`, список файлов (added/modified/deleted), статистика.
+  - `github.push_branch` — ввод: `repository`, `branchName`, `force=false`; вывод: результат push, ссылки на ветку/commit, предупреждения о конфликтах.
+  - `github.open_pull_request` — ввод: `repository`, `headBranch`, `baseBranch`, `title`, `body`, optional reviewers; вывод: `prNumber`, ссылки, `headSha`, `baseSha`.
+  - `github.approve_pull_request` — ввод: `repository`, `number`, `body?`; вывод: статус ревью (`APPROVED`), id review, ссылка на UI.
+  - `github.merge_pull_request` — ввод: `repository`, `number`, `mergeMethod`, `commitTitle?`, `commitMessage?`; вывод: итоговый статус merge, `mergedSha`, предупреждения о незакрытых проверках.
 - [ ] Реализовать `CodingAssistantService` с операциями `generate_patch`, `review_patch`, `apply_patch_preview` поверх `WorkspaceAccessService`; валидировать пути, ограничивать размер diff, хранить связку patch↔workspace.
 - [ ] (Опционально) Добавить проверку компиляции через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; при включении — маскировать секреты и собирать базовые метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
 - [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска), поддерживать `dry-run`/preview режим и lightweight аудит действий.

@@ -1,5 +1,6 @@
 package com.aiadvent.mcp.backend;
 
+import com.aiadvent.mcp.backend.coding.CodingAssistantProperties;
 import com.aiadvent.mcp.backend.config.AgentOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.config.InsightBackendProperties;
@@ -24,7 +25,8 @@ import org.springframework.context.annotation.Profile;
   McpApplication.GitHubConfig.class,
   McpApplication.DockerRunnerConfig.class,
   McpApplication.RepoAnalysisConfig.class,
-  McpApplication.NotesConfig.class
+  McpApplication.NotesConfig.class,
+  McpApplication.CodingConfig.class
 })
 public class McpApplication {
 
@@ -99,6 +101,17 @@ public class McpApplication {
     })
     @EnableConfigurationProperties(NotesBackendProperties.class)
     public class NotesConfig {
+    }
+
+    @Configuration
+    @Profile("coding")
+    @ComponentScan(basePackages = {
+            "com.aiadvent.mcp.backend.coding",
+            "com.aiadvent.mcp.backend.config"
+    })
+    @EnableConfigurationProperties({CodingAssistantProperties.class, GitHubBackendProperties.class})
+    @Import(TempWorkspaceService.class)
+    public class CodingConfig {
     }
 
 }

@@ -1,0 +1,31 @@
+server:
+  port: ${CODING_MCP_HTTP_PORT:${SERVER_PORT:8080}}
+
+spring:
+  ai:
+    mcp:
+      server:
+        enabled: true
+        stdio: false
+        protocol: STREAMABLE
+        name: coding-mcp
+        version: 0.1.0
+        type: SYNC
+        annotation-scanner:
+          enabled: false
+        instructions: |
+          Coding MCP предоставляет заглушечные инструменты для генерации, ревью и dry-run патчей.
+          На текущем этапе реализована каркасная логика без фактической модификации файлов.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+      streamable-http:
+        mcp-endpoint: /mcp
+        keep-alive-interval: 30s
+
+coding:
+  patch-ttl: ${CODING_PATCH_TTL:PT24H}
+  max-diff-bytes: ${CODING_MAX_DIFF_BYTES:262144}
+  max-context-bytes: ${CODING_MAX_CONTEXT_BYTES:262144}
