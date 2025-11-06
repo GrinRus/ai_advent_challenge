@@ -235,6 +235,8 @@ services:
       context: ./backend-mcp
     image: ai-advent/notes-mcp:latest
     container_name: ai-advent-notes-mcp
+    env_file:
+      - .env
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: notes
@@ -246,7 +248,7 @@ services:
       NOTES_SEARCH_TOP_K: ${NOTES_SEARCH_TOP_K:-5}
       NOTES_SEARCH_MIN_SCORE: ${NOTES_SEARCH_MIN_SCORE:-0.55}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-openai-key}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
     ports:
       - "${NOTES_MCP_HTTP_PORT:-7097}:8080"
     depends_on:
