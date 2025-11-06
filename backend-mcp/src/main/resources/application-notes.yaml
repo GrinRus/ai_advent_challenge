@@ -2,6 +2,35 @@ server:
   port: ${NOTES_MCP_HTTP_PORT:${SERVER_PORT:8080}}
 
 spring:
+  ai:
+    mcp:
+      server:
+        enabled: true
+        stdio: false
+        protocol: STREAMABLE
+        name: notes-mcp
+        version: 0.1.0
+        type: SYNC
+        annotation-scanner:
+          enabled: false
+        instructions: |
+          Notes MCP управляет сохранением и поиском текстовых заметок в общей базе.
+          Перед добавлением убедитесь, что заголовок кратко отражает содержание, а теги помогают дальнейшему поиску.
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+      streamable-http:
+        mcp-endpoint: /mcp
+        keep-alive-interval: 30s
+    openai:
+      api-key: ${OPENAI_API_KEY:demo-openai-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      embedding:
+        options:
+          model: ${NOTES_EMBEDDING_MODEL:text-embedding-3-small}
+          dimensions: ${NOTES_EMBEDDING_DIMENSIONS:1536}
   datasource:
     url: ${NOTES_MCP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
     username: ${NOTES_MCP_DB_USER:ai_advent}
@@ -18,14 +47,6 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/notes/db.changelog-master.yaml
     contexts: notes
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:demo-openai-key}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
-      embedding:
-        options:
-          model: ${NOTES_EMBEDDING_MODEL:text-embedding-3-small}
-          dimensions: ${NOTES_EMBEDDING_DIMENSIONS:1536}
 
 notes:
   embedding:
