@@ -428,7 +428,7 @@ app:
           description: "Хранение пользовательских заметок и поиск похожего контента через PgVector."
           tags: ["notes", "rag"]
           security-policy: "internal-readonly"
-        coding:
+        coding-mcp:
           display-name: "Coding MCP"
           description: "Ассистент по генерации, ревью и dry-run патчей в подготовленном workspace."
           tags: ["coding", "patch", "github"]
