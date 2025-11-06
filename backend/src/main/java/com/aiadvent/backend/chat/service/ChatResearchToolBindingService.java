@@ -4,11 +4,14 @@ import com.aiadvent.backend.chat.api.ChatInteractionMode;
 import com.aiadvent.backend.chat.config.ChatResearchProperties;
 import com.aiadvent.backend.chat.config.ChatResearchProperties.ToolBindingProperties;
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
+import com.aiadvent.backend.flow.tool.domain.ToolDefinition;
+import com.aiadvent.backend.flow.tool.persistence.ToolDefinitionRepository;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -24,6 +27,7 @@ public class ChatResearchToolBindingService {
 
   private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
+  private final ToolDefinitionRepository toolDefinitionRepository;
   private final Map<String, AgentInvocationOptions.ToolBinding> configuredBindings;
   private final String systemPrompt;
   private final String structuredAdvice;
@@ -32,9 +36,11 @@ public class ChatResearchToolBindingService {
   public ChatResearchToolBindingService(
       McpToolBindingService mcpToolBindingService,
       ObjectMapper objectMapper,
-      ChatResearchProperties researchProperties) {
+      ChatResearchProperties researchProperties,
+      ToolDefinitionRepository toolDefinitionRepository) {
     this.mcpToolBindingService = mcpToolBindingService;
     this.objectMapper = objectMapper;
+    this.toolDefinitionRepository = toolDefinitionRepository;
     Map<String, AgentInvocationOptions.ToolBinding> configured = new LinkedHashMap<>();
     for (ToolBindingProperties properties : researchProperties.getTools()) {
       AgentInvocationOptions.ToolBinding binding = toBinding(properties);
@@ -50,10 +56,19 @@ public class ChatResearchToolBindingService {
   }
 
   public List<String> availableToolCodes() {
-    if (configuredBindings.isEmpty()) {
-      return List.of();
+    LinkedHashSet<String> codes = new LinkedHashSet<>();
+    if (!configuredBindings.isEmpty()) {
+      codes.addAll(configuredBindings.keySet());
     }
-    return List.copyOf(configuredBindings.keySet());
+    if (toolDefinitionRepository != null) {
+      toolDefinitionRepository.findAllBySchemaVersionIsNotNull().stream()
+          .map(ToolDefinition::getCode)
+          .map(ChatResearchToolBindingService::normalizeCode)
+          .filter(ChatResearchToolBindingService::hasText)
+          .sorted(Comparator.naturalOrder())
+          .forEach(codes::add);
+    }
+    return codes.isEmpty() ? List.of() : List.copyOf(codes);
   }
 
   public ResearchContext resolve(ChatInteractionMode mode, String userQuery) {
