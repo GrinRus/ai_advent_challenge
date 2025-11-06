@@ -62,7 +62,7 @@ import org.kohsuke.github.GHCompare;
 import org.kohsuke.github.GHTeam;
 import org.kohsuke.github.GHUser;
 import org.kohsuke.github.GitHub;
-import org.kohsuke.github.HttpException;
+import org.kohsuke.github.GHFileNotFoundException;
 import org.mockito.stubbing.Answer;
 
 class GitHubWriteFlowIntegrationTests {
@@ -238,7 +238,7 @@ class GitHubWriteFlowIntegrationTests {
               String ref = invocation.getArgument(0);
               String sha = resolveBranch(ref);
               if (sha == null) {
-                throw new HttpException("GET", 404, "Not Found", ref);
+                throw new GHFileNotFoundException("Not Found: " + ref);
               }
               GHRef ghRef = mock(GHRef.class);
               org.kohsuke.github.GHRef.GHObject refObject =

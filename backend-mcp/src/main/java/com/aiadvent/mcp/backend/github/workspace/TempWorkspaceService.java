@@ -4,6 +4,7 @@ import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -12,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -323,6 +326,49 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       WorkspaceMetadata.write(metadata, out);
     } catch (IOException ex) {
       log.warn("Failed to persist metadata for workspace {}: {}", record.workspaceId(), ex.getMessage(), ex);
+    }
+    ensureMetadataExcluded(record.path());
+  }
+
+  private void ensureMetadataExcluded(Path workspacePath) {
+    Path gitDir = workspacePath.resolve(".git");
+    if (!Files.isDirectory(gitDir)) {
+      return;
+    }
+    Path excludeFile = gitDir.resolve("info").resolve("exclude");
+    try {
+      Path excludeDir = excludeFile.getParent();
+      if (excludeDir != null) {
+        Files.createDirectories(excludeDir);
+      }
+      List<String> existing = Collections.emptyList();
+      if (Files.exists(excludeFile)) {
+        existing = Files.readAllLines(excludeFile, StandardCharsets.UTF_8);
+        boolean alreadyPresent =
+            existing.stream().map(String::trim).anyMatch(line -> METADATA_FILE.equals(line));
+        if (alreadyPresent) {
+          return;
+        }
+      }
+      boolean needsNewline = Files.exists(excludeFile) && Files.size(excludeFile) > 0;
+      try (BufferedWriter writer =
+          Files.newBufferedWriter(
+              excludeFile,
+              StandardCharsets.UTF_8,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.APPEND)) {
+        if (needsNewline) {
+          writer.newLine();
+        }
+        writer.write(METADATA_FILE);
+        writer.newLine();
+      }
+    } catch (IOException ex) {
+      log.debug(
+          "Failed to add {} to git exclude for workspace {}: {}",
+          METADATA_FILE,
+          workspacePath,
+          ex.getMessage());
     }
   }
 

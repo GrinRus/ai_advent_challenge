@@ -53,6 +53,7 @@ import org.kohsuke.github.GHCommitStatus;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHDirection;
 import org.kohsuke.github.GHCompare;
+import org.kohsuke.github.GHFileNotFoundException;
 import org.kohsuke.github.GHIssueComment;
 import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHLabel;
@@ -878,6 +879,8 @@ public class GitHubRepositoryService {
       repository.getRef("heads/" + branchName);
       throw new IllegalStateException(
           "Branch %s already exists in %s".formatted(branchName, ref.owner() + "/" + ref.name()));
+    } catch (GHFileNotFoundException ex) {
+      return;
     } catch (HttpException ex) {
       if (ex.getResponseCode() == 404) {
         return;
