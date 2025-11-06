@@ -913,7 +913,7 @@
 - [x] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
 - [x] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
 - [x] Оценить интеграцию `WorkspaceAccessService`: вынесли чтение файлов в общий `WorkspaceFileService`, который переиспользуют `github` и `coding` профили.
-- [ ] Реализовать in-memory `PatchRegistry` с TTL: связка `patchId↔workspaceId`, статусы (`generated|applied|discarded`), атрибуты `requiresManualReview`, `hasDryRun`, переиспользовать `TempWorkspaceService`.
+- [x] Реализовать in-memory `PatchRegistry` с TTL: связка `patchId↔workspaceId`, статусы (`generated|applied|discarded`), атрибуты `requiresManualReview`, `hasDryRun`, переиспользовать `TempWorkspaceService`.
 - [ ] Реализовать инструменты:
   - `coding.generate_patch` — валидация путей, лимиты diff ≤ 256 КБ и ≤ 25 файлов, сохранение diff/summary/annotations в `PatchRegistry`.
   - `coding.review_patch` — поддержка фокусов (`risks|tests|migration`), проверка статуса патча, возврат рекомендаций и следующего шага.

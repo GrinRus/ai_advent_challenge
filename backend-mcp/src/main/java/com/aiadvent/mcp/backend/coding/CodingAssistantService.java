@@ -6,11 +6,10 @@ import com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayl
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -20,16 +19,18 @@ class CodingAssistantService {
   private final TempWorkspaceService workspaceService;
   private final CodingAssistantProperties properties;
   private final WorkspaceFileService workspaceFileService;
-  private final Map<String, PatchRecord> patches = new ConcurrentHashMap<>();
+  private final PatchRegistry patchRegistry;
 
   CodingAssistantService(
       TempWorkspaceService workspaceService,
       CodingAssistantProperties properties,
-      WorkspaceFileService workspaceFileService) {
+      WorkspaceFileService workspaceFileService,
+      PatchRegistry patchRegistry) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.workspaceFileService =
         Objects.requireNonNull(workspaceFileService, "workspaceFileService");
+    this.patchRegistry = Objects.requireNonNull(patchRegistry, "patchRegistry");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -41,11 +42,9 @@ class CodingAssistantService {
       throw new IllegalArgumentException("instructions must not be blank");
     }
 
-    // ensure workspace exists
-    Workspace workspace =
-        workspaceService
-            .findWorkspace(workspaceId)
-            .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    workspaceService
+        .findWorkspace(workspaceId)
+        .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
 
     List<String> targetPaths = normalizePaths(request.targetPaths());
     List<String> forbiddenPaths = normalizePaths(request.forbiddenPaths());
@@ -55,48 +54,51 @@ class CodingAssistantService {
         collectContext(workspaceId, normalizeContextFiles(request.contextFiles()));
 
     String patchId = UUID.randomUUID().toString();
-    PatchRecord record =
-        new PatchRecord(
-            patchId,
-            workspaceId,
-            instructions,
-            "",
-            Instant.now(),
-            targetPaths,
-            forbiddenPaths,
-            snippets);
-    patches.put(patchId, record);
-
-    Annotations annotations =
-        new Annotations(
+    String summary = buildSummary(snippets);
+    PatchAnnotations annotations =
+        new PatchAnnotations(
             snippets.stream().map(ContextSnippet::path).toList(),
             List.of("Patch generation stub – implement LLM call"),
             List.of());
-    Usage usage = new Usage(0, 0);
+    CodingPatch patch =
+        patchRegistry.register(
+            new PatchRegistry.NewPatch(
+                patchId,
+                workspaceId,
+                instructions,
+                summary,
+                "",
+                annotations,
+                PatchUsage.empty(),
+                false,
+                false,
+                targetPaths,
+                forbiddenPaths,
+                snippets));
     return new GeneratePatchResponse(
-        patchId,
-        workspaceId,
-        buildSummary(record),
-        record.diff(),
+        patch.patchId(),
+        patch.workspaceId(),
+        patch.summary(),
+        patch.diff(),
         annotations,
-        usage,
-        record.createdAt());
+        patch.usage(),
+        patch.createdAt());
   }
 
   ReviewPatchResponse reviewPatch(ReviewPatchRequest request) {
     Objects.requireNonNull(request, "request");
-    PatchRecord record = findPatch(request.workspaceId(), request.patchId());
+    CodingPatch patch = requirePatch(request.workspaceId(), request.patchId());
     List<String> findings = new ArrayList<>();
-    findings.add("Ревью пока не реализовано для патча " + record.patchId());
+    findings.add("Ревью пока не реализовано для патча " + patch.patchId());
     List<String> recommendations = List.of("Запланировать реализацию LLM code review.");
     List<String> nextSteps = List.of("Повторно вызвать review после реализации.");
     return new ReviewPatchResponse(
-        record.patchId(), "not_implemented", findings, recommendations, nextSteps);
+        patch.patchId(), "not_implemented", findings, recommendations, nextSteps);
   }
 
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
     Objects.requireNonNull(request, "request");
-    PatchRecord record = findPatch(request.workspaceId(), request.patchId());
+    CodingPatch patch = requirePatch(request.workspaceId(), request.patchId());
     boolean dryRun = request.dryRun() == null ? true : request.dryRun();
     Preview preview =
         new Preview(
@@ -108,8 +110,8 @@ class CodingAssistantService {
         new GradleResult(
             false, null, 0, "not_executed", List.of("Gradle проверки не запускались"));
     return new ApplyPatchPreviewResponse(
-        record.patchId(),
-        record.workspaceId(),
+        patch.patchId(),
+        patch.workspaceId(),
         false,
         preview,
         gradle,
@@ -117,18 +119,12 @@ class CodingAssistantService {
         Instant.now());
   }
 
-  private PatchRecord findPatch(String workspaceId, String patchId) {
+  private CodingPatch requirePatch(String workspaceId, String patchId) {
     String sanitizedWorkspaceId = sanitizeWorkspaceId(workspaceId);
     if (!StringUtils.hasText(patchId)) {
       throw new IllegalArgumentException("patchId must not be blank");
     }
-    PatchRecord record =
-        Optional.ofNullable(patches.get(patchId))
-            .orElseThrow(() -> new IllegalArgumentException("Unknown patchId: " + patchId));
-    if (!record.workspaceId().equals(sanitizedWorkspaceId)) {
-      throw new IllegalArgumentException("Patch does not belong to workspaceId " + workspaceId);
-    }
-    return record;
+    return patchRegistry.get(sanitizedWorkspaceId, patchId);
   }
 
   private String sanitizeWorkspaceId(String workspaceId) {
@@ -205,23 +201,13 @@ class CodingAssistantService {
     return Math.min(requested, max);
   }
 
-  private String buildSummary(PatchRecord record) {
-    if (record.contextSnippets().isEmpty()) {
+  private String buildSummary(List<ContextSnippet> snippets) {
+    if (snippets.isEmpty()) {
       return "Инструкция сохранена, генерация патча будет реализована позднее.";
     }
     return "Подготовлен контекст из файлов: "
-        + record.contextSnippets().stream().map(ContextSnippet::path).toList();
+        + snippets.stream().map(ContextSnippet::path).toList();
   }
-
-  private record PatchRecord(
-      String patchId,
-      String workspaceId,
-      String instructions,
-      String diff,
-      Instant createdAt,
-      List<String> targetPaths,
-      List<String> forbiddenPaths,
-      List<ContextSnippet> contextSnippets) {}
 
   record GeneratePatchRequest(
       String workspaceId,
@@ -237,13 +223,9 @@ class CodingAssistantService {
       String workspaceId,
       String summary,
       String diff,
-      Annotations annotations,
-      Usage usage,
+      PatchAnnotations annotations,
+      PatchUsage usage,
       Instant createdAt) {}
-
-  record Annotations(List<String> files, List<String> risks, List<String> conflicts) {}
-
-  record Usage(int promptTokens, int completionTokens) {}
 
   record ReviewPatchRequest(String workspaceId, String patchId, List<String> focus) {}
 
@@ -261,9 +243,6 @@ class CodingAssistantService {
 
   record GradleResult(
       boolean executed, String runner, int exitCode, String status, List<String> logs) {}
-
-  record ContextSnippet(
-      String path, String encoding, boolean binary, String content, String base64, boolean truncated) {}
 
   record ApplyPatchPreviewResponse(
       String patchId,

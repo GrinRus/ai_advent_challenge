@@ -4,7 +4,7 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "coding")
-class CodingAssistantProperties {
+public class CodingAssistantProperties {
 
   private Duration patchTtl = Duration.ofHours(24);
   private int maxDiffBytes = 256 * 1024;

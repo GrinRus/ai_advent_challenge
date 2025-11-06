@@ -4,12 +4,13 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryIn
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
+import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService.Workspace;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
-import com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayload;
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
@@ -50,7 +51,18 @@ public class WorkspaceAccessService {
   }
 
   public WorkspaceFilePayload readWorkspaceFile(String workspaceId, String path, Integer maxBytes) {
-    return workspaceFileService.readWorkspaceFile(workspaceId, path, maxBytes);
+    com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayload payload =
+        workspaceFileService.readWorkspaceFile(workspaceId, path, maxBytes);
+    return new WorkspaceFilePayload(
+        payload.workspaceId(),
+        payload.path(),
+        payload.sizeBytes(),
+        payload.truncated(),
+        payload.binary(),
+        payload.encoding(),
+        payload.content(),
+        payload.base64Content(),
+        payload.readAt());
   }
 
   public EnumSet<WorkspaceInspectorService.WorkspaceItemType> resolveTypes(
@@ -79,4 +91,15 @@ public class WorkspaceAccessService {
     }
     return resolved;
   }
+
+  public record WorkspaceFilePayload(
+      String workspaceId,
+      String path,
+      long sizeBytes,
+      boolean truncated,
+      boolean binary,
+      String encoding,
+      String content,
+      String base64Content,
+      Instant readAt) {}
 }
