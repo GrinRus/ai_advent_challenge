@@ -347,7 +347,6 @@ class GitHubWriteFlowIntegrationTests {
     when(pullRequest.getHtmlUrl()).thenReturn(new URL("https://example.com/pr/" + number));
     when(pullRequest.getBody()).thenReturn(body);
     when(pullRequest.isDraft()).thenReturn(draft);
-    when(pullRequest.getCreatedAt()).thenReturn(Date.from(Instant.now()));
     when(pullRequest.getMergeable()).thenReturn(Boolean.TRUE);
     when(pullRequest.getMergeableState()).thenAnswer(inv -> state.mergeableState());
     when(pullRequest.getMergeCommitSha()).thenAnswer(inv -> state.mergeSha());

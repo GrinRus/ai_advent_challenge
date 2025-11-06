@@ -2,12 +2,12 @@ package com.aiadvent.mcp.backend;
 
 import com.aiadvent.mcp.backend.coding.CodingAssistantProperties;
 import com.aiadvent.mcp.backend.config.AgentOpsBackendProperties;
+import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
+import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.config.InsightBackendProperties;
-import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
-import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
-import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
 import com.aiadvent.mcp.backend.config.NotesBackendProperties;
+import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -109,10 +109,15 @@ public class McpApplication {
     @Profile("coding")
     @ComponentScan(basePackages = {
             "com.aiadvent.mcp.backend.coding",
+            "com.aiadvent.mcp.backend.docker",
             "com.aiadvent.mcp.backend.workspace",
             "com.aiadvent.mcp.backend.config"
     })
-    @EnableConfigurationProperties({CodingAssistantProperties.class, GitHubBackendProperties.class})
+    @EnableConfigurationProperties({
+            CodingAssistantProperties.class,
+            GitHubBackendProperties.class,
+            DockerRunnerProperties.class
+    })
     @Import(TempWorkspaceService.class)
     public class CodingConfig {
     }
