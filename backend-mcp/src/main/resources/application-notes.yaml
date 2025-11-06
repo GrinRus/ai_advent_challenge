@@ -1,3 +1,6 @@
+server:
+  port: ${NOTES_MCP_HTTP_PORT:${SERVER_PORT:8080}}
+
 spring:
   datasource:
     url: ${NOTES_MCP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
