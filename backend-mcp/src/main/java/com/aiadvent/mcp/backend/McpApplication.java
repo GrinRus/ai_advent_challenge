@@ -6,6 +6,7 @@ import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
 import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
+import com.aiadvent.mcp.backend.config.NotesBackendProperties;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -22,7 +23,8 @@ import org.springframework.context.annotation.Profile;
   McpApplication.AgentOpsConfig.class,
   McpApplication.GitHubConfig.class,
   McpApplication.DockerRunnerConfig.class,
-  McpApplication.RepoAnalysisConfig.class
+  McpApplication.RepoAnalysisConfig.class,
+  McpApplication.NotesConfig.class
 })
 public class McpApplication {
 
@@ -87,6 +89,16 @@ public class McpApplication {
     @EnableConfigurationProperties({RepoAnalysisProperties.class, GitHubBackendProperties.class})
     @Import(TempWorkspaceService.class)
     public class RepoAnalysisConfig {
+    }
+
+    @Configuration
+    @Profile("notes")
+    @ComponentScan(basePackages = {
+            "com.aiadvent.mcp.backend.notes",
+            "com.aiadvent.mcp.backend.config"
+    })
+    @EnableConfigurationProperties(NotesBackendProperties.class)
+    public class NotesConfig {
     }
 
 }

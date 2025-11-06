@@ -25,16 +25,27 @@ repositories {
 dependencies {
     implementation platform("org.springframework.boot:spring-boot-dependencies:3.5.6")
     implementation platform("org.springframework.ai:spring-ai-bom:1.1.0-M3")
+
     implementation "org.springframework.ai:spring-ai-starter-mcp-server"
     implementation "org.springframework.ai:spring-ai-starter-mcp-server-webmvc"
+    implementation "org.springframework.ai:spring-ai-starter-model-openai"
+    implementation "org.springframework.ai:spring-ai-pgvector-store"
 
     implementation "org.springframework.boot:spring-boot-starter-webflux"
     implementation "org.springframework.boot:spring-boot-starter-validation"
+    implementation "org.springframework.boot:spring-boot-starter-data-jpa"
+    implementation "org.springframework.boot:spring-boot-starter-jdbc"
+
+    implementation "org.liquibase:liquibase-core"
 
     implementation "com.fasterxml.jackson.core:jackson-databind"
     implementation "org.kohsuke:github-api:1.330"
 
+    runtimeOnly "org.postgresql:postgresql"
+
     testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation "org.testcontainers:junit-jupiter"
+    testImplementation "org.testcontainers:postgresql"
 }
 
 tasks.named('test') {

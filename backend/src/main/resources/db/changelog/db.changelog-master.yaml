@@ -2966,3 +2966,32 @@ databaseChangeLog:
               FROM analysis_def_id
               WHERE NOT EXISTS (
                 SELECT 1 FROM agent_version av WHERE av.agent_definition_id = analysis_def_id.id AND av.version = 1);
+
+  - changeSet:
+      id: 0205-insert-notes-mcp-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('notes.save_note', 1,
+                 '{"type":"object","properties":{"title":{"type":"string","minLength":1,"maxLength":160},"content":{"type":"string","minLength":1,"maxLength":4000},"tags":{"type":"array","items":{"type":"string"},"maxItems":25},"metadata":{"type":"object"},"userNamespace":{"type":"string","minLength":1},"userReference":{"type":"string","minLength":1},"sourceChannel":{"type":"string"}},"required":["title","content","userNamespace","userReference"]}'::jsonb,
+                 '{"type":"object","properties":{"noteId":{"type":"string","format":"uuid"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"created":{"type":"boolean"},"embeddingProvider":{"type":"string"},"embeddingDimensions":{"type":"integer"}},"required":["noteId","createdAt","updatedAt","created","embeddingProvider","embeddingDimensions"]}'::jsonb,
+                 'checksum-notes.save_note-v1', '[]'::jsonb, 'notes', 'notes.save_note', 'http-stream', 'notes'),
+                ('notes.search_similar', 1,
+                 '{"type":"object","properties":{"query":{"type":"string","minLength":1},"userNamespace":{"type":"string","minLength":1},"userReference":{"type":"string","minLength":1},"topK":{"type":"integer","minimum":1,"maximum":50},"minScore":{"type":"number","minimum":0.0,"maximum":0.99}},"required":["query","userNamespace","userReference"]}'::jsonb,
+                 '{"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"noteId":{"type":"string","format":"uuid"},"title":{"type":"string"},"content":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"metadata":{"type":"object"},"createdAt":{"type":"string","format":"date-time"},"updatedAt":{"type":"string","format":"date-time"},"score":{"type":"number"},"vectorMetadata":{"type":"object"}},"required":["noteId","title","content","score"]}}},"required":["matches"]}'::jsonb,
+                 'checksum-notes.search_similar-v1', '[]'::jsonb, 'notes', 'notes.search_similar', 'http-stream', 'notes')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('notes.save_note', 'Notes · Save note', 'Persist user note and index it in PgVector.', 'notes', 'MANUAL', '["notes","storage"]'::jsonb, '["persistence"]'::jsonb, 'Local MCP service', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'notes.save_note' AND version = 1)),
+                ('notes.search_similar', 'Notes · Search similar', 'Vector search over notes for the requesting user.', 'notes', 'MANUAL', '["notes","search"]'::jsonb, '["retrieval"]'::jsonb, 'Local MCP service', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'notes.search_similar' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;

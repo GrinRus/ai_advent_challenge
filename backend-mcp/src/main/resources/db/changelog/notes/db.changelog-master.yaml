@@ -1,0 +1,133 @@
+databaseChangeLog:
+  - changeSet:
+      id: notes-0001-init
+      author: ai-advent
+      context: notes
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: CREATE EXTENSION IF NOT EXISTS "vector";
+        - createTable:
+            tableName: note_entry
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: title
+                  type: VARCHAR(160)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tags
+                  type: JSONB
+              - column:
+                  name: metadata
+                  type: JSONB
+              - column:
+                  name: user_namespace
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_reference
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_channel
+                  type: VARCHAR(32)
+              - column:
+                  name: content_hash
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: note_entry
+            constraintName: uq_note_entry_user_hash
+            columnNames: user_namespace, user_reference, content_hash
+        - createIndex:
+            tableName: note_entry
+            indexName: idx_note_entry_user
+            columns:
+              - column:
+                  name: user_namespace
+              - column:
+                  name: user_reference
+        - sql:
+            splitStatements: false
+            sql: CREATE INDEX IF NOT EXISTS idx_note_entry_tags_gin ON note_entry USING gin (tags jsonb_path_ops);
+        - createTable:
+            tableName: note_vector_store
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metadata
+                  type: JSONB
+              - column:
+                  name: embedding
+                  type: VECTOR(1536)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: embedding_provider
+                  type: VARCHAR(128)
+                  defaultValue: text-embedding-3-small
+                  constraints:
+                    nullable: false
+              - column:
+                  name: embedding_dimensions
+                  type: INTEGER
+                  defaultValueNumeric: 1536
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: note_vector_store
+            baseColumnNames: id
+            referencedTableName: note_entry
+            referencedColumnNames: id
+            onDelete: CASCADE
+            constraintName: fk_note_vector_store_note
+        - sql:
+            splitStatements: false
+            sql: CREATE INDEX IF NOT EXISTS idx_note_vector_store_embedding ON note_vector_store USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

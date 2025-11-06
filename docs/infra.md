@@ -15,6 +15,7 @@
   - `flow-ops-mcp` — порт `7092` (HTTP MCP, профиль `flowops`).
   - `insight-mcp` — порт `7093` (HTTP MCP, профиль `insight`).
   - `github-mcp` — порт `7094` (HTTP MCP, профиль `github`).
+  - `notes-mcp` — порт `7097` (HTTP MCP, профиль `notes`, хранит заметки и эмбеддинги PgVector).
 
 ## Docker Compose
 Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости. Для GitHub MCP обязательно задайте Personal Access Token (`GITHUB_PAT`) с правами `repo`, `read:org` и `read:checks`. Оформите процесс выдачи и ротации PAT согласно внутренним правилам безопасности (см. `docs/processes.md`).
@@ -62,6 +63,27 @@ Backend автоматически подключает `github-mcp` по адр
 export GITHUB_MCP_HTTP_BASE_URL=http://localhost:7094
 export GITHUB_MCP_HTTP_ENDPOINT=/mcp
 ```
+
+### Запуск Notes MCP
+Notes MCP хранит заметки пользователей и векторные эмбеддинги для поиска похожего контента. Сервис работает на Spring Boot с профилем `notes`, использует общий Postgres (`pgvector`) и подключается к OpenAI для генерации эмбеддингов (модель `text-embedding-3-small`).
+
+| Переменная | Назначение | Значение по умолчанию |
+|------------|------------|------------------------|
+| `NOTES_MCP_HTTP_PORT` | прокинутый порт сервиса | `7097` |
+| `NOTES_MCP_HTTP_BASE_URL` | URL подключения backend | `http://notes-mcp:8080` |
+| `NOTES_MCP_DB_URL` | строка подключения к Postgres | `jdbc:postgresql://postgres:5432/ai_advent` |
+| `NOTES_MCP_DB_USER` / `NOTES_MCP_DB_PASSWORD` | креды базы данных | `ai_advent` / `ai_advent` |
+| `NOTES_EMBEDDING_MODEL` / `NOTES_EMBEDDING_DIMENSIONS` | конфигурация модели эмбеддингов | `text-embedding-3-small` / `1536` |
+| `NOTES_SEARCH_TOP_K` / `NOTES_SEARCH_MIN_SCORE` | дефолтные параметры поиска | `5` / `0.55` |
+
+Backend подключает MCP через `spring.ai.mcp.client.streamable-http.connections.notes`. Для локального вызова вне Compose установите:
+
+```bash
+export NOTES_MCP_HTTP_BASE_URL=http://localhost:7097
+export NOTES_MCP_HTTP_ENDPOINT=/mcp
+```
+
+Интерфейс MCP предоставляет инструменты `notes.save_note` и `notes.search_similar`, которые доступны в чате/flow и через API. Таблицы `note_entry` и `note_vector_store` управляются Liquibase (`backend-mcp/src/main/resources/db/changelog/notes`).
 
 ### Redis для fallback-оценки токенов
 - Сервис `redis` поднимается вместе с `docker compose` и хранит результаты подсчёта токенов для повторно используемых промптов. По умолчанию кэш выключен (`CHAT_TOKEN_USAGE_CACHE_ENABLED=false`), поэтому Redis безвреден при локальной разработке.

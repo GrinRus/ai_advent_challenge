@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: ${NOTES_MCP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
+    username: ${NOTES_MCP_DB_USER:ai_advent}
+    password: ${NOTES_MCP_DB_PASSWORD:ai_advent}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/notes/db.changelog-master.yaml
+    contexts: notes
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:demo-openai-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      embedding:
+        options:
+          model: ${NOTES_EMBEDDING_MODEL:text-embedding-3-small}
+          dimensions: ${NOTES_EMBEDDING_DIMENSIONS:1536}
+
+notes:
+  embedding:
+    model: ${NOTES_EMBEDDING_MODEL:text-embedding-3-small}
+    dimensions: ${NOTES_EMBEDDING_DIMENSIONS:1536}
+  search:
+    default-top-k: ${NOTES_SEARCH_TOP_K:5}
+    min-score: ${NOTES_SEARCH_MIN_SCORE:0.55}
+  storage:
+    vector-table: ${NOTES_VECTOR_TABLE:note_vector_store}
+    schema-validation: ${NOTES_VECTOR_SCHEMA_VALIDATION:true}
+  validation:
+    max-title-length: ${NOTES_MAX_TITLE_LENGTH:160}
+    max-content-length: ${NOTES_MAX_CONTENT_LENGTH:4000}
+    max-tags: ${NOTES_MAX_TAGS:25}

@@ -1,6 +1,6 @@
 # MCP Servers Guide for Operators & Analysts
 
-Этот документ описывает, как подключаться к внутренним MCP-серверам (Flow Ops, Agent Ops, Insight, GitHub), запускать их локально и безопасно пользоваться инструментами.
+Этот документ описывает, как подключаться к внутренним MCP-серверам (Flow Ops, Agent Ops, Insight, GitHub, Notes), запускать их локально и безопасно пользоваться инструментами.
 
 ## Запуск инфраструктуры
 
@@ -11,7 +11,7 @@
   docker compose up --build backend frontend agent-ops-mcp flow-ops-mcp insight-mcp github-mcp
   ```
   - `backend` — основной REST API.
-  - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp`, `github-mcp` — HTTP MCP-сервера (Spring Boot, streamable transport). Контейнеры слушают порт `8080`; на хост по умолчанию пробрасываются порты `7091`, `7092`, `7093`, `7094`.
+  - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp`, `github-mcp`, `notes-mcp` — HTTP MCP-сервера (Spring Boot, streamable transport). Контейнеры слушают порт `8080`; на хост по умолчанию пробрасываются порты `7091`, `7092`, `7093`, `7094`, `7097`.
   - Переменные `AGENT_OPS_BACKEND_BASE_URL`, `FLOW_OPS_BACKEND_BASE_URL`, `INSIGHT_BACKEND_BASE_URL`, `GITHUB_API_BASE_URL` указывают базовый URL API бэкенда/внешнего сервиса; по умолчанию — `http://backend:8080` для внутренних MCP и `https://api.github.com` для GitHub.
 
 ## Подключение backend → MCP
@@ -26,8 +26,9 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
   export FLOW_OPS_MCP_HTTP_BASE_URL=http://localhost:7092
   export INSIGHT_MCP_HTTP_BASE_URL=http://localhost:7093
   export GITHUB_MCP_HTTP_BASE_URL=http://localhost:7094
+  export NOTES_MCP_HTTP_BASE_URL=http://localhost:7097
   ```
-  При необходимости измените порты (`AGENT_OPS_MCP_HTTP_PORT`, `FLOW_OPS_MCP_HTTP_PORT`, `INSIGHT_MCP_HTTP_PORT`, `GITHUB_MCP_HTTP_PORT`) в `docker-compose.yml`.
+  При необходимости измените порты (`AGENT_OPS_MCP_HTTP_PORT`, `FLOW_OPS_MCP_HTTP_PORT`, `INSIGHT_MCP_HTTP_PORT`, `GITHUB_MCP_HTTP_PORT`, `NOTES_MCP_HTTP_PORT`) в `docker-compose.yml`.
 - Перplexity продолжает работать через STDIO: убедитесь, что бинарь/скрипт `perplexity-mcp` доступен в `PATH`, либо переопределите `PERPLEXITY_MCP_CMD`.
 
 ## IDE и внешние клиенты
@@ -75,6 +76,17 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.create_pull_request_comment` — создаёт issue- или review-комментарий; для review требуется указать файл и строку/диапазон.
 - `github.create_pull_request_review` — оформляет ревью с действием `APPROVE`/`REQUEST_CHANGES`/`COMMENT` или оставляет `PENDING`, поддерживает пакет комментариев.
 - `github.submit_pull_request_review` — отправляет ранее созданное ревью с выбранным действием.
+
+### Notes
+```
+User: Сохрани заметку "Сводка звонка" и подбери похожие записи за последние встречи.
+Tool: notes.save_note → notes.search_similar
+```
+
+- `notes.save_note` — сохраняет заметку, валидирует размеры (`title ≤ 160`, `content ≤ 4000`, `tags ≤ 25`), вычисляет SHA-256 контента для идемпотентности и индексирует документ в PgVector (`note_vector_store`).
+- `notes.search_similar` — векторный поиск по заметкам пользователя с косинусным расстоянием. Поддерживает `topK` (1..50) и `minScore` (0..0.99). Метаданные (`user_namespace`, `user_reference`, `tags`) доступны в ответе.
+- При необходимости можно указать `metadata` (JSON), который сохраняется вместе с заметкой и возвращается в результатах поиска.
+- Финансовые/операционные ошибки возвращаются как 5xx (например, недоступность OpenAI). В логах `notes-mcp` ищите `NotesStorageException`/`NotesValidationException`.
 
 ## Безопасность
 

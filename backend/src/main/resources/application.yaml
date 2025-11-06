@@ -60,6 +60,9 @@ spring:
             repo-analysis:
               url: ${REPO_ANALYSIS_MCP_HTTP_BASE_URL:http://localhost:7096}
               endpoint: ${REPO_ANALYSIS_MCP_HTTP_ENDPOINT:/mcp}
+            notes:
+              url: ${NOTES_MCP_HTTP_BASE_URL:http://localhost:7097}
+              endpoint: ${NOTES_MCP_HTTP_ENDPOINT:/mcp}
     openai:
       api-key: ${OPENAI_API_KEY:demo-openai-key}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
@@ -181,6 +184,12 @@ app:
           schema-version: 1
           execution-mode: MANUAL
         - code: insight.search_memory
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: notes.save_note
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: notes.search_similar
           schema-version: 1
           execution-mode: MANUAL
       default-tool-codes:
@@ -377,6 +386,11 @@ app:
           display-name: "Repo Analysis MCP"
           description: "Анализ локального workspace: скан сегментов, агрегация находок и hotspots."
           tags: ["analysis", "workspace"]
+          security-policy: "internal-readonly"
+        notes:
+          display-name: "Notes MCP"
+          description: "Хранение пользовательских заметок и поиск похожего контента через PgVector."
+          tags: ["notes", "rag"]
           security-policy: "internal-readonly"
 
   flow:
