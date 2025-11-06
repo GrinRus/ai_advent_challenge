@@ -913,7 +913,7 @@
 - [ ] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
 - [ ] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
 - [ ] Реализовать `CodingAssistantService` с операциями `generate_patch`, `review_patch`, `apply_patch_preview` поверх `WorkspaceAccessService`; валидировать пути, ограничивать размер diff, хранить связку patch↔workspace.
-- [ ] Интегрировать компиляцию через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; замаскировать секреты, собирать метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
+- [ ] (Опционально) Добавить проверку компиляции через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; при включении — маскировать секреты и собирать базовые метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
 - [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска), поддерживать `dry-run`/preview режим и lightweight аудит действий.
 - [ ] Зарегистрировать инструменты в MCP-каталоге: новый `ToolCallbackProvider`, записи Liquibase (`tool_schema_version`, `tool_definition`), обновление `app.mcp.catalog` с описанием сервера.
 - [ ] Подключить инструменты к backend (chat/flow): расширить `app.chat.research.tools`, задать execution-mode `MANUAL` для apply, описать bindings и ручное подтверждение.
@@ -923,11 +923,11 @@
 ### GitHub MCP Expansion
 - [ ] Расширить `GitHubRepositoryService`: реализовать `createBranch`, `commitChanges`, `pushBranch`, `openPullRequest`, `setPrStatus`, `raiseVeto` с проверками workspace, whitelist веток и запретом force-push.
 - [ ] Дополнить `GitHubTools`/`GitHubWorkspaceTools` новыми `@Tool`-методами, нормализовать ответы (SHA, ссылки, статусы, vetos) и обеспечить валидацию входных данных.
-- [ ] Настроить защиту операций: лимиты архивов, маскирование токенов, структурированные логи и метрики для аудита, обработка конфликтов/rollback при ошибках API.
+- [ ] Добавить структурированные логи операций; усиленные ограничения (лимиты архивов, маскирование токенов, метрики, rollback при ошибках API) запланировать отдельно.
 - [ ] Обновить каталог инструментов: Liquibase вставки, запись в `app.mcp.catalog`, добавить execution-mode `MANUAL` в backend-конфигах (chat/flow).
 - [ ] Протестировать end-to-end на sandbox репозитории (ветка → коммит → push → PR → статус), негативы (конфликт, force-push запрет, veto).
 - [ ] Unit-тесты: сериализация запросов, обработка ошибок GitHub API, откат workspace при исключениях.
-- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): требования к PAT/SSH, чек-лист безопасного использования, примеры JSON запросов, сценарии работы с sandbox.
+- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON запросов, сценарии работы с sandbox (PAT уже описан — не дублировать).
 
 ### Assisted Coding Flow (FE/TG → MCP)
 1. Пользователь задаёт репозиторий/задачу → `github.repository_fetch` + `github.workspace_directory_inspector` для подготовки workspace.
