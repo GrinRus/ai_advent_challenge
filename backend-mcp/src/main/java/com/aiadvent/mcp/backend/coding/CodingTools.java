@@ -34,7 +34,8 @@ class CodingTools {
               + "относительно корня workspace и не могут ссылаться на каталоги (contextFiles читает только файлы). "
               + "targetPaths помогает сфокусировать генерацию, forbiddenPaths блокирует затрагивание файлов. Чтобы "
               + "создать новый файл, добавьте путь в targetPaths и опишите содержимое во instructions - diff будет "
-              + "включать блок с new file.")
+              + "включать блок с new file. Пример запроса: {\"workspaceId\": \"notes-1\", \"instructions\": \"добавь README\", "
+              + "\"targetPaths\": [\"docs/README.md\"], \"contextFiles\": [{\"path\": \"docs/index.md\"}]}.")
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
     return codingAssistantService.generatePatch(request);
   }
@@ -46,7 +47,7 @@ class CodingTools {
               + "\"patchId\": \"...\", \"focus\": [\"risks\",\"tests\"]}. Обязательны workspaceId и patchId. focus - "
               + "необязательный список режимов анализа (risks, tests, migration); регистр нечувствителен. В ответе "
               + "возвращаются findings, советы по тестам, nextSteps и аннотации, которые можно показывать оператору "
-              + "перед публикацией.")
+              + "перед публикацией. Пример запроса: {\"workspaceId\": \"notes-1\", \"patchId\": \"abc123\", \"focus\": [\"risks\"]}.")
   ReviewPatchResponse reviewPatch(ReviewPatchRequest request) {
     return codingAssistantService.reviewPatch(request);
   }
@@ -58,7 +59,8 @@ class CodingTools {
               + "Docker. Тело запроса {\"workspaceId\": \"...\", \"patchId\": \"...\", \"commands\": [\"./gradlew test\"], "
               + "\"dryRun\": true, \"timeout\": \"PT15M\"}. workspaceId и patchId обязательны. По умолчанию dryRun=true, "
               + "timeout подразумевает ISO 8601 duration. Команды поддерживают только gradle/./gradlew. После успешного "
-              + "прогона diff откатывается, а метаданные dry-run обновляются в реестре.")
+              + "прогона diff откатывается, а метаданные dry-run обновляются в реестре. Пример запроса: {\"workspaceId\": "
+              + "\"notes-1\", \"patchId\": \"abc123\", \"commands\": [\"./gradlew test\"], \"dryRun\": true}.")
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
     return codingAssistantService.applyPatchPreview(request);
   }
@@ -68,7 +70,7 @@ class CodingTools {
       description =
           "Возвращает список патчей, связанных с workspace: {\"workspaceId\": \"...\"}. Поле обязательно. Ответ содержит "
               + "patchId, статус, requiresManualReview, наличие dry-run и прочие метрики, что удобно для отображения "
-              + "очереди задач оператора или повторного запуска review/apply.")
+              + "очереди задач оператора или повторного запуска review/apply. Пример запроса: {\"workspaceId\": \"notes-1\"}.")
   ListPatchesResponse listPatches(ListPatchesRequest request) {
     return codingAssistantService.listPatches(request);
   }
@@ -78,7 +80,8 @@ class CodingTools {
       description =
           "Удаляет патч из реестра и освобождает связанные ресурсы. Ожидает {\"workspaceId\": \"...\", "
               + "\"patchId\": \"...\"} - оба поля обязательны. Используйте после успешной публикации или если патч "
-              + "более не нужен, чтобы очистить реестр и прекратить дальнейшие dry-run/review для него.")
+              + "более не нужен, чтобы очистить реестр и прекратить дальнейшие dry-run/review для него. Пример запроса: {\"workspaceId\": "
+              + "\"notes-1\", \"patchId\": \"abc123\"}.")
   DiscardPatchResponse discardPatch(DiscardPatchRequest request) {
     return codingAssistantService.discardPatch(request);
   }

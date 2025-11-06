@@ -66,11 +66,13 @@ class GitHubTools {
   @Tool(
       name = "github.list_repository_tree",
       description =
-          "Сканирует git-дерево репозитория. Передайте repository{owner,name,ref?} (ref по умолчанию heads/main). "
-              + "path очищается от ведущих/замыкающих '/' и задаёт стартовый каталог (пусто = корневая). "
-              + "recursive=true включает обход подкаталогов. maxDepth ограничивается диапазоном 1-10, "
-              + "maxEntries обрезает количество элементов; truncated=true сигнализирует об отсечении. "
-              + "resolvedRef содержит точный SHA коммита, чьё дерево было использовано.")
+          "Возвращает список файлов и директорий в репозитории. Тело запроса: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\", \"ref\": \"refs/heads/main\"}, "
+              + "\"path\": \"src\", \"recursive\": true, \"maxDepth\": 4, \"maxEntries\": 400}. "
+              + "repository обязательно (owner/name, ref можно опустить — используется основная ветка). "
+              + "path задаётся относительно корня; пустая строка означает весь репозиторий. recursive=true включает обход "
+              + "подкаталогов. maxDepth допустим в диапазоне 1-10. maxEntries ограничивает число элементов; при превышении "
+              + "результат помечается truncated=true. resolvedRef в ответе содержит точный SHA дерева.")
   GitHubTreeResponse listRepositoryTree(GitHubTreeRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     ListRepositoryTreeInput serviceInput =
@@ -93,10 +95,14 @@ class GitHubTools {
   @Tool(
       name = "github.list_pull_requests",
       description =
-          "Возвращает сводки pull request'ов. Обязателен блок repository. Необязательные фильтры: "
-              + "state (OPEN/CLOSED/ALL), head, base, sort (CREATED/UPDATED/POPULARITY/LONG_RUNNING), "
-              + "direction (ASC/DESC). limit ограничивается диапазоном 1-50; некорректные значения фильтров "
-              + "игнорируются. truncated=true означает, что список был урезан по limit.")
+          "Выдаёт список PR c фильтрами и пагинацией. Пример запроса: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\", \"ref\": \"refs/heads/main\"}, "
+              + "\"state\": \"OPEN\", \"head\": \"user:branch\", \"base\": \"main\", \"limit\": 20, "
+              + "\"sort\": \"UPDATED\", \"direction\": \"DESC\"}. "
+              + "repository.owner/name обязательны; ref опционален (по умолчанию default branch). "
+              + "state принимает OPEN/CLOSED/ALL. head и base — фильтры веток. limit (1-50) режет размер ответа. "
+              + "sort: CREATED/UPDATED/POPULARITY/LONG_RUNNING, direction: ASC/DESC. "
+              + "Если лимит достигнут, ответ содержит truncated=true.")
   GitHubPullRequestsResponse listPullRequests(GitHubListPullRequestsRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     ListPullRequestsResult result =
@@ -119,8 +125,9 @@ class GitHubTools {
   @Tool(
       name = "github.get_pull_request",
       description =
-          "Читает расширенные сведения о pull request: тело, лейблы, ассайни, запрошенные ревьюеры/команды, "
-              + "milestone, mergeability, maintainerCanModify, mergeCommitSha. Требуются repository и положительный number.")
+          "Возвращает детальную информацию о PR. Запрос формата {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123}. Поля repository и number (>0) обязательны. Ответ включает описание, лейблы, "
+              + "assignees, requestedReviewers/Teams, milestone, mergeability, maintainerCanModify, mergeCommitSha и другую метаинформацию.")
   GitHubPullRequestDetailsResponse getPullRequest(GitHubGetPullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -138,8 +145,10 @@ class GitHubTools {
   @Tool(
       name = "github.get_pull_request_diff",
       description =
-          "Возвращает unified diff по PR. number > 0 обязателен. maxBytes (по умолчанию конфигурация или 1 МиБ) "
-              + "ограничивает размер UTF-8 текста; при превышении response.truncated=true. headSha указывает SHA головой ветки.")
+          "Возвращает unified diff выбранного PR. Тело запроса: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123, \"maxBytes\": 1048576}. number (>0) обязателен. maxBytes задаёт верхний предел на размер "
+              + "UTF-8 diff (используется дефолт сервиса, если не указан). При обрезке diff поле truncated=true. "
+              + "В ответе headSha указывает текущий SHA ветки."
   GitHubPullRequestDiffResponse getPullRequestDiff(GitHubGetPullRequestDiffRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -160,9 +169,12 @@ class GitHubTools {
   @Tool(
       name = "github.list_pull_request_comments",
       description =
-          "Возвращает issue- и review-комментарии для PR. issueCommentLimit/reviewCommentLimit (0–200) управляют объёмом, "
-              + "0 отключает соответствующий список. issueComments содержат id/body/author/url, reviewComments дополнительно включают "
-              + "diffHunk, path, line/startLine/endLine, position, side. truncated флаги показывают, что лимит был достигнут.")
+          "Собирает issue- и review-комментарии для PR. Пример запроса: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"number\": 123, "
+              + "\"issueCommentLimit\": 50, \"reviewCommentLimit\": 200}. number (>0) обязателен. "
+              + "Лимиты 0-200; значение 0 отключает соответствующий список. В ответе issueComments содержат id/body/author/url, "
+              + "reviewComments дополнительно дают diffHunk, path, line/startLine/endLine, position, side. "
+              + "Флаги issueCommentsTruncated/reviewCommentsTruncated сигнализируют о срезе лимита.")
   GitHubPullRequestCommentsResponse listPullRequestComments(GitHubListPullRequestCommentsRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -185,8 +197,11 @@ class GitHubTools {
   @Tool(
       name = "github.list_pull_request_checks",
       description =
-          "Возвращает check runs и commit statuses для head SHA PR. Параметры checkRunLimit/statusLimit (0–200) "
-              + "определяют число элементов; truncation флаги сообщают об урезанных списках. overallStatus агрегирует результат проверок.")
+          "Возвращает check runs и commit statuses для head SHA PR. Запрос: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"number\": 123, "
+              + "\"checkRunLimit\": 100, \"statusLimit\": 50}. number (>0) обязателен. "
+              + "Лимиты 0-200 управляют объёмом; 0 означает отключить соответствующий список. "
+              + "Ответ включает overallStatus, headSha, массивы checkRuns/statuses и флаги truncated для каждого массива.")
   GitHubPullRequestChecksResponse listPullRequestChecks(GitHubListPullRequestChecksRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -212,7 +227,12 @@ class GitHubTools {
   @Tool(
       name = "github.open_pull_request",
       description =
-          "Создаёт pull request. Требует headBranch, baseBranch и title. reviewers и teamReviewers опциональны; draft=true создаёт черновик.")
+          "Создаёт PR в репозитории. Пример тела: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"headBranch\": \"feature\", "
+              + "\"baseBranch\": \"main\", \"title\": \"Add feature\", \"body\": \"Описание\", "
+              + "\"reviewers\": [\"user1\"], \"teamReviewers\": [\"team-alpha\"], \"draft\": false}. "
+              + "repository.owner/name, headBranch, baseBranch и title обязательны. body опционален. "
+              + "reviewers/teamReviewers — массивы логинов пользователей и команд. draft=true создаёт черновик.")
   GitHubOpenPullRequestResponse openPullRequest(GitHubOpenPullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     OpenPullRequestResult result =
@@ -240,7 +260,9 @@ class GitHubTools {
   @Tool(
       name = "github.approve_pull_request",
       description =
-          "Оставляет approve-review для PR. number > 0 обязателен, body опционален.")
+          "Создаёт approve-review для PR. Тело: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123, \"body\": \"LGTM\"}. repository и number (>0) обязательны. body опционален; "
+              + "если не задан, создаётся пустой комментарий Approval.")
   GitHubApprovePullRequestResponse approvePullRequest(GitHubApprovePullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     ApprovePullRequestResult result =
@@ -262,7 +284,10 @@ class GitHubTools {
   @Tool(
       name = "github.merge_pull_request",
       description =
-          "Мержит pull request. mergeMethod может быть MERGE, SQUASH или REBASE. commitTitle/commitMessage опциональны.")
+          "Выполняет merge PR. Пример запроса: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123, \"mergeMethod\": \"SQUASH\", \"commitTitle\": \"feat: change\", "
+              + "\"commitMessage\": \"Описание\"}. repository и number (>0) обязательны. mergeMethod опционален "
+              + "(MERGE|SQUASH|REBASE, по умолчанию MERGE). commitTitle/commitMessage используются при SQUASH/MERGE."
   GitHubMergePullRequestResponse mergePullRequest(GitHubMergePullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     MergeMethod method = parseMergeMethod(request.mergeMethod());
@@ -288,10 +313,12 @@ class GitHubTools {
   @Tool(
       name = "github.create_pull_request_comment",
       description =
-          "Публикует комментарий в PR. body обязателен. Если location не задан, создаётся issue-комментарий. "
-              + "Для review-комментария location.path обязателен и нужно задать либо line ( >0 ), либо интервал startLine/endLine "
-              + "(оба >0, endLine >= startLine; если они равны, используется одиночная строка), либо position (diff offset >0). "
-              + "commitSha опционален и уточняет контекст diff. Инструмент проверяет дубликаты (по body+координатам) перед созданием.")
+          "Публикует комментарий в PR. Пример: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123, \"body\": \"Нужно поправить\", "
+              + "\"location\": {\"path\": \"src/App.java\", \"line\": 42, \"commitSha\": \"abc\"}}. "
+              + "repository, number (>0) и body обязательны. Если location отсутствует, создаётся issue-комментарий. "
+              + "Для review-комментария требуется location.path и координаты: либо line (>0), либо диапазон startLine/endLine "
+              + "(>0, endLine >= startLine), либо position (>0). commitSha уточняет контекст diff. Дубликаты (body+координаты) пропускаются."
   GitHubPullRequestCommentResponse createPullRequestComment(GitHubCreatePullRequestCommentRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -329,11 +356,13 @@ class GitHubTools {
   @Tool(
       name = "github.create_pull_request_review",
       description =
-          "Создаёт review. Обязательны repository и number. event может быть APPROVE/REQUEST_CHANGES/COMMENT/PENDING; "
-              + "для COMMENT и REQUEST_CHANGES требуется непустой body. commitId задаёт SHA (опционально). "
-              + "comments — список черновиков: каждый содержит body+path и либо line, либо startLine/endLine "
-              + "(валидируются как для комментариев), либо position >0. Интервалы с equal start/end превращаются в single-line. "
-              + "Перед созданием сервис ищет дубликат review с тем же состоянием и body.")
+          "Создаёт review с черновыми комментариями. Тело запроса: "
+              + "{\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, \"number\": 123, "
+              + "\"event\": \"COMMENT\", \"body\": \"Общее замечание\", \"commitId\": \"abc\", "
+              + "\"comments\": [{\"body\": \"Поправьте\", \"path\": \"src/App.java\", \"line\": 42}]}. "
+              + "repository и number обязательны. event допускает APPROVE/REQUEST_CHANGES/COMMENT/PENDING. "
+              + "Для COMMENT/REQUEST_CHANGES нужен непустой body. comments — массив драфтов: каждый требует body+path и координаты "
+              + "(line или startLine/endLine или position). commitId опционален. Перед созданием выполняется поиск дубликатов review."
   GitHubCreatePullRequestReviewResponse createPullRequestReview(GitHubCreatePullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -361,9 +390,10 @@ class GitHubTools {
   @Tool(
       name = "github.submit_pull_request_review",
       description =
-          "Отправляет ранее созданное review. reviewId и number обязаны быть положительными. "
-              + "event должен быть APPROVE, REQUEST_CHANGES или COMMENT (PENDING запрещён); "
-              + "для COMMENT/REQUEST_CHANGES требуется body. Ответ возвращает обновлённую сводку review.")
+          "Завершает ранее созданный review. Запрос: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
+              + "\"number\": 123, \"reviewId\": 456, \"event\": \"APPROVE\", \"body\": \"OK\"}. "
+              + "repository, number (>0) и reviewId (>0) обязательны. event допускает APPROVE/REQUEST_CHANGES/COMMENT; "
+              + "для COMMENT и REQUEST_CHANGES требуется непустой body."
   GitHubSubmitPullRequestReviewResponse submitPullRequestReview(GitHubSubmitPullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -387,9 +417,10 @@ class GitHubTools {
   @Tool(
       name = "github.read_file",
       description =
-          "Читает файл репозитория. repository обязателен; path очищается от лишних '/' и должен быть непустым. "
-              + "Ответ содержит resolvedRef, метаданные файла (sha, size, encoding, downloadUrl), "
-              + "Base64 содержимое и UTF-8 текст (если декодирование удалось). Результаты кешируются в соответствии с настройками.")
+          "Читает blob из репозитория. Запрос: {\"repository\": {\"owner\": \"...\", \"name\": \"...\", \"ref\": \"refs/heads/main\"}, "
+              + "\"path\": \"docs/README.md\"}. repository и path обязательны; path должен быть относительным и непустым. "
+              + "Ответ возвращает resolvedRef (SHA коммита), метаданные (sha,size,encoding,downloadUrl) и содержимое "
+              + "в base64 и текстовом виде (textContent доступен, если файл не бинарный)."
   GitHubFileResponse readFile(GitHubFileRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     if (!StringUtils.hasText(request.path())) {
