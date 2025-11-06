@@ -9,6 +9,8 @@ public class CodingAssistantProperties {
   private Duration patchTtl = Duration.ofHours(24);
   private int maxDiffBytes = 256 * 1024;
   private int maxContextBytes = 256 * 1024;
+  private int maxInstructionLength = 4000;
+  private int maxFilesPerPatch = 25;
 
   public Duration getPatchTtl() {
     return patchTtl;
@@ -32,5 +34,21 @@ public class CodingAssistantProperties {
 
   public void setMaxContextBytes(int maxContextBytes) {
     this.maxContextBytes = maxContextBytes;
+  }
+
+  public int getMaxInstructionLength() {
+    return maxInstructionLength;
+  }
+
+  public void setMaxInstructionLength(int maxInstructionLength) {
+    this.maxInstructionLength = maxInstructionLength;
+  }
+
+  public int getMaxFilesPerPatch() {
+    return maxFilesPerPatch;
+  }
+
+  public void setMaxFilesPerPatch(int maxFilesPerPatch) {
+    this.maxFilesPerPatch = maxFilesPerPatch;
   }
 }
