@@ -1,6 +1,8 @@
 package com.aiadvent.mcp.backend.coding;
 
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
+import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
+import com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayload;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,12 +19,17 @@ class CodingAssistantService {
 
   private final TempWorkspaceService workspaceService;
   private final CodingAssistantProperties properties;
+  private final WorkspaceFileService workspaceFileService;
   private final Map<String, PatchRecord> patches = new ConcurrentHashMap<>();
 
   CodingAssistantService(
-      TempWorkspaceService workspaceService, CodingAssistantProperties properties) {
+      TempWorkspaceService workspaceService,
+      CodingAssistantProperties properties,
+      WorkspaceFileService workspaceFileService) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
+    this.workspaceFileService =
+        Objects.requireNonNull(workspaceFileService, "workspaceFileService");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -35,9 +42,17 @@ class CodingAssistantService {
     }
 
     // ensure workspace exists
-    workspaceService
-        .findWorkspace(workspaceId)
-        .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    Workspace workspace =
+        workspaceService
+            .findWorkspace(workspaceId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+
+    List<String> targetPaths = normalizePaths(request.targetPaths());
+    List<String> forbiddenPaths = normalizePaths(request.forbiddenPaths());
+    validatePaths(targetPaths, forbiddenPaths);
+
+    List<ContextSnippet> snippets =
+        collectContext(workspaceId, normalizeContextFiles(request.contextFiles()));
 
     String patchId = UUID.randomUUID().toString();
     PatchRecord record =
@@ -47,17 +62,21 @@ class CodingAssistantService {
             instructions,
             "",
             Instant.now(),
-            List.copyOf(Optional.ofNullable(request.targetPaths()).orElse(List.of())),
-            List.copyOf(Optional.ofNullable(request.forbiddenPaths()).orElse(List.of())));
+            targetPaths,
+            forbiddenPaths,
+            snippets);
     patches.put(patchId, record);
 
     Annotations annotations =
-        new Annotations(List.of(), List.of("Patch generation stub – implement LLM call"), List.of());
+        new Annotations(
+            snippets.stream().map(ContextSnippet::path).toList(),
+            List.of("Patch generation stub – implement LLM call"),
+            List.of());
     Usage usage = new Usage(0, 0);
     return new GeneratePatchResponse(
         patchId,
         workspaceId,
-        "Инструкция сохранена, генерация патча будет реализована позднее.",
+        buildSummary(record),
         record.diff(),
         annotations,
         usage,
@@ -121,6 +140,79 @@ class CodingAssistantService {
     return sanitized;
   }
 
+  private List<String> normalizePaths(List<String> paths) {
+    if (paths == null) {
+      return List.of();
+    }
+    return paths.stream()
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .toList();
+  }
+
+  private List<ContextFile> normalizeContextFiles(List<ContextFile> contextFiles) {
+    if (contextFiles == null) {
+      return List.of();
+    }
+    return contextFiles.stream()
+        .filter(Objects::nonNull)
+        .map(
+            file ->
+                new ContextFile(
+                    file.path() == null ? "" : file.path().trim(),
+                    file.maxBytes()))
+        .filter(file -> StringUtils.hasText(file.path()))
+        .distinct()
+        .toList();
+  }
+
+  private void validatePaths(List<String> targets, List<String> forbidden) {
+    if (!targets.isEmpty() && !forbidden.isEmpty()) {
+      for (String path : targets) {
+        if (forbidden.contains(path)) {
+          throw new IllegalArgumentException(
+              "Path %s present in both targetPaths and forbiddenPaths".formatted(path));
+        }
+      }
+    }
+  }
+
+  private List<ContextSnippet> collectContext(
+      String workspaceId, List<ContextFile> contextFiles) {
+    List<ContextSnippet> snippets = new ArrayList<>();
+    for (ContextFile context : contextFiles) {
+      WorkspaceFilePayload payload =
+          workspaceFileService.readWorkspaceFile(
+              workspaceId, context.path(), safeContextLimit(context.maxBytes()));
+      snippets.add(
+          new ContextSnippet(
+              context.path(),
+              payload.encoding(),
+              payload.binary(),
+              payload.content(),
+              payload.base64Content(),
+              payload.truncated()));
+    }
+    return snippets;
+  }
+
+  private int safeContextLimit(Integer requested) {
+    int max = properties.getMaxContextBytes();
+    if (requested == null || requested <= 0) {
+      return max;
+    }
+    return Math.min(requested, max);
+  }
+
+  private String buildSummary(PatchRecord record) {
+    if (record.contextSnippets().isEmpty()) {
+      return "Инструкция сохранена, генерация патча будет реализована позднее.";
+    }
+    return "Подготовлен контекст из файлов: "
+        + record.contextSnippets().stream().map(ContextSnippet::path).toList();
+  }
+
   private record PatchRecord(
       String patchId,
       String workspaceId,
@@ -128,7 +220,8 @@ class CodingAssistantService {
       String diff,
       Instant createdAt,
       List<String> targetPaths,
-      List<String> forbiddenPaths) {}
+      List<String> forbiddenPaths,
+      List<ContextSnippet> contextSnippets) {}
 
   record GeneratePatchRequest(
       String workspaceId,
@@ -168,6 +261,9 @@ class CodingAssistantService {
 
   record GradleResult(
       boolean executed, String runner, int exitCode, String status, List<String> logs) {}
+
+  record ContextSnippet(
+      String path, String encoding, boolean binary, String content, String base64, boolean truncated) {}
 
   record ApplyPatchPreviewResponse(
       String patchId,

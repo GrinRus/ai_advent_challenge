@@ -65,7 +65,9 @@ public class McpApplication {
     @Configuration
     @Profile("github")
     @ComponentScan(basePackages = {
-            "com.aiadvent.mcp.backend.github", "com.aiadvent.mcp.backend.config"
+            "com.aiadvent.mcp.backend.github",
+            "com.aiadvent.mcp.backend.workspace",
+            "com.aiadvent.mcp.backend.config"
     })
     @EnableConfigurationProperties(GitHubBackendProperties.class)
     public class GitHubConfig {
@@ -107,6 +109,7 @@ public class McpApplication {
     @Profile("coding")
     @ComponentScan(basePackages = {
             "com.aiadvent.mcp.backend.coding",
+            "com.aiadvent.mcp.backend.workspace",
             "com.aiadvent.mcp.backend.config"
     })
     @EnableConfigurationProperties({CodingAssistantProperties.class, GitHubBackendProperties.class})

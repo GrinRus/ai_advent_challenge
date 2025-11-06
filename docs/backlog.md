@@ -924,7 +924,7 @@
   - `github.open_pull_request` — ввод: `repository`, `headBranch`, `baseBranch`, `title`, `body`, optional reviewers; вывод: `prNumber`, ссылки, `headSha`, `baseSha`.
   - `github.approve_pull_request` — ввод: `repository`, `number`, `body?`; вывод: статус ревью (`APPROVED`), id review, ссылка на UI.
   - `github.merge_pull_request` — ввод: `repository`, `number`, `mergeMethod`, `commitTitle?`, `commitMessage?`; вывод: итоговый статус merge, `mergedSha`, предупреждения о незакрытых проверках.
-- [ ] Реализовать `CodingAssistantService` с операциями `generate_patch`, `review_patch`, `apply_patch_preview` поверх `WorkspaceAccessService`; валидировать пути, ограничивать размер diff, хранить связку patch↔workspace.
+- [x] Оценить интеграцию `WorkspaceAccessService`: вынесли чтение файлов в общий `WorkspaceFileService`, который переиспользуют `github` и `coding` профили.
 - [ ] (Опционально) Добавить проверку компиляции через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; при включении — маскировать секреты и собирать базовые метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
 - [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска), поддерживать `dry-run`/preview режим и lightweight аудит действий.
 - [ ] Зарегистрировать инструменты в MCP-каталоге: новый `ToolCallbackProvider`, записи Liquibase (`tool_schema_version`, `tool_definition`), обновление `app.mcp.catalog` с описанием сервера.
