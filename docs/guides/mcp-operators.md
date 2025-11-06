@@ -86,6 +86,49 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.approve_pull_request` — `MANUAL`. Оставляет review c действием `APPROVE` для номера PR, опционально добавляет текстовый комментарий.
 - `github.merge_pull_request` — `MANUAL`. Выполняет merge PR (`mergeMethod=MERGE|SQUASH|REBASE`), допускает переопределение commit title/message и возвращает merge SHA.
 
+#### Чек-лист безопасного выпуска
+- Убедитесь, что workspace получен через `github.repository_fetch`, а последний dry-run (`coding.apply_patch_preview`) завершился успехом и зафиксирован в UI/чат-логе.
+- Просмотрите diff (`git status`/`git diff`) в локальном workspace и подтвердите, что commit message отражает суть изменений и не содержит секретов.
+- Перед `github.push_branch` проверьте, что ветка отсутствует на удалённом репо либо действительно должна быть обновлена; при необходимости удалите устаревшие локальные изменения (`git clean -fd`).
+- После `github.open_pull_request` убедитесь, что head/base SHA отображаются в ответе инструмента, а статус проверок в GitHub зелёный до вызова `github.merge_pull_request`.
+- В случае сбоев (конфликт, отклонение ревью) обновите состояние в чате и повторите подготовку патча; запрещено выполнять force-push — инструмент отклонит такой запрос.
+
+#### Примеры JSON
+
+```json
+{
+  "tool": "github.create_branch",
+  "arguments": {
+    "repository": {"owner": "sandbox-co", "name": "demo-service", "ref": "heads/main"},
+    "workspaceId": "workspace-1234",
+    "branchName": "feature/improve-logging"
+  }
+}
+```
+
+```json
+{
+  "tool": "github.open_pull_request",
+  "arguments": {
+    "repository": {"owner": "sandbox-co", "name": "demo-service", "ref": "heads/main"},
+    "headBranch": "feature/improve-logging",
+    "baseBranch": "main",
+    "title": "Improve logging around retry handler",
+    "body": "## Summary\n- add structured logs\n- document retry policy",
+    "reviewers": ["qa-automation"],
+    "teamReviewers": ["platform"],
+    "draft": false
+  }
+}
+```
+
+Ответ `github.open_pull_request` содержит `pullRequestNumber`, `headSha`, `baseSha`, которые нужно сохранить в журнале операции, чтобы при необходимости выполнить `github.approve_pull_request` или `github.merge_pull_request`.
+
+#### Sandbox-сценарии
+1. Создайте тестовую ветку: `github.create_branch` → `github.commit_workspace_diff` (правка README) → `github.push_branch`. Проверьте, что ветка появилась на GitHub и содержит только ожидаемые файлы.
+2. Сформируйте PR: вызывайте `github.open_pull_request`, затем из веб-интерфейса убедитесь, что reviewer/teams назначены правильно. Для отклонения сценария уберите один из обязательных параметров — инструмент вернёт 4xx с расшифровкой.
+3. Апрув/мердж: после обновления статуса проверок выполните `github.approve_pull_request` и `github.merge_pull_request`. В случае незелёного CI инструмент вернёт ошибку, которую нужно зафиксировать и устранить.
+
 ### Notes
 ```
 User: Сохрани заметку "Сводка звонка" и подбери похожие записи за последние встречи.

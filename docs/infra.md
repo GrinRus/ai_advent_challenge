@@ -73,6 +73,27 @@ export GITHUB_MCP_HTTP_ENDPOINT=/mcp
 - `github.open_pull_request` — sanity-check head/base, опциональные reviewer логины и team slug'и, лимиты по количеству файлов/коммитов. Ответ содержит `htmlUrl`, head/base SHA и timestamp.
 - `github.approve_pull_request` / `github.merge_pull_request` — организуют ручное review-одобрение и merge (`MERGE|SQUASH|REBASE`), проверяют mergeable state и возвращают merge SHA/статусы.
 - Все операции логируют безопасность и аудит (`github_write_operation` category) и используют токен с правами `repo`, `read:org`, `read:checks`.
+- **Операторский чек-лист**: перед публикацией выполните `coding.apply_patch_preview`, задокументируйте результат dry-run, убедитесь что commit message соответствует политикам команды, и подтвердите, что ветка отсутствует в удалённом репозитории. После `github.open_pull_request` сохраните `pullRequestNumber`/`headSha` для журнала операции и финальной телеметрии.
+- **Sandbox-поток**: рекомендуемый репозиторий `sandbox/<project>-playground`. Минимальный сценарий: fetch → create_branch → commit_workspace_diff (обновление README) → push_branch → open_pull_request (draft) → approve → merge. Во время ручного теста убедитесь, что отказ от merge (например, незелёный CI) корректно генерирует ошибку 409.
+- **Примеры вызовов**: можно использовать HTTP MCP endpoint напрямую.
+  ```bash
+  curl -X POST "$GITHUB_MCP_HTTP_BASE_URL/mcp" \
+       -H 'Content-Type: application/json' \
+       -d '{
+         "jsonrpc":"2.0",
+         "id":"demo",
+         "method":"tools/call",
+         "params":{
+           "name":"github.create_branch",
+           "arguments":{
+             "repository":{"owner":"sandbox-co","name":"demo-service","ref":"heads/main"},
+             "workspaceId":"workspace-1234",
+             "branchName":"feature/docs-refresh"
+           }
+         }
+       }'
+  ```
+- **Интеграция со Spring AI**: backend использует `spring.ai.tool.method.MethodToolCallbackProvider` и конфигурацию `app.chat.research.tools.*`. Если необходимо включить новые write-инструменты в другой профиль, добавьте соответствующую запись c `execution-mode: MANUAL` и убедитесь, что операторский UI отображает подтверждения.
 
 ### Запуск Notes MCP
 Notes MCP хранит заметки пользователей и векторные эмбеддинги для поиска похожего контента. Сервис работает на Spring Boot с профилем `notes`, использует общий Postgres (`pgvector`) и подключается к OpenAI для генерации эмбеддингов (модель `text-embedding-3-small`).

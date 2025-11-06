@@ -940,7 +940,7 @@
 - [x] Обновить MCP-каталог и backend (`app.mcp.catalog`, `app.chat.research.tools`): `execution-mode=MANUAL` для write-операций, разблокировка после dry-run.
 - [x] Протестировать e2e: sandbox-репозиторий ветка → commit → push → PR → approve → merge; негативы (конфликт, запрет force-push, veto).
 - [x] Unit-тесты: сериализация запросов, обработка ошибок GitHub API, откат workspace при исключениях.
-- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON, сценарии sandbox.
+- [x] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON, сценарии sandbox.
 
 ### Assisted Coding Flow (FE/TG → MCP)
 1. Пользователь задаёт репозиторий/задачу → `github.repository_fetch` + `github.workspace_directory_inspector` готовят workspace.
