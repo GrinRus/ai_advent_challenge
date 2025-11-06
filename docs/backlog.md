@@ -910,7 +910,7 @@
 
 ### MCP Coding Assistant
 - [ ] Провести desk-research через Perplexity: собрать MCP/AGI-инструменты патч-генерации, оценить API/лицензии, подготовить shortlist reuse-кандидатов и зафиксировать ограничения.
-- [ ] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
+ - [x] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
 - [ ] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
 - [ ] Реализовать `CodingAssistantService` с операциями `generate_patch`, `review_patch`, `apply_patch_preview` поверх `WorkspaceAccessService`; валидировать пути, ограничивать размер diff, хранить связку patch↔workspace.
 - [ ] (Опционально) Добавить проверку компиляции через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; при включении — маскировать секреты и собирать базовые метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
