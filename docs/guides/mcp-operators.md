@@ -8,10 +8,10 @@
 2. Склонируйте репозиторий и скопируйте `.env.example` → `.env`. Отредактируйте блок `*_MCP_*`, если хотите подключаться к staging/prod backend-у.
 3. Поднимите окружение:
  ```bash
-  docker compose up --build backend frontend agent-ops-mcp flow-ops-mcp insight-mcp github-mcp
+  docker compose up --build backend frontend agent-ops-mcp flow-ops-mcp insight-mcp github-mcp coding-mcp
   ```
   - `backend` — основной REST API.
-  - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp`, `github-mcp`, `notes-mcp` — HTTP MCP-сервера (Spring Boot, streamable transport). Контейнеры слушают порт `8080`; на хост по умолчанию пробрасываются порты `7091`, `7092`, `7093`, `7094`, `7097`.
+  - `agent-ops-mcp`, `flow-ops-mcp`, `insight-mcp`, `github-mcp`, `notes-mcp`, `coding-mcp` — HTTP MCP-сервера (Spring Boot, streamable transport). Контейнеры слушают порт `8080`; на хост по умолчанию пробрасываются порты `7091`, `7092`, `7093`, `7094`, `7097`, `7098`.
   - Переменные `AGENT_OPS_BACKEND_BASE_URL`, `FLOW_OPS_BACKEND_BASE_URL`, `INSIGHT_BACKEND_BASE_URL`, `GITHUB_API_BASE_URL` указывают базовый URL API бэкенда/внешнего сервиса; по умолчанию — `http://backend:8080` для внутренних MCP и `https://api.github.com` для GitHub.
 
 ## Подключение backend → MCP
@@ -27,8 +27,10 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
   export INSIGHT_MCP_HTTP_BASE_URL=http://localhost:7093
   export GITHUB_MCP_HTTP_BASE_URL=http://localhost:7094
   export NOTES_MCP_HTTP_BASE_URL=http://localhost:7097
+  export CODING_MCP_HTTP_BASE_URL=http://localhost:7098
+  export CODING_MCP_HTTP_ENDPOINT=/mcp
   ```
-  При необходимости измените порты (`AGENT_OPS_MCP_HTTP_PORT`, `FLOW_OPS_MCP_HTTP_PORT`, `INSIGHT_MCP_HTTP_PORT`, `GITHUB_MCP_HTTP_PORT`, `NOTES_MCP_HTTP_PORT`) в `docker-compose.yml`.
+  При необходимости измените порты (`AGENT_OPS_MCP_HTTP_PORT`, `FLOW_OPS_MCP_HTTP_PORT`, `INSIGHT_MCP_HTTP_PORT`, `GITHUB_MCP_HTTP_PORT`, `NOTES_MCP_HTTP_PORT`, `CODING_MCP_HTTP_PORT`) в `docker-compose.yml`.
 - Перplexity продолжает работать через STDIO: убедитесь, что бинарь/скрипт `perplexity-mcp` доступен в `PATH`, либо переопределите `PERPLEXITY_MCP_CMD`.
 
 ## IDE и внешние клиенты
@@ -39,6 +41,7 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
   - Agent Ops: `URL=http://localhost:7091`, `Endpoint=/mcp`
   - Insight: `URL=http://localhost:7093`, `Endpoint=/mcp`
   - GitHub: `URL=http://localhost:7094`, `Endpoint=/mcp`
+  - Coding: `URL=http://localhost:7098`, `Endpoint=/mcp`
 - Для Perplexity используйте STDIO команду (`perplexity-mcp --api-key ...`) или собственный wrapper. IDE обычно позволяет указать произвольную команду запуска.
 - Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway. GitHub MCP требует Personal Access Token с правами `repo`, `read:org`, `read:checks`, переданный через переменную `GITHUB_PAT`.
 
@@ -87,6 +90,17 @@ Tool: notes.save_note → notes.search_similar
 - `notes.search_similar` — векторный поиск по заметкам пользователя с косинусным расстоянием. Поддерживает `topK` (1..50) и `minScore` (0..0.99). Метаданные (`user_namespace`, `user_reference`, `tags`) доступны в ответе.
 - При необходимости можно указать `metadata` (JSON), который сохраняется вместе с заметкой и возвращается в результатах поиска.
 - Финансовые/операционные ошибки возвращаются как 5xx (например, недоступность OpenAI). В логах `notes-mcp` ищите `NotesStorageException`/`NotesValidationException`.
+
+### Coding
+```
+User: Сгенерируй исправление NullPointerException в `UserService`, покажи риски и выполни dry-run.
+Tool: coding.generate_patch → coding.review_patch → coding.apply_patch_preview
+```
+
+- `coding.generate_patch` принимает `workspaceId`, инструкции и, опционально, списки `targetPaths`, `forbiddenPaths`, `contextFiles`. Лимиты: дифф ≤ 256 КБ, ≤ 25 файлов, контекст ≤ 256 КБ на файл.
+- `coding.review_patch` подсвечивает риски, отсутствие тестов и миграции; результат содержит аннотации по файлам, рискам и конфликтам.
+- `coding.apply_patch_preview` помечен как `MANUAL`: в UI/Telegram инструмент запускается только после явного подтверждения оператора. Внутри выполняется `git apply --check`, временное применение diff, сбор `git diff --stat`, откат изменений и (по whitelisted командами) вызов Docker Gradle runner. Ответ возвращает список изменённых файлов, предупреждения, рекомендации и метрики.
+- Если dry-run завершился успешно, backend разблокирует GitHub write-инструменты (`create_branch` → `commit_workspace_diff` → `push_branch` → `open_pull_request`). При ошибках оператор получает список конфликтов/логов и может повторить генерацию патча.
 
 ## Безопасность
 

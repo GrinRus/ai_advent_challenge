@@ -16,6 +16,7 @@
   - `insight-mcp` — порт `7093` (HTTP MCP, профиль `insight`).
   - `github-mcp` — порт `7094` (HTTP MCP, профиль `github`).
   - `notes-mcp` — порт `7097` (HTTP MCP, профиль `notes`, хранит заметки и эмбеддинги PgVector).
+  - `coding-mcp` — порт `7098` (HTTP MCP, профиль `coding`, assisted coding flow).
 
 ## Docker Compose
 Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости. Для GitHub MCP обязательно задайте Personal Access Token (`GITHUB_PAT`) с правами `repo`, `read:org` и `read:checks`. Оформите процесс выдачи и ротации PAT согласно внутренним правилам безопасности (см. `docs/processes.md`).
@@ -84,6 +85,31 @@ export NOTES_MCP_HTTP_ENDPOINT=/mcp
 ```
 
 Интерфейс MCP предоставляет инструменты `notes.save_note` и `notes.search_similar`, которые доступны в чате/flow и через API. Таблицы `note_entry` и `note_vector_store` управляются Liquibase (`backend-mcp/src/main/resources/db/changelog/notes`).
+
+### Запуск Coding MCP
+Coding MCP реализует assisted coding: генерацию патчей, эвристическое ревью и dry-run. Сервис запускается с профилем `coding`, использует `TempWorkspaceService` для работы с локальными репозиториями и Docker runner для dry-run.
+
+| Переменная | Назначение | Значение по умолчанию |
+|------------|------------|------------------------|
+| `CODING_MCP_HTTP_PORT` | прокинутый порт сервиса | `7098` |
+| `CODING_MCP_HTTP_BASE_URL` | URL подключения backend | `http://coding-mcp:8080` |
+| `CODING_MCP_HTTP_ENDPOINT` | endpoint HTTP MCP | `/mcp` |
+
+Для локального запуска вне Compose:
+
+```bash
+export CODING_MCP_HTTP_BASE_URL=http://localhost:7098
+export CODING_MCP_HTTP_ENDPOINT=/mcp
+```
+
+Backend подключает сервис через `spring.ai.mcp.client.streamable-http.connections.coding`. Внутри инструменты работают с `git` и Docker, поэтому убедитесь, что различные утилиты (`git`, `./gradlew`) доступны внутри контейнера.
+
+Инструменты:
+- `coding.generate_patch` — создаёт diff, summary, usage, сохраняет `patchId` в in-memory реестр с TTL и контролирует лимиты (diff ≤ 256 КБ, ≤ 25 файлов).
+- `coding.review_patch` — подсвечивает риски (build-файлы, TODO/FIXME, миграции), тестовые рекомендации и обновляет аннотации.
+- `coding.apply_patch_preview` — **MANUAL** инструмент. После явного подтверждения выполняет `git apply --check`, временно накладывает diff, собирает `git diff --stat`, откатывает изменения и (если переданы whitelisted команды) запускает dry-run через Docker. Ответ содержит статус dry-run, список изменённых файлов, рекомендации, аннотации и метрики (`coding_patch_*`).
+
+Успешный dry-run разблокирует в backend цепочку GitHub write-инструментов (`create_branch → commit_workspace_diff → push_branch → open_pull_request`). При ошибках dry-run оператор получает список конфликтов и логи, после чего может скорректировать инструкции и повторить генерацию.
 
 ### Redis для fallback-оценки токенов
 - Сервис `redis` поднимается вместе с `docker compose` и хранит результаты подсчёта токенов для повторно используемых промптов. По умолчанию кэш выключен (`CHAT_TOKEN_USAGE_CACHE_ENABLED=false`), поэтому Redis безвреден при локальной разработке.
