@@ -181,6 +181,8 @@ services:
       SPRING_PROFILES_ACTIVE: coding
     ports:
       - "${CODING_MCP_HTTP_PORT:-7098}:8080"
+    volumes:
+      - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
     stdin_open: true
     tty: true
     restart: unless-stopped
