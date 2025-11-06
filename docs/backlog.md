@@ -1003,28 +1003,26 @@
 ### Продукт и архитектура
 - [ ] Зафиксировать сценарии заметок: структура payload (заголовок, текст, теги/метаданные), ограничения размера, политика обновлений/удалений и требования к latency при поиске похожего; описать MVP и расширения (реранкинг, шаринг).
 - [ ] Определить модель идентификации пользователей: заметки должны храниться с учётом контекста источника (Telegram — `chatId`, FE — `userId`/`sessionId`), предусмотреть namespace/tenant-ключ, стратегию миграции и правила доступа между каналами.
-- [ ] Подготовить контракт запросов/ответов для `notes.save_note` и `notes.search_similar`: схемы JSON, поля уверенности/score, флаги для будущего реранкинга, требования к idempotency.
+- [ ] Подготовить контракт запросов/ответов для инструментов `notes.save_note` и `notes.search_similar`: схемы JSON, поля уверенности/score, параметры idempotency, расширяемые поля для будущего реранкинга; зафиксировать использование OpenAI `text-embedding-3-small` как базовой модели эмбеддингов.
+- [ ] Зафиксировать архитектуру: хранение заметок и эмбеддингов реализуется в отдельном `notes-mcp` сервисе (часть `backend-mcp`), основной backend только регистрирует MCP инструменты и прокидывает конфигурацию.
 
 ### Backend (Spring Boot)
-- [ ] Liquibase: создать таблицу `note_entry` (UUID, title, content, tags jsonb, metadata jsonb, author/source, created_at/updated_at) и таблицу векторного хранилища `note_vector_store` (note_id FK, embedding vector, embedding_provider, embedding_dimensions, metadata jsonb, created_at), добавить индексы по `note_id` и `tags`.
-- [ ] Обновить `build.gradle` зависимостями Spring AI для векторного стора (`spring-ai-pgvector-store`, embedding starter), настроить бины `EmbeddingModel`, `VectorStore` и свойства `app.notes.*` (модель, размер эмбеддингов, topK, включение реранкинга).
-- [ ] Реализовать доменный слой заметок: `Note`/`NoteRepository`, `NoteService` с транзакционным сохранением записи в БД и синхронной записью `Document` в `PgVectorStore`, обработкой идемпотентности по хэшу контента, хранением `user_namespace`/`user_reference` и логированием ошибок embeddings.
-- [ ] Реализовать `NoteSearchService`: запрос векторного стора с fallback на полнотекстовый поиск, нормализация score, подготовка hook'ов для будущего `RerankModel` (интеграция через Spring AI) без включения в MVP.
-- [ ] Добавить REST-эндпоинты `/api/notes` (POST) и `/api/notes/search` (POST): DTO, валидация, OpenAPI, обработка ошибок и метаданных; закрыть endpoints авторизацией как у внутренних MCP-инструментов.
-- [ ] Обновить конфигурацию MCP каталога: записи Liquibase для `tool_schema_version`/`tool_definition` (`notes.save_note`, `notes.search_similar`), описания `app.mcp.catalog`, привязка к новому серверу, добавить bindings в `app.chat.research.tools` (execution-mode `MANUAL`).
+- [ ] Обновить конфигурацию MCP каталога: записи Liquibase для `tool_schema_version`/`tool_definition` (`notes.save_note`, `notes.search_similar`), описания `app.mcp.catalog`, добавить bindings в `app.chat.research.tools` (execution-mode `MANUAL`).
 
 ### Backend MCP (notes profile)
-- [ ] Добавить профиль `notes` в `McpApplication`: `@ComponentScan`, `@EnableConfigurationProperties(NotesBackendProperties)`, `NotesClientConfiguration` с `WebClient`/`Bearer` токеном и тайм-аутами.
-- [ ] Реализовать `NotesClient`: REST вызовы `/api/notes` и `/api/notes/search`, DTO, преобразование score/metadata, обработка ошибок (timeout, 4xx/5xx, сериализация).
-- [ ] Реализовать `NotesTools` с методами `notes.save_note` и `notes.search_similar`, валидацией входа (обязательные поля, лимиты topK), адаптацией параметров для будущего реранкинга; зарегистрировать `MethodToolCallbackProvider` и добавить unit/contract тесты.
+- [ ] Добавить профиль `notes` в `McpApplication`: `@ComponentScan`, `@EnableConfigurationProperties(NotesBackendProperties)`, настроить DataSource/`Liquibase` на общий Postgres.
+- [ ] Liquibase (backend-mcp): создать таблицы `note_entry` (UUID, title, content, tags jsonb, metadata jsonb, user_namespace, user_reference, source_channel, created_at/updated_at) и `note_vector_store` (note_id FK, embedding vector, embedding_provider, embedding_dimensions, metadata jsonb, created_at), индексы по `note_id`, `user_namespace`, `tags`.
+- [ ] Добавить зависимости Spring AI (`spring-ai-pgvector-store`, embedding starter) и сконфигурировать `EmbeddingModel`, `PgVectorStore`, параметры `notes.rag.*` (модель `openai/text-embedding-3-small`, размер эмбеддингов, topK, включение реранкинга).
+- [ ] Реализовать доменный слой (`NoteEntity`, репозитории, `NotesService`) с транзакционным сохранением заметки, записью `Document` в PgVectorStore, идемпотентностью по хэшу контента и логированием embedding ошибок.
+- [ ] Реализовать `NoteSearchService`: запрос векторного стора, нормализация score, подготовка hook'ов под будущий `RerankModel` (Spring AI); fallback на полнотекстовый поиск в MVP не требуется.
+- [ ] Реализовать `NotesTools` с методами `notes.save_note` и `notes.search_similar`, валидацией входа (обязательные поля, лимиты topK), настройкой реранкинг-параметров (пока отключены), регистрацией через `MethodToolCallbackProvider`.
 
 ### Инфраструктура и конфигурация
-- [ ] Добавить сервис `notes-mcp` в `docker-compose.yml`, настроить переменные `NOTES_BACKEND_BASE_URL`/`NOTES_BACKEND_API_TOKEN`, включить healthcheck; обновить backend переменные `NOTES_MCP_HTTP_*` и `spring.ai.mcp.client.streamable-http.connections.notes`.
-- [ ] Обновить `.env.example`, `application.yaml`/`application-prod.yaml` описанием embedding-провайдера, размеров векторов, параметров поиска/реранкинга; задокументировать миграции и необходимость расширения `pgvector`.
-- [ ] Настроить миграции/Testcontainers: ensure `pgvector` расширение создаётся в новых окружениях, добавить smoke-сценарий запуска notes-mcp в локальном compose.
+- [ ] Добавить сервис `notes-mcp` в `docker-compose.yml`, подключить общий Postgres/Redis (при необходимости), пробросить переменные `NOTES_MCP_DB_URL`/`NOTES_MCP_DB_USER`/`NOTES_MCP_DB_PASSWORD`, параметры embedding модели, API ключи; настроить healthcheck и логирование.
+- [ ] Обновить `.env.example`, `application.yaml`/`application-prod.yaml` и профили backend-mcp описанием embedding-провайдера, размеров векторов, параметров поиска/реранкинга; задокументировать миграции и расширение `pgvector`.
+- [ ] Настроить миграции/Testcontainers в backend-mcp: ensure `pgvector` расширение создаётся, добавить smoke-сценарий запуска notes-mcp в локальном compose и базовый health-check.
 
 ### Тестирование и документация
-- [ ] Интеграционные тесты backend: сохранение заметки, повторное сохранение (идемпотентность), поиск похожего (vector match + fallback), проверка сериализации метаданных и graceful деградации embeddings.
-- [ ] Контрактные тесты backend-mcp: успешный вызов обоих инструментов, таймауты, обработка 4xx/5xx, корректный mapping score и noteId.
-- [ ] Обновить документацию (`docs/infra.md`, `docs/guides/mcp-operators.md`, README): описание серверов, формат заметок, параметры поиска, процесс настройки embedding моделей, подсказки по эксплуатации и мониторингу (метрики insert/search).
-- [ ] Добавить observability: метрики (`notes_saved_total`, `notes_search_duration`, `notes_search_hit_rate`, `embedding_fail_total`) и алерты; задокументировать дешборды/алерты в enablement.
+- [ ] Интеграционные тесты notes-mcp: сохранение заметки, повторное сохранение (идемпотентность), поиск похожего (vector match + fallback), проверка сериализации метаданных и graceful деградации embeddings.
+- [ ] Контрактные тесты между backend ↔ notes-mcp (MCP): успешный вызов обоих инструментов, таймауты, обработка 4xx/5xx, корректный mapping score и noteId.
+- [ ] Обновить документацию (`docs/infra.md`, `docs/guides/mcp-operators.md`, README): описание сервиса notes-mcp, формат заметок, параметры поиска, процесс настройки embedding моделей, подсказки по эксплуатации и мониторингу (метрики insert/search).
