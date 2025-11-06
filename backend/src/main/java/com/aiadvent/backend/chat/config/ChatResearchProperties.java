@@ -3,6 +3,9 @@ package com.aiadvent.backend.chat.config;
 import com.aiadvent.backend.flow.agent.options.AgentInvocationOptions;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.util.StringUtils;
 
@@ -24,6 +27,7 @@ public class ChatResearchProperties {
 
   private List<ToolBindingProperties> tools = List.of();
   private List<String> defaultToolCodes = List.of();
+  private List<String> disabledToolNamespaces = List.of();
 
   public String getSystemPrompt() {
     return systemPrompt;
@@ -60,6 +64,36 @@ public class ChatResearchProperties {
   public void setDefaultToolCodes(List<String> defaultToolCodes) {
     this.defaultToolCodes =
         defaultToolCodes != null ? defaultToolCodes.stream().filter(StringUtils::hasText).map(String::trim).toList() : List.of();
+  }
+
+  public List<String> getDisabledToolNamespaces() {
+    return disabledToolNamespaces != null ? disabledToolNamespaces : List.of();
+  }
+
+  public void setDisabledToolNamespaces(List<String> disabledToolNamespaces) {
+    this.disabledToolNamespaces = normalizeDisabledNamespaces(disabledToolNamespaces);
+  }
+
+  public void setDisabledToolNamespaces(String disabledToolNamespaces) {
+    if (!StringUtils.hasText(disabledToolNamespaces)) {
+      this.disabledToolNamespaces = List.of();
+      return;
+    }
+    String[] parts = disabledToolNamespaces.split("[,;\\s]+");
+    this.disabledToolNamespaces = normalizeDisabledNamespaces(Arrays.asList(parts));
+  }
+
+  private List<String> normalizeDisabledNamespaces(Collection<String> namespaces) {
+    if (namespaces == null || namespaces.isEmpty()) {
+      return List.of();
+    }
+    LinkedHashSet<String> normalized = new LinkedHashSet<>();
+    for (String namespace : namespaces) {
+      if (StringUtils.hasText(namespace)) {
+        normalized.add(namespace.trim().toLowerCase());
+      }
+    }
+    return normalized.isEmpty() ? List.of() : List.copyOf(normalized);
   }
 
   public static class ToolBindingProperties {

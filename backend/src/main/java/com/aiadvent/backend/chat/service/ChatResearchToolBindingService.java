@@ -11,8 +11,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,8 +25,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatResearchToolBindingService {
 
-  private static final List<String> DISABLED_TOOL_NAMESPACES = List.of("agent_ops", "flow_ops", "insight");
-
   private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
   private final ToolDefinitionRepository toolDefinitionRepository;
@@ -34,6 +32,7 @@ public class ChatResearchToolBindingService {
   private final String systemPrompt;
   private final String structuredAdvice;
   private final boolean hasConfiguredPrompt;
+  private final List<String> disabledToolNamespaces;
 
   public ChatResearchToolBindingService(
       McpToolBindingService mcpToolBindingService,
@@ -43,6 +42,7 @@ public class ChatResearchToolBindingService {
     this.mcpToolBindingService = mcpToolBindingService;
     this.objectMapper = objectMapper;
     this.toolDefinitionRepository = toolDefinitionRepository;
+    this.disabledToolNamespaces = researchProperties.getDisabledToolNamespaces();
     Map<String, AgentInvocationOptions.ToolBinding> configured = new LinkedHashMap<>();
     for (ToolBindingProperties properties : researchProperties.getTools()) {
       AgentInvocationOptions.ToolBinding binding = toBinding(properties);
@@ -60,16 +60,13 @@ public class ChatResearchToolBindingService {
   public List<String> availableToolCodes() {
     LinkedHashSet<String> codes = new LinkedHashSet<>();
     if (!configuredBindings.isEmpty()) {
-      configuredBindings.keySet().stream()
-          .filter(code -> !isDisabledToolCode(code))
-          .forEach(codes::add);
+      configuredBindings.keySet().stream().filter(this::isAllowedToolCode).forEach(codes::add);
     }
     if (toolDefinitionRepository != null) {
       toolDefinitionRepository.findAllBySchemaVersionIsNotNull().stream()
           .map(ToolDefinition::getCode)
           .map(ChatResearchToolBindingService::normalizeCode)
-          .filter(ChatResearchToolBindingService::hasText)
-          .filter(code -> !isDisabledToolCode(code))
+          .filter(this::isAllowedToolCode)
           .sorted(Comparator.naturalOrder())
           .forEach(codes::add);
     }
@@ -85,7 +82,8 @@ public class ChatResearchToolBindingService {
     if (!hasText(userQuery)) {
       return ResearchContext.empty();
     }
-    List<String> selectionCodes = normalizeRequestedToolCodes(requestedToolCodes);
+    List<String> selectionCodes =
+        normalizeRequestedToolCodes(requestedToolCodes, disabledToolNamespaces);
     if (selectionCodes.isEmpty()) {
       return ResearchContext.empty();
     }
@@ -177,14 +175,15 @@ public class ChatResearchToolBindingService {
     return hasText(code) ? code.trim().toLowerCase(Locale.ROOT) : null;
   }
 
-  private static List<String> normalizeRequestedToolCodes(List<String> codes) {
+  private static List<String> normalizeRequestedToolCodes(
+      List<String> codes, List<String> disabledNamespaces) {
     if (codes == null || codes.isEmpty()) {
       return List.of();
     }
     LinkedHashSet<String> normalized = new LinkedHashSet<>();
     for (String code : codes) {
       String normalizedCode = normalizeCode(code);
-      if (hasText(normalizedCode) && !isDisabledToolCode(normalizedCode)) {
+      if (hasText(normalizedCode) && !isDisabledToolCode(normalizedCode, disabledNamespaces)) {
         normalized.add(normalizedCode);
       }
     }
@@ -213,11 +212,15 @@ public class ChatResearchToolBindingService {
     }
   }
 
-  private static boolean isDisabledToolCode(String code) {
-    if (!hasText(code)) {
+  private boolean isDisabledToolCode(String code) {
+    return isDisabledToolCode(code, disabledToolNamespaces);
+  }
+
+  private static boolean isDisabledToolCode(String code, List<String> disabledNamespaces) {
+    if (!hasText(code) || disabledNamespaces == null || disabledNamespaces.isEmpty()) {
       return false;
     }
-    for (String namespace : DISABLED_TOOL_NAMESPACES) {
+    for (String namespace : disabledNamespaces) {
       if (matchesNamespace(code, namespace)) {
         return true;
       }
@@ -241,5 +244,9 @@ public class ChatResearchToolBindingService {
       return separator == '.' || separator == '_' || separator == ':';
     }
     return false;
+  }
+
+  private boolean isAllowedToolCode(String code) {
+    return hasText(code) && !isDisabledToolCode(code);
   }
 }

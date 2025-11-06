@@ -185,6 +185,10 @@ app:
           execution-mode: MANUAL
       default-tool-codes:
         - perplexity_search
+      disabled-tool-namespaces:
+        - agent_ops
+        - flow_ops
+        - insight
     logging:
       model:
         enabled: ${CHAT_LOGGING_MODEL_ENABLED:true}
