@@ -361,6 +361,8 @@ public class AgentInvocationService {
       }
     }
 
+    applyNotesDefaults(payload, codes, overrides);
+
     if (codes.isEmpty()) {
       return ToolSelection.empty();
     }
@@ -394,6 +396,133 @@ public class AgentInvocationService {
 
   private JsonNode cloneNode(JsonNode node) {
     return node != null ? node.deepCopy() : objectMapper.nullNode();
+  }
+
+  private void applyNotesDefaults(
+      JsonNode payload, Set<String> toolCodes, Map<String, JsonNode> overrides) {
+    if (payload == null || payload.isNull() || toolCodes == null || toolCodes.isEmpty()) {
+      return;
+    }
+
+    if (toolCodes.stream().noneMatch(AgentInvocationService::isNotesToolCode)) {
+      return;
+    }
+
+    NotesIdentity identity = extractNotesIdentity(payload);
+    if (!identity.hasReference()) {
+      return;
+    }
+
+    for (String code : toolCodes) {
+      if (!isNotesToolCode(code)) {
+        continue;
+      }
+      JsonNode existing = overrides.get(code);
+      ObjectNode merged;
+      if (existing == null || existing.isNull() || !existing.isObject()) {
+        merged = objectMapper.createObjectNode();
+      } else {
+        merged = ((ObjectNode) existing).deepCopy();
+      }
+
+      boolean updated = false;
+      if (!merged.hasNonNull("userReference") && identity.userReference() != null) {
+        merged.put("userReference", identity.userReference());
+        updated = true;
+      }
+      if (!merged.hasNonNull("userNamespace") && identity.userNamespace() != null) {
+        merged.put("userNamespace", identity.userNamespace());
+        updated = true;
+      }
+      if (!merged.hasNonNull("sourceChannel") && identity.sourceChannel() != null) {
+        merged.put("sourceChannel", identity.sourceChannel());
+        updated = true;
+      }
+
+      if (updated) {
+        overrides.put(code, merged);
+      }
+    }
+  }
+
+  private NotesIdentity extractNotesIdentity(JsonNode payload) {
+    if (payload == null || payload.isNull()) {
+      return NotesIdentity.empty();
+    }
+
+    String namespace = findText(payload, "userNamespace");
+    if (!StringUtils.hasText(namespace)) {
+      namespace = findText(payload, "namespace");
+    }
+    if (!StringUtils.hasText(namespace)) {
+      namespace = findText(payload, "sourceChannel");
+    }
+
+    String reference = findText(payload, "userReference");
+    if (!StringUtils.hasText(reference)) {
+      reference = findText(payload, "userId");
+    }
+    if (!StringUtils.hasText(reference)) {
+      reference = findText(payload, "chatId");
+    }
+    if (!StringUtils.hasText(reference)) {
+      reference = findText(payload, "sessionId");
+    }
+
+    String sourceChannel = findText(payload, "sourceChannel");
+    if (!StringUtils.hasText(sourceChannel)) {
+      sourceChannel = namespace;
+    }
+
+    return new NotesIdentity(
+        normalizeNamespace(namespace), normalizeText(reference), normalizeNamespace(sourceChannel));
+  }
+
+  private String findText(JsonNode node, String fieldName) {
+    if (node == null || fieldName == null) {
+      return null;
+    }
+    JsonNode value = node.get(fieldName);
+    if (value != null) {
+      if (value.isTextual()) {
+        String text = value.asText();
+        return StringUtils.hasText(text) ? text.trim() : null;
+      }
+      if (value.isNumber() || value.isIntegralNumber()) {
+        return value.asText();
+      }
+    }
+    if (value == null && node.isObject()) {
+      JsonNode payloadNode = node.get("payload");
+      if (payloadNode != null && payloadNode.isObject()) {
+        return findText(payloadNode, fieldName);
+      }
+    }
+    return null;
+  }
+
+  private String normalizeText(String value) {
+    return StringUtils.hasText(value) ? value.trim() : null;
+  }
+
+  private String normalizeNamespace(String value) {
+    String normalized = normalizeText(value);
+    return normalized != null ? normalized.toLowerCase(Locale.ROOT) : null;
+  }
+
+  private static boolean isNotesToolCode(String code) {
+    return StringUtils.hasText(code) && code.toLowerCase(Locale.ROOT).startsWith("notes.");
+  }
+
+  private record NotesIdentity(String userNamespace, String userReference, String sourceChannel) {
+
+    static NotesIdentity empty() {
+      return new NotesIdentity(null, null, null);
+    }
+
+    boolean hasReference() {
+      return StringUtils.hasText(userReference);
+    }
   }
 
   private record ToolSelection(List<String> toolCodes, Map<String, JsonNode> requestOverrides) {
