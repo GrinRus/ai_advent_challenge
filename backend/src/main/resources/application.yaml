@@ -192,6 +192,15 @@ app:
         - code: notes.search_similar
           schema-version: 1
           execution-mode: MANUAL
+        - code: coding.generate_patch
+          schema-version: 1
+          execution-mode: AUTO
+        - code: coding.review_patch
+          schema-version: 1
+          execution-mode: AUTO
+        - code: coding.apply_patch_preview
+          schema-version: 1
+          execution-mode: MANUAL
       default-tool-codes:
         - perplexity_search
       disabled-tool-namespaces:

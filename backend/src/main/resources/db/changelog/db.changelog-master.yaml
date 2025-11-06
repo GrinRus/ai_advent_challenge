@@ -2995,3 +2995,38 @@ databaseChangeLog:
                 ('notes.search_similar', 'Notes · Search similar', 'Vector search over notes for the requesting user.', 'notes', 'MANUAL', '["notes","search"]'::jsonb, '["retrieval"]'::jsonb, 'Local MCP service', NULL, 45000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'notes.search_similar' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
+
+  - changeSet:
+      id: 0206-insert-coding-mcp-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('coding.generate_patch', 1,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"instructions":{"type":"string","minLength":1,"maxLength":4000},"targetPaths":{"type":"array","items":{"type":"string"},"maxItems":25},"forbiddenPaths":{"type":"array","items":{"type":"string"},"maxItems":25},"contextFiles":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","minLength":1},"maxBytes":{"type":"integer","minimum":1}},"required":["path"]},"maxItems":25}},"required":["workspaceId","instructions"]}'::jsonb,
+                 '{"type":"object","properties":{"patchId":{"type":"string"},"workspaceId":{"type":"string"},"summary":{"type":"string"},"diff":{"type":"string"},"annotations":{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"conflicts":{"type":"array","items":{"type":"string"}}},"required":["files","risks","conflicts"]},"usage":{"type":"object","properties":{"promptTokens":{"type":"integer","minimum":0},"completionTokens":{"type":"integer","minimum":0}},"required":["promptTokens","completionTokens"]},"createdAt":{"type":"string","format":"date-time"}},"required":["patchId","workspaceId","summary","diff","annotations","usage","createdAt"]}'::jsonb,
+                 'checksum-coding.generate_patch-v1', '[]'::jsonb, 'coding-mcp', 'coding.generate_patch', 'http-stream', 'coding'),
+                ('coding.review_patch', 1,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"patchId":{"type":"string","minLength":1},"focus":{"type":"array","items":{"type":"string","enum":["risks","tests","migration"]},"maxItems":3}},"required":["workspaceId","patchId"]}'::jsonb,
+                 '{"type":"object","properties":{"patchId":{"type":"string"},"status":{"type":"string","enum":["ok","warnings","blocked"]},"findings":{"type":"array","items":{"type":"string"}},"testingRecommendations":{"type":"array","items":{"type":"string"}},"nextSteps":{"type":"array","items":{"type":"string"}},"annotations":{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"conflicts":{"type":"array","items":{"type":"string"}}},"required":["files","risks","conflicts"]},"usage":{"type":"object","properties":{"promptTokens":{"type":"integer","minimum":0},"completionTokens":{"type":"integer","minimum":0}},"required":["promptTokens","completionTokens"]}},"required":["patchId","status","findings","testingRecommendations","nextSteps","annotations","usage"]}'::jsonb,
+                 'checksum-coding.review_patch-v1', '[]'::jsonb, 'coding-mcp', 'coding.review_patch', 'http-stream', 'coding'),
+                ('coding.apply_patch_preview', 1,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"patchId":{"type":"string","minLength":1},"commands":{"type":"array","items":{"type":"string"},"maxItems":10},"dryRun":{"type":"boolean"},"timeout":{"type":"string","minLength":1}},"required":["workspaceId","patchId"]}'::jsonb,
+                 '{"type":"object","properties":{"patchId":{"type":"string"},"workspaceId":{"type":"string"},"applied":{"type":"boolean"},"preview":{"type":"object","properties":{"summary":{"type":"string"},"warnings":{"type":"array","items":{"type":"string"}},"dryRunStatus":{"type":"string"},"modifiedFiles":{"type":"array","items":{"type":"string"}},"recommendations":{"type":"array","items":{"type":"string"}}},"required":["summary","warnings","dryRunStatus","modifiedFiles","recommendations"]},"gradle":{"type":"object","properties":{"executed":{"type":"boolean"},"runner":{"type":"string"},"exitCode":{"type":"integer"},"status":{"type":"string"},"logs":{"type":"array","items":{"type":"string"}}},"required":["executed","exitCode","status","logs"]},"annotations":{"type":"object","properties":{"files":{"type":"array","items":{"type":"string"}},"risks":{"type":"array","items":{"type":"string"}},"conflicts":{"type":"array","items":{"type":"string"}}},"required":["files","risks","conflicts"]},"usage":{"type":"object","properties":{"promptTokens":{"type":"integer","minimum":0},"completionTokens":{"type":"integer","minimum":0}},"required":["promptTokens","completionTokens"]},"metrics":{"type":"object"},"completedAt":{"type":"string","format":"date-time"}},"required":["patchId","workspaceId","applied","preview","gradle","annotations","usage","metrics","completedAt"]}'::jsonb,
+                 'checksum-coding.apply_patch_preview-v1', '[]'::jsonb, 'coding-mcp', 'coding.apply_patch_preview', 'http-stream', 'coding')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('coding.generate_patch', 'Coding · Generate patch', 'Generate patch diff suggestions within a prepared workspace.', 'coding', 'AUTO', '["coding","patch"]'::jsonb, '["generation"]'::jsonb, 'Local MCP service', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.generate_patch' AND version = 1)),
+                ('coding.review_patch', 'Coding · Review patch', 'Analyse generated patch and highlight risks, testing advice and next steps.', 'coding', 'AUTO', '["coding","review"]'::jsonb, '["analysis"]'::jsonb, 'Local MCP service', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.review_patch' AND version = 1)),
+                ('coding.apply_patch_preview', 'Coding · Apply patch preview', 'Apply patch preview inside sandboxed workspace and optionally run dry-run commands.', 'coding', 'MANUAL', '["coding","execution"]'::jsonb, '["dry-run"]'::jsonb, 'Local MCP service', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.apply_patch_preview' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;

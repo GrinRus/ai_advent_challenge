@@ -921,7 +921,7 @@
   - [x] Настроить валидации и ограничения: запрет абсолютных путей, ограничение контекстных чтений `WorkspaceAccessService`, лимиты prompt/completion, блокировка не-whitelisted команд.
   - [x] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска, usage), отражать статус dry-run и рекомендации.
   - [x] Отправлять метрики и аудит: `coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`, структурированные логи без секретов.
-- [ ] Зарегистрировать инструменты в MCP-каталоге (Liquibase), указать `execution-mode=MANUAL` для `coding.apply_patch_preview`.
+- [x] Зарегистрировать инструменты в MCP-каталоге (Liquibase), указать `execution-mode=MANUAL` для `coding.apply_patch_preview`.
 - [ ] Подключить инструменты к backend (chat/flow): bindings, ручные подтверждения dry-run в UI/Telegram, разблокировка GitHub write-инструментов после подтверждения.
 - [ ] Покрыть тестами: unit (валидации, Registry), интеграция (generate→review→apply с dry-run/timeout/invalid diff), smoke (apply без dry-run).
 - [ ] Обновить документацию (`docs/guides/mcp-operators.md`, `docs/infra.md`): UX assisted coding, политика подтверждений, лимиты, troubleshooting.
