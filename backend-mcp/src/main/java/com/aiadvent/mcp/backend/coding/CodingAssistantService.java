@@ -1,12 +1,20 @@
 package com.aiadvent.mcp.backend.coding;
 
+import com.aiadvent.mcp.backend.docker.DockerRunnerService;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunInput;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunResult;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerRunnerException;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService.WorkspaceFilePayload;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
@@ -14,10 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -36,13 +46,15 @@ class CodingAssistantService {
   private final WorkspaceFileService workspaceFileService;
   private final PatchRegistry patchRegistry;
   private final PatchGenerationService patchGenerationService;
+  private final DockerRunnerService dockerRunnerService;
 
   CodingAssistantService(
       TempWorkspaceService workspaceService,
       CodingAssistantProperties properties,
       WorkspaceFileService workspaceFileService,
       PatchRegistry patchRegistry,
-      PatchGenerationService patchGenerationService) {
+      PatchGenerationService patchGenerationService,
+      DockerRunnerService dockerRunnerService) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.workspaceFileService =
@@ -50,6 +62,8 @@ class CodingAssistantService {
     this.patchRegistry = Objects.requireNonNull(patchRegistry, "patchRegistry");
     this.patchGenerationService =
         Objects.requireNonNull(patchGenerationService, "patchGenerationService");
+    this.dockerRunnerService =
+        Objects.requireNonNull(dockerRunnerService, "dockerRunnerService");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -167,22 +181,134 @@ class CodingAssistantService {
     Objects.requireNonNull(request, "request");
     CodingPatch patch = requirePatch(request.workspaceId(), request.patchId());
     boolean dryRun = request.dryRun() == null ? true : request.dryRun();
+    if (!StringUtils.hasText(patch.diff())) {
+      throw new IllegalStateException("Patch diff is empty — nothing to apply");
+    }
+
+    TempWorkspaceService.Workspace workspace =
+        workspaceService
+            .findWorkspace(patch.workspaceId())
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "Unknown workspaceId: " + patch.workspaceId()));
+
+    Path workspacePath = workspace.path();
+
+    byte[] diffBytes = patch.diff().getBytes(StandardCharsets.UTF_8);
+    GitResult checkResult =
+        runGitCommand(
+            workspacePath,
+            diffBytes,
+            Duration.ofMinutes(1),
+            "git",
+            "apply",
+            "--check",
+            "--whitespace=nowarn",
+            "-");
+    List<String> warnings = new ArrayList<>();
+    if (checkResult.exitCode() != 0) {
+      warnings.add("git apply --check завершился с ошибкой: " + checkResult.stderr());
+      return new ApplyPatchPreviewResponse(
+          patch.patchId(),
+          patch.workspaceId(),
+          false,
+          new Preview("Патч не применён: обнаружены конфликты.", warnings),
+          new GradleResult(false, null, 0, "not_executed", List.of()),
+          Map.of("gitApplyCheck", "failed"),
+          Instant.now());
+    }
+
+    boolean applied = false;
+    String diffStat = "";
+    String diffNameStatus = "";
+    GradleResult gradleResult = new GradleResult(false, null, 0, "not_executed", List.of());
+    Map<String, Object> metrics = new java.util.LinkedHashMap<>();
+    metrics.put("gitApplyCheck", "success");
+
+    Instant started = Instant.now();
+    try {
+      if (dryRun) {
+        GitResult applyResult =
+            runGitCommand(
+                workspacePath,
+                diffBytes,
+                Duration.ofMinutes(2),
+                "git",
+                "apply",
+                "--whitespace=nowarn",
+                "-");
+        if (applyResult.exitCode() != 0) {
+          warnings.add("git apply завершился с ошибкой: " + applyResult.stderr());
+          return new ApplyPatchPreviewResponse(
+              patch.patchId(),
+              patch.workspaceId(),
+              false,
+              new Preview("Патч не применён: git apply завершился с ошибкой.", warnings),
+              gradleResult,
+              metrics,
+              Instant.now());
+        }
+        applied = true;
+        diffStat =
+            runGitCommand(
+                    workspacePath, null, Duration.ofSeconds(30), "git", "diff", "--stat")
+                .stdout();
+        diffNameStatus =
+            runGitCommand(
+                    workspacePath, null, Duration.ofSeconds(30), "git", "diff", "--name-status")
+                .stdout();
+        metrics.put("filesTouched", extractFilesTouched(diffNameStatus));
+
+        if (request.commands() != null
+            && !request.commands().isEmpty()
+            && !request.commands().stream().allMatch(String::isBlank)) {
+          gradleResult =
+              executeDryRunCommands(
+                  patch.workspaceId(), request.commands(), request.timeout(), warnings, metrics);
+        }
+        patchRegistry.markDryRun(patch.workspaceId(), patch.patchId(), true);
+      } else {
+        warnings.add("Dry-run отключён в запросе — git apply не выполнялся.");
+        metrics.put("dryRun", "skipped");
+      }
+    } finally {
+      if (applied) {
+        runGitCommand(
+            workspacePath,
+            diffBytes,
+            Duration.ofMinutes(1),
+            "git",
+            "apply",
+            "--reverse",
+            "--whitespace=nowarn",
+            "-");
+      }
+    }
+
+    List<String> previewWarnings = new ArrayList<>(warnings);
+    if (StringUtils.hasText(diffNameStatus)) {
+      previewWarnings.add("Изменённые файлы:\n" + diffNameStatus.strip());
+    }
+    String previewSummary =
+        dryRun
+            ? (StringUtils.hasText(diffStat)
+                ? "Патч применён в preview. Статистика:\n" + diffStat.strip()
+                : "Патч применён в preview.")
+            : "Dry-run пропущен по запросу.";
+
     Preview preview =
-        new Preview(
-            "Dry-run "
-                + (dryRun ? "пока не выполняется" : "пропущен")
-                + "; патч сохранён без применения.",
-            List.of());
-    GradleResult gradle =
-        new GradleResult(
-            false, null, 0, "not_executed", List.of("Gradle проверки не запускались"));
+        new Preview(previewSummary, previewWarnings);
+
+    metrics.put("durationMs", Duration.between(started, Instant.now()).toMillis());
+
     return new ApplyPatchPreviewResponse(
         patch.patchId(),
         patch.workspaceId(),
-        false,
+        dryRun && warnings.isEmpty(),
         preview,
-        gradle,
-        Map.of("status", "stub"),
+        gradleResult,
+        metrics,
         Instant.now());
   }
 
@@ -390,6 +516,160 @@ class CodingAssistantService {
 
     return new PatchAnnotations(files, risks, conflicts);
   }
+
+  private GradleResult executeDryRunCommands(
+      String workspaceId,
+      List<String> commands,
+      String timeout,
+      List<String> warnings,
+      Map<String, Object> metrics) {
+    Queue<String> queue = new ArrayDeque<>();
+    commands.stream().filter(StringUtils::hasText).map(String::trim).forEach(queue::add);
+    if (queue.isEmpty()) {
+      return new GradleResult(false, null, 0, "not_executed", List.of());
+    }
+    String command = queue.poll();
+    List<String> tokens = List.of(command.split("\\s+"));
+    if (tokens.isEmpty()) {
+      return new GradleResult(false, null, 0, "not_executed", List.of());
+    }
+
+    String runner = tokens.get(0);
+    if (!runner.equals("./gradlew") && !runner.equals("gradle")) {
+      warnings.add("Команда \"" + command + "\" не поддерживается в preview и была пропущена.");
+      return new GradleResult(false, null, 0, "not_supported", List.of());
+    }
+
+    List<String> tasks = tokens.subList(1, tokens.size());
+    if (tasks.isEmpty()) {
+      warnings.add("Команда Gradle не содержит задач — пропуск запуска.");
+      return new GradleResult(false, runner, 0, "not_executed", List.of());
+    }
+
+    Duration timeoutDuration = parseTimeout(timeout, Duration.ofMinutes(10));
+    DockerGradleRunInput input =
+        new DockerGradleRunInput(
+            workspaceId, null, tasks, List.of(), Map.of(), timeoutDuration);
+    try {
+      DockerGradleRunResult result = dockerRunnerService.runGradle(input);
+      metrics.put("dockerCommand", result.dockerCommand());
+      metrics.put("dockerDurationMs", result.duration().toMillis());
+      return new GradleResult(
+          true,
+          result.runnerExecutable(),
+          result.exitCode(),
+          result.status(),
+          mergeLogs(result.stdout(), result.stderr()));
+    } catch (DockerRunnerException ex) {
+      warnings.add("Запуск Docker runner завершился ошибкой: " + ex.getMessage());
+      return new GradleResult(false, runner, -1, "failed", List.of());
+    }
+  }
+
+  private Duration parseTimeout(String timeout, Duration defaultValue) {
+    if (!StringUtils.hasText(timeout)) {
+      return defaultValue;
+    }
+    try {
+      return Duration.parse(timeout.trim());
+    } catch (Exception ex) {
+      return defaultValue;
+    }
+  }
+
+  private List<String> mergeLogs(List<String> stdout, List<String> stderr) {
+    List<String> merged = new ArrayList<>();
+    if (stdout != null) {
+      merged.addAll(stdout);
+    }
+    if (stderr != null && !stderr.isEmpty()) {
+      merged.add("--- stderr ---");
+      merged.addAll(stderr);
+    }
+    return merged.isEmpty() ? List.of() : merged;
+  }
+
+  private List<String> extractFilesTouched(String diffNameStatus) {
+    if (!StringUtils.hasText(diffNameStatus)) {
+      return List.of();
+    }
+    return diffNameStatus.lines()
+        .map(String::trim)
+        .filter(line -> !line.isEmpty())
+        .map(line -> line.replace("\t", " "))
+        .collect(Collectors.toList());
+  }
+
+  private GitResult runGitCommand(
+      Path workspacePath, byte[] stdin, Duration timeout, String... command) {
+    ProcessBuilder builder = new ProcessBuilder(command);
+    builder.directory(workspacePath.toFile());
+    builder.redirectErrorStream(false);
+    Process process;
+    try {
+      process = builder.start();
+    } catch (IOException ex) {
+      throw new IllegalStateException("Failed to start git process", ex);
+    }
+    if (stdin != null && stdin.length > 0) {
+      try (OutputStream output = process.getOutputStream()) {
+        output.write(stdin);
+        output.flush();
+      } catch (IOException ex) {
+        process.destroyForcibly();
+        throw new IllegalStateException("Failed to send data to git process", ex);
+      }
+    } else {
+      try {
+        process.getOutputStream().close();
+      } catch (IOException ignored) {
+      }
+    }
+    StreamCollector stdout = new StreamCollector();
+    StreamCollector stderr = new StreamCollector();
+    Thread stdoutThread = new Thread(() -> stdout.collect(process.getInputStream()));
+    Thread stderrThread = new Thread(() -> stderr.collect(process.getErrorStream()));
+    stdoutThread.start();
+    stderrThread.start();
+    boolean finished;
+    try {
+      finished = process.waitFor(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+      process.destroyForcibly();
+      throw new IllegalStateException("git command interrupted", ex);
+    }
+    if (!finished) {
+      process.destroyForcibly();
+      throw new IllegalStateException("git command timed out: " + String.join(" ", command));
+    }
+    try {
+      stdoutThread.join();
+      stderrThread.join();
+    } catch (InterruptedException ex) {
+      Thread.currentThread().interrupt();
+    }
+    return new GitResult(process.exitValue(), stdout.content(), stderr.content());
+  }
+
+  private static class StreamCollector {
+    private final StringBuilder buffer = new StringBuilder();
+
+    void collect(java.io.InputStream stream) {
+      try (stream) {
+        byte[] data = stream.readAllBytes();
+        buffer.append(new String(data, StandardCharsets.UTF_8));
+      } catch (IOException ex) {
+        buffer.append(ex.getMessage());
+      }
+    }
+
+    String content() {
+      return buffer.toString();
+    }
+  }
+
+  private record GitResult(int exitCode, String stdout, String stderr) {}
 
   private EnumSet<ReviewFocus> resolveFocus(List<String> focus) {
     if (focus == null || focus.isEmpty()) {

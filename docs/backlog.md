@@ -917,7 +917,7 @@
 - [ ] Реализовать инструменты:
   - [x] `coding.generate_patch` — валидация путей, лимиты diff ≤ 256 КБ и ≤ 25 файлов, сохранение diff/summary/annotations в `PatchRegistry`.
   - [x] `coding.review_patch` — поддержка фокусов (`risks|tests|migration`), проверка статуса патча, возврат рекомендаций и следующего шага.
-  - `coding.apply_patch_preview` — инструмент `MANUAL`: `git apply` внутри workspace, dry-run через `DockerRunnerService` (whitelist Gradle/npm/pytest), маскирование логов, base64 для бинарных артефактов.
+  - [x] `coding.apply_patch_preview` — инструмент `MANUAL`: `git apply` внутри workspace, dry-run через `DockerRunnerService` (whitelist Gradle/npm/pytest), маскирование логов, base64 для бинарных артефактов.
 - [ ] Настроить валидации и ограничения: запрет абсолютных путей, ограничение контекстных чтений `WorkspaceAccessService`, лимиты prompt/completion, блокировка не-whitelisted команд.
 - [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска, usage), отражать статус dry-run и рекомендации.
 - [ ] Отправлять метрики и аудит: `coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`, структурированные логи без секретов.
