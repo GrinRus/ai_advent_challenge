@@ -28,12 +28,19 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.lang.Nullable;
 
 @Service
 class CodingAssistantService {
 
+  private static final Logger log = LoggerFactory.getLogger(CodingAssistantService.class);
   private static final Pattern DIFF_FILE_PATTERN =
       Pattern.compile("^diff --git a/(.+) b/(.+)$", Pattern.MULTILINE);
   private static final Pattern BINARY_FILES_PATTERN =
@@ -47,6 +54,10 @@ class CodingAssistantService {
   private final PatchRegistry patchRegistry;
   private final PatchGenerationService patchGenerationService;
   private final DockerRunnerService dockerRunnerService;
+  private final MeterRegistry meterRegistry;
+  private final Counter patchAttemptCounter;
+  private final Counter patchSuccessCounter;
+  private final Counter patchCompileFailCounter;
 
   CodingAssistantService(
       TempWorkspaceService workspaceService,
@@ -54,7 +65,8 @@ class CodingAssistantService {
       WorkspaceFileService workspaceFileService,
       PatchRegistry patchRegistry,
       PatchGenerationService patchGenerationService,
-      DockerRunnerService dockerRunnerService) {
+      DockerRunnerService dockerRunnerService,
+      @Nullable MeterRegistry meterRegistry) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.workspaceFileService =
@@ -64,6 +76,15 @@ class CodingAssistantService {
         Objects.requireNonNull(patchGenerationService, "patchGenerationService");
     this.dockerRunnerService =
         Objects.requireNonNull(dockerRunnerService, "dockerRunnerService");
+    MeterRegistry registry = meterRegistry;
+    if (registry == null) {
+      registry = new SimpleMeterRegistry();
+    }
+    this.meterRegistry = registry;
+    this.patchAttemptCounter = this.meterRegistry.counter("coding_patch_attempt_total");
+    this.patchSuccessCounter = this.meterRegistry.counter("coding_patch_success_total");
+    this.patchCompileFailCounter =
+        this.meterRegistry.counter("coding_patch_compile_fail_total");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -184,6 +205,7 @@ class CodingAssistantService {
     if (!StringUtils.hasText(patch.diff())) {
       throw new IllegalStateException("Patch diff is empty — nothing to apply");
     }
+    patchAttemptCounter.increment();
 
     TempWorkspaceService.Workspace workspace =
         workspaceService
@@ -266,7 +288,11 @@ class CodingAssistantService {
           gradleResult =
               executeDryRunCommands(
                   patch.workspaceId(), request.commands(), request.timeout(), warnings, metrics);
+          if (!gradleResult.executed() || gradleResult.exitCode() != 0) {
+            patchCompileFailCounter.increment();
+          }
         }
+        patchSuccessCounter.increment();
         patchRegistry.markDryRun(patch.workspaceId(), patch.patchId(), true);
       } else {
         warnings.add("Dry-run отключён в запросе — git apply не выполнялся.");
@@ -301,6 +327,14 @@ class CodingAssistantService {
         new Preview(previewSummary, previewWarnings);
 
     metrics.put("durationMs", Duration.between(started, Instant.now()).toMillis());
+
+    log.info(
+        "coding.apply_patch_preview completed: patchId={}, workspaceId={}, dryRun={}, gitWarnings={}, gradleStatus={}",
+        patch.patchId(),
+        patch.workspaceId(),
+        dryRun,
+        !warnings.isEmpty(),
+        gradleResult.status());
 
     return new ApplyPatchPreviewResponse(
         patch.patchId(),
@@ -562,6 +596,7 @@ class CodingAssistantService {
           mergeLogs(result.stdout(), result.stderr()));
     } catch (DockerRunnerException ex) {
       warnings.add("Запуск Docker runner завершился ошибкой: " + ex.getMessage());
+      patchCompileFailCounter.increment();
       return new GradleResult(false, runner, -1, "failed", List.of());
     }
   }
