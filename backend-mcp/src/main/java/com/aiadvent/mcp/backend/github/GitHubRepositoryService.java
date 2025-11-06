@@ -46,11 +46,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import java.util.regex.Pattern;
 import org.kohsuke.github.GHCheckRun;
 import org.kohsuke.github.GHCommit;
 import org.kohsuke.github.GHCommitStatus;
 import org.kohsuke.github.GHContent;
 import org.kohsuke.github.GHDirection;
+import org.kohsuke.github.GHCompare;
 import org.kohsuke.github.GHIssueComment;
 import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHLabel;
@@ -70,6 +72,7 @@ import org.kohsuke.github.GHTeam;
 import org.kohsuke.github.GHTree;
 import org.kohsuke.github.GHTreeEntry;
 import org.kohsuke.github.GHUser;
+import org.kohsuke.github.GHOrganization;
 import org.kohsuke.github.HttpException;
 import org.kohsuke.github.PagedIterable;
 import org.slf4j.Logger;
@@ -92,6 +95,9 @@ public class GitHubRepositoryService {
   private static final int COMMENT_DEDUP_LIMIT = 50;
   private static final int REVIEW_DEDUP_LIMIT = 20;
   private static final int MAX_API_ERROR_DETAIL = 500;
+  private static final int MAX_BRANCH_NAME_LENGTH = 255;
+  private static final Pattern INVALID_BRANCH_PATTERN = Pattern.compile("[\\s~^:?*\\[\\\\]");
+  private static final Pattern INVALID_BRANCH_COMPONENT = Pattern.compile("(^\\.|\\.\\.|@\\{|//|\\.lock$)");
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private final GitHubClientExecutor executor;
@@ -306,6 +312,849 @@ public class GitHubRepositoryService {
         data.statuses(),
         data.truncatedCheckRuns(),
         data.truncatedStatuses());
+  }
+
+  CreateBranchResult createBranch(CreateBranchInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    String branchName = validateBranchName(input.branchName());
+    TempWorkspaceService.Workspace workspace = requireWorkspace(input.workspaceId());
+    ensureWorkspaceMatches(workspace, repository);
+
+    Path workspacePath = workspace.path();
+    String token = tokenManager.currentToken();
+    String authHeader = authorizationHeader(token);
+    Duration gitTimeout = Duration.ofSeconds(60);
+    String sourceSha =
+        resolveSourceSha(workspace, input.sourceSha(), workspacePath, authHeader, token);
+
+    executor.executeVoid(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            ensurePushAccess(repo, repository);
+            ensureRemoteBranchAbsent(repo, branchName, repository);
+            repo.createRef("refs/heads/" + branchName, sourceSha);
+          } catch (HttpException ex) {
+            if (ex.getResponseCode() == 422 || ex.getResponseCode() == 409) {
+              throw new GitHubClientException(
+                  "Branch %s already exists in %s"
+                      .formatted(branchName, repository.fullName()),
+                  ex);
+            }
+            throw new GitHubClientException(
+                "Failed to create branch %s in %s (HTTP %d)"
+                    .formatted(branchName, repository.fullName(), ex.getResponseCode()),
+                ex);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to create branch %s in %s"
+                    .formatted(branchName, repository.fullName()),
+                ex);
+          }
+        });
+
+    runGitCommand(
+        workspacePath, gitTimeout, authHeader, token, "git", "fetch", "--prune", "origin");
+    if (branchExistsLocally(workspacePath, branchName)) {
+      throw new IllegalStateException(
+          "Local branch already exists: " + branchName + " (workspace " + workspace.workspaceId() + ")");
+    }
+    runGitCommand(
+        workspacePath,
+        gitTimeout,
+        authHeader,
+        token,
+        "git",
+        "checkout",
+        "-b",
+        branchName,
+        sourceSha);
+
+    Instant createdAt = Instant.now();
+    log.info(
+        "github.write.create_branch success repo={} branch={} workspace={} sourceSha={} localHead={}",
+        repository.fullName(),
+        branchName,
+        workspace.workspaceId(),
+        sourceSha,
+        sourceSha);
+    return new CreateBranchResult(
+        repository,
+        workspace.workspaceId(),
+        branchName,
+        "refs/heads/" + branchName,
+        sourceSha,
+        sourceSha,
+        createdAt);
+  }
+
+  CommitWorkspaceDiffResult commitWorkspaceDiff(CommitWorkspaceDiffInput input) {
+    Objects.requireNonNull(input, "input");
+    TempWorkspaceService.Workspace workspace = requireWorkspace(input.workspaceId());
+    RepositoryRef repository = repositoryFromWorkspace(workspace);
+    String branchName = validateBranchName(input.branchName());
+    CommitAuthor author = validateAuthor(input.author());
+    String commitMessage = sanitizeCommitMessage(input.commitMessage());
+
+    Path workspacePath = workspace.path();
+    String token = tokenManager.currentToken();
+    String authHeader = authorizationHeader(token);
+    Duration gitTimeout = Duration.ofSeconds(120);
+
+    ensureLocalBranchExists(workspacePath, branchName, authHeader, token);
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "checkout", branchName);
+
+    ProcessResult statusResult =
+        runGitCommand(
+            workspacePath, gitTimeout, authHeader, token, "git", "status", "--porcelain=1");
+    if (!StringUtils.hasText(statusResult.output())) {
+      throw new IllegalStateException(
+          "Workspace "
+              + workspace.workspaceId()
+              + " has no staged changes to commit (branch "
+              + branchName
+              + ")");
+    }
+
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "add", "--all");
+
+    ProcessResult diffResult =
+        runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "diff", "--cached");
+    ensureDiffWithinLimits(repository, branchName, diffResult.output());
+
+    ProcessResult nameStatusResult =
+        runGitCommand(
+            workspacePath,
+            gitTimeout,
+            authHeader,
+            token,
+            "git",
+            "diff",
+            "--cached",
+            "--name-status");
+    List<CommitFileChange> files = parseCommitFiles(nameStatusResult.output());
+
+    ProcessResult numstatResult =
+        runGitCommand(
+            workspacePath,
+            gitTimeout,
+            authHeader,
+            token,
+            "git",
+            "diff",
+            "--cached",
+            "--numstat");
+    CommitStatistics statistics = summarizeNumstat(numstatResult.output());
+
+    int maxFiles =
+        Optional.ofNullable(properties.getCommitMaxFiles()).filter(limit -> limit > 0).orElse(200);
+    if (files.size() > maxFiles) {
+      throw new IllegalStateException(
+          "Commit affects %d files, exceeding configured limit %d".formatted(files.size(), maxFiles));
+    }
+
+    runGitCommand(
+        workspacePath,
+        gitTimeout,
+        authHeader,
+        token,
+        "git",
+        "-c",
+        "user.name=" + author.name(),
+        "-c",
+        "user.email=" + author.email(),
+        "commit",
+        "--message",
+        commitMessage,
+        "--author",
+        "%s <%s>".formatted(author.name(), author.email()));
+
+    ProcessResult headResult =
+        runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
+    String commitSha = headResult.output().trim();
+    workspaceService.updateWorkspace(workspace.workspaceId(), null, commitSha, null);
+
+    Instant committedAt = Instant.now();
+    log.info(
+        "github.write.commit_workspace_diff success repo={} branch={} workspace={} commit={} files={} additions={} deletions={}",
+        repository.fullName(),
+        branchName,
+        workspace.workspaceId(),
+        commitSha,
+        statistics.filesChanged(),
+        statistics.additions(),
+        statistics.deletions());
+    return new CommitWorkspaceDiffResult(
+        repository,
+        workspace.workspaceId(),
+        branchName,
+        commitSha,
+        statistics.filesChanged(),
+        statistics.additions(),
+        statistics.deletions(),
+        files,
+        committedAt);
+  }
+
+  PushBranchResult pushBranch(PushBranchInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    TempWorkspaceService.Workspace workspace = requireWorkspace(input.workspaceId());
+    ensureWorkspaceMatches(workspace, repository);
+    String branchName = validateBranchName(input.branchName());
+    if (Boolean.TRUE.equals(input.force())) {
+      throw new IllegalArgumentException("Force push is disabled for safety reasons");
+    }
+
+    Path workspacePath = workspace.path();
+    String token = tokenManager.currentToken();
+    String authHeader = authorizationHeader(token);
+    Duration gitTimeout = Duration.ofSeconds(120);
+
+    ensureLocalBranchExists(workspacePath, branchName, authHeader, token);
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "checkout", branchName);
+
+    ProcessResult statusResult =
+        runGitCommand(
+            workspacePath, gitTimeout, authHeader, token, "git", "status", "--porcelain=1");
+    if (StringUtils.hasText(statusResult.output())) {
+      throw new IllegalStateException(
+          "Workspace "
+              + workspace.workspaceId()
+              + " contains uncommitted changes on branch "
+              + branchName
+              + ". Commit or stash them before push.");
+    }
+
+    int commitsAhead = computeAheadCount(workspacePath, branchName, authHeader, token);
+    runGitCommand(
+        workspacePath,
+        gitTimeout,
+        authHeader,
+        token,
+        "git",
+        "push",
+        "--set-upstream",
+        "origin",
+        branchName);
+
+    String remoteHead =
+        executor.execute(
+            github -> {
+              try {
+                GHRepository repo = github.getRepository(repository.fullName());
+                ensurePushAccess(repo, repository);
+                GHRef ref = repo.getRef("heads/" + branchName);
+                return ref.getObject().getSha();
+              } catch (IOException ex) {
+                throw new GitHubClientException(
+                    "Failed to read head for branch %s in %s"
+                        .formatted(branchName, repository.fullName()),
+                    ex);
+              }
+            });
+
+    ProcessResult headResult =
+        runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
+    String localHead = headResult.output().trim();
+
+    Instant pushedAt = Instant.now();
+    log.info(
+        "github.write.push_branch success repo={} branch={} workspace={} commits={} localHead={} remoteHead={}",
+        repository.fullName(),
+        branchName,
+        workspace.workspaceId(),
+        commitsAhead,
+        localHead,
+        remoteHead);
+    return new PushBranchResult(
+        repository,
+        workspace.workspaceId(),
+        branchName,
+        localHead,
+        remoteHead,
+        commitsAhead,
+        pushedAt);
+  }
+
+  OpenPullRequestResult openPullRequest(OpenPullRequestInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    String headBranch = validateBranchName(input.headBranch());
+    String baseBranch = validateBranchName(input.baseBranch());
+    if (!StringUtils.hasText(input.title())) {
+      throw new IllegalArgumentException("title must not be blank");
+    }
+    if (headBranch.equals(baseBranch)) {
+      throw new IllegalArgumentException("headBranch must not be equal to baseBranch");
+    }
+    String body = input.body() != null ? input.body() : "";
+    boolean draft = Boolean.TRUE.equals(input.draft());
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            ensurePushAccess(repo, repository);
+            GHRef headRef = repo.getRef("heads/" + headBranch);
+            GHRef baseRef = repo.getRef("heads/" + baseBranch);
+
+            enforcePullRequestLimits(repo, baseRef, headRef);
+
+            String headSpec = repository.owner() + ":" + headBranch;
+            GHPullRequest pullRequest =
+                repo.createPullRequest(input.title().trim(), headSpec, baseBranch, body, draft);
+
+            if (input.reviewers() != null && !input.reviewers().isEmpty()) {
+              List<GHUser> reviewers = resolveReviewers(github, input.reviewers());
+              if (!reviewers.isEmpty()) {
+                pullRequest.requestReviewers(reviewers);
+              }
+            }
+            if (input.teamReviewers() != null && !input.teamReviewers().isEmpty()) {
+              List<GHTeam> teams =
+                  resolveTeamReviewers(github, repository, repo, input.teamReviewers());
+              if (!teams.isEmpty()) {
+                pullRequest.requestTeamReviewers(teams);
+              }
+            }
+
+            Instant createdAt =
+                pullRequest.getCreatedAt() != null
+                    ? pullRequest.getCreatedAt().toInstant()
+                    : Instant.now();
+            String headSha =
+                pullRequest.getHead() != null
+                        && pullRequest.getHead().getSha() != null
+                        && !pullRequest.getHead().getSha().isBlank()
+                    ? pullRequest.getHead().getSha()
+                    : headRef.getObject().getSha();
+            String baseSha =
+                pullRequest.getBase() != null
+                        && pullRequest.getBase().getSha() != null
+                        && !pullRequest.getBase().getSha().isBlank()
+                    ? pullRequest.getBase().getSha()
+                    : baseRef.getObject().getSha();
+
+            log.info(
+                "github.write.open_pull_request success repo={} pr={} head={} base={} headSha={} baseSha={} draft={}",
+                repository.fullName(),
+                pullRequest.getNumber(),
+                headBranch,
+                baseBranch,
+                headSha,
+                baseSha,
+                draft);
+            return new OpenPullRequestResult(
+                repository,
+                pullRequest.getNumber(),
+                pullRequest.getHtmlUrl() != null ? pullRequest.getHtmlUrl().toString() : null,
+                headSha,
+                baseSha,
+                createdAt);
+          } catch (HttpException ex) {
+            throw new GitHubClientException(
+                "Failed to open pull request for %s (HTTP %d)"
+                    .formatted(repository.fullName(), ex.getResponseCode()),
+                ex);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to open pull request for " + repository.fullName(), ex);
+          }
+        });
+  }
+
+  ApprovePullRequestResult approvePullRequest(ApprovePullRequestInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int number =
+        Optional.ofNullable(input.number())
+            .filter(value -> value > 0)
+            .orElseThrow(() -> new IllegalArgumentException("pullRequest number must be positive"));
+    String body = input.body();
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            ensurePushAccess(repo, repository);
+            GHPullRequest pullRequest = repo.getPullRequest(number);
+            GHPullRequestReviewBuilder builder = pullRequest.createReview().event(GHPullRequestReviewEvent.APPROVE);
+            if (StringUtils.hasText(body)) {
+              builder.body(body.trim());
+            }
+            GHPullRequestReview review = builder.create();
+            Instant submittedAt =
+                review.getSubmittedAt() != null
+                    ? review.getSubmittedAt().toInstant()
+                    : Instant.now();
+            log.info(
+                "github.write.approve_pull_request success repo={} pr={} reviewId={} state={}",
+                repository.fullName(),
+                number,
+                review.getId(),
+                review.getState());
+            return new ApprovePullRequestResult(
+                repository,
+                number,
+                review.getId(),
+                review.getState() != null ? review.getState().name() : GHPullRequestReviewState.APPROVED.name(),
+                submittedAt);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to approve pull request %s#%d"
+                    .formatted(repository.fullName(), number),
+                ex);
+          }
+        });
+  }
+
+  MergePullRequestResult mergePullRequest(MergePullRequestInput input) {
+    Objects.requireNonNull(input, "input");
+    RepositoryRef repository = normalizeRepository(input.repository());
+    int number =
+        Optional.ofNullable(input.number())
+            .filter(value -> value > 0)
+            .orElseThrow(() -> new IllegalArgumentException("pullRequest number must be positive"));
+    MergeMethod method = Optional.ofNullable(input.method()).orElse(MergeMethod.MERGE);
+    String commitTitle = input.commitTitle();
+    String commitMessage = input.commitMessage();
+
+    return executor.execute(
+        github -> {
+          try {
+            GHRepository repo = github.getRepository(repository.fullName());
+            ensurePushAccess(repo, repository);
+            GHPullRequest pullRequest = repo.getPullRequest(number);
+            pullRequest.refresh();
+            Boolean mergeable = pullRequest.getMergeable();
+            String mergeableState = pullRequest.getMergeableState();
+            if (mergeable != null && !mergeable) {
+              throw new IllegalStateException(
+                  "Pull request %s#%d is not mergeable (state=%s)"
+                      .formatted(repository.fullName(), number, mergeableState));
+            }
+
+            GHPullRequest.MergeMethod ghMergeMethod = mapMergeMethod(method);
+            String title =
+                StringUtils.hasText(commitTitle)
+                    ? commitTitle.trim()
+                    : Optional.ofNullable(pullRequest.getTitle()).orElse("Merge pull request #" + number);
+            String message = commitMessage != null ? commitMessage : "";
+            pullRequest.merge(title, message, ghMergeMethod);
+
+            pullRequest.refresh();
+            boolean merged = pullRequest.isMerged();
+            String mergeSha =
+                merged && pullRequest.getMergeCommitSha() != null
+                    ? pullRequest.getMergeCommitSha()
+                    : null;
+            Instant mergedAt =
+                pullRequest.getMergedAt() != null
+                    ? pullRequest.getMergedAt().toInstant()
+                    : Instant.now();
+            String state =
+                pullRequest.getMergeableState() != null ? pullRequest.getMergeableState() : "unknown";
+
+            log.info(
+                "github.write.merge_pull_request success repo={} pr={} method={} merged={} mergeSha={} state={}",
+                repository.fullName(),
+                number,
+                method,
+                merged,
+                mergeSha,
+                state);
+
+            return new MergePullRequestResult(
+                repository, number, merged, mergeSha, state, mergedAt);
+          } catch (IOException ex) {
+            throw new GitHubClientException(
+                "Failed to merge pull request %s#%d"
+                    .formatted(repository.fullName(), number),
+                ex);
+          }
+        });
+  }
+
+  private TempWorkspaceService.Workspace requireWorkspace(String workspaceId) {
+    if (!StringUtils.hasText(workspaceId)) {
+      throw new IllegalArgumentException("workspaceId must not be blank");
+    }
+    return workspaceService
+        .findWorkspace(workspaceId.trim())
+        .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+  }
+
+  private RepositoryRef repositoryFromWorkspace(TempWorkspaceService.Workspace workspace) {
+    String fullName = workspace.repositoryFullName();
+    if (!StringUtils.hasText(fullName) || !fullName.contains("/")) {
+      throw new IllegalStateException(
+          "Workspace %s is missing repository metadata".formatted(workspace.workspaceId()));
+    }
+    String[] parts = fullName.split("/", 2);
+    String ref = StringUtils.hasText(workspace.ref()) ? workspace.ref() : "heads/main";
+    return new RepositoryRef(parts[0], parts[1], ref);
+  }
+
+  private void ensureWorkspaceMatches(
+      TempWorkspaceService.Workspace workspace, RepositoryRef repository) {
+    String expected = repository.owner() + "/" + repository.name();
+    if (!expected.equalsIgnoreCase(workspace.repositoryFullName())) {
+      throw new IllegalArgumentException(
+          "Workspace "
+              + workspace.workspaceId()
+              + " belongs to "
+              + workspace.repositoryFullName()
+              + " but request targets "
+              + expected);
+    }
+  }
+
+  private String validateBranchName(String branchName) {
+    if (!StringUtils.hasText(branchName)) {
+      throw new IllegalArgumentException("branchName must not be blank");
+    }
+    String trimmed = branchName.trim();
+    if (trimmed.length() > MAX_BRANCH_NAME_LENGTH) {
+      throw new IllegalArgumentException("branchName exceeds %d characters".formatted(MAX_BRANCH_NAME_LENGTH));
+    }
+    if (trimmed.startsWith("/") || trimmed.endsWith("/") || trimmed.endsWith(".")) {
+      throw new IllegalArgumentException("branchName must not start or end with '/' or '.'");
+    }
+    if (trimmed.contains("..")) {
+      throw new IllegalArgumentException("branchName must not contain '..'");
+    }
+    if (INVALID_BRANCH_PATTERN.matcher(trimmed).find()) {
+      throw new IllegalArgumentException("branchName contains forbidden characters");
+    }
+    String[] segments = trimmed.split("/");
+    for (String segment : segments) {
+      if (!StringUtils.hasText(segment)) {
+        throw new IllegalArgumentException("branchName must not contain empty path components");
+      }
+      if (INVALID_BRANCH_COMPONENT.matcher(segment).find()) {
+        throw new IllegalArgumentException("branchName component '" + segment + "' is invalid");
+      }
+    }
+    return trimmed;
+  }
+
+  private String resolveSourceSha(
+      TempWorkspaceService.Workspace workspace,
+      String requested,
+      Path workspacePath,
+      String authHeader,
+      String token) {
+    if (StringUtils.hasText(requested)) {
+      String trimmed = requested.trim();
+      if (!trimmed.matches("(?i)[0-9a-f]{40}")) {
+        throw new IllegalArgumentException("sourceSha must be a 40-character hexadecimal string");
+      }
+      return trimmed.toLowerCase(Locale.ROOT);
+    }
+    if (StringUtils.hasText(workspace.commitSha())) {
+      return workspace.commitSha();
+    }
+    ProcessResult headResult =
+        runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
+    if (!StringUtils.hasText(headResult.output())) {
+      throw new IllegalStateException(
+          "Unable to resolve HEAD commit for workspace " + workspace.workspaceId());
+    }
+    return headResult.output().trim();
+  }
+
+  private void ensurePushAccess(GHRepository repository, RepositoryRef ref) throws IOException {
+    if (!repository.hasPushAccess()) {
+      throw new IllegalStateException(
+          "Configured token does not have push access to " + ref.owner() + "/" + ref.name());
+    }
+  }
+
+  private void ensureRemoteBranchAbsent(
+      GHRepository repository, String branchName, RepositoryRef ref) throws IOException {
+    try {
+      repository.getRef("heads/" + branchName);
+      throw new IllegalStateException(
+          "Branch %s already exists in %s".formatted(branchName, ref.owner() + "/" + ref.name()));
+    } catch (HttpException ex) {
+      if (ex.getResponseCode() == 404) {
+        return;
+      }
+      throw ex;
+    }
+  }
+
+  private boolean branchExistsLocally(Path workspacePath, String branchName) {
+    ProcessBuilder builder =
+        new ProcessBuilder("git", "show-ref", "--verify", "--quiet", "refs/heads/" + branchName);
+    builder.directory(workspacePath.toFile());
+    builder.environment().put("GIT_TERMINAL_PROMPT", "0");
+    builder.environment().putIfAbsent("LC_ALL", "C");
+    ProcessResult result = runProcess(builder, Duration.ofSeconds(10));
+    return result.exitCode() == 0;
+  }
+
+  private void ensureLocalBranchExists(
+      Path workspacePath, String branchName, String authHeader, String token) {
+    try {
+      runGitCommand(
+          workspacePath,
+          Duration.ofSeconds(30),
+          authHeader,
+          token,
+          "git",
+          "rev-parse",
+          "--verify",
+          "refs/heads/" + branchName);
+    } catch (GitHubClientException ex) {
+      throw new IllegalStateException(
+          "Branch "
+              + branchName
+              + " does not exist in workspace. Create it with github.create_branch first.",
+          ex);
+    }
+  }
+
+  private CommitAuthor validateAuthor(CommitAuthor author) {
+    if (author == null) {
+      throw new IllegalArgumentException("author block is required");
+    }
+    if (!StringUtils.hasText(author.name())) {
+      throw new IllegalArgumentException("author.name must not be blank");
+    }
+    if (!StringUtils.hasText(author.email())) {
+      throw new IllegalArgumentException("author.email must not be blank");
+    }
+    String name = author.name().trim();
+    String email = author.email().trim();
+    if (!email.contains("@")) {
+      throw new IllegalArgumentException("author.email must contain '@'");
+    }
+    return new CommitAuthor(name, email);
+  }
+
+  private String sanitizeCommitMessage(String commitMessage) {
+    if (!StringUtils.hasText(commitMessage)) {
+      throw new IllegalArgumentException("commitMessage must not be blank");
+    }
+    String trimmed = commitMessage.strip();
+    if (trimmed.length() > 2000) {
+      throw new IllegalArgumentException("commitMessage exceeds 2000 characters");
+    }
+    return trimmed;
+  }
+
+  private void ensureDiffWithinLimits(
+      RepositoryRef repository, String branchName, String diffOutput) {
+    if (!StringUtils.hasText(diffOutput)) {
+      throw new IllegalStateException(
+          "No staged changes detected for repository "
+              + repository.owner()
+              + "/"
+              + repository.name()
+              + " on branch "
+              + branchName);
+    }
+    long maxBytes =
+        Optional.ofNullable(properties.getCommitDiffMaxBytes())
+            .filter(limit -> limit > 0)
+            .orElse(MAX_DIFF_BYTES);
+    byte[] bytes = diffOutput.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length > maxBytes) {
+      throw new IllegalArgumentException(
+          "Staged diff size %d bytes exceeds limit %d".formatted(bytes.length, maxBytes));
+    }
+  }
+
+  private List<CommitFileChange> parseCommitFiles(String output) {
+    if (!StringUtils.hasText(output)) {
+      return List.of();
+    }
+    List<CommitFileChange> changes = new ArrayList<>();
+    String[] lines = output.split("\\R");
+    for (String rawLine : lines) {
+      if (!StringUtils.hasText(rawLine)) {
+        continue;
+      }
+      String line = rawLine.trim();
+      String[] columns = line.split("\\t");
+      if (columns.length < 2) {
+        continue;
+      }
+      String status = columns[0].trim();
+      String path = columns[columns.length - 1].trim();
+      String previous = null;
+      if ((status.startsWith("R") || status.startsWith("C")) && columns.length >= 3) {
+        previous = columns[1].trim();
+        path = columns[2].trim();
+      }
+      changes.add(new CommitFileChange(status, path, previous));
+    }
+    return List.copyOf(changes);
+  }
+
+  private CommitStatistics summarizeNumstat(String output) {
+    if (!StringUtils.hasText(output)) {
+      return new CommitStatistics(0, 0, 0);
+    }
+    int files = 0;
+    int additions = 0;
+    int deletions = 0;
+    String[] lines = output.split("\\R");
+    for (String line : lines) {
+      if (!StringUtils.hasText(line)) {
+        continue;
+      }
+      String[] columns = line.trim().split("\\t");
+      if (columns.length < 3) {
+        continue;
+      }
+      files++;
+      additions += parseStatValue(columns[0]);
+      deletions += parseStatValue(columns[1]);
+    }
+    return new CommitStatistics(files, additions, deletions);
+  }
+
+  private int parseStatValue(String raw) {
+    if (!StringUtils.hasText(raw) || raw.equals("-")) {
+      return 0;
+    }
+    try {
+      return Integer.parseInt(raw.trim());
+    } catch (NumberFormatException ex) {
+      return 0;
+    }
+  }
+
+  private List<GHUser> resolveReviewers(
+      org.kohsuke.github.GitHub github, List<String> reviewerLogins) throws IOException {
+    if (reviewerLogins == null || reviewerLogins.isEmpty()) {
+      return List.of();
+    }
+    List<GHUser> reviewers = new ArrayList<>();
+    for (String login : reviewerLogins) {
+      if (!StringUtils.hasText(login)) {
+        continue;
+      }
+      GHUser user = github.getUser(login.trim());
+      if (user != null) {
+        reviewers.add(user);
+      }
+    }
+    return List.copyOf(reviewers);
+  }
+
+  private List<GHTeam> resolveTeamReviewers(
+      org.kohsuke.github.GitHub github,
+      RepositoryRef repository,
+      GHRepository repo,
+      List<String> teamSlugs)
+      throws IOException {
+    if (teamSlugs == null || teamSlugs.isEmpty()) {
+      return List.of();
+    }
+    GHOrganization organization =
+        github.getOrganization(repository.owner());
+    if (organization == null) {
+      log.warn(
+          "Repository {} is not owned by an organization; team reviewers are ignored",
+          repository.fullName());
+      return List.of();
+    }
+    List<GHTeam> teams = new ArrayList<>();
+    for (String slug : teamSlugs) {
+      if (!StringUtils.hasText(slug)) {
+        continue;
+      }
+      GHTeam team = organization.getTeamBySlug(slug.trim());
+      if (team != null) {
+        teams.add(team);
+      } else {
+        log.warn(
+            "Unable to resolve team '{}' for organization {}. Team reviewer will be skipped.",
+            slug,
+            organization.getLogin());
+      }
+    }
+    return List.copyOf(teams);
+  }
+
+  private int computeAheadCount(
+      Path workspacePath, String branchName, String authHeader, String token) {
+    try {
+      ProcessResult result =
+          runGitCommand(
+              workspacePath,
+              Duration.ofSeconds(30),
+              authHeader,
+              token,
+              "git",
+              "rev-list",
+              "--count",
+              "origin/" + branchName + ".." + branchName);
+      String output = result.output().trim();
+      if (StringUtils.hasText(output)) {
+        return Integer.parseInt(output);
+      }
+    } catch (GitHubClientException | NumberFormatException ex) {
+      log.debug("Failed to compute ahead count via origin comparison: {}", ex.getMessage());
+    }
+    try {
+      ProcessResult fallback =
+          runGitCommand(
+              workspacePath,
+              Duration.ofSeconds(30),
+              authHeader,
+              token,
+              "git",
+              "rev-list",
+              "--count",
+              branchName);
+      String output = fallback.output().trim();
+      if (StringUtils.hasText(output)) {
+        return Integer.parseInt(output);
+      }
+    } catch (GitHubClientException | NumberFormatException ex) {
+      log.debug("Failed to compute local commit count for {}: {}", branchName, ex.getMessage());
+    }
+    return 0;
+  }
+
+  private void enforcePullRequestLimits(
+      GHRepository repository, GHRef baseRef, GHRef headRef) throws IOException {
+    Integer maxFiles =
+        Optional.ofNullable(properties.getPullRequestMaxFiles()).filter(limit -> limit > 0).orElse(null);
+    Integer maxCommits =
+        Optional.ofNullable(properties.getPullRequestMaxCommits()).filter(limit -> limit > 0).orElse(null);
+    if (maxFiles == null && maxCommits == null) {
+      return;
+    }
+    GHCompare compare =
+        repository.getCompare(baseRef.getObject().getSha(), headRef.getObject().getSha());
+    if (maxFiles != null) {
+      GHCommit.File[] files = compare.getFiles();
+      int count = files != null ? files.length : 0;
+      if (count > maxFiles) {
+        throw new IllegalArgumentException(
+            "Pull request diff contains %d files, exceeds limit %d".formatted(count, maxFiles));
+      }
+    }
+    if (maxCommits != null && compare.getTotalCommits() > maxCommits) {
+      throw new IllegalArgumentException(
+          "Pull request contains %d commits, exceeds limit %d"
+              .formatted(compare.getTotalCommits(), maxCommits));
+    }
+  }
+
+  private GHPullRequest.MergeMethod mapMergeMethod(MergeMethod method) {
+    return switch (method) {
+      case MERGE -> GHPullRequest.MergeMethod.MERGE;
+      case SQUASH -> GHPullRequest.MergeMethod.SQUASH;
+      case REBASE -> GHPullRequest.MergeMethod.REBASE;
+    };
   }
 
   private TreeData loadTree(RepositoryRef repository, int requestedDepth) {
@@ -1931,6 +2780,93 @@ public class GitHubRepositoryService {
       return fallback != null ? fallback : Duration.ofMinutes(1);
     }
     return candidate;
+  }
+
+  record CreateBranchInput(RepositoryRef repository, String workspaceId, String branchName, String sourceSha) {}
+
+  record CreateBranchResult(
+      RepositoryRef repository,
+      String workspaceId,
+      String branchName,
+      String branchRef,
+      String sourceSha,
+      String localHeadSha,
+      Instant createdAt) {}
+
+  record CommitWorkspaceDiffInput(
+      String workspaceId, String branchName, CommitAuthor author, String commitMessage) {}
+
+  record CommitWorkspaceDiffResult(
+      RepositoryRef repository,
+      String workspaceId,
+      String branchName,
+      String commitSha,
+      int filesChanged,
+      int additions,
+      int deletions,
+      List<CommitFileChange> files,
+      Instant committedAt) {}
+
+  record CommitAuthor(String name, String email) {}
+
+  record CommitFileChange(String status, String path, String previousPath) {}
+
+  private record CommitStatistics(int filesChanged, int additions, int deletions) {}
+
+  record PushBranchInput(
+      RepositoryRef repository, String workspaceId, String branchName, Boolean force) {}
+
+  record PushBranchResult(
+      RepositoryRef repository,
+      String workspaceId,
+      String branchName,
+      String localHeadSha,
+      String remoteHeadSha,
+      int commitsPushed,
+      Instant pushedAt) {}
+
+  record OpenPullRequestInput(
+      RepositoryRef repository,
+      String headBranch,
+      String baseBranch,
+      String title,
+      String body,
+      List<String> reviewers,
+      List<String> teamReviewers,
+      Boolean draft) {}
+
+  record OpenPullRequestResult(
+      RepositoryRef repository,
+      int pullRequestNumber,
+      String htmlUrl,
+      String headSha,
+      String baseSha,
+      Instant createdAt) {}
+
+  record ApprovePullRequestInput(RepositoryRef repository, Integer number, String body) {}
+
+  record ApprovePullRequestResult(
+      RepositoryRef repository, int pullRequestNumber, long reviewId, String state, Instant submittedAt) {}
+
+  record MergePullRequestInput(
+      RepositoryRef repository,
+      Integer number,
+      MergeMethod method,
+      String commitTitle,
+      String commitMessage) {}
+
+  record MergePullRequestResult(
+      RepositoryRef repository,
+      int pullRequestNumber,
+      boolean merged,
+      String mergeSha,
+      String message,
+      Instant mergedAt) {}
+
+  enum MergeMethod {
+    MERGE,
+    SQUASH,
+    REBASE
   }
 
   record FetchRepositoryInput(RepositoryRef repository, GitFetchOptions options, String requestId) {}

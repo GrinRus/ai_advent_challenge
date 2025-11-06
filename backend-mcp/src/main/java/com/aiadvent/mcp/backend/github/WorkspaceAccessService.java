@@ -1,8 +1,20 @@
 package com.aiadvent.mcp.backend.github;
 
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ApprovePullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ApprovePullRequestResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitWorkspaceDiffInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitWorkspaceDiffResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreateBranchInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreateBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergePullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergePullRequestResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.OpenPullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.OpenPullRequestResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService.Workspace;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
@@ -40,6 +52,30 @@ public class WorkspaceAccessService {
       String requestId) {
     return repositoryService.fetchRepository(
         new FetchRepositoryInput(repositoryRef, options, requestId));
+  }
+
+  public CreateBranchResult createBranch(CreateBranchInput input) {
+    return repositoryService.createBranch(input);
+  }
+
+  public CommitWorkspaceDiffResult commitWorkspaceDiff(CommitWorkspaceDiffInput input) {
+    return repositoryService.commitWorkspaceDiff(input);
+  }
+
+  public PushBranchResult pushBranch(PushBranchInput input) {
+    return repositoryService.pushBranch(input);
+  }
+
+  public OpenPullRequestResult openPullRequest(OpenPullRequestInput input) {
+    return repositoryService.openPullRequest(input);
+  }
+
+  public ApprovePullRequestResult approvePullRequest(ApprovePullRequestInput input) {
+    return repositoryService.approvePullRequest(input);
+  }
+
+  public MergePullRequestResult mergePullRequest(MergePullRequestInput input) {
+    return repositoryService.mergePullRequest(input);
   }
 
   public InspectWorkspaceResult inspectWorkspace(InspectWorkspaceRequest request) {

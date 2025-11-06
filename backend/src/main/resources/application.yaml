@@ -210,6 +210,24 @@ app:
         - code: coding.discard_patch
           schema-version: 1
           execution-mode: MANUAL
+        - code: github.create_branch
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: github.commit_workspace_diff
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: github.push_branch
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: github.open_pull_request
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: github.approve_pull_request
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: github.merge_pull_request
+          schema-version: 1
+          execution-mode: MANUAL
       default-tool-codes:
         - perplexity_search
       disabled-tool-namespaces:

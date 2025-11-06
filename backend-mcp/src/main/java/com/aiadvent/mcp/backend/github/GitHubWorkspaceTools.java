@@ -1,8 +1,16 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckoutStrategy;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitAuthor;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitFileChange;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitWorkspaceDiffInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitWorkspaceDiffResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreateBranchInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreateBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.FetchRepositoryResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
@@ -57,6 +65,98 @@ class GitHubWorkspaceTools {
         result.strategy().name().toLowerCase(Locale.ROOT),
         result.keyFiles(),
         result.fetchedAt());
+  }
+
+  @Tool(
+      name = "github.create_branch",
+      description =
+          "Создаёт новую ветку в репозитории и локальном workspace. Требует workspaceId и branchName. "
+              + "sourceSha опционален (по умолчанию текущий HEAD workspace). Выполняется только после ручного подтверждения.")
+  GitHubCreateBranchResponse createBranch(GitHubCreateBranchRequest request) {
+    validateWorkspaceRequest(request.workspaceId());
+    GitHubTools.RepositoryInput repositoryInput = requireRepository(request);
+    CreateBranchResult result =
+        accessService.createBranch(
+            new CreateBranchInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.workspaceId(),
+                request.branchName(),
+                request.sourceSha()));
+
+    return new GitHubCreateBranchResponse(
+        toRepositoryInfo(result.repository()),
+        result.workspaceId(),
+        result.branchName(),
+        result.branchRef(),
+        result.sourceSha(),
+        result.localHeadSha(),
+        result.createdAt());
+  }
+
+  @Tool(
+      name = "github.commit_workspace_diff",
+      description =
+          "Формирует commit из изменений в workspace. Требует branchName, commitMessage и автора (name/email). "
+              + "Отклоняет пустой diff и превышение лимитов. Изменения остаются локальными до push.")
+  GitHubCommitWorkspaceDiffResponse commitWorkspaceDiff(GitHubCommitWorkspaceDiffRequest request) {
+    validateWorkspaceRequest(request.workspaceId());
+    if (!StringUtils.hasText(request.branchName())) {
+      throw new IllegalArgumentException("branchName must not be blank");
+    }
+    if (request.author() == null) {
+      throw new IllegalArgumentException("author block is required");
+    }
+    if (!StringUtils.hasText(request.author().name()) || !StringUtils.hasText(request.author().email())) {
+      throw new IllegalArgumentException("author.name and author.email must not be blank");
+    }
+    CommitWorkspaceDiffResult result =
+        accessService.commitWorkspaceDiff(
+            new CommitWorkspaceDiffInput(
+                request.workspaceId(),
+                request.branchName(),
+                new CommitAuthor(request.author().name(), request.author().email()),
+                request.commitMessage()));
+
+    List<CommitFileChangeEntry> files =
+        result.files().stream().map(this::toCommitFileChangeEntry).toList();
+
+    return new GitHubCommitWorkspaceDiffResponse(
+        toRepositoryInfo(result.repository()),
+        result.workspaceId(),
+        result.branchName(),
+        result.commitSha(),
+        result.filesChanged(),
+        result.additions(),
+        result.deletions(),
+        files,
+        result.committedAt());
+  }
+
+  @Tool(
+      name = "github.push_branch",
+      description =
+          "Публикует локальные commits в удалённую ветку. Force push запрещён. Требует workspaceId и branchName.")
+  GitHubPushBranchResponse pushBranch(GitHubPushBranchRequest request) {
+    validateWorkspaceRequest(request.workspaceId());
+    GitHubTools.RepositoryInput repositoryInput = requireRepository(request);
+    PushBranchResult result =
+        accessService.pushBranch(
+            new PushBranchInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.workspaceId(),
+                request.branchName(),
+                request.force()));
+
+    return new GitHubPushBranchResponse(
+        toRepositoryInfo(result.repository()),
+        result.workspaceId(),
+        result.branchName(),
+        result.localHeadSha(),
+        result.remoteHeadSha(),
+        result.commitsPushed(),
+        result.pushedAt());
   }
 
   @Tool(
@@ -184,6 +284,20 @@ class GitHubWorkspaceTools {
     }
   }
 
+  private void validateWorkspaceRequest(String workspaceId) {
+    if (!StringUtils.hasText(workspaceId)) {
+      throw new IllegalArgumentException("workspaceId must not be blank");
+    }
+  }
+
+  private CommitFileChangeEntry toCommitFileChangeEntry(CommitFileChange change) {
+    if (change == null) {
+      return null;
+    }
+    return new CommitFileChangeEntry(
+        change.status(), change.path(), change.previousPath());
+  }
+
   record GitHubRepositoryFetchRequest(
       GitHubTools.RepositoryInput repository,
       String requestId,
@@ -244,6 +358,59 @@ class GitHubWorkspaceTools {
       Instant lastModified,
       List<String> projectTypes,
       boolean hasGradleWrapper) {}
+
+  record GitHubCreateBranchRequest(
+      GitHubTools.RepositoryInput repository,
+      String workspaceId,
+      String branchName,
+      String sourceSha)
+      implements GitHubTools.RepositoryRequest {}
+
+  record GitHubCreateBranchResponse(
+      GitHubTools.RepositoryInfo repository,
+      String workspaceId,
+      String branchName,
+      String branchRef,
+      String sourceSha,
+      String localHeadSha,
+      Instant createdAt) {}
+
+  record GitHubCommitWorkspaceDiffRequest(
+      String workspaceId,
+      String branchName,
+      GitHubCommitAuthor author,
+      String commitMessage) {}
+
+  record GitHubCommitAuthor(String name, String email) {}
+
+  record GitHubCommitWorkspaceDiffResponse(
+      GitHubTools.RepositoryInfo repository,
+      String workspaceId,
+      String branchName,
+      String commitSha,
+      int filesChanged,
+      int additions,
+      int deletions,
+      List<CommitFileChangeEntry> files,
+      Instant committedAt) {}
+
+  record CommitFileChangeEntry(String status, String path, String previousPath) {}
+
+  record GitHubPushBranchRequest(
+      GitHubTools.RepositoryInput repository,
+      String workspaceId,
+      String branchName,
+      Boolean force)
+      implements GitHubTools.RepositoryRequest {}
+
+  record GitHubPushBranchResponse(
+      GitHubTools.RepositoryInfo repository,
+      String workspaceId,
+      String branchName,
+      String localHeadSha,
+      String remoteHeadSha,
+      int commitsPushed,
+      Instant pushedAt) {}
 
   record WorkspaceReadFileRequest(String workspaceId, String path, Integer maxBytes) {}
 

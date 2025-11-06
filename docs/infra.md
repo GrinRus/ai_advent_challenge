@@ -65,6 +65,15 @@ export GITHUB_MCP_HTTP_BASE_URL=http://localhost:7094
 export GITHUB_MCP_HTTP_ENDPOINT=/mcp
 ```
 
+#### GitHub write-инструменты
+- Все write-операции помечены как `MANUAL` и требуют подтверждения в UI/Telegram. После успешного dry-run (`coding.apply_patch_preview`) backend разблокирует последовательность `github.create_branch` → `github.commit_workspace_diff` → `github.push_branch`; финальные шаги (`github.open_pull_request`, `github.approve_pull_request`, `github.merge_pull_request`) также остаются ручными.
+- `github.create_branch` — валидация имени ветки, создание remote ref и локального checkout в workspace; отклоняет существующие ветки и несоответствие workspace/репозитория.
+- `github.commit_workspace_diff` — собирает staged diff, контролирует размер (по `github.backend.commit-diff-max-bytes`), формирует commit с автором и возвращает статистику.
+- `github.push_branch` — запрещает force-push, проверяет чистоту workspace, сообщает локальный и удалённый SHA, количество отправленных коммитов.
+- `github.open_pull_request` — sanity-check head/base, опциональные reviewer логины и team slug'и, лимиты по количеству файлов/коммитов. Ответ содержит `htmlUrl`, head/base SHA и timestamp.
+- `github.approve_pull_request` / `github.merge_pull_request` — организуют ручное review-одобрение и merge (`MERGE|SQUASH|REBASE`), проверяют mergeable state и возвращают merge SHA/статусы.
+- Все операции логируют безопасность и аудит (`github_write_operation` category) и используют токен с правами `repo`, `read:org`, `read:checks`.
+
 ### Запуск Notes MCP
 Notes MCP хранит заметки пользователей и векторные эмбеддинги для поиска похожего контента. Сервис работает на Spring Boot с профилем `notes`, использует общий Postgres (`pgvector`) и подключается к OpenAI для генерации эмбеддингов (модель `text-embedding-3-small`).
 

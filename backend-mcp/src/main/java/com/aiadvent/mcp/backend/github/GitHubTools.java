@@ -1,5 +1,7 @@
 package com.aiadvent.mcp.backend.github;
 
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ApprovePullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ApprovePullRequestResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CheckRunInfo;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommentType;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitStatusInfo;
@@ -7,6 +9,11 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequest
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestCommentResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CreatePullRequestReviewResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergeMethod;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergePullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.MergePullRequestResult;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.OpenPullRequestInput;
+import com.aiadvent.mcp.backend.github.GitHubRepositoryService.OpenPullRequestResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestDiffInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GetPullRequestInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.ListPullRequestChecksInput;
@@ -203,6 +210,82 @@ class GitHubTools {
   }
 
   @Tool(
+      name = "github.open_pull_request",
+      description =
+          "Создаёт pull request. Требует headBranch, baseBranch и title. reviewers и teamReviewers опциональны; draft=true создаёт черновик.")
+  GitHubOpenPullRequestResponse openPullRequest(GitHubOpenPullRequestRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    OpenPullRequestResult result =
+        repositoryService.openPullRequest(
+            new OpenPullRequestInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.headBranch(),
+                request.baseBranch(),
+                request.title(),
+                request.body(),
+                request.reviewers(),
+                request.teamReviewers(),
+                request.draft()));
+
+    return new GitHubOpenPullRequestResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequestNumber(),
+        result.htmlUrl(),
+        result.headSha(),
+        result.baseSha(),
+        result.createdAt());
+  }
+
+  @Tool(
+      name = "github.approve_pull_request",
+      description =
+          "Оставляет approve-review для PR. number > 0 обязателен, body опционален.")
+  GitHubApprovePullRequestResponse approvePullRequest(GitHubApprovePullRequestRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    ApprovePullRequestResult result =
+        repositoryService.approvePullRequest(
+            new ApprovePullRequestInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.number(),
+                request.body()));
+
+    return new GitHubApprovePullRequestResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequestNumber(),
+        result.reviewId(),
+        result.state(),
+        result.submittedAt());
+  }
+
+  @Tool(
+      name = "github.merge_pull_request",
+      description =
+          "Мержит pull request. mergeMethod может быть MERGE, SQUASH или REBASE. commitTitle/commitMessage опциональны.")
+  GitHubMergePullRequestResponse mergePullRequest(GitHubMergePullRequestRequest request) {
+    RepositoryInput repositoryInput = requireRepository(request);
+    MergeMethod method = parseMergeMethod(request.mergeMethod());
+    MergePullRequestResult result =
+        repositoryService.mergePullRequest(
+            new MergePullRequestInput(
+                new RepositoryRef(
+                    repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
+                request.number(),
+                method,
+                request.commitTitle(),
+                request.commitMessage()));
+
+    return new GitHubMergePullRequestResponse(
+        toRepositoryInfo(result.repository()),
+        result.pullRequestNumber(),
+        result.merged(),
+        result.mergeSha(),
+        result.message(),
+        result.mergedAt());
+  }
+
+  @Tool(
       name = "github.create_pull_request_comment",
       description =
           "Публикует комментарий в PR. body обязателен. Если location не задан, создаётся issue-комментарий. "
@@ -358,6 +441,17 @@ class GitHubTools {
     return number;
   }
 
+  private MergeMethod parseMergeMethod(String mergeMethod) {
+    if (!StringUtils.hasText(mergeMethod)) {
+      return MergeMethod.MERGE;
+    }
+    try {
+      return MergeMethod.valueOf(mergeMethod.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException("Unsupported mergeMethod: " + mergeMethod);
+    }
+  }
+
   private List<ReviewCommentDraft> toReviewDrafts(List<GitHubReviewCommentDraft> drafts) {
     if (drafts == null || drafts.isEmpty()) {
       return List.of();
@@ -506,4 +600,49 @@ class GitHubTools {
       RepositoryInfo repository,
       int pullRequestNumber,
       GitHubPullRequestReview review) {}
+
+  record GitHubOpenPullRequestRequest(
+      RepositoryInput repository,
+      String headBranch,
+      String baseBranch,
+      String title,
+      String body,
+      List<String> reviewers,
+      List<String> teamReviewers,
+      Boolean draft)
+      implements RepositoryRequest {}
+
+  record GitHubOpenPullRequestResponse(
+      RepositoryInfo repository,
+      int pullRequestNumber,
+      String htmlUrl,
+      String headSha,
+      String baseSha,
+      Instant createdAt) {}
+
+  record GitHubApprovePullRequestRequest(
+      RepositoryInput repository, Integer number, String body) implements RepositoryRequest {}
+
+  record GitHubApprovePullRequestResponse(
+      RepositoryInfo repository,
+      int pullRequestNumber,
+      long reviewId,
+      String state,
+      Instant submittedAt) {}
+
+  record GitHubMergePullRequestRequest(
+      RepositoryInput repository,
+      Integer number,
+      String mergeMethod,
+      String commitTitle,
+      String commitMessage)
+      implements RepositoryRequest {}
+
+  record GitHubMergePullRequestResponse(
+      RepositoryInfo repository,
+      int pullRequestNumber,
+      boolean merged,
+      String mergeSha,
+      String message,
+      Instant mergedAt) {}
 }

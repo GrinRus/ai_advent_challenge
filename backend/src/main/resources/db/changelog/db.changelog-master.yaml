@@ -3042,3 +3042,79 @@ databaseChangeLog:
                 ('coding.discard_patch', 'Coding · Discard patch', 'Remove a patch from registry after manual confirmation.', 'coding', 'MANUAL', '["coding","registry"]'::jsonb, '["cleanup"]'::jsonb, 'Local MCP service', NULL, 45000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.discard_patch' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
+
+
+  - changeSet:
+      id: 0207-seed-github-write-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('github.create_branch', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"workspaceId":{"type":"string","minLength":1},"branchName":{"type":"string","minLength":1},"sourceSha":{"type":"string","pattern":"^[0-9a-fA-F]{40}$"}},"required":["repository","workspaceId","branchName"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"workspaceId":{"type":"string"},"branchName":{"type":"string"},"branchRef":{"type":"string"},"sourceSha":{"type":"string"},"localHeadSha":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}},"required":["repository","workspaceId","branchName","branchRef","sourceSha","localHeadSha","createdAt"]}
+                 $$::jsonb,
+                 'checksum-github.create_branch-v1', '[]'::jsonb, 'github', 'github.create_branch', 'http-stream', 'github'),
+                ('github.commit_workspace_diff', 1,
+                 $$
+                 {"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"branchName":{"type":"string","minLength":1},"author":{"type":"object","properties":{"name":{"type":"string","minLength":1},"email":{"type":"string","format":"email"}},"required":["name","email"]},"commitMessage":{"type":"string","minLength":1}},"required":["workspaceId","branchName","author","commitMessage"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"workspaceId":{"type":"string"},"branchName":{"type":"string"},"commitSha":{"type":"string"},"filesChanged":{"type":"integer","minimum":0},"additions":{"type":"integer","minimum":0},"deletions":{"type":"integer","minimum":0},"files":{"type":"array","items":{"type":"object","properties":{"status":{"type":"string"},"path":{"type":"string"},"previousPath":{"type":"string"}},"required":["status","path"]}},"committedAt":{"type":"string","format":"date-time"}},"required":["repository","workspaceId","branchName","commitSha","filesChanged","additions","deletions","files","committedAt"]}
+                 $$::jsonb,
+                 'checksum-github.commit_workspace_diff-v1', '[]'::jsonb, 'github', 'github.commit_workspace_diff', 'http-stream', 'github'),
+                ('github.push_branch', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"workspaceId":{"type":"string","minLength":1},"branchName":{"type":"string","minLength":1},"force":{"type":"boolean"}},"required":["repository","workspaceId","branchName"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"workspaceId":{"type":"string"},"branchName":{"type":"string"},"localHeadSha":{"type":"string"},"remoteHeadSha":{"type":"string"},"commitsPushed":{"type":"integer","minimum":0},"pushedAt":{"type":"string","format":"date-time"}},"required":["repository","workspaceId","branchName","localHeadSha","remoteHeadSha","commitsPushed","pushedAt"]}
+                 $$::jsonb,
+                 'checksum-github.push_branch-v1', '[]'::jsonb, 'github', 'github.push_branch', 'http-stream', 'github'),
+                ('github.open_pull_request', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"headBranch":{"type":"string","minLength":1},"baseBranch":{"type":"string","minLength":1},"title":{"type":"string","minLength":1},"body":{"type":"string"},"reviewers":{"type":"array","items":{"type":"string"},"maxItems":16},"teamReviewers":{"type":"array","items":{"type":"string"},"maxItems":10},"draft":{"type":"boolean"}},"required":["repository","headBranch","baseBranch","title"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"htmlUrl":{"type":"string","format":"uri"},"headSha":{"type":"string"},"baseSha":{"type":"string"},"createdAt":{"type":"string","format":"date-time"}},"required":["repository","pullRequestNumber","headSha","baseSha","createdAt"]}
+                 $$::jsonb,
+                 'checksum-github.open_pull_request-v1', '[]'::jsonb, 'github', 'github.open_pull_request', 'http-stream', 'github'),
+                ('github.approve_pull_request', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"body":{"type":"string"}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"reviewId":{"type":"integer"},"state":{"type":"string"},"submittedAt":{"type":"string","format":"date-time"}},"required":["repository","pullRequestNumber","reviewId","state","submittedAt"]}
+                 $$::jsonb,
+                 'checksum-github.approve_pull_request-v1', '[]'::jsonb, 'github', 'github.approve_pull_request', 'http-stream', 'github'),
+                ('github.merge_pull_request', 1,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}},"required":["owner","name"]},"number":{"type":"integer","minimum":1},"mergeMethod":{"type":"string","enum":["MERGE","SQUASH","REBASE"]},"commitTitle":{"type":"string"},"commitMessage":{"type":"string"}},"required":["repository","number"]}
+                 $$::jsonb,
+                 $$
+                 {"type":"object","properties":{"repository":{"type":"object","properties":{"owner":{"type":"string"},"name":{"type":"string"},"ref":{"type":"string"}}},"pullRequestNumber":{"type":"integer"},"merged":{"type":"boolean"},"mergeSha":{"type":"string"},"message":{"type":"string"},"mergedAt":{"type":"string","format":"date-time"}},"required":["repository","pullRequestNumber","merged"]}
+                 $$::jsonb,
+                 'checksum-github.merge_pull_request-v1', '[]'::jsonb, 'github', 'github.merge_pull_request', 'http-stream', 'github');
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('github.create_branch', 'GitHub · Create branch', 'Создаёт новую ветку в целевом репозитории, используя подготовленный workspace.', 'github', 'MANUAL', '["github","branch","write"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.create_branch' AND version = 1)),
+                ('github.commit_workspace_diff', 'GitHub · Commit workspace diff', 'Формирует commit из локальных изменений workspace с валидацией diff.', 'github', 'MANUAL', '["github","commit","write"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.commit_workspace_diff' AND version = 1)),
+                ('github.push_branch', 'GitHub · Push branch', 'Публикует локальные изменения workspace в удалённую ветку.', 'github', 'MANUAL', '["github","branch","write"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.push_branch' AND version = 1)),
+                ('github.open_pull_request', 'GitHub · Open pull request', 'Создаёт pull request между указанными ветками.', 'github', 'MANUAL', '["github","pull-request","write"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.open_pull_request' AND version = 1)),
+                ('github.approve_pull_request', 'GitHub · Approve pull request', 'Оставляет approve-review для pull request от имени сервисного аккаунта.', 'github', 'MANUAL', '["github","pull-request","review"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.approve_pull_request' AND version = 1)),
+                ('github.merge_pull_request', 'GitHub · Merge pull request', 'Выполняет merge pull request с выбранным методом.', 'github', 'MANUAL', '["github","pull-request","merge"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.merge_pull_request' AND version = 1));

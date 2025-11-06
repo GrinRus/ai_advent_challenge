@@ -22,6 +22,10 @@ public class GitHubBackendProperties {
   private Long workspaceMaxSizeBytes = 2L * 1024 * 1024 * 1024;
   private Long archiveMaxSizeBytes = 512L * 1024 * 1024;
   private Duration archiveDownloadTimeout = Duration.ofMinutes(2);
+  private Long commitDiffMaxBytes = 1_048_576L;
+  private Integer commitMaxFiles = 200;
+  private Integer pullRequestMaxFiles = 300;
+  private Integer pullRequestMaxCommits = 100;
 
   public String getBaseUrl() {
     return baseUrl;
@@ -149,5 +153,37 @@ public class GitHubBackendProperties {
 
   public void setArchiveDownloadTimeout(Duration archiveDownloadTimeout) {
     this.archiveDownloadTimeout = archiveDownloadTimeout;
+  }
+
+  public Long getCommitDiffMaxBytes() {
+    return commitDiffMaxBytes;
+  }
+
+  public void setCommitDiffMaxBytes(Long commitDiffMaxBytes) {
+    this.commitDiffMaxBytes = commitDiffMaxBytes;
+  }
+
+  public Integer getCommitMaxFiles() {
+    return commitMaxFiles;
+  }
+
+  public void setCommitMaxFiles(Integer commitMaxFiles) {
+    this.commitMaxFiles = commitMaxFiles;
+  }
+
+  public Integer getPullRequestMaxFiles() {
+    return pullRequestMaxFiles;
+  }
+
+  public void setPullRequestMaxFiles(Integer pullRequestMaxFiles) {
+    this.pullRequestMaxFiles = pullRequestMaxFiles;
+  }
+
+  public Integer getPullRequestMaxCommits() {
+    return pullRequestMaxCommits;
+  }
+
+  public void setPullRequestMaxCommits(Integer pullRequestMaxCommits) {
+    this.pullRequestMaxCommits = pullRequestMaxCommits;
   }
 }

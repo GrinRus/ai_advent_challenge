@@ -914,7 +914,7 @@
 - [x] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
 - [x] Оценить интеграцию `WorkspaceAccessService`: вынесли чтение файлов в общий `WorkspaceFileService`, который переиспользуют `github` и `coding` профили.
 - [x] Реализовать in-memory `PatchRegistry` с TTL: связка `patchId↔workspaceId`, статусы (`generated|applied|discarded`), атрибуты `requiresManualReview`, `hasDryRun`, переиспользовать `TempWorkspaceService`.
-- [ ] Реализовать инструменты:
+- [x] Реализовать инструменты:
   - [x] `coding.generate_patch` — валидация путей, лимиты diff ≤ 256 КБ и ≤ 25 файлов, сохранение diff/summary/annotations в `PatchRegistry`.
   - [x] `coding.review_patch` — поддержка фокусов (`risks|tests|migration`), проверка статуса патча, возврат рекомендаций и следующего шага.
   - [x] `coding.apply_patch_preview` — инструмент `MANUAL`: `git apply` внутри workspace, dry-run через `DockerRunnerService` (whitelist Gradle/npm/pytest), маскирование логов, base64 для бинарных артефактов.
@@ -928,16 +928,16 @@
 - [x] (Post-MVP) Зафиксировать roadmap-пункты `coding.list_patches` / `coding.discard_patch` для диагностики активных патчей и ручного сброса.
 
 ### GitHub MCP Expansion
-- [ ] Реализовать write-операции в `GitHubRepositoryService`:
+- [x] Реализовать write-операции в `GitHubRepositoryService`:
   - `createBranch` — whitelist branchName, проверка существующей ветки и прав записи.
   - `commitWorkspaceDiff` — формирование commit из diff workspace, отклонение пустого diff и превышения лимитов.
   - `pushBranch` — запрет `force`, проверка конфликтов и размера.
   - `openPullRequest` — sanity-check head/base, лимит diff, возврат `prNumber`, `headSha`, `baseSha`.
   - `approvePullRequest` — review `APPROVE` сервисным аккаунтом.
   - `mergePullRequest` — проверка статуса CI, поддержка `squash|rebase|merge`.
-- [ ] Экспортировать инструменты через `GitHubTools`/`GitHubWorkspaceTools`, нормализовать ответы (SHA, ссылки, статусы, vetos), настроить ручные подтверждения.
-- [ ] Добавить структурированные логи и аудит write-операций; усиленные ограничения (лимиты архивов, маскирование токенов, rollback) вынести в отдельный backlog.
-- [ ] Обновить MCP-каталог и backend (`app.mcp.catalog`, `app.chat.research.tools`): `execution-mode=MANUAL` для write-операций, разблокировка после dry-run.
+- [x] Экспортировать инструменты через `GitHubTools`/`GitHubWorkspaceTools`, нормализовать ответы (SHA, ссылки, статусы, vetos), настроить ручные подтверждения.
+- [x] Добавить структурированные логи и аудит write-операций; усиленные ограничения (лимиты архивов, маскирование токенов, rollback) вынести в отдельный backlog.
+- [x] Обновить MCP-каталог и backend (`app.mcp.catalog`, `app.chat.research.tools`): `execution-mode=MANUAL` для write-операций, разблокировка после dry-run.
 - [ ] Протестировать e2e: sandbox-репозиторий ветка → commit → push → PR → approve → merge; негативы (конфликт, запрет force-push, veto).
 - [ ] Unit-тесты: сериализация запросов, обработка ошибок GitHub API, откат workspace при исключениях.
 - [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON, сценарии sandbox.

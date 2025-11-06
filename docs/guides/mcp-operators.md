@@ -79,6 +79,12 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.create_pull_request_comment` — создаёт issue- или review-комментарий; для review требуется указать файл и строку/диапазон.
 - `github.create_pull_request_review` — оформляет ревью с действием `APPROVE`/`REQUEST_CHANGES`/`COMMENT` или оставляет `PENDING`, поддерживает пакет комментариев.
 - `github.submit_pull_request_review` — отправляет ранее созданное ревью с выбранным действием.
+- `github.create_branch` — `MANUAL`. Требует `repository`, `workspaceId`, `branchName`; опционально `sourceSha`. Создаёт удалённую ветку и локальную checkout в workspace, отклоняет существующие ветки и некорректные имена.
+- `github.commit_workspace_diff` — `MANUAL`. Формирует commit из изменений workspace (`author{name,email}`, `commitMessage`). Ограничивает объём диффа, возвращает SHA, статистику и список файлов.
+- `github.push_branch` — `MANUAL`. Публикует локальные commits (`force=false`), проверяет чистоту workspace, сообщает локальный и удалённый SHA, количество отправленных коммитов.
+- `github.open_pull_request` — `MANUAL`. Создаёт PR для веток (`headBranch`, `baseBranch`, `title`), валидирует размеры diff, поддерживает reviewer-логины и командные slugs.
+- `github.approve_pull_request` — `MANUAL`. Оставляет review c действием `APPROVE` для номера PR, опционально добавляет текстовый комментарий.
+- `github.merge_pull_request` — `MANUAL`. Выполняет merge PR (`mergeMethod=MERGE|SQUASH|REBASE`), допускает переопределение commit title/message и возвращает merge SHA.
 
 ### Notes
 ```
