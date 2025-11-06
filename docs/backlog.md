@@ -938,7 +938,7 @@
 - [x] Экспортировать инструменты через `GitHubTools`/`GitHubWorkspaceTools`, нормализовать ответы (SHA, ссылки, статусы, vetos), настроить ручные подтверждения.
 - [x] Добавить структурированные логи и аудит write-операций; усиленные ограничения (лимиты архивов, маскирование токенов, rollback) вынести в отдельный backlog.
 - [x] Обновить MCP-каталог и backend (`app.mcp.catalog`, `app.chat.research.tools`): `execution-mode=MANUAL` для write-операций, разблокировка после dry-run.
-- [ ] Протестировать e2e: sandbox-репозиторий ветка → commit → push → PR → approve → merge; негативы (конфликт, запрет force-push, veto).
+- [x] Протестировать e2e: sandbox-репозиторий ветка → commit → push → PR → approve → merge; негативы (конфликт, запрет force-push, veto).
 - [x] Unit-тесты: сериализация запросов, обработка ошибок GitHub API, откат workspace при исключениях.
 - [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON, сценарии sandbox.
 
