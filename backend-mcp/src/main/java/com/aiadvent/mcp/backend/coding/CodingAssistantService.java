@@ -8,6 +8,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -112,12 +113,54 @@ class CodingAssistantService {
   ReviewPatchResponse reviewPatch(ReviewPatchRequest request) {
     Objects.requireNonNull(request, "request");
     CodingPatch patch = requirePatch(request.workspaceId(), request.patchId());
+    if (!StringUtils.hasText(patch.diff())) {
+      List<String> findings = List.of("Патч не содержит diff — ничего не было сгенерировано.");
+      List<String> recommendations = List.of("Перегенерировать патч перед ревью.");
+      List<String> nextSteps = List.of("Повторно вызвать generate_patch и затем review_patch.");
+      return new ReviewPatchResponse(
+          patch.patchId(), "blocked", findings, recommendations, nextSteps);
+    }
+
+    Set<String> diffFiles = extractDiffFiles(patch.diff());
+    EnumSet<ReviewFocus> focuses = resolveFocus(request.focus());
+
     List<String> findings = new ArrayList<>();
-    findings.add("Ревью пока не реализовано для патча " + patch.patchId());
-    List<String> recommendations = List.of("Запланировать реализацию LLM code review.");
-    List<String> nextSteps = List.of("Повторно вызвать review после реализации.");
+    List<String> testingRecommendations = new ArrayList<>();
+    List<String> nextSteps = new ArrayList<>();
+
+    if (focuses.contains(ReviewFocus.RISKS)) {
+      analyzeRisks(patch, diffFiles, findings, nextSteps);
+    }
+    if (focuses.contains(ReviewFocus.TESTS)) {
+      analyzeTests(patch, diffFiles, findings, testingRecommendations, nextSteps);
+    }
+    if (focuses.contains(ReviewFocus.MIGRATION)) {
+      analyzeMigrations(diffFiles, findings, nextSteps);
+    }
+
+    if (findings.isEmpty()) {
+      findings.add("Замечания не обнаружены. Патч выглядит безопасным.");
+      nextSteps.add("Можно переходить к dry-run или публикации.");
+    }
+
+    boolean hasWarnings = findings.stream().anyMatch(msg -> !msg.startsWith("Замечания не обнаружены"));
+    String status = hasWarnings ? "warnings" : "ok";
+
+    patchRegistry.update(
+        patch.workspaceId(),
+        patch.patchId(),
+        existing -> existing.withRequiresManualReview(hasWarnings));
+
+    if (testingRecommendations.isEmpty() && focuses.contains(ReviewFocus.TESTS)) {
+      testingRecommendations.add("Запустить базовые тесты проекта после применения патча.");
+    }
+
+    if (nextSteps.isEmpty()) {
+      nextSteps.add("Подтвердить dry-run и подготовку к публикации.");
+    }
+
     return new ReviewPatchResponse(
-        patch.patchId(), "not_implemented", findings, recommendations, nextSteps);
+        patch.patchId(), status, findings, testingRecommendations, nextSteps);
   }
 
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
@@ -346,6 +389,102 @@ class CodingAssistantService {
         annotations == null ? new ArrayList<>() : new ArrayList<>(annotations.conflicts());
 
     return new PatchAnnotations(files, risks, conflicts);
+  }
+
+  private EnumSet<ReviewFocus> resolveFocus(List<String> focus) {
+    if (focus == null || focus.isEmpty()) {
+      return EnumSet.allOf(ReviewFocus.class);
+    }
+    EnumSet<ReviewFocus> resolved = EnumSet.noneOf(ReviewFocus.class);
+    for (String value : focus) {
+      if (!StringUtils.hasText(value)) {
+        continue;
+      }
+      try {
+        resolved.add(ReviewFocus.valueOf(value.trim().toUpperCase()));
+      } catch (IllegalArgumentException ex) {
+        // ignore unknown focus values
+      }
+    }
+    if (resolved.isEmpty()) {
+      return EnumSet.allOf(ReviewFocus.class);
+    }
+    return resolved;
+  }
+
+  private void analyzeRisks(
+      CodingPatch patch, Set<String> diffFiles, List<String> findings, List<String> nextSteps) {
+    if (diffFiles.stream().anyMatch(this::isBuildFile)) {
+      findings.add("Изменяются build/config файлы — требуется ручная проверка зависимостей.");
+      nextSteps.add("Проверить сборку и прогнать smoke-тесты после применения.");
+    }
+    if (diffFiles.stream().anyMatch(path -> path.contains("Security") || path.contains("Auth"))) {
+      findings.add("Затронуты security/auth файлы — убедитесь в корректности права доступа.");
+      nextSteps.add("Планируется ручной аудит изменений безопасности.");
+    }
+    if (patch.diff().contains("TODO") || patch.diff().contains("FIXME")) {
+      findings.add("Diff содержит TODO/FIXME — возможно, требуется доработка перед merge.");
+      nextSteps.add("Удалить временные пометки и задокументировать решения.");
+    }
+  }
+
+  private void analyzeTests(
+      CodingPatch patch,
+      Set<String> diffFiles,
+      List<String> findings,
+      List<String> testingRecommendations,
+      List<String> nextSteps) {
+    boolean touchesTests = diffFiles.stream().anyMatch(this::isTestFile);
+    if (!touchesTests) {
+      findings.add("Не обнаружены изменения в тестах — стоит добавить покрытие.");
+      testingRecommendations.add("Добавить тесты, покрывающие изменения.");
+      nextSteps.add("Подготовить и запустить релевантные unit/integration тесты.");
+    }
+    if (patch.diff().contains("@Transactional") || patch.diff().contains("database")) {
+      testingRecommendations.add("Выполнить интеграционные тесты с БД.");
+    }
+  }
+
+  private void analyzeMigrations(Set<String> diffFiles, List<String> findings, List<String> nextSteps) {
+    boolean touchesMigrations =
+        diffFiles.stream()
+            .anyMatch(path -> path.toLowerCase().contains("migration") || path.contains("db/migrate"));
+    if (touchesMigrations) {
+      findings.add("Изменения затрагивают миграции — требуется проверить порядок применения.");
+      nextSteps.add("Согласовать миграции и выполнить dry-run базы данных.");
+    }
+  }
+
+  private boolean isBuildFile(String path) {
+    String lower = path.toLowerCase();
+    return lower.endsWith("pom.xml")
+        || lower.endsWith("build.gradle")
+        || lower.endsWith("build.gradle.kts")
+        || lower.contains("gradle.properties")
+        || lower.contains("settings.gradle")
+        || lower.contains("package.json")
+        || lower.contains("requirements.txt")
+        || lower.contains("pyproject.toml");
+  }
+
+  private boolean isTestFile(String path) {
+    String lower = path.toLowerCase();
+    return lower.contains("/test")
+        || lower.contains("/tests")
+        || lower.contains("__tests__")
+        || lower.endsWith("test.java")
+        || lower.endsWith("tests.java")
+        || lower.endsWith("spec.ts")
+        || lower.endsWith("spec.js")
+        || lower.endsWith("test.ts")
+        || lower.endsWith("test.js")
+        || lower.endsWith("test.py");
+  }
+
+  private enum ReviewFocus {
+    RISKS,
+    TESTS,
+    MIGRATION
   }
 
   record GeneratePatchRequest(
