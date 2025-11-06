@@ -132,6 +132,7 @@ logging:
     org.springframework.ai.mcp.client: DEBUG
     org.springframework.ai.mcp.tool: DEBUG
     com.aiadvent.backend.mcp.service.McpCatalogService: WARN
+    com.aiadvent.backend.flow.tool.service.McpToolBindingService: INFO
 
     # чтобы видеть обмен с моделью и LoggingChatModel
     org.springframework.ai.chat.model: DEBUG
