@@ -150,7 +150,7 @@ class GitHubTools {
           "Возвращает unified diff выбранного PR. Тело запроса: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
               + "\"number\": 123, \"maxBytes\": 1048576}. number (>0) обязателен. maxBytes задаёт верхний предел на размер "
               + "UTF-8 diff (используется дефолт сервиса, если не указан). При обрезке diff поле truncated=true. "
-              + "В ответе headSha указывает текущий SHA ветки."
+              + "В ответе headSha указывает текущий SHA ветки.")
   GitHubPullRequestDiffResponse getPullRequestDiff(GitHubGetPullRequestDiffRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -290,7 +290,7 @@ class GitHubTools {
           "Выполняет merge PR. Пример запроса: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
               + "\"number\": 123, \"mergeMethod\": \"SQUASH\", \"commitTitle\": \"feat: change\", "
               + "\"commitMessage\": \"Описание\"}. repository и number (>0) обязательны. mergeMethod опционален "
-              + "(MERGE|SQUASH|REBASE, по умолчанию MERGE). commitTitle/commitMessage используются при SQUASH/MERGE."
+              + "(MERGE|SQUASH|REBASE, по умолчанию MERGE). commitTitle/commitMessage используются при SQUASH/MERGE.")
   GitHubMergePullRequestResponse mergePullRequest(GitHubMergePullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     MergeMethod method = parseMergeMethod(request.mergeMethod());
@@ -321,7 +321,7 @@ class GitHubTools {
               + "\"location\": {\"path\": \"src/App.java\", \"line\": 42, \"commitSha\": \"abc\"}}. "
               + "repository, number (>0) и body обязательны. Если location отсутствует, создаётся issue-комментарий. "
               + "Для review-комментария требуется location.path и координаты: либо line (>0), либо диапазон startLine/endLine "
-              + "(>0, endLine >= startLine), либо position (>0). commitSha уточняет контекст diff. Дубликаты (body+координаты) пропускаются."
+              + "(>0, endLine >= startLine), либо position (>0). commitSha уточняет контекст diff. Дубликаты (body+координаты) пропускаются.")
   GitHubPullRequestCommentResponse createPullRequestComment(GitHubCreatePullRequestCommentRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -365,7 +365,7 @@ class GitHubTools {
               + "\"comments\": [{\"body\": \"Поправьте\", \"path\": \"src/App.java\", \"line\": 42}]}. "
               + "repository и number обязательны. event допускает APPROVE/REQUEST_CHANGES/COMMENT/PENDING. "
               + "Для COMMENT/REQUEST_CHANGES нужен непустой body. comments — массив драфтов: каждый требует body+path и координаты "
-              + "(line или startLine/endLine или position). commitId опционален. Перед созданием выполняется поиск дубликатов review."
+              + "(line или startLine/endLine или position). commitId опционален. Перед созданием выполняется поиск дубликатов review.")
   GitHubCreatePullRequestReviewResponse createPullRequestReview(GitHubCreatePullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -396,7 +396,7 @@ class GitHubTools {
           "Завершает ранее созданный review. Запрос: {\"repository\": {\"owner\": \"...\", \"name\": \"...\"}, "
               + "\"number\": 123, \"reviewId\": 456, \"event\": \"APPROVE\", \"body\": \"OK\"}. "
               + "repository, number (>0) и reviewId (>0) обязательны. event допускает APPROVE/REQUEST_CHANGES/COMMENT; "
-              + "для COMMENT и REQUEST_CHANGES требуется непустой body."
+              + "для COMMENT и REQUEST_CHANGES требуется непустой body.")
   GitHubSubmitPullRequestReviewResponse submitPullRequestReview(GitHubSubmitPullRequestReviewRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     int number = requirePullRequestNumber(request.number());
@@ -423,7 +423,7 @@ class GitHubTools {
           "Читает blob из репозитория. Запрос: {\"repository\": {\"owner\": \"...\", \"name\": \"...\", \"ref\": \"refs/heads/main\"}, "
               + "\"path\": \"docs/README.md\"}. repository и path обязательны; path должен быть относительным и непустым. "
               + "Размер файла ограничен github.backend.file-max-size-bytes (по умолчанию 512 КБ). Ответ возвращает resolvedRef (SHA коммита), метаданные (sha,size,encoding,downloadUrl) и содержимое "
-              + "в base64 и текстовом виде (textContent доступен, если файл не бинарный)."
+              + "в base64 и текстовом виде (textContent доступен, если файл не бинарный).")
   GitHubFileResponse readFile(GitHubFileRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     if (!StringUtils.hasText(request.path())) {
