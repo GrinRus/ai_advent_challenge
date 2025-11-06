@@ -906,48 +906,49 @@
 - [x] Интегрировать `repo_analysis_mcp` с основным backend: передать инструменты в оркестратор, организовать доступ к состоянию и метрикам.
 
 ## Wave 24 — Расширенные MCP-инструменты: ассистент и GitHub
-Цель: завершить MCP-экосистему для assisted coding и полного цикла работы с GitHub поверх локального workspace.
+Цель: замкнуть assisted-coding цикл — LLM формирует патчи поверх локального workspace, оператор подтверждает dry-run и публикует изменения в GitHub с ручными подтверждениями, аудитом и метриками.
 
 ### MCP Coding Assistant
 - [x] Провести desk-research через Perplexity: собрать MCP/AGI-инструменты патч-генерации, оценить API/лицензии, подготовить shortlist reuse-кандидатов и зафиксировать ограничения.
 - [x] Подготовить RFC (`reuse` vs собственный `code_patch_mcp`): целевой UX (чат/flow), обязанности сервисов, сценарии безопасности/отката, политика подтверждений и лимиты объёмов.
 - [x] Поднять профиль `coding` в `backend-mcp`: подключить `@ComponentScan`/`@EnableConfigurationProperties`, переиспользовать `TempWorkspaceService`, добавить сервис `coding-mcp` в docker-compose и env.
-- [ ] Детально описать новые MCP-инструменты:
-  - `coding.generate_patch` — ввод: `workspaceId`, инструкции, целевые/исключённые пути, список контекстных файлов; вывод: `patchId`, summary, аннотации (список файлов, рисков, конфликтов), usage.
-  - `coding.review_patch` — ввод: `workspaceId`, `patchId`, набор фокусов (risks/tests/migration); вывод: статус, находки, рекомендации по тестам, следующие шаги.
-  - `coding.apply_patch_preview` — ввод: `workspaceId`, `patchId`, whitelist команд, флаг `dryRun`, `timeout`; вывод: флаг применения, превью diff/конфликтов, результат Gradle (executed/exitCode/logs), метрики.
-  - `coding.discard_patch` — ввод: `workspaceId`, `patchId`; действие: удаляет патч из registry, возвращает итоговый статус и метки времени (реализовать после MVP).
-  - `coding.list_patches` — ввод: `workspaceId`; вывод: список активных патчей с `patchId`, `createdAt`, статусом (`generated|applied|discarded`), признаком наличия dry-run (запланировано после MVP).
-  - `github.create_branch` — ввод: `workspaceId`, `repository{owner,name,ref}`, `branchName`, `sourceSha`; вывод: подтверждение создания ветки, `commitSha`, список ключевых файлов.
-  - `github.commit_workspace_diff` — ввод: `workspaceId`, `branchName`, автор (имя/email), сообщение; вывод: `commitSha`, список файлов (added/modified/deleted), статистика.
-  - `github.push_branch` — ввод: `repository`, `branchName`, `force=false`; вывод: результат push, ссылки на ветку/commit, предупреждения о конфликтах.
-  - `github.open_pull_request` — ввод: `repository`, `headBranch`, `baseBranch`, `title`, `body`, optional reviewers; вывод: `prNumber`, ссылки, `headSha`, `baseSha`.
-  - `github.approve_pull_request` — ввод: `repository`, `number`, `body?`; вывод: статус ревью (`APPROVED`), id review, ссылка на UI.
-  - `github.merge_pull_request` — ввод: `repository`, `number`, `mergeMethod`, `commitTitle?`, `commitMessage?`; вывод: итоговый статус merge, `mergedSha`, предупреждения о незакрытых проверках.
 - [x] Оценить интеграцию `WorkspaceAccessService`: вынесли чтение файлов в общий `WorkspaceFileService`, который переиспользуют `github` и `coding` профили.
-- [ ] (Опционально) Добавить проверку компиляции через `DockerRunnerService.runGradle` с fallback на локальный `gradle`; при включении — маскировать секреты и собирать базовые метрики (`coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`).
-- [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска), поддерживать `dry-run`/preview режим и lightweight аудит действий.
-- [ ] Зарегистрировать инструменты в MCP-каталоге: новый `ToolCallbackProvider`, записи Liquibase (`tool_schema_version`, `tool_definition`), обновление `app.mcp.catalog` с описанием сервера.
-- [ ] Подключить инструменты к backend (chat/flow): расширить `app.chat.research.tools`, задать execution-mode `MANUAL` для apply, описать bindings и ручное подтверждение.
-- [ ] Покрыть тестами: unit (валидации, лимиты, ошибки workspace), интеграция (генерация/превью, docker runner, dry-run), smoke на temp workspace.
-- [ ] Обновить документацию (`docs/guides/mcp-operators.md`, `docs/infra.md`): запуск `coding-mcp`, лимиты, процесс подтверждения, контроль доступа и troubleshooting.
+- [ ] Реализовать in-memory `PatchRegistry` с TTL: связка `patchId↔workspaceId`, статусы (`generated|applied|discarded`), атрибуты `requiresManualReview`, `hasDryRun`, переиспользовать `TempWorkspaceService`.
+- [ ] Реализовать инструменты:
+  - `coding.generate_patch` — валидация путей, лимиты diff ≤ 256 КБ и ≤ 25 файлов, сохранение diff/summary/annotations в `PatchRegistry`.
+  - `coding.review_patch` — поддержка фокусов (`risks|tests|migration`), проверка статуса патча, возврат рекомендаций и следующего шага.
+  - `coding.apply_patch_preview` — инструмент `MANUAL`: `git apply` внутри workspace, dry-run через `DockerRunnerService` (whitelist Gradle/npm/pytest), маскирование логов, base64 для бинарных артефактов.
+- [ ] Настроить валидации и ограничения: запрет абсолютных путей, ограничение контекстных чтений `WorkspaceAccessService`, лимиты prompt/completion, блокировка не-whitelisted команд.
+- [ ] Формировать ответы с аннотациями (modified files, конфликтные hunks, оценка риска, usage), отражать статус dry-run и рекомендации.
+- [ ] Отправлять метрики и аудит: `coding_patch_attempt_total`, `coding_patch_success_total`, `coding_patch_compile_fail_total`, структурированные логи без секретов.
+- [ ] Зарегистрировать инструменты в MCP-каталоге (Liquibase), указать `execution-mode=MANUAL` для `coding.apply_patch_preview`.
+- [ ] Подключить инструменты к backend (chat/flow): bindings, ручные подтверждения dry-run в UI/Telegram, разблокировка GitHub write-инструментов после подтверждения.
+- [ ] Покрыть тестами: unit (валидации, Registry), интеграция (generate→review→apply с dry-run/timeout/invalid diff), smoke (apply без dry-run).
+- [ ] Обновить документацию (`docs/guides/mcp-operators.md`, `docs/infra.md`): UX assisted coding, политика подтверждений, лимиты, troubleshooting.
+- [ ] (Post-MVP) Зафиксировать roadmap-пункты `coding.list_patches` / `coding.discard_patch` для диагностики активных патчей и ручного сброса.
 
 ### GitHub MCP Expansion
-- [ ] Расширить `GitHubRepositoryService`: реализовать `createBranch`, `commitChanges`, `pushBranch`, `openPullRequest`, `setPrStatus`, `raiseVeto` с проверками workspace, whitelist веток и запретом force-push.
-- [ ] Дополнить `GitHubTools`/`GitHubWorkspaceTools` новыми `@Tool`-методами, нормализовать ответы (SHA, ссылки, статусы, vetos) и обеспечить валидацию входных данных.
-- [ ] Добавить структурированные логи операций; усиленные ограничения (лимиты архивов, маскирование токенов, метрики, rollback при ошибках API) запланировать отдельно.
-- [ ] Обновить каталог инструментов: Liquibase вставки, запись в `app.mcp.catalog`, добавить execution-mode `MANUAL` в backend-конфигах (chat/flow).
-- [ ] Протестировать end-to-end на sandbox репозитории (ветка → коммит → push → PR → статус), негативы (конфликт, force-push запрет, veto).
+- [ ] Реализовать write-операции в `GitHubRepositoryService`:
+  - `createBranch` — whitelist branchName, проверка существующей ветки и прав записи.
+  - `commitWorkspaceDiff` — формирование commit из diff workspace, отклонение пустого diff и превышения лимитов.
+  - `pushBranch` — запрет `force`, проверка конфликтов и размера.
+  - `openPullRequest` — sanity-check head/base, лимит diff, возврат `prNumber`, `headSha`, `baseSha`.
+  - `approvePullRequest` — review `APPROVE` сервисным аккаунтом.
+  - `mergePullRequest` — проверка статуса CI, поддержка `squash|rebase|merge`.
+- [ ] Экспортировать инструменты через `GitHubTools`/`GitHubWorkspaceTools`, нормализовать ответы (SHA, ссылки, статусы, vetos), настроить ручные подтверждения.
+- [ ] Добавить структурированные логи и аудит write-операций; усиленные ограничения (лимиты архивов, маскирование токенов, rollback) вынести в отдельный backlog.
+- [ ] Обновить MCP-каталог и backend (`app.mcp.catalog`, `app.chat.research.tools`): `execution-mode=MANUAL` для write-операций, разблокировка после dry-run.
+- [ ] Протестировать e2e: sandbox-репозиторий ветка → commit → push → PR → approve → merge; негативы (конфликт, запрет force-push, veto).
 - [ ] Unit-тесты: сериализация запросов, обработка ошибок GitHub API, откат workspace при исключениях.
-- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON запросов, сценарии работы с sandbox (PAT уже описан — не дублировать).
+- [ ] Документация (`docs/guides/mcp-operators.md`, `docs/infra.md`): чек-лист безопасного использования, примеры JSON, сценарии sandbox.
 
 ### Assisted Coding Flow (FE/TG → MCP)
-1. Пользователь задаёт репозиторий/задачу → `github.repository_fetch` + `github.workspace_directory_inspector` для подготовки workspace.
-2. `coding.generate_patch` возвращает ответ LLM и diff; при необходимости `coding.review_patch` уточняет риски/конфликты.
-3. После ручного подтверждения вызывается `coding.apply_patch_preview` (dry-run + Gradle через Docker); результаты обсуждаются в чате.
-4. `github.create_branch` → `github.commit_workspace_diff` → `github.push_branch` публикуют изменения.
-5. `github.open_pull_request` формирует LLM PR; дополнительные инструменты (`github.get_pull_request_diff/comments/checks`) используются для анализа.
-6. Результаты ревью фиксируются через `github.set_pr_status`/`github.raise_veto`; цикл повторяется до merge.
+1. Пользователь задаёт репозиторий/задачу → `github.repository_fetch` + `github.workspace_directory_inspector` готовят workspace.
+2. `coding.generate_patch` возвращает diff и summary; по запросу `coding.review_patch` подсвечивает риски/tests/migrations.
+3. Оператор вручную подтверждает `coding.apply_patch_preview` (dry-run через Docker по whitelist-командам, доступно только при явном запросе).
+4. После успешного dry-run или явного решения пропустить его разблокируются `github.create_branch` → `github.commit_workspace_diff` → `github.push_branch` (каждый шаг требует отдельного подтверждения).
+5. `github.open_pull_request` создаёт PR; при необходимости подключаются анализаторы (`github.get_pull_request_diff/comments/checks`), а `github.approve_pull_request` и `github.merge_pull_request` доступны только после ручного подтверждения и проверки статуса проверок.
+6. Результаты ревью фиксируются через `github.set_pr_status` / `github.raise_veto`; цикл повторяется до merge.
 
 ## Wave 26 — Комплексный аудит скачанных репозиториев
 ### Repo Analysis Service
