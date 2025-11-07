@@ -2783,6 +2783,11 @@ public class GitHubRepositoryService {
   }
 
   private String buildCloneUrl(RepositoryRef repository) {
+    String override = properties.getCloneBaseUrl();
+    if (StringUtils.hasText(override)) {
+      return formatCloneOverride(override, repository);
+    }
+
     String baseUrl = properties.getBaseUrl();
     if (!StringUtils.hasText(baseUrl) || baseUrl.contains("api.github.com")) {
       return "https://github.com/" + repository.fullName() + ".git";
@@ -2798,6 +2803,26 @@ public class GitHubRepositoryService {
       sanitized = sanitized + "/";
     }
     return sanitized + repository.fullName() + ".git";
+  }
+
+  private String formatCloneOverride(String override, RepositoryRef repository) {
+    String result = override;
+    if (result.contains("{owner}")) {
+      result = result.replace("{owner}", repository.owner());
+    }
+    if (result.contains("{name}")) {
+      result = result.replace("{name}", repository.name());
+    }
+    if (result.contains("{fullName}")) {
+      result = result.replace("{fullName}", repository.fullName());
+    }
+    if (result.contains("%s")) {
+      return result.formatted(repository.fullName());
+    }
+    if (result.contains("%1$s") || result.contains("%2$s")) {
+      return result.formatted(repository.owner(), repository.name());
+    }
+    return result;
   }
 
   private void emptyDirectory(Path directory) {

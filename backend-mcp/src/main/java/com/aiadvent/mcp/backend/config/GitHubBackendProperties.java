@@ -26,6 +26,7 @@ public class GitHubBackendProperties {
   private Integer commitMaxFiles = 200;
   private Integer pullRequestMaxFiles = 300;
   private Integer pullRequestMaxCommits = 100;
+  private String cloneBaseUrl;
 
   public String getBaseUrl() {
     return baseUrl;
@@ -185,5 +186,13 @@ public class GitHubBackendProperties {
 
   public void setPullRequestMaxCommits(Integer pullRequestMaxCommits) {
     this.pullRequestMaxCommits = pullRequestMaxCommits;
+  }
+
+  public String getCloneBaseUrl() {
+    return cloneBaseUrl;
+  }
+
+  public void setCloneBaseUrl(String cloneBaseUrl) {
+    this.cloneBaseUrl = cloneBaseUrl;
   }
 }

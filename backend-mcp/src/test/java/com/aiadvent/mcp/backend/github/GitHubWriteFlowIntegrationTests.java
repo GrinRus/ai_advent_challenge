@@ -97,6 +97,7 @@ class GitHubWriteFlowIntegrationTests {
     GitHubBackendProperties properties = new GitHubBackendProperties();
     properties.setWorkspaceRoot(tempDir.resolve("workspaces").toString());
     properties.setCommitDiffMaxBytes(2L * 1024 * 1024);
+    properties.setCloneBaseUrl(remoteGitDir.toUri().toString());
 
     workspaceService = new TempWorkspaceService(properties, null);
     workspaceService.afterPropertiesSet();
