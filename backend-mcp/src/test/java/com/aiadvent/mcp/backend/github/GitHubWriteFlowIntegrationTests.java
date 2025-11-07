@@ -34,8 +34,11 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
@@ -192,6 +195,23 @@ class GitHubWriteFlowIntegrationTests {
   }
 
   @Test
+  void createBranchRecoversWorkspaceWithoutGitMetadata() throws Exception {
+    RepositoryRef repoRef = new RepositoryRef(OWNER, REPOSITORY, "heads/main");
+    Path gitDir = workspacePath.resolve(".git");
+    deleteRecursively(gitDir);
+    assertThat(Files.exists(gitDir)).isFalse();
+
+    CreateBranchResult branchResult =
+        repositoryService.createBranch(
+            new CreateBranchInput(repoRef, workspaceId, "feature/reinit", null));
+
+    assertThat(branchResult.branchRef()).isEqualTo("refs/heads/feature/reinit");
+    assertThat(Files.isDirectory(gitDir)).isTrue();
+    String status = runGit(workspacePath, "status", "--short");
+    assertThat(status.trim()).isEmpty();
+  }
+
+  @Test
   void pushBranchRejectsForceFlag() {
     RepositoryRef repoRef = new RepositoryRef(OWNER, REPOSITORY, "heads/main");
 
@@ -220,6 +240,27 @@ class GitHubWriteFlowIntegrationTests {
     String headSha = resolveLocalRef("HEAD");
     branchRefs.put("heads/main", headSha);
     workspaceService.updateWorkspace(workspaceId, null, headSha, List.of("README.md"));
+  }
+
+  private void deleteRecursively(Path target) throws IOException {
+    if (!Files.exists(target)) {
+      return;
+    }
+    Files.walkFileTree(
+        target,
+        new SimpleFileVisitor<>() {
+          @Override
+          public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+            Files.deleteIfExists(file);
+            return FileVisitResult.CONTINUE;
+          }
+
+          @Override
+          public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+            Files.deleteIfExists(dir);
+            return FileVisitResult.CONTINUE;
+          }
+        });
   }
 
   private void configureGitHubMocks() throws Exception {

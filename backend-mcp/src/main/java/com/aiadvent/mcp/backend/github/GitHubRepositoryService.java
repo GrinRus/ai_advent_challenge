@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.BufferedInputStream;
+import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -28,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -99,6 +101,7 @@ public class GitHubRepositoryService {
   private static final int MAX_BRANCH_NAME_LENGTH = 255;
   private static final Pattern INVALID_BRANCH_PATTERN = Pattern.compile("[\\s~^:?*\\[\\\\]");
   private static final Pattern INVALID_BRANCH_COMPONENT = Pattern.compile("(^\\.|\\.\\.|@\\{|//|\\.lock$)");
+  private static final String WORKSPACE_METADATA_FILE = ".workspace.json";
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private final GitHubClientExecutor executor;
@@ -328,6 +331,9 @@ public class GitHubRepositoryService {
     Duration gitTimeout = Duration.ofSeconds(60);
     String sourceSha =
         resolveSourceSha(workspace, input.sourceSha(), workspacePath, authHeader, token);
+
+    ensureGitRepositoryInitialized(
+        repository, workspace, workspacePath, sourceSha, gitTimeout, authHeader, token);
 
     executor.executeVoid(
         github -> {
@@ -864,6 +870,87 @@ public class GitHubRepositoryService {
           "Unable to resolve HEAD commit for workspace " + workspace.workspaceId());
     }
     return headResult.output().trim();
+  }
+
+  private void ensureGitRepositoryInitialized(
+      RepositoryRef repository,
+      TempWorkspaceService.Workspace workspace,
+      Path workspacePath,
+      String sourceSha,
+      Duration gitTimeout,
+      String authHeader,
+      String token) {
+    Path gitDir = workspacePath.resolve(".git");
+    if (Files.isDirectory(gitDir)) {
+      return;
+    }
+    if (!StringUtils.hasText(sourceSha)) {
+      throw new IllegalStateException(
+          "Workspace "
+              + workspace.workspaceId()
+              + " is missing git metadata and no commit SHA is available to reconstruct it."
+              + " Re-fetch the repository with clone strategy.");
+    }
+    log.info(
+        "Workspace {} missing .git directory, initializing git repository for {}",
+        workspace.workspaceId(),
+        repository.fullName());
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "init");
+    ensureMetadataExcluded(workspacePath);
+    String remoteUrl = buildCloneUrl(repository);
+    runGitCommand(
+        workspacePath,
+        gitTimeout,
+        authHeader,
+        token,
+        "git",
+        "remote",
+        "add",
+        "origin",
+        remoteUrl);
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "fetch", "origin", sourceSha);
+    runGitCommand(workspacePath, gitTimeout, authHeader, token, "git", "checkout", "-f", sourceSha);
+  }
+
+  private void ensureMetadataExcluded(Path workspacePath) {
+    Path gitDir = workspacePath.resolve(".git");
+    if (!Files.isDirectory(gitDir)) {
+      return;
+    }
+    Path excludeFile = gitDir.resolve("info").resolve("exclude");
+    try {
+      Path excludeDir = excludeFile.getParent();
+      if (excludeDir != null) {
+        Files.createDirectories(excludeDir);
+      }
+      if (Files.exists(excludeFile)) {
+        List<String> existing = Files.readAllLines(excludeFile, StandardCharsets.UTF_8);
+        boolean alreadyPresent =
+            existing.stream().map(String::trim).anyMatch(line -> WORKSPACE_METADATA_FILE.equals(line));
+        if (alreadyPresent) {
+          return;
+        }
+      }
+      boolean needsNewline = Files.exists(excludeFile) && Files.size(excludeFile) > 0;
+      try (BufferedWriter writer =
+          Files.newBufferedWriter(
+              excludeFile,
+              StandardCharsets.UTF_8,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.APPEND)) {
+        if (needsNewline) {
+          writer.newLine();
+        }
+        writer.write(WORKSPACE_METADATA_FILE);
+        writer.newLine();
+      }
+    } catch (IOException ex) {
+      log.debug(
+          "Failed to add {} to git exclude for workspace {}: {}",
+          WORKSPACE_METADATA_FILE,
+          workspacePath,
+          ex.getMessage());
+    }
   }
 
   private void ensurePushAccess(GHRepository repository, RepositoryRef ref) throws IOException {
