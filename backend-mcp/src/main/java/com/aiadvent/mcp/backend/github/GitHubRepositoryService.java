@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github;
 
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
+import com.aiadvent.mcp.backend.github.rag.RepoRagIndexScheduler;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -107,6 +108,7 @@ public class GitHubRepositoryService {
   private final GitHubClientExecutor executor;
   private final GitHubBackendProperties properties;
   private final TempWorkspaceService workspaceService;
+  private final RepoRagIndexScheduler repoRagIndexScheduler;
   private final GitHubTokenManager tokenManager;
   private final MeterRegistry meterRegistry;
   private final Timer fetchTimer;
@@ -122,11 +124,14 @@ public class GitHubRepositoryService {
       GitHubClientExecutor executor,
       GitHubBackendProperties properties,
       TempWorkspaceService workspaceService,
+      RepoRagIndexScheduler repoRagIndexScheduler,
       GitHubTokenManager tokenManager,
       @Nullable MeterRegistry meterRegistry) {
     this.executor = Objects.requireNonNull(executor, "executor");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
+    this.repoRagIndexScheduler =
+        Objects.requireNonNull(repoRagIndexScheduler, "repoRagIndexScheduler");
     this.tokenManager = Objects.requireNonNull(tokenManager, "tokenManager");
     MeterRegistry registry = meterRegistry;
     if (registry == null) {
@@ -202,23 +207,45 @@ public class GitHubRepositoryService {
       if (workspaceSize > 0) {
         workspaceSizeSummary.record((double) workspaceSize);
       }
-      return new FetchRepositoryResult(
-          repository,
-          updated.workspaceId(),
-          updated.path(),
-          outcome.resolvedRef(),
-          outcome.commitSha(),
-          outcome.downloadedBytes(),
-          workspaceSize,
-          duration,
-          outcome.strategy(),
-          keyFiles,
-          outcome.completedAt());
+      FetchRepositoryResult result =
+          new FetchRepositoryResult(
+              repository,
+              updated.workspaceId(),
+              updated.path(),
+              outcome.resolvedRef(),
+              outcome.commitSha(),
+              outcome.downloadedBytes(),
+              workspaceSize,
+              duration,
+              outcome.strategy(),
+              keyFiles,
+              outcome.completedAt());
+      scheduleRagIndexing(result);
+      return result;
     } catch (RuntimeException ex) {
       fetchFailureCounter.increment();
       fetchTimer.record(Duration.between(startedAt, Instant.now()));
       workspaceService.deleteWorkspace(workspace.workspaceId());
       throw ex;
+    }
+  }
+
+  private void scheduleRagIndexing(FetchRepositoryResult result) {
+    RepositoryRef repository = result.repository();
+    try {
+      repoRagIndexScheduler.scheduleIndexing(
+          repository.owner(),
+          repository.name(),
+          result.workspaceId(),
+          result.resolvedRef(),
+          result.fetchedAt());
+    } catch (Exception ex) {
+      log.warn(
+          "Unable to enqueue repo RAG indexing for {}/{}: {}",
+          repository.owner(),
+          repository.name(),
+          ex.getMessage(),
+          ex);
     }
   }
 
