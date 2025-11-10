@@ -1039,3 +1039,27 @@
 - [x] Интеграционные тесты notes-mcp: сохранение заметки, повторное сохранение (идемпотентность), поиск похожего (vector match + fallback), проверка сериализации метаданных и graceful деградации embeddings. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/notes/NotesServiceIntegrationTest.java`
 - [x] Контрактные тесты между backend ↔ notes-mcp (MCP): успешный вызов обоих инструментов, таймауты, обработка 4xx/5xx, корректный mapping score и noteId. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/notes/NotesServiceIntegrationTest.java`
 - [x] Обновить документацию (`docs/infra.md`, `docs/guides/mcp-operators.md`, README): описание сервиса notes-mcp, формат заметок, параметры поиска, процесс настройки embedding моделей, подсказки по эксплуатации и мониторингу (метрики insert/search). → `docs/infra.md`, `docs/guides/mcp-operators.md`, `README.md`, `docs/architecture/notes-mcp.md`
+
+## Wave 29 — Claude CLI Patch Generation
+Цель: заменить заглушку Patch Plan на полноценную генерацию diff'ов через Claude Code CLI и встроить новый генератор в существующий assisted-coding pipeline (coding → GitHub write).
+
+### Backend (backend-mcp)
+- [ ] Ввести интерфейс `PatchGenerator` и реализацию `ClaudeCliPatchGenerator`, которая собирает инструкции/target/forbidden/context, вызывает `claude` как подпроцесс и возвращает summary/diff/usage/annotations (учитывая лимиты `coding.max-*`). → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/*`
+- [ ] Добавить `ClaudeCliService`: поиск бинаря, валидация (`claude --version`), сбор env (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_BIN`), конфигурация таймаутов и нормализованный запуск через `ProcessBuilder`. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding`
+- [ ] Использовать `WorkspaceFileService` для подготовки контекста (snippets → временный каталог или stdin), не выходя за лимиты чтения и сохраняя ссылки на файлы. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/workspace/WorkspaceFileService.java`
+- [ ] Перенастроить `CodingAssistantService` на новую реализацию генератора, обеспечить нормализацию diff (отфильтровать бинарные блоки, отсечь файлы вне workspace), обновлять `PatchRegistry`/метрики в случае ошибок CLI. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/CodingAssistantService.java`, `PatchRegistry.java`
+- [ ] Обработать usage/аннотации из CLI-ответа: пробрасывать оценку риска, modified files, ограничения dry-run, логировать предупреждения. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/CodingAssistantService.java`
+- [ ] Покрыть тестами: unit на `ClaudeCliService` (успех, таймаут, stderr), unit на `ClaudeCliPatchGenerator` (валидации, лимиты, парсинг diff), интеграционный сценарий generate→review→apply c mock CLI. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/coding/*`
+
+### Инфраструктура и конфигурация
+- [ ] Добавить переменные `CLAUDE_CODE_BIN`, `CLAUDE_CODE_TIMEOUT`, `ANTHROPIC_API_KEY` в `.env.example`, `application-coding.yaml`, описать fallback автоматического поиска бинаря. → `.env.example`, `backend-mcp/src/main/resources/application-coding.yaml`
+- [ ] Обновить `docker-compose.yml`: смонтировать Node/npm cache, добавить healthcheck `claude --version`, задокументировать зависимости контейнера `coding-mcp`. → `docker-compose.yml`
+- [ ] Создать раздел в `docs/infra.md` про установку Claude CLI в dev/prod окружениях (Node 18+, npm install -g, хранение API ключей). → `docs/infra.md`
+
+### Наблюдаемость и безопасность
+- [ ] Расширить метрики: `coding_patch_generation_duration`, `coding_claude_cli_fail_total`, логировать структуру prompt size (без контента) и размер diff. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/CodingAssistantService.java`
+- [ ] Добавить feature-flag/конфиг для быстрого отключения Claude CLI (fallback к patch plan) при деградации, зафиксировать политику ретраев и маскирование stderr в логах. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/CodingAssistantProperties.java`, `application-coding.yaml`
+- [ ] Обновить `docs/guides/mcp-operators.md` и `docs/architecture/coding-assistant-rfc.md`: новый генератор, требования к CLI, сценарий отладки (stdout/stderr, tmp-папка контекста). → `docs/guides/mcp-operators.md`, `docs/architecture/coding-assistant-rfc.md`
+
+### Assisted Coding Flow
+- [ ] Провести e2e прогоны (web UI + Telegram): `github.repository_fetch` → `coding.generate_patch` (Claude CLI) → `coding.review_patch` → `coding.apply_patch_preview` → GitHub write-инструменты; задокументировать чек-лист оператора и негативные сценарии (CLI timeout, превышение лимита diff). → `frontend`, `docs/guides/mcp-operators.md`
