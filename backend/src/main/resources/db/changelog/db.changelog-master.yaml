@@ -3,7 +3,6 @@ databaseChangeLog:
       id: 0001-create-help-table
       author: ai-advent
       context: local,prod
-      validCheckSum: 9:484fe1cf55423801c14efd9862b30088
       changes:
         - sql:
             splitStatements: false
@@ -3119,6 +3118,16 @@ databaseChangeLog:
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.approve_pull_request' AND version = 1)),
                 ('github.merge_pull_request', 'GitHub · Merge pull request', 'Выполняет merge pull request с выбранным методом.', 'github', 'MANUAL', '["github","pull-request","merge"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.merge_pull_request' AND version = 1));
+
+  - changeSet:
+      id: 0208-add-repo-rag-tools
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
               INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
               VALUES
                 ('repo.rag_index_status', 1,
@@ -3146,3 +3155,6 @@ databaseChangeLog:
                 ('repo.rag_search', 'GitHub · Repo RAG search', 'Возвращает релевантные чанки из namespace `repo:<owner>/<name>` с heuristic rerank.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
