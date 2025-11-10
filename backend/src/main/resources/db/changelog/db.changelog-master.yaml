@@ -3155,6 +3155,3 @@ databaseChangeLog:
                 ('repo.rag_search', 'GitHub · Repo RAG search', 'Возвращает релевантные чанки из namespace `repo:<owner>/<name>` с heuristic rerank.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
-
-              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
-              VALUES
