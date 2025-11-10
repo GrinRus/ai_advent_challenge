@@ -16,4 +16,12 @@ public interface RepoRagDocumentRepository
 
   @Query("select d.id from RepoRagDocumentEntity d where d.namespace = :namespace")
   List<UUID> findIdsByNamespace(@Param("namespace") String namespace);
+
+  @Query(
+      "select d.id from RepoRagDocumentEntity d where d.namespace = :namespace and d.filePath = :filePath")
+  List<UUID> findIdsByNamespaceAndFilePath(
+      @Param("namespace") String namespace, @Param("filePath") String filePath);
+
+  @Query("select distinct d.filePath from RepoRagDocumentEntity d where d.namespace = :namespace")
+  List<String> findDistinctFilePathsByNamespace(@Param("namespace") String namespace);
 }

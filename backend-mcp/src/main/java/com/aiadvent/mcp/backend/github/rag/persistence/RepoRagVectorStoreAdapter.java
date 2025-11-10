@@ -1,6 +1,8 @@
 package com.aiadvent.mcp.backend.github.rag.persistence;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.ai.document.Document;
@@ -22,11 +24,6 @@ public class RepoRagVectorStoreAdapter {
     this.documentRepository = documentRepository;
   }
 
-  public void replaceNamespace(String namespace, List<Document> documents) {
-    deleteNamespace(namespace);
-    addDocuments(documents);
-  }
-
   public void addDocuments(List<Document> documents) {
     if (CollectionUtils.isEmpty(documents)) {
       return;
@@ -36,6 +33,23 @@ public class RepoRagVectorStoreAdapter {
 
   public void deleteNamespace(String namespace) {
     List<UUID> ids = documentRepository.findIdsByNamespace(namespace);
+    if (ids.isEmpty()) {
+      return;
+    }
+    vectorStore.delete(ids.stream().map(UUID::toString).collect(Collectors.toList()));
+  }
+
+  public Set<String> listFilePaths(String namespace) {
+    return new HashSet<>(documentRepository.findDistinctFilePathsByNamespace(namespace));
+  }
+
+  public void replaceFile(String namespace, String filePath, List<Document> documents) {
+    deleteFile(namespace, filePath);
+    addDocuments(documents);
+  }
+
+  public void deleteFile(String namespace, String filePath) {
+    List<UUID> ids = documentRepository.findIdsByNamespaceAndFilePath(namespace, filePath);
     if (ids.isEmpty()) {
       return;
     }

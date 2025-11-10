@@ -187,3 +187,15 @@ databaseChangeLog:
             splitStatements: false
             stripComments: true
             sql: CREATE INDEX IF NOT EXISTS idx_repo_rag_vector_store_embedding ON repo_rag_vector_store USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  - changeSet:
+      id: github-rag-0002
+      author: ai-advent
+      context: github-rag
+      changes:
+        - dropUniqueConstraint:
+            constraintName: uq_repo_rag_vector_store_namespace_hash
+            tableName: repo_rag_vector_store
+        - addUniqueConstraint:
+            tableName: repo_rag_vector_store
+            columnNames: namespace, file_path, chunk_index
+            constraintName: uq_repo_rag_vector_store_namespace_path_idx

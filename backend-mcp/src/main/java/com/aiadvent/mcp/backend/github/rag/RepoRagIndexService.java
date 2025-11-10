@@ -18,11 +18,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -79,10 +81,10 @@ public class RepoRagIndexService {
             .toAbsolutePath()
             .normalize();
 
-    List<Document> documents = new ArrayList<>();
     AtomicLong files = new AtomicLong();
     AtomicLong chunks = new AtomicLong();
     List<String> warnings = new ArrayList<>();
+    Set<String> stalePaths = new HashSet<>(vectorStoreAdapter.listFilePaths(request.namespace()));
 
     try {
       Files.walkFileTree(
@@ -110,50 +112,45 @@ public class RepoRagIndexService {
               }
               Path relative = root.relativize(file.toAbsolutePath().normalize());
               String relativePath = relative.toString().replace('\\', '/');
+              stalePaths.remove(relativePath);
               if (isBinaryFile(file)) {
                 appendWarning(warnings, "Skipped binary file " + relativePath);
                 return FileVisitResult.CONTINUE;
               }
 
-              List<Chunk> fileChunks = chunkFile(file);
-              if (fileChunks.isEmpty()) {
+              List<Chunk> fileChunks;
+              try {
+                fileChunks = chunkFile(file);
+              } catch (IOException ex) {
+                appendWarning(
+                    warnings, "Skipped broken file " + relativePath + ": " + ex.getMessage());
+                log.warn("Failed to read {}: {}", relativePath, ex.getMessage());
                 return FileVisitResult.CONTINUE;
               }
 
-              files.incrementAndGet();
-              for (int i = 0; i < fileChunks.size(); i++) {
-                Chunk chunk = fileChunks.get(i);
-                Map<String, Object> metadata = new LinkedHashMap<>();
-                metadata.put("namespace", request.namespace());
-                metadata.put("repo_owner", request.repoOwner());
-                metadata.put("repo_name", request.repoName());
-                metadata.put("file_path", relativePath);
-                metadata.put("chunk_index", i);
-                metadata.put("line_start", chunk.lineStart());
-                metadata.put("line_end", chunk.lineEnd());
-                metadata.put("chunk_hash", chunk.hash());
-                metadata.put("language", chunk.language());
-                metadata.put("summary", chunk.summary());
-                if (request.sourceRef() != null) {
-                  metadata.put("source_ref", request.sourceRef());
+              List<Document> fileDocuments =
+                  buildDocuments(fileChunks, relativePath, request);
+
+              boolean hasChunks = !fileDocuments.isEmpty();
+              try {
+                vectorStoreAdapter.replaceFile(
+                    request.namespace(), relativePath, fileDocuments);
+                if (hasChunks) {
+                  files.incrementAndGet();
+                  chunks.addAndGet(fileDocuments.size());
                 }
-                if (request.fetchedAt() != null) {
-                  metadata.put("fetched_at", request.fetchedAt().toString());
-                }
-                Document document =
-                    Document.builder()
-                        .id(chunk.hash())
-                        .text(chunk.content())
-                        .metadata(metadata)
-                        .build();
-                documents.add(document);
-                chunks.incrementAndGet();
+              } catch (RuntimeException ex) {
+                appendWarning(
+                    warnings,
+                    "Failed to store chunks for " + relativePath + ": " + ex.getMessage());
+                log.warn("Failed to store chunks for {}: {}", relativePath, ex.getMessage());
               }
               return FileVisitResult.CONTINUE;
             }
           });
-
-      vectorStoreAdapter.replaceNamespace(request.namespace(), documents);
+      for (String stalePath : stalePaths) {
+        vectorStoreAdapter.deleteFile(request.namespace(), stalePath);
+      }
       log.info(
           "Indexed repo {} with {} files and {} chunks (namespace={})",
           request.repoOwner(),
@@ -165,6 +162,47 @@ public class RepoRagIndexService {
     }
 
     return new IndexResult(files.get(), chunks.get(), List.copyOf(warnings));
+  }
+
+  private List<Document> buildDocuments(
+      List<Chunk> fileChunks, String relativePath, IndexRequest request) {
+    if (fileChunks.isEmpty()) {
+      return List.of();
+    }
+    List<Document> documents = new ArrayList<>(fileChunks.size());
+    for (int i = 0; i < fileChunks.size(); i++) {
+      Chunk chunk = fileChunks.get(i);
+      Map<String, Object> metadata = new LinkedHashMap<>();
+      metadata.put("namespace", request.namespace());
+      metadata.put("repo_owner", request.repoOwner());
+      metadata.put("repo_name", request.repoName());
+      metadata.put("file_path", relativePath);
+      metadata.put("chunk_index", i);
+      metadata.put("line_start", chunk.lineStart());
+      metadata.put("line_end", chunk.lineEnd());
+      metadata.put("chunk_hash", chunk.hash());
+      metadata.put("language", chunk.language());
+      metadata.put("summary", chunk.summary());
+      if (request.sourceRef() != null) {
+        metadata.put("source_ref", request.sourceRef());
+      }
+      if (request.fetchedAt() != null) {
+        metadata.put("fetched_at", request.fetchedAt().toString());
+      }
+      Document document =
+          Document.builder()
+              .id(buildChunkId(relativePath, i, chunk.hash()))
+              .text(chunk.content())
+              .metadata(metadata)
+              .build();
+      documents.add(document);
+    }
+    return documents;
+  }
+
+  private String buildChunkId(String relativePath, int chunkIndex, String chunkHash) {
+    String source = relativePath + ":" + chunkIndex + ":" + chunkHash;
+    return UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8)).toString();
   }
 
   private boolean shouldSkipDirectory(String dirName) {
@@ -209,7 +247,7 @@ public class RepoRagIndexService {
     }
   }
 
-  private List<Chunk> chunkFile(Path file) throws IOException {
+  List<Chunk> chunkFile(Path file) throws IOException {
     List<Chunk> chunks = new ArrayList<>();
     int maxBytes = properties.getChunk().getMaxBytes();
     int maxLines = properties.getChunk().getMaxLines();

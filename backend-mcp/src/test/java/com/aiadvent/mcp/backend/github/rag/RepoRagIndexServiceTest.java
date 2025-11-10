@@ -3,6 +3,9 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +16,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +31,8 @@ import org.springframework.ai.document.Document;
 
 @ExtendWith(MockitoExtension.class)
 class RepoRagIndexServiceTest {
+
+  private static final String NAMESPACE = "repo:owner/repo";
 
   @Mock private TempWorkspaceService workspaceService;
   @Mock private RepoRagVectorStoreAdapter vectorStoreAdapter;
@@ -51,31 +58,22 @@ class RepoRagIndexServiceTest {
     Path binaryFile = tempDir.resolve("logo.png");
     Files.write(binaryFile, new byte[] {0, 1, 2, 3});
 
-    TempWorkspaceService.Workspace workspace =
-        new TempWorkspaceService.Workspace(
-            "ws-1",
-            tempDir,
-            Instant.now(),
-            Instant.now().plusSeconds(60),
-            null,
-            "owner/repo",
-            "refs/heads/main",
-            0L,
-            null,
-            List.of());
-    when(workspaceService.findWorkspace("ws-1")).thenReturn(Optional.of(workspace));
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet("ghost.js"));
+    when(workspaceService.findWorkspace("ws-1"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
         service.indexWorkspace(
             new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-1", "repo:owner/repo", "refs/heads/main", Instant.now()));
+                "owner", "repo", "ws-1", NAMESPACE, "refs/heads/main", Instant.now()));
 
     assertThat(result.filesProcessed()).isEqualTo(1);
     assertThat(result.chunksProcessed()).isEqualTo(1);
     assertThat(result.warnings()).anyMatch(w -> w.contains("binary file") && w.contains("logo.png"));
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
-    verify(vectorStoreAdapter).replaceNamespace(eq("repo:owner/repo"), captor.capture());
+    verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("src/Main.java"), captor.capture());
+    verify(vectorStoreAdapter).deleteFile(NAMESPACE, "ghost.js");
     List<Document> documents = captor.getValue();
     assertThat(documents).hasSize(1);
     Document doc = documents.get(0);
@@ -92,17 +90,19 @@ class RepoRagIndexServiceTest {
     String content = String.join("\n", List.of("line1", "line2", "line3", "line4", "line5", "line6"));
     Files.writeString(file, content);
 
-    when(workspaceService.findWorkspace("ws-2")).thenReturn(Optional.of(workspaceFor(tempDir)));
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet());
+    when(workspaceService.findWorkspace("ws-2"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
         service.indexWorkspace(
             new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-2", "repo:owner/repo", "refs/heads/main", Instant.now()));
+                "owner", "repo", "ws-2", NAMESPACE, "refs/heads/main", Instant.now()));
 
     assertThat(result.chunksProcessed()).isEqualTo(2);
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
-    verify(vectorStoreAdapter).replaceNamespace(eq("repo:owner/repo"), captor.capture());
+    verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("Large.java"), captor.capture());
     List<Document> documents = captor.getValue();
     assertThat(documents).hasSize(2);
     assertThat(documents.get(0).getMetadata().get("line_end")).isEqualTo(3);
@@ -118,19 +118,51 @@ class RepoRagIndexServiceTest {
     Path expectedDir = Files.createDirectories(tempDir.resolve("src"));
     Files.writeString(expectedDir.resolve("kept.ts"), "export const a = 1;");
 
-    when(workspaceService.findWorkspace("ws-3")).thenReturn(Optional.of(workspaceFor(tempDir)));
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet());
+    when(workspaceService.findWorkspace("ws-3"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
         service.indexWorkspace(
             new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-3", "repo:owner/repo", "refs/heads/main", Instant.now()));
+                "owner", "repo", "ws-3", NAMESPACE, "refs/heads/main", Instant.now()));
 
     assertThat(result.filesProcessed()).isEqualTo(1);
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
-    verify(vectorStoreAdapter).replaceNamespace(eq("repo:owner/repo"), captor.capture());
+    verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("src/kept.ts"), captor.capture());
     List<Document> documents = captor.getValue();
-    assertThat(documents).singleElement().satisfies(doc -> assertThat(doc.getMetadata().get("file_path")).isEqualTo("src/kept.ts"));
+    assertThat(documents)
+        .singleElement()
+        .satisfies(doc -> assertThat(doc.getMetadata().get("file_path")).isEqualTo("src/kept.ts"));
+  }
+
+  @Test
+  void skipsBrokenFilesWithoutDroppingExistingChunks() throws IOException {
+    Path file = tempDir.resolve("broken.txt");
+    Files.writeString(file, "secret");
+
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet("broken.txt"));
+    when(workspaceService.findWorkspace("ws-4"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
+
+    RepoRagIndexService serviceSpy = spy(service);
+    doThrow(new IOException("boom")).when(serviceSpy).chunkFile(any(Path.class));
+
+    RepoRagIndexService.IndexResult result =
+        serviceSpy.indexWorkspace(
+            new RepoRagIndexService.IndexRequest(
+                "owner", "repo", "ws-4", NAMESPACE, "refs/heads/main", Instant.now()));
+
+    assertThat(result.filesProcessed()).isZero();
+    assertThat(result.warnings()).anyMatch(w -> w.contains("Skipped broken file"));
+
+    verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("broken.txt"), any());
+    verify(vectorStoreAdapter, never()).deleteFile(NAMESPACE, "broken.txt");
+  }
+
+  private HashSet<String> mutableSet(String... values) {
+    return new HashSet<>(Arrays.asList(values));
   }
 
   private TempWorkspaceService.Workspace workspaceFor(Path root) {
