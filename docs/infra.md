@@ -57,6 +57,15 @@ docker compose up --build github-mcp
 | `SPRING_PROFILES_ACTIVE` | активный профиль Spring Boot | `github` |
 | `GITHUB_API_BASE_URL` | базовый URL GitHub API | `https://api.github.com` |
 | `GITHUB_PAT` | PAT с правами `repo`, `read:org`, `read:checks` | пусто, требуется задать в `.env` |
+| `GITHUB_MCP_DB_URL/USER/PASSWORD` | Postgres для хранения `repo_rag_index_job` и PgVector | `jdbc:postgresql://postgres:5432/ai_advent` / `ai_advent` / `ai_advent` |
+| `GITHUB_RAG_*` | настройки chunking, ретраев и rerank | см. `.env.example` |
+
+#### Repo RAG индексатор
+- **Поток:** `github.repository_fetch` → запись job в `repo_rag_index_job` → `RepoRagIndexScheduler` асинхронно обходит workspace (игнор `.git`, `.github`, `node_modules`, `dist`, `build` + `.mcpignore`) и сохраняет чанки (по умолчанию 2048 Б / 160 строк) в `repo_rag_vector_store`.
+- **Эмбеддинги:** управляются `GITHUB_RAG_EMBEDDING_MODEL` и `GITHUB_RAG_EMBEDDING_DIMENSIONS` (`text-embedding-3-small`, 1536). При смене модели пересоздайте таблицу.
+- **Очередь и ретраи:** `GITHUB_RAG_MAX_CONCURRENCY` — параллельность воркеров; `GITHUB_RAG_MAX_ATTEMPTS` и `GITHUB_RAG_INITIAL_BACKOFF` — backoff ретраев. За метрики следят `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`.
+- **Heuristic rerank:** без внешней модели. Параметры `GITHUB_RAG_RERANK_TOP_N`, `GITHUB_RAG_RERANK_SCORE_WEIGHT`, `GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT`, `GITHUB_RAG_MAX_SNIPPET_LINES` управляют сортировкой чанков по комбинации similarity score и длины фрагмента.
+- **Инструменты:** `repo.rag_index_status` (MANUAL) и `repo.rag_search` зарегистрированы в backend каталоге и доступны агентам `repo-fetcher`, GitHub flow и чату (`app.chat.research.tools`). Перед тяжёлыми задачами проверяйте `status=SUCCEEDED`.
 
 Backend автоматически подключает `github-mcp` по адресу `http://github-mcp:8080` (см. `GITHUB_MCP_HTTP_BASE_URL` в `docker-compose.yml`). Для локального запуска бэкенда вне Compose укажите:
 

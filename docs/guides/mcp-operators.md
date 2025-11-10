@@ -45,6 +45,21 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 - Для Perplexity используйте STDIO команду (`perplexity-mcp --api-key ...`) или собственный wrapper. IDE обычно позволяет указать произвольную команду запуска.
 - Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway. GitHub MCP требует Personal Access Token с правами `repo`, `read:org`, `read:checks`, переданный через переменную `GITHUB_PAT`.
 
+### Repo RAG (GitHub MCP)
+1. **После fetch:** инструмент `github.repository_fetch` возвращает `workspaceId` и заодно ставит job в очередь индексатора. Проверяйте прогресс через `repo.rag_index_status`:
+   ```json
+   {
+     "repoOwner": "sandbox-co",
+     "repoName": "demo-service"
+   }
+   ```
+   Ответ содержит `status` (QUEUED/RUNNING/SUCCEEDED/FAILED), `progress` (0..1), `etaSeconds`, `filesProcessed`, `chunksProcessed`, `lastError`.
+2. **Ожидание READY:** прежде чем запускать тяжёлые flow (`github-gradle-test-flow`, agents), убедитесь что `status=SUCCEEDED`. Если статус `FAILED` и `attempt < maxAttempts`, индексатор автоматически повторит задачу; иначе очистите workspace и вызовите fetch заново.
+3. **Поиск контекста:** используйте `repo.rag_search` с `query`, `topK`, `rerankTopN` (опционально). Инструмент возвращает массив чанков (`path`, `snippet`, `summary`, `score`). Все чанки принадлежат namespace `repo:<owner>/<name>`, поэтому новый fetch автоматически заменяет данные.
+4. **Heuristic rerank:** под капотом используется комбинация similarity score и длины фрагмента (`GITHUB_RAG_RERANK_SCORE_WEIGHT`, `GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT`). Для узких файлов лучше выставлять `rerankTopN=10`, чтобы брать достаточно контекста.
+5. **Метрики и мониторинг:** в Grafana отслеживайте `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. Если очередь растёт > 5 или подряд ≥3 fail'ов, проверьте наличие stuck workspace'ов и лимиты диска в `/var/tmp/aiadvent/mcp-workspaces`.
+6. **Операторские советы:** храните `repoOwner`/`repoName` в карточке flow, чтобы не потерять контекст; при ручной очистке workspace (`TempWorkspaceService#deleteWorkspace`) всегда повторяйте fetch → status → search.
+
 ## Примеры запросов
 
 ### Flow Ops
