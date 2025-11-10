@@ -28,6 +28,7 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.OpenPullRequestRe
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
+import com.aiadvent.mcp.backend.github.rag.RepoRagIndexScheduler;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService.CreateWorkspaceRequest;
 import java.io.IOException;
@@ -120,9 +121,10 @@ class GitHubWriteFlowIntegrationTests {
 
     configureGitHubMocks();
 
+    RepoRagIndexScheduler indexScheduler = mock(RepoRagIndexScheduler.class);
     repositoryService =
         new GitHubRepositoryService(
-            executor, properties, workspaceService, tokenManager, null);
+            executor, properties, workspaceService, indexScheduler, tokenManager, null);
   }
 
   @AfterEach

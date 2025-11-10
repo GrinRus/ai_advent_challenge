@@ -14,6 +14,7 @@ public class GitHubRagProperties {
   private final Retry retry = new Retry();
   private final Ignore ignore = new Ignore();
   private final Embedding embedding = new Embedding();
+  private final Rerank rerank = new Rerank();
 
   public String getNamespacePrefix() {
     return namespacePrefix;
@@ -45,6 +46,10 @@ public class GitHubRagProperties {
 
   public Embedding getEmbedding() {
     return embedding;
+  }
+
+  public Rerank getRerank() {
+    return rerank;
   }
 
   public static class Chunk {
@@ -120,6 +125,45 @@ public class GitHubRagProperties {
 
     public void setDimensions(int dimensions) {
       this.dimensions = dimensions;
+    }
+  }
+
+  public static class Rerank {
+    private int topN = 8;
+    private double scoreWeight = 0.8;
+    private double lineSpanWeight = 0.2;
+    private int maxSnippetLines = 8;
+
+    public int getTopN() {
+      return topN;
+    }
+
+    public void setTopN(int topN) {
+      this.topN = topN;
+    }
+
+    public double getScoreWeight() {
+      return scoreWeight;
+    }
+
+    public void setScoreWeight(double scoreWeight) {
+      this.scoreWeight = scoreWeight;
+    }
+
+    public double getLineSpanWeight() {
+      return lineSpanWeight;
+    }
+
+    public void setLineSpanWeight(double lineSpanWeight) {
+      this.lineSpanWeight = lineSpanWeight;
+    }
+
+    public int getMaxSnippetLines() {
+      return maxSnippetLines;
+    }
+
+    public void setMaxSnippetLines(int maxSnippetLines) {
+      this.maxSnippetLines = maxSnippetLines;
     }
   }
 }

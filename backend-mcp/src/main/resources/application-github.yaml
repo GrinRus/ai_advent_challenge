@@ -75,3 +75,8 @@ github:
     embedding:
       model: ${GITHUB_RAG_EMBEDDING_MODEL:text-embedding-3-small}
       dimensions: ${GITHUB_RAG_EMBEDDING_DIMENSIONS:1536}
+    rerank:
+      top-n: ${GITHUB_RAG_RERANK_TOP_N:8}
+      score-weight: ${GITHUB_RAG_RERANK_SCORE_WEIGHT:0.8}
+      line-span-weight: ${GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT:0.2}
+      max-snippet-lines: ${GITHUB_RAG_MAX_SNIPPET_LINES:8}

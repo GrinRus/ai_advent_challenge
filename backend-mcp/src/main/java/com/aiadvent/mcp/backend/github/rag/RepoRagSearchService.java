@@ -10,10 +10,8 @@ import java.util.stream.Collectors;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpression;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -31,10 +29,10 @@ public class RepoRagSearchService {
   public RepoRagSearchService(
       @Qualifier("repoRagVectorStore") VectorStore vectorStore,
       GitHubRagProperties properties,
-      @Nullable RepoRagSearchReranker reranker) {
+      RepoRagSearchReranker reranker) {
     this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore");
     this.properties = Objects.requireNonNull(properties, "properties");
-    this.reranker = reranker;
+    this.reranker = Objects.requireNonNull(reranker, "reranker");
   }
 
   public SearchResponse search(SearchCommand command) {
@@ -43,8 +41,7 @@ public class RepoRagSearchService {
     double minScore = resolveMinScore(command.minScore());
     String namespace = buildNamespace(command.repoOwner(), command.repoName());
 
-    FilterExpression expression =
-        new FilterExpressionBuilder().eq("namespace", namespace).build();
+    var expression = new FilterExpressionBuilder().eq("namespace", namespace).build();
 
     SearchRequest request =
         SearchRequest.builder()
@@ -60,11 +57,8 @@ public class RepoRagSearchService {
     }
 
     List<SearchMatch> matches = toMatches(documents);
-    boolean rerankApplied = false;
-    if (reranker != null && command.rerankTopN() != null) {
-      rerankApplied =
-          reranker.rerank(command.query(), matches, Math.min(topK, command.rerankTopN()));
-    }
+    int rerankTopN = resolveRerankTopN(command.rerankTopN());
+    boolean rerankApplied = reranker.rerank(command.query(), matches, rerankTopN);
 
     return new SearchResponse(matches, rerankApplied);
   }
@@ -86,7 +80,8 @@ public class RepoRagSearchService {
     if (!StringUtils.hasText(text)) {
       return "";
     }
-    return text.lines().limit(8).collect(Collectors.joining("\n"));
+    int maxLines = Math.max(1, properties.getRerank().getMaxSnippetLines());
+    return text.lines().limit(maxLines).collect(Collectors.joining("\n"));
   }
 
   private int resolveTopK(Integer candidate) {
@@ -101,6 +96,13 @@ public class RepoRagSearchService {
       return DEFAULT_MIN_SCORE;
     }
     return Math.max(0.1d, Math.min(0.99d, candidate));
+  }
+
+  private int resolveRerankTopN(Integer value) {
+    if (value != null && value > 0) {
+      return value;
+    }
+    return Math.max(1, properties.getRerank().getTopN());
   }
 
   private void validate(SearchCommand command) {

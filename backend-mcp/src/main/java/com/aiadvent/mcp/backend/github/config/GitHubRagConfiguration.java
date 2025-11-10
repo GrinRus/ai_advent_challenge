@@ -1,6 +1,9 @@
 package com.aiadvent.mcp.backend.github.config;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.HeuristicRepoRagSearchReranker;
+import com.aiadvent.mcp.backend.github.rag.RepoRagSearchReranker;
+import com.aiadvent.mcp.backend.github.rag.RepoRagToolConfiguration;
 import javax.sql.DataSource;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -11,6 +14,7 @@ import org.springframework.ai.vectorstore.pgvector.PgVectorStore.PgIndexType;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
@@ -19,7 +23,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EnableTransactionManagement
 @EnableJpaRepositories(basePackages = "com.aiadvent.mcp.backend.github.rag.persistence")
 @EntityScan(basePackages = "com.aiadvent.mcp.backend.github.rag.persistence")
-@org.springframework.context.annotation.Import(com.aiadvent.mcp.backend.github.rag.RepoRagToolConfiguration.class)
+@Import(RepoRagToolConfiguration.class)
 public class GitHubRagConfiguration {
 
   @Bean(name = "repoRagVectorStore")
@@ -36,5 +40,10 @@ public class GitHubRagConfiguration {
             .initializeSchema(false)
             .vectorTableValidationsEnabled(true);
     return builder.build();
+  }
+
+  @Bean
+  RepoRagSearchReranker repoRagSearchReranker(GitHubRagProperties properties) {
+    return new HeuristicRepoRagSearchReranker(properties);
   }
 }

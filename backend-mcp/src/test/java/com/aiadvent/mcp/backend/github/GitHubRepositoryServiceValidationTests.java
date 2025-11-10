@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.CommitFileChange;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
+import com.aiadvent.mcp.backend.github.rag.RepoRagIndexScheduler;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -27,7 +28,10 @@ class GitHubRepositoryServiceValidationTests {
     GitHubBackendProperties properties = new GitHubBackendProperties();
     TempWorkspaceService workspaceService = mock(TempWorkspaceService.class);
     GitHubTokenManager tokenManager = mock(GitHubTokenManager.class);
-    service = new GitHubRepositoryService(executor, properties, workspaceService, tokenManager, null);
+    RepoRagIndexScheduler indexScheduler = mock(RepoRagIndexScheduler.class);
+    service =
+        new GitHubRepositoryService(
+            executor, properties, workspaceService, indexScheduler, tokenManager, null);
   }
 
   @Test

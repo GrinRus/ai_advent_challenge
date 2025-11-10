@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-class RepoRagToolConfiguration {
+public class RepoRagToolConfiguration {
 
   @Bean
   ToolCallbackProvider repoRagToolCallbackProvider(RepoRagTools repoRagTools) {
