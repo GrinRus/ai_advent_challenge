@@ -1117,7 +1117,6 @@
 - [ ] Добавить сохранение пользовательских фильтров (например, по `language`, `path glob`) в `RepoRagSearchService` и прокинуть их в `VectorStoreDocumentRetriever` через advisor context (`FILTER_EXPRESSION`). → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagSearchService.java`, `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagTools.java`
 
 ### Observability и тестирование
-- [ ] Ввести метрики для каждого модуля (`repo_rag_query_transform_duration`, `repo_rag_multi_query_count`, `repo_rag_document_postprocess_duration`, `repo_rag_empty_context_total`) и трассировки Spring Observability, чтобы видеть, где теряется время. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagMetricsConfiguration.java`
 - [ ] Покрыть юнит-тестами каждый модуль (стаб LLM для трансформеров, multi-query дедупликация, post-processor) и интеграциями, которые гоняют полный цикл `repo.rag_search` с флагами on/off; добавить regression-набор на lost-in-the-middle и мультиязычные запросы. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/*`
 
 ### Документация и enablement
