@@ -1085,7 +1085,7 @@
 - [x] Обновить heuristics-конфигурацию: описать параметры `rerankTopN`, сортировку по `score/line_span`, лимиты snippet'ов, fallback без внешней модели; добавить unit-тесты `RepoRagSearchService` с mock `VectorStore`. → `backend-mcp/src/main/resources/application-github.yaml`, `.env.example`, `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/RepoRagSearchServiceTest.java`
 
 ### Backend (core), агенты и UI
-- [ ] Добавить записи в каталог инструментов backend: `tool_schema_version`/`tool_definition`/`tool_binding` для `repo.rag_index_status` и `repo.rag_search`, указать сервер `github` и execution mode (MANUAL), включить инструменты в `app.chat.research.tools` и blueprint'ы, чтобы агенты автоматически ожидали индекса. → `backend/src/main/resources/db/changelog/db.changelog-master.yaml`, `backend/src/main/resources/application.yaml`
+- [x] Добавить записи в каталог инструментов backend: `tool_schema_version`/`tool_definition`/`tool_binding` для `repo.rag_index_status` и `repo.rag_search`, указать сервер `github` и execution mode (MANUAL), включить инструменты в `app.chat.research.tools` и blueprint'ы, чтобы агенты автоматически ожидали индекса. → `backend/src/main/resources/db/changelog/db.changelog-master.yaml`, `backend/src/main/resources/application.yaml`
 
 ### Observability & QA
 - [ ] Метрики и алёрты: `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`, `repo_rag_queue_depth`, traceId=requestId+repo; экспортировать через Micrometer/Prometheus и описать алерты на рост очереди или массовые отказы. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/*`

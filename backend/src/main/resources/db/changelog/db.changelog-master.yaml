@@ -3118,3 +3118,30 @@ databaseChangeLog:
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.approve_pull_request' AND version = 1)),
                 ('github.merge_pull_request', 'GitHub · Merge pull request', 'Выполняет merge pull request с выбранным методом.', 'github', 'MANUAL', '["github","pull-request","merge"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.merge_pull_request' AND version = 1));
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_index_status', 1,
+                 $${"type":"object","properties":{"repoOwner":{"type":"string"},"repoName":{"type":"string"}},"required":["repoOwner","repoName"]}$$::jsonb,
+                 $${"type":"object","properties":{"repoOwner":{"type":"string"},"repoName":{"type":"string"},"status":{"type":"string"},"attempt":{"type":"integer"},"maxAttempts":{"type":"integer"},"progress":{"type":"number"},"etaSeconds":{"type":["integer","null"]},"filesProcessed":{"type":"integer"},"chunksProcessed":{"type":"integer"},"queuedAt":{"type":["string","null"]},"startedAt":{"type":["string","null"]},"completedAt":{"type":["string","null"]},"lastError":{"type":["string","null"]}},"required":["repoOwner","repoName","status","attempt","maxAttempts","progress","filesProcessed","chunksProcessed"]}$$::jsonb,
+                 'checksum-repo.rag_index_status-v1', '[]'::jsonb, 'github', 'repo.rag_index_status', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_search', 1,
+                 $${"type":"object","properties":{"repoOwner":{"type":"string"},"repoName":{"type":"string"},"query":{"type":"string"},"topK":{"type":"integer","minimum":1,"maximum":40},"minScore":{"type":"number","minimum":0.1,"maximum":0.99},"rerankTopN":{"type":"integer","minimum":1,"maximum":40}},"required":["repoOwner","repoName","query"]}$$::jsonb,
+                 $${"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"snippet":{"type":"string"},"summary":{"type":"string"},"score":{"type":"number"},"metadata":{"type":"object"}},"required":["path","snippet","score"]}},"rerankApplied":{"type":"boolean"}},"required":["matches","rerankApplied"]}$$::jsonb,
+                 'checksum-repo.rag_search-v1', '[]'::jsonb, 'github', 'repo.rag_search', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo.rag_index_status', 'GitHub · Repo RAG status', 'Показывает состояние асинхронной индексации workspace: прогресс, ETA, ошибки.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_index_status' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo.rag_search', 'GitHub · Repo RAG search', 'Возвращает релевантные чанки из namespace `repo:<owner>/<name>` с heuristic rerank.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;

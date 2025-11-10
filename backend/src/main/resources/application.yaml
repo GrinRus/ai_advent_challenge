@@ -197,6 +197,12 @@ app:
         - code: notes.search_similar
           schema-version: 1
           execution-mode: MANUAL
+        - code: repo.rag_index_status
+          schema-version: 1
+          execution-mode: MANUAL
+        - code: repo.rag_search
+          schema-version: 1
+          execution-mode: MANUAL
         - code: coding.generate_patch
           schema-version: 1
           execution-mode: AUTO
