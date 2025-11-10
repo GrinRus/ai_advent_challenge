@@ -10,11 +10,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagVectorStoreAdapter;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -36,6 +40,7 @@ class RepoRagIndexServiceTest {
 
   @Mock private TempWorkspaceService workspaceService;
   @Mock private RepoRagVectorStoreAdapter vectorStoreAdapter;
+  @Mock private RepoRagFileStateRepository fileStateRepository;
 
   @TempDir Path tempDir;
 
@@ -47,7 +52,9 @@ class RepoRagIndexServiceTest {
     properties = new GitHubRagProperties();
     properties.getChunk().setMaxBytes(1024);
     properties.getChunk().setMaxLines(50);
-    service = new RepoRagIndexService(workspaceService, vectorStoreAdapter, properties);
+    service =
+        new RepoRagIndexService(
+            workspaceService, vectorStoreAdapter, fileStateRepository, properties);
   }
 
   @Test
@@ -59,13 +66,12 @@ class RepoRagIndexServiceTest {
     Files.write(binaryFile, new byte[] {0, 1, 2, 3});
 
     when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet("ghost.js"));
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of());
     when(workspaceService.findWorkspace("ws-1"))
         .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
-        service.indexWorkspace(
-            new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-1", NAMESPACE, "refs/heads/main", Instant.now()));
+        service.indexWorkspace(request("ws-1"));
 
     assertThat(result.filesProcessed()).isEqualTo(1);
     assertThat(result.chunksProcessed()).isEqualTo(1);
@@ -74,6 +80,8 @@ class RepoRagIndexServiceTest {
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
     verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("src/Main.java"), captor.capture());
     verify(vectorStoreAdapter).deleteFile(NAMESPACE, "ghost.js");
+    verify(fileStateRepository).save(any(RepoRagFileStateEntity.class));
+    verify(fileStateRepository).deleteByNamespaceAndFilePath(NAMESPACE, "ghost.js");
     List<Document> documents = captor.getValue();
     assertThat(documents).hasSize(1);
     Document doc = documents.get(0);
@@ -91,13 +99,12 @@ class RepoRagIndexServiceTest {
     Files.writeString(file, content);
 
     when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet());
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of());
     when(workspaceService.findWorkspace("ws-2"))
         .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
-        service.indexWorkspace(
-            new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-2", NAMESPACE, "refs/heads/main", Instant.now()));
+        service.indexWorkspace(request("ws-2"));
 
     assertThat(result.chunksProcessed()).isEqualTo(2);
 
@@ -119,13 +126,12 @@ class RepoRagIndexServiceTest {
     Files.writeString(expectedDir.resolve("kept.ts"), "export const a = 1;");
 
     when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet());
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of());
     when(workspaceService.findWorkspace("ws-3"))
         .thenReturn(Optional.of(workspaceFor(tempDir)));
 
     RepoRagIndexService.IndexResult result =
-        service.indexWorkspace(
-            new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-3", NAMESPACE, "refs/heads/main", Instant.now()));
+        service.indexWorkspace(request("ws-3"));
 
     assertThat(result.filesProcessed()).isEqualTo(1);
 
@@ -143,6 +149,7 @@ class RepoRagIndexServiceTest {
     Files.writeString(file, "secret");
 
     when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet("broken.txt"));
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of());
     when(workspaceService.findWorkspace("ws-4"))
         .thenReturn(Optional.of(workspaceFor(tempDir)));
 
@@ -150,15 +157,38 @@ class RepoRagIndexServiceTest {
     doThrow(new IOException("boom")).when(serviceSpy).chunkFile(any(Path.class));
 
     RepoRagIndexService.IndexResult result =
-        serviceSpy.indexWorkspace(
-            new RepoRagIndexService.IndexRequest(
-                "owner", "repo", "ws-4", NAMESPACE, "refs/heads/main", Instant.now()));
+        serviceSpy.indexWorkspace(request("ws-4"));
 
     assertThat(result.filesProcessed()).isZero();
     assertThat(result.warnings()).anyMatch(w -> w.contains("Skipped broken file"));
 
     verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("broken.txt"), any());
     verify(vectorStoreAdapter, never()).deleteFile(NAMESPACE, "broken.txt");
+    verify(fileStateRepository, never()).deleteByNamespaceAndFilePath(NAMESPACE, "broken.txt");
+  }
+
+  @Test
+  void skipsFilesWithUnchangedHash() throws Exception {
+    Path file = tempDir.resolve("Same.java");
+    Files.writeString(file, "class Sample {}\n");
+    RepoRagFileStateEntity existing = new RepoRagFileStateEntity();
+    existing.setNamespace(NAMESPACE);
+    existing.setFilePath("Same.java");
+    existing.setFileHash(hashFile(file));
+    existing.setChunkCount(1);
+
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet("Same.java"));
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of(existing));
+    when(workspaceService.findWorkspace("ws-5"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
+
+    RepoRagIndexService.IndexResult result = service.indexWorkspace(request("ws-5"));
+
+    assertThat(result.filesProcessed()).isZero();
+    assertThat(result.filesSkipped()).isEqualTo(1);
+
+    verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("Same.java"), any());
+    verify(fileStateRepository, never()).save(any());
   }
 
   private HashSet<String> mutableSet(String... values) {
@@ -177,5 +207,34 @@ class RepoRagIndexServiceTest {
         0L,
         null,
         List.of());
+  }
+
+  private RepoRagIndexService.IndexRequest request(String workspaceId) {
+    return new RepoRagIndexService.IndexRequest(
+        "owner",
+        "repo",
+        workspaceId,
+        NAMESPACE,
+        "refs/heads/main",
+        "commit-sha",
+        1024L,
+        Instant.now());
+  }
+
+  private String hashFile(Path file) throws NoSuchAlgorithmException, IOException {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    try (var input = Files.newInputStream(file)) {
+      byte[] buffer = new byte[8192];
+      int read;
+      while ((read = input.read(buffer)) != -1) {
+        digest.update(buffer, 0, read);
+      }
+    }
+    byte[] hash = digest.digest();
+    StringBuilder builder = new StringBuilder(hash.length * 2);
+    for (byte b : hash) {
+      builder.append(String.format("%02x", b));
+    }
+    return builder.toString();
   }
 }

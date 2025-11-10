@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.github.rag;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagJobStatus;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
@@ -14,9 +15,13 @@ import org.springframework.util.StringUtils;
 public class RepoRagStatusService {
 
   private final RepoRagIndexJobRepository jobRepository;
+  private final RepoRagNamespaceStateService namespaceStateService;
 
-  public RepoRagStatusService(RepoRagIndexJobRepository jobRepository) {
+  public RepoRagStatusService(
+      RepoRagIndexJobRepository jobRepository,
+      RepoRagNamespaceStateService namespaceStateService) {
     this.jobRepository = jobRepository;
+    this.namespaceStateService = namespaceStateService;
   }
 
   public StatusView currentStatus(String repoOwner, String repoName) {
@@ -28,27 +33,61 @@ public class RepoRagStatusService {
         jobRepository.findFirstByRepoOwnerIgnoreCaseAndRepoNameIgnoreCaseOrderByQueuedAtDesc(
             normalize(repoOwner), normalize(repoName));
 
-    if (optionalJob.isEmpty()) {
-      return StatusView.notFound(normalize(repoOwner), normalize(repoName));
+    Optional<RepoRagNamespaceStateEntity> namespaceState =
+        namespaceStateService.findByRepoOwnerAndRepoName(
+            normalize(repoOwner), normalize(repoName));
+
+    if (optionalJob.isPresent()) {
+      RepoRagIndexJobEntity job = optionalJob.get();
+      Progress progress = computeProgress(job);
+      RepoRagNamespaceStateEntity state = namespaceState.orElse(null);
+
+      return new StatusView(
+          job.getRepoOwner(),
+          job.getRepoName(),
+          job.getStatus().name(),
+          job.getAttempt(),
+          job.getMaxAttempts(),
+          progress.percentage(),
+          progress.etaSeconds(),
+          job.getFilesProcessed(),
+          job.getChunksProcessed(),
+          job.getQueuedAt(),
+          job.getStartedAt(),
+          job.getCompletedAt(),
+          job.getLastError() != null ? job.getLastError().path("message").asText(null) : null,
+          job.getFilesSkipped(),
+          state != null ? state.getSourceRef() : null,
+          state != null ? state.getCommitSha() : null,
+          state != null ? state.getWorkspaceId() : null,
+          state != null && state.isReady());
     }
 
-    RepoRagIndexJobEntity job = optionalJob.get();
-    Progress progress = computeProgress(job);
+    if (namespaceState.isPresent()) {
+      RepoRagNamespaceStateEntity state = namespaceState.get();
+      String status = state.isReady() ? "READY" : "STALE";
+      return new StatusView(
+          state.getRepoOwner(),
+          state.getRepoName(),
+          status,
+          0,
+          0,
+          state.isReady() ? 1.0 : 0.0,
+          null,
+          state.getFilesTotal() - state.getFilesSkipped(),
+          state.getChunksTotal(),
+          null,
+          null,
+          state.getLastIndexedAt(),
+          null,
+          state.getFilesSkipped(),
+          state.getSourceRef(),
+          state.getCommitSha(),
+          state.getWorkspaceId(),
+          state.isReady());
+    }
 
-    return new StatusView(
-        job.getRepoOwner(),
-        job.getRepoName(),
-        job.getStatus().name(),
-        job.getAttempt(),
-        job.getMaxAttempts(),
-        progress.percentage(),
-        progress.etaSeconds(),
-        job.getFilesProcessed(),
-        job.getChunksProcessed(),
-        job.getQueuedAt(),
-        job.getStartedAt(),
-        job.getCompletedAt(),
-        job.getLastError() != null ? job.getLastError().path("message").asText(null) : null);
+    return StatusView.notFound(normalize(repoOwner), normalize(repoName));
   }
 
   private Progress computeProgress(RepoRagIndexJobEntity job) {
@@ -90,7 +129,12 @@ public class RepoRagStatusService {
       Instant queuedAt,
       Instant startedAt,
       Instant completedAt,
-      String lastError) {
+      String lastError,
+      long filesSkipped,
+      String sourceRef,
+      String commitSha,
+      String workspaceId,
+      boolean ready) {
 
     static StatusView notFound(String owner, String name) {
       return new StatusView(
@@ -106,7 +150,12 @@ public class RepoRagStatusService {
           null,
           null,
           null,
-          null);
+          null,
+          0,
+          null,
+          null,
+          null,
+          false);
     }
   }
 }

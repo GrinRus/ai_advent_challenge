@@ -56,6 +56,9 @@ public class RepoRagIndexJobEntity {
   @Column(name = "files_processed", nullable = false)
   private long filesProcessed = 0;
 
+  @Column(name = "files_skipped", nullable = false)
+  private long filesSkipped = 0;
+
   @Column(name = "chunks_total", nullable = false)
   private long chunksTotal = 0;
 
@@ -170,6 +173,14 @@ public class RepoRagIndexJobEntity {
 
   public void setChunksProcessed(long chunksProcessed) {
     this.chunksProcessed = chunksProcessed;
+  }
+
+  public long getFilesSkipped() {
+    return filesSkipped;
+  }
+
+  public void setFilesSkipped(long filesSkipped) {
+    this.filesSkipped = filesSkipped;
   }
 
   public JsonNode getLastError() {

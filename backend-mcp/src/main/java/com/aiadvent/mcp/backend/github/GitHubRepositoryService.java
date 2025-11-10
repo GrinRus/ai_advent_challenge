@@ -238,6 +238,8 @@ public class GitHubRepositoryService {
           repository.name(),
           result.workspaceId(),
           result.resolvedRef(),
+          result.commitSha(),
+          result.workspaceSizeBytes(),
           result.fetchedAt());
     } catch (Exception ex) {
       log.warn(

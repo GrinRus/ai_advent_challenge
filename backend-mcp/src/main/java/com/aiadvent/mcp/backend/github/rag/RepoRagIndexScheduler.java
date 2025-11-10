@@ -37,6 +37,7 @@ public class RepoRagIndexScheduler {
 
   private final RepoRagIndexJobRepository jobRepository;
   private final RepoRagIndexService indexService;
+  private final RepoRagNamespaceStateService namespaceStateService;
   private final GitHubRagProperties properties;
   private final ObjectMapper objectMapper;
   private final ScheduledExecutorService executor;
@@ -49,11 +50,13 @@ public class RepoRagIndexScheduler {
   public RepoRagIndexScheduler(
       RepoRagIndexJobRepository jobRepository,
       RepoRagIndexService indexService,
+      RepoRagNamespaceStateService namespaceStateService,
       GitHubRagProperties properties,
       ObjectMapper objectMapper,
       @Nullable MeterRegistry meterRegistry) {
     this.jobRepository = jobRepository;
     this.indexService = indexService;
+    this.namespaceStateService = namespaceStateService;
     this.properties = properties;
     this.objectMapper = objectMapper;
     int poolSize = Math.max(1, properties.getMaxConcurrency());
@@ -68,7 +71,14 @@ public class RepoRagIndexScheduler {
     this.embeddingsTotal = registry.counter("repo_rag_embeddings_total");
   }
 
-  public void scheduleIndexing(String repoOwner, String repoName, String workspaceId, String sourceRef, Instant fetchedAt) {
+  public void scheduleIndexing(
+      String repoOwner,
+      String repoName,
+      String workspaceId,
+      String sourceRef,
+      String commitSha,
+      long workspaceSizeBytes,
+      Instant fetchedAt) {
     if (!StringUtils.hasText(repoOwner) || !StringUtils.hasText(repoName)) {
       return;
     }
@@ -88,7 +98,19 @@ public class RepoRagIndexScheduler {
             normalize(repoName),
             workspaceId,
             sourceRef,
+            commitSha,
+            workspaceSizeBytes,
             fetchedAt);
+    namespaceStateService.markPending(
+        request.namespace(),
+        request.repoOwner(),
+        request.repoName(),
+        request.sourceRef(),
+        request.commitSha(),
+        request.workspaceId(),
+        request.fetchedAt(),
+        job,
+        request.workspaceSizeBytes());
     workRequests.put(job.getId(), request);
     queued.incrementAndGet();
     scheduleExecution(request, Duration.ZERO);
@@ -122,7 +144,14 @@ public class RepoRagIndexScheduler {
 
       RepoRagIndexService.IndexRequest indexRequest =
           new RepoRagIndexService.IndexRequest(
-              request.repoOwner(), request.repoName(), request.workspaceId(), request.namespace(), request.sourceRef(), request.fetchedAt());
+              request.repoOwner(),
+              request.repoName(),
+              request.workspaceId(),
+              request.namespace(),
+              request.sourceRef(),
+              request.commitSha(),
+              request.workspaceSizeBytes(),
+              request.fetchedAt());
 
       Instant started = Instant.now();
       RepoRagIndexService.IndexResult result = indexService.indexWorkspace(indexRequest);
@@ -132,10 +161,25 @@ public class RepoRagIndexScheduler {
       job.setFilesProcessed(result.filesProcessed());
       job.setChunksProcessed(result.chunksProcessed());
       job.setChunksTotal(result.chunksProcessed());
-      job.setFilesTotal(result.filesProcessed());
+      long filesTotal = result.filesProcessed() + result.filesSkipped() + result.filesDeleted();
+      job.setFilesTotal(filesTotal);
       job.setCompletedAt(Instant.now());
+      job.setFilesSkipped(result.filesSkipped());
       job.setLastError(null);
       jobRepository.save(job);
+      namespaceStateService.markReady(
+          request.namespace(),
+          request.repoOwner(),
+          request.repoName(),
+          request.sourceRef(),
+          request.commitSha(),
+          request.workspaceId(),
+          request.fetchedAt(),
+          job,
+          filesTotal,
+          result.chunksProcessed(),
+          result.filesSkipped(),
+          request.workspaceSizeBytes());
 
       embeddingsTotal.increment(result.chunksProcessed());
       indexDuration.record(duration);
@@ -178,6 +222,7 @@ public class RepoRagIndexScheduler {
           job.getId(),
           job.getAttempt(),
           ex.getMessage());
+      namespaceStateService.markFailed(request.namespace(), job);
     }
   }
 
@@ -227,5 +272,7 @@ public class RepoRagIndexScheduler {
       String repoName,
       String workspaceId,
       String sourceRef,
+      String commitSha,
+      long workspaceSizeBytes,
       Instant fetchedAt) {}
 }

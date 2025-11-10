@@ -1,9 +1,9 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -25,21 +25,37 @@ public class RepoRagSearchService {
   private final VectorStore vectorStore;
   private final GitHubRagProperties properties;
   private final RepoRagSearchReranker reranker;
+  private final RepoRagNamespaceStateService namespaceStateService;
 
   public RepoRagSearchService(
       @Qualifier("repoRagVectorStore") VectorStore vectorStore,
       GitHubRagProperties properties,
-      RepoRagSearchReranker reranker) {
+      RepoRagSearchReranker reranker,
+      RepoRagNamespaceStateService namespaceStateService) {
     this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.reranker = Objects.requireNonNull(reranker, "reranker");
+    this.namespaceStateService =
+        Objects.requireNonNull(namespaceStateService, "namespaceStateService");
   }
 
   public SearchResponse search(SearchCommand command) {
     validate(command);
     int topK = resolveTopK(command.topK());
     double minScore = resolveMinScore(command.minScore());
-    String namespace = buildNamespace(command.repoOwner(), command.repoName());
+    RepoRagNamespaceStateEntity state =
+        namespaceStateService
+            .findByRepoOwnerAndRepoName(command.repoOwner(), command.repoName())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Namespace repo:%s/%s has not been indexed yet"
+                            .formatted(command.repoOwner(), command.repoName())));
+    if (!state.isReady()) {
+      throw new IllegalStateException(
+          "Namespace repo:%s/%s is still indexing".formatted(command.repoOwner(), command.repoName()));
+    }
+    String namespace = state.getNamespace();
 
     var expression = new FilterExpressionBuilder().eq("namespace", namespace).build();
 
@@ -112,18 +128,6 @@ public class RepoRagSearchService {
     if (!StringUtils.hasText(command.query())) {
       throw new IllegalArgumentException("query must not be blank");
     }
-  }
-
-  private String buildNamespace(String owner, String name) {
-    return properties.getNamespacePrefix()
-        + ":"
-        + normalize(owner)
-        + "/"
-        + normalize(name);
-  }
-
-  private String normalize(String value) {
-    return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
   }
 
   public record SearchCommand(

@@ -1,6 +1,8 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagVectorStoreAdapter;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import java.io.BufferedInputStream;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -58,14 +61,17 @@ public class RepoRagIndexService {
 
   private final TempWorkspaceService workspaceService;
   private final RepoRagVectorStoreAdapter vectorStoreAdapter;
+  private final RepoRagFileStateRepository fileStateRepository;
   private final GitHubRagProperties properties;
 
   public RepoRagIndexService(
       TempWorkspaceService workspaceService,
       RepoRagVectorStoreAdapter vectorStoreAdapter,
+      RepoRagFileStateRepository fileStateRepository,
       GitHubRagProperties properties) {
     this.workspaceService = workspaceService;
     this.vectorStoreAdapter = vectorStoreAdapter;
+    this.fileStateRepository = fileStateRepository;
     this.properties = properties;
   }
 
@@ -83,8 +89,14 @@ public class RepoRagIndexService {
 
     AtomicLong files = new AtomicLong();
     AtomicLong chunks = new AtomicLong();
+    AtomicLong filesSkipped = new AtomicLong();
+    AtomicLong filesDeleted = new AtomicLong();
     List<String> warnings = new ArrayList<>();
+    Map<String, RepoRagFileStateEntity> stateByPath =
+        fileStateRepository.findByNamespace(request.namespace()).stream()
+            .collect(Collectors.toMap(RepoRagFileStateEntity::getFilePath, Function.identity()));
     Set<String> stalePaths = new HashSet<>(vectorStoreAdapter.listFilePaths(request.namespace()));
+    stalePaths.addAll(stateByPath.keySet());
 
     try {
       Files.walkFileTree(
@@ -128,17 +140,44 @@ public class RepoRagIndexService {
                 return FileVisitResult.CONTINUE;
               }
 
+              String fileHash;
+              try {
+                fileHash = hashFile(file);
+              } catch (IOException ex) {
+                appendWarning(
+                    warnings, "Skipped file (unable to hash) " + relativePath + ": " + ex.getMessage());
+                log.warn("Failed to hash {}: {}", relativePath, ex.getMessage());
+                return FileVisitResult.CONTINUE;
+              }
+
+              RepoRagFileStateEntity existingState = stateByPath.get(relativePath);
+              if (existingState != null && fileHash.equals(existingState.getFileHash())) {
+                filesSkipped.incrementAndGet();
+                return FileVisitResult.CONTINUE;
+              }
+
               List<Document> fileDocuments =
                   buildDocuments(fileChunks, relativePath, request);
 
               boolean hasChunks = !fileDocuments.isEmpty();
               try {
-                vectorStoreAdapter.replaceFile(
-                    request.namespace(), relativePath, fileDocuments);
                 if (hasChunks) {
+                  vectorStoreAdapter.replaceFile(
+                      request.namespace(), relativePath, fileDocuments);
+                  upsertFileState(
+                      request.namespace(),
+                      relativePath,
+                      fileHash,
+                      fileDocuments.size(),
+                      stateByPath);
                   files.incrementAndGet();
                   chunks.addAndGet(fileDocuments.size());
+                } else {
+                  vectorStoreAdapter.deleteFile(request.namespace(), relativePath);
+                  deleteFileState(request.namespace(), relativePath, stateByPath);
+                  filesDeleted.incrementAndGet();
                 }
+                stalePaths.remove(relativePath);
               } catch (RuntimeException ex) {
                 appendWarning(
                     warnings,
@@ -150,6 +189,8 @@ public class RepoRagIndexService {
           });
       for (String stalePath : stalePaths) {
         vectorStoreAdapter.deleteFile(request.namespace(), stalePath);
+        deleteFileState(request.namespace(), stalePath, stateByPath);
+        filesDeleted.incrementAndGet();
       }
       log.info(
           "Indexed repo {} with {} files and {} chunks (namespace={})",
@@ -161,7 +202,8 @@ public class RepoRagIndexService {
       throw new IllegalStateException("Failed to index workspace " + request.workspaceId(), ex);
     }
 
-    return new IndexResult(files.get(), chunks.get(), List.copyOf(warnings));
+    return new IndexResult(
+        files.get(), chunks.get(), filesSkipped.get(), filesDeleted.get(), List.copyOf(warnings));
   }
 
   private List<Document> buildDocuments(
@@ -198,6 +240,49 @@ public class RepoRagIndexService {
       documents.add(document);
     }
     return documents;
+  }
+
+  private void upsertFileState(
+      String namespace,
+      String relativePath,
+      String fileHash,
+      int chunkCount,
+      Map<String, RepoRagFileStateEntity> cache) {
+    RepoRagFileStateEntity entity =
+        cache.computeIfAbsent(
+            relativePath,
+            path -> {
+              RepoRagFileStateEntity fresh = new RepoRagFileStateEntity();
+              fresh.setNamespace(namespace);
+              fresh.setFilePath(path);
+              return fresh;
+            });
+    entity.setFileHash(fileHash);
+    entity.setChunkCount(chunkCount);
+    RepoRagFileStateEntity saved = fileStateRepository.save(entity);
+    cache.put(relativePath, saved);
+  }
+
+  private void deleteFileState(
+      String namespace, String relativePath, Map<String, RepoRagFileStateEntity> cache) {
+    fileStateRepository.deleteByNamespaceAndFilePath(namespace, relativePath);
+    cache.remove(relativePath);
+  }
+
+  private String hashFile(Path file) throws IOException {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      try (InputStream input = Files.newInputStream(file)) {
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+          digest.update(buffer, 0, read);
+        }
+      }
+      return bytesToHex(digest.digest());
+    } catch (NoSuchAlgorithmException ex) {
+      throw new IllegalStateException("SHA-256 algorithm is not available", ex);
+    }
   }
 
   private String buildChunkId(String relativePath, int chunkIndex, String chunkHash) {
@@ -323,14 +408,18 @@ public class RepoRagIndexService {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      StringBuilder builder = new StringBuilder(hash.length * 2);
-      for (byte b : hash) {
-        builder.append(String.format("%02x", b));
-      }
-      return builder.toString();
+      return bytesToHex(hash);
     } catch (NoSuchAlgorithmException ex) {
       throw new IllegalStateException("SHA-256 algorithm is not available", ex);
     }
+  }
+
+  private String bytesToHex(byte[] hash) {
+    StringBuilder builder = new StringBuilder(hash.length * 2);
+    for (byte b : hash) {
+      builder.append(String.format("%02x", b));
+    }
+    return builder.toString();
   }
 
   public record IndexRequest(
@@ -339,9 +428,16 @@ public class RepoRagIndexService {
       String workspaceId,
       String namespace,
       String sourceRef,
+      String commitSha,
+      long workspaceSizeBytes,
       Instant fetchedAt) {}
 
-  public record IndexResult(long filesProcessed, long chunksProcessed, List<String> warnings) {}
+  public record IndexResult(
+      long filesProcessed,
+      long chunksProcessed,
+      long filesSkipped,
+      long filesDeleted,
+      List<String> warnings) {}
 
   private record Chunk(
       String content, int lineStart, int lineEnd, String language, String summary, String hash) {}

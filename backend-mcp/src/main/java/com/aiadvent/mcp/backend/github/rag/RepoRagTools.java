@@ -38,7 +38,12 @@ public class RepoRagTools {
         status.queuedAt(),
         status.startedAt(),
         status.completedAt(),
-        status.lastError());
+        status.lastError(),
+        status.filesSkipped(),
+        status.sourceRef(),
+        status.commitSha(),
+        status.workspaceId(),
+        status.ready());
   }
 
   @Tool(
@@ -94,7 +99,12 @@ public class RepoRagTools {
       java.time.Instant queuedAt,
       java.time.Instant startedAt,
       java.time.Instant completedAt,
-      String lastError) {}
+      String lastError,
+      long filesSkipped,
+      String sourceRef,
+      String commitSha,
+      String workspaceId,
+      boolean ready) {}
 
   public record RepoRagSearchInput(
       String repoOwner,

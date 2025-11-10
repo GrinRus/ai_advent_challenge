@@ -226,3 +226,172 @@ databaseChangeLog:
               CREATE TRIGGER repo_rag_vector_store_sync_columns
               BEFORE INSERT OR UPDATE ON repo_rag_vector_store
               FOR EACH ROW EXECUTE FUNCTION repo_rag_vector_store_sync_columns();
+  - changeSet:
+      id: github-rag-0004
+      author: ai-advent
+      context: github-rag
+      changes:
+        - addColumn:
+            tableName: repo_rag_index_job
+            columns:
+              - column:
+                  name: files_skipped
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: repo_rag_file_state
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: namespace
+                  type: VARCHAR(256)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_path
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_hash
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chunk_count
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: repo_rag_file_state
+            columnNames: namespace, file_path
+            constraintName: uq_repo_rag_file_state_namespace_path
+        - createIndex:
+            tableName: repo_rag_file_state
+            indexName: idx_repo_rag_file_state_namespace
+            columns:
+              - column:
+                  name: namespace
+        - createTable:
+            tableName: repo_rag_namespace_state
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: namespace
+                  type: VARCHAR(256)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: repo_owner
+                  type: VARCHAR(180)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: repo_name
+                  type: VARCHAR(180)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: source_ref
+                  type: VARCHAR(256)
+              - column:
+                  name: commit_sha
+                  type: VARCHAR(64)
+              - column:
+                  name: workspace_id
+                  type: VARCHAR(64)
+              - column:
+                  name: files_total
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chunks_total
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: files_skipped
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workspace_size_bytes
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: fetched_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: last_indexed_at
+                  type: TIMESTAMP WITH TIME ZONE
+              - column:
+                  name: is_ready
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_job_id
+                  type: UUID
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: repo_rag_namespace_state
+            columnNames: namespace
+            constraintName: uq_repo_rag_namespace_state_namespace
+        - createIndex:
+            tableName: repo_rag_namespace_state
+            indexName: idx_repo_rag_namespace_owner_repo
+            columns:
+              - column:
+                  name: repo_owner
+              - column:
+                  name: repo_name
+        - addForeignKeyConstraint:
+            baseTableName: repo_rag_namespace_state
+            baseColumnNames: last_job_id
+            referencedTableName: repo_rag_index_job
+            referencedColumnNames: id
+            constraintName: fk_repo_rag_namespace_state_job
+            onDelete: SET NULL

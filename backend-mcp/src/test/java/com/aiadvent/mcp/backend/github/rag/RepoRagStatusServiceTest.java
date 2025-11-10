@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagJobStatus;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,12 +19,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class RepoRagStatusServiceTest {
 
   @Mock private RepoRagIndexJobRepository jobRepository;
+  @Mock private RepoRagNamespaceStateService namespaceStateService;
 
   private RepoRagStatusService service;
 
   @BeforeEach
   void setUp() {
-    service = new RepoRagStatusService(jobRepository);
+    service = new RepoRagStatusService(jobRepository, namespaceStateService);
   }
 
   @Test
@@ -40,6 +42,8 @@ class RepoRagStatusServiceTest {
     when(jobRepository.findFirstByRepoOwnerIgnoreCaseAndRepoNameIgnoreCaseOrderByQueuedAtDesc(
             "owner", "repo"))
         .thenReturn(Optional.of(job));
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.empty());
 
     RepoRagStatusService.StatusView status = service.currentStatus("Owner", "Repo");
 
@@ -54,10 +58,32 @@ class RepoRagStatusServiceTest {
     when(jobRepository.findFirstByRepoOwnerIgnoreCaseAndRepoNameIgnoreCaseOrderByQueuedAtDesc(
             "owner", "repo"))
         .thenReturn(Optional.empty());
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.empty());
 
     RepoRagStatusService.StatusView status = service.currentStatus("owner", "repo");
 
     assertThat(status.status()).isEqualTo("NOT_FOUND");
     assertThat(status.filesProcessed()).isZero();
+  }
+
+  @Test
+  void returnsReadyStateWhenNoActiveJob() {
+    when(jobRepository.findFirstByRepoOwnerIgnoreCaseAndRepoNameIgnoreCaseOrderByQueuedAtDesc(
+            "owner", "repo"))
+        .thenReturn(Optional.empty());
+    RepoRagNamespaceStateEntity state = new RepoRagNamespaceStateEntity();
+    state.setNamespace("repo:owner/repo");
+    state.setRepoOwner("owner");
+    state.setRepoName("repo");
+    state.setReady(true);
+    state.setFilesTotal(10);
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(state));
+
+    RepoRagStatusService.StatusView status = service.currentStatus("owner", "repo");
+
+    assertThat(status.status()).isEqualTo("READY");
+    assertThat(status.ready()).isTrue();
   }
 }

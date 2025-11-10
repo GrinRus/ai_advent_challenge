@@ -5,9 +5,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -19,6 +21,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 class RepoRagSearchServiceTest {
 
   @Mock private VectorStore vectorStore;
+  @Mock private RepoRagNamespaceStateService namespaceStateService;
 
   private GitHubRagProperties properties;
   private RepoRagSearchService service;
@@ -32,7 +35,7 @@ class RepoRagSearchServiceTest {
     properties.getRerank().setLineSpanWeight(0.6);
     properties.getRerank().setMaxSnippetLines(2);
     RepoRagSearchReranker reranker = new HeuristicRepoRagSearchReranker(properties);
-    service = new RepoRagSearchService(vectorStore, properties, reranker);
+    service = new RepoRagSearchService(vectorStore, properties, reranker, namespaceStateService);
   }
 
   @Test
@@ -42,6 +45,8 @@ class RepoRagSearchServiceTest {
     Document fallback = document("C.java", 0.50, 5, 50);
     when(vectorStore.similaritySearch(any(SearchRequest.class)))
         .thenReturn(List.of(wideSpanHighScore, narrowSpanLowerScore, fallback));
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
 
     RepoRagSearchService.SearchResponse response =
         service.search(new RepoRagSearchService.SearchCommand("owner", "repo", "query", 3, null, null));
@@ -62,6 +67,8 @@ class RepoRagSearchServiceTest {
             .score(0.7)
             .build();
     when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
 
     RepoRagSearchService.SearchResponse response =
         service.search(new RepoRagSearchService.SearchCommand("owner", "repo", "query", 1, null, null));
@@ -88,5 +95,14 @@ class RepoRagSearchServiceTest {
     metadata.put("summary", "summary " + path);
     metadata.put("namespace", "repo:owner/" + path.toLowerCase());
     return metadata;
+  }
+
+  private RepoRagNamespaceStateEntity readyState() {
+    RepoRagNamespaceStateEntity state = new RepoRagNamespaceStateEntity();
+    state.setNamespace("repo:owner/repo");
+    state.setRepoOwner("owner");
+    state.setRepoName("repo");
+    state.setReady(true);
+    return state;
   }
 }
