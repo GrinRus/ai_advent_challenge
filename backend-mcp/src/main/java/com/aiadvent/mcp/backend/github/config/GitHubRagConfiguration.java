@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EnableTransactionManagement
 @EnableJpaRepositories(basePackages = "com.aiadvent.mcp.backend.github.rag.persistence")
 @EntityScan(basePackages = "com.aiadvent.mcp.backend.github.rag.persistence")
+@org.springframework.context.annotation.Import(com.aiadvent.mcp.backend.github.rag.RepoRagToolConfiguration.class)
 public class GitHubRagConfiguration {
 
   @Bean(name = "repoRagVectorStore")

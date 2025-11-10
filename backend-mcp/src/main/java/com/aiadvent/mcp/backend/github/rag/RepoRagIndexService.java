@@ -124,6 +124,7 @@ public class RepoRagIndexService {
               for (int i = 0; i < fileChunks.size(); i++) {
                 Chunk chunk = fileChunks.get(i);
                 Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("namespace", request.namespace());
                 metadata.put("repo_owner", request.repoOwner());
                 metadata.put("repo_name", request.repoName());
                 metadata.put("file_path", relativePath);
