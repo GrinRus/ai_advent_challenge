@@ -80,3 +80,18 @@ github:
       score-weight: ${GITHUB_RAG_RERANK_SCORE_WEIGHT:0.8}
       line-span-weight: ${GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT:0.2}
       max-snippet-lines: ${GITHUB_RAG_MAX_SNIPPET_LINES:8}
+    query-transformers:
+      enabled: ${GITHUB_RAG_QUERY_TRANSFORMERS_ENABLED:true}
+      max-history-tokens: ${GITHUB_RAG_QUERY_TRANSFORMERS_MAX_HISTORY_TOKENS:1600}
+      default-target-language: ${GITHUB_RAG_QUERY_TRANSFORMERS_DEFAULT_TARGET_LANGUAGE:ru}
+      model: ${GITHUB_RAG_QUERY_TRANSFORMERS_MODEL:gpt-4o-mini}
+      temperature: ${GITHUB_RAG_QUERY_TRANSFORMERS_TEMPERATURE:0.0}
+    multi-query:
+      enabled: ${GITHUB_RAG_MULTI_QUERY_ENABLED:true}
+      default-queries: ${GITHUB_RAG_MULTI_QUERY_DEFAULT_QUERIES:3}
+      max-queries: ${GITHUB_RAG_MULTI_QUERY_MAX_QUERIES:6}
+    post-processing:
+      max-context-tokens: ${GITHUB_RAG_POST_MAX_CONTEXT_TOKENS:4000}
+      llm-compression-enabled: ${GITHUB_RAG_POST_LLM_COMPRESSION_ENABLED:true}
+      llm-compression-model: ${GITHUB_RAG_POST_LLM_COMPRESSION_MODEL:gpt-4o-mini}
+      llm-compression-temperature: ${GITHUB_RAG_POST_LLM_COMPRESSION_TEMPERATURE:0.1}

@@ -15,6 +15,9 @@ public class GitHubRagProperties {
   private final Ignore ignore = new Ignore();
   private final Embedding embedding = new Embedding();
   private final Rerank rerank = new Rerank();
+  private final QueryTransformers queryTransformers = new QueryTransformers();
+  private final MultiQuery multiQuery = new MultiQuery();
+  private final PostProcessing postProcessing = new PostProcessing();
 
   public String getNamespacePrefix() {
     return namespacePrefix;
@@ -50,6 +53,18 @@ public class GitHubRagProperties {
 
   public Rerank getRerank() {
     return rerank;
+  }
+
+  public QueryTransformers getQueryTransformers() {
+    return queryTransformers;
+  }
+
+  public MultiQuery getMultiQuery() {
+    return multiQuery;
+  }
+
+  public PostProcessing getPostProcessing() {
+    return postProcessing;
   }
 
   public static class Chunk {
@@ -164,6 +179,123 @@ public class GitHubRagProperties {
 
     public void setMaxSnippetLines(int maxSnippetLines) {
       this.maxSnippetLines = maxSnippetLines;
+    }
+  }
+
+  public static class QueryTransformers {
+    private boolean enabled = true;
+    private int maxHistoryTokens = 1600;
+    private String defaultTargetLanguage = "ru";
+    private String model = "gpt-4o-mini";
+    private double temperature = 0.0;
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public int getMaxHistoryTokens() {
+      return maxHistoryTokens;
+    }
+
+    public void setMaxHistoryTokens(int maxHistoryTokens) {
+      this.maxHistoryTokens = maxHistoryTokens;
+    }
+
+    public String getDefaultTargetLanguage() {
+      return defaultTargetLanguage;
+    }
+
+    public void setDefaultTargetLanguage(String defaultTargetLanguage) {
+      this.defaultTargetLanguage = defaultTargetLanguage;
+    }
+
+    public String getModel() {
+      return model;
+    }
+
+    public void setModel(String model) {
+      this.model = model;
+    }
+
+    public double getTemperature() {
+      return temperature;
+    }
+
+    public void setTemperature(double temperature) {
+      this.temperature = temperature;
+    }
+  }
+
+  public static class MultiQuery {
+    private boolean enabled = true;
+    private int defaultQueries = 3;
+    private int maxQueries = 6;
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public int getDefaultQueries() {
+      return defaultQueries;
+    }
+
+    public void setDefaultQueries(int defaultQueries) {
+      this.defaultQueries = defaultQueries;
+    }
+
+    public int getMaxQueries() {
+      return maxQueries;
+    }
+
+    public void setMaxQueries(int maxQueries) {
+      this.maxQueries = maxQueries;
+    }
+  }
+
+  public static class PostProcessing {
+    private int maxContextTokens = 4000;
+    private boolean llmCompressionEnabled = true;
+    private String llmCompressionModel = "gpt-4o-mini";
+    private double llmCompressionTemperature = 0.0;
+
+    public int getMaxContextTokens() {
+      return maxContextTokens;
+    }
+
+    public void setMaxContextTokens(int maxContextTokens) {
+      this.maxContextTokens = maxContextTokens;
+    }
+
+    public boolean isLlmCompressionEnabled() {
+      return llmCompressionEnabled;
+    }
+
+    public void setLlmCompressionEnabled(boolean llmCompressionEnabled) {
+      this.llmCompressionEnabled = llmCompressionEnabled;
+    }
+
+    public String getLlmCompressionModel() {
+      return llmCompressionModel;
+    }
+
+    public void setLlmCompressionModel(String llmCompressionModel) {
+      this.llmCompressionModel = llmCompressionModel;
+    }
+
+    public double getLlmCompressionTemperature() {
+      return llmCompressionTemperature;
+    }
+
+    public void setLlmCompressionTemperature(double llmCompressionTemperature) {
+      this.llmCompressionTemperature = llmCompressionTemperature;
     }
   }
 }

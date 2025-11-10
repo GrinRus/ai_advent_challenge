@@ -12,11 +12,12 @@ AI Advent Challenge — инициативный проект по развит�
 - `docs/CONTRIBUTING.md` — чек-лист по поддержке документации.
 - `docs/faq.md` — часто задаваемые вопросы.
 
-## Repo RAG индексатор (Wave 30)
-- После успешного `github.repository_fetch` backend запускает асинхронный job (`RepoRagIndexScheduler`), который обходит workspace, режет файлы на чанки (≈2 КиБ/160 строк) и сохраняет их в PgVector (`repo_rag_vector_store`).
-- Эмбеддинги и параметры chunking управляются переменными `GITHUB_RAG_*` (см. `.env.example`, `docs/infra.md`). Внешняя rerank-модель не требуется: heuristic комбинирует similarity score и длину фрагмента (`scoreWeight`, `lineSpanWeight`).
-- MCP-инструменты `repo.rag_index_status` и `repo.rag_search` зарегистрированы в backend каталоге и подключены к `app.chat.research.tools`, поэтому агенты могут ждать READY и запрашивать релевантный контекст.
-- Метрики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total` доступны через Micrometer. Рекомендуется завести алёрты на рост очереди и повторные ошибки воркеров.
+## Repo RAG индексатор (Wave 31)
+- После успешного `github.repository_fetch` backend запускает асинхронный job (`RepoRagIndexScheduler`), который обходит workspace, режет файлы на чанки (≈2 КиБ/160 строк) и сохраняет их в PgVector (`repo_rag_vector_store`). Параметры задаются через `GITHUB_RAG_*` (см. `.env.example`, `docs/infra.md`).
+- `repo.rag_search` обновлён до v3 и использует модульный Spring AI pipeline: Compression/Rewrite/Translation QueryTransformers, `MultiQueryExpander`, `ConcatenationDocumentJoiner` и цепочку DocumentPostProcessor (heuristic rerank + context-budget + LLM-компрессор). Ответ содержит `instructions`, `augmentedPrompt`, `contextMissing` и `appliedModules`.
+- Добавлен инструмент `repo.rag_search_simple` — достаточно передать только `rawQuery`, MCP автоматически подставит последний READY namespace после `github.repository_fetch`.
+- Практическое руководство и диагностика описаны в `docs/guides/mcp-operators.md`, архитектурные детали модулей — в `docs/architecture/github-rag-modular.md`.
+- Метрики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total` отслеживаются через Micrometer; рекомендуется настраивать алёрты на рост очереди и повторные ошибки воркеров.
 
 ## Telegram бот (Wave 27)
 

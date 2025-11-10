@@ -46,19 +46,17 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 - Для защищённых сред вместо проброса портов используйте reverse proxy/SSH-туннель. MCP-серверы — обычные Spring Boot приложения, поэтому можно разворачивать их за ingress-контроллером или API Gateway. GitHub MCP требует Personal Access Token с правами `repo`, `read:org`, `read:checks`, переданный через переменную `GITHUB_PAT`.
 
 ### Repo RAG (GitHub MCP)
-1. **После fetch:** инструмент `github.repository_fetch` возвращает `workspaceId` и заодно ставит job в очередь индексатора. Проверяйте прогресс через `repo.rag_index_status`:
-   ```json
-   {
-     "repoOwner": "sandbox-co",
-     "repoName": "demo-service"
-   }
-   ```
-   Ответ содержит `status` (QUEUED/RUNNING/SUCCEEDED/FAILED), `progress` (0..1), `etaSeconds`, `filesProcessed`, `chunksProcessed`, `lastError`.
-2. **Ожидание READY:** прежде чем запускать тяжёлые flow (`github-gradle-test-flow`, agents), убедитесь что `status=SUCCEEDED`. Если статус `FAILED` и `attempt < maxAttempts`, индексатор автоматически повторит задачу; иначе очистите workspace и вызовите fetch заново.
-3. **Поиск контекста:** используйте `repo.rag_search` с `query`, `topK`, `rerankTopN` (опционально). Инструмент возвращает массив чанков (`path`, `snippet`, `summary`, `score`). Все чанки принадлежат namespace `repo:<owner>/<name>`, поэтому новый fetch автоматически заменяет данные.
-4. **Heuristic rerank:** под капотом используется комбинация similarity score и длины фрагмента (`GITHUB_RAG_RERANK_SCORE_WEIGHT`, `GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT`). Для узких файлов лучше выставлять `rerankTopN=10`, чтобы брать достаточно контекста.
-5. **Метрики и мониторинг:** в Grafana отслеживайте `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. Если очередь растёт > 5 или подряд ≥3 fail'ов, проверьте наличие stuck workspace'ов и лимиты диска в `/var/tmp/aiadvent/mcp-workspaces`.
-6. **Операторские советы:** храните `repoOwner`/`repoName` в карточке flow, чтобы не потерять контекст; при ручной очистке workspace (`TempWorkspaceService#deleteWorkspace`) всегда повторяйте fetch → status → search.
+1. **После fetch:** `github.repository_fetch` возвращает `workspaceId` и ставит job в очередь индексатора. Следите за прогрессом через `repo.rag_index_status` (`status`, `progress`, `etaSeconds`, `lastError`). Ждём `ready=true`, иначе search вернёт пустой контекст.
+2. **Быстрый поиск:** `repo.rag_search_simple` принимает только `rawQuery` и использует последний READY namespace. Удобно в чатах/flows, когда мы гарантированно работаем с одним репозиторием. Если READY нет, MCP бросит ошибку.
+3. **Расширенный поиск (`repo.rag_search` v3):**
+   - Вход: `history[]`, `previousAssistantReply`, `translateTo`, `multiQuery`, `maxContextTokens`, `instructionsTemplate`, `filters`, `filterExpression`.
+   - Выход: `matches`, `augmentedPrompt`, `instructions`, `contextMissing`, `appliedModules`. Значение `contextMissing=true` означает «Индекс не содержит подходящих документов» — UI/flows должны показать предупреждение или предложить повторный fetch.
+   - `appliedModules` отражает цепочку модулей (compression, translation, multi-query, context-budget, llm-compression). Если модуль отсутствует, он не запускался или не внёс изменений.
+4. **Разбор ответов:** `instructions` — готовый system prompt для агента (учитывает `generationLocale` и шаблон). `augmentedPrompt` содержит упакованный контекст (первые 5 сниппетов). `matches[].metadata.generatedBySubQuery` помогает понять, какой подзапрос вернул чанк.
+5. **Наблюдаемость:** графики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. При очереди >5 или ≥3 fail подряд проверяйте свободное место `/var/tmp/aiadvent/mcp-workspaces` и наличие зависших job.
+6. **Runbook:** логируйте `repoOwner/repoName`, `appliedModules`, `contextMissing`, `maxContextTokens`. При ручной очистке workspace всегда повторяйте fetch → status → search.
+
+> Подробнее о LEGO-модулях pipeline см. `docs/architecture/github-rag-modular.md`.
 
 ## Примеры запросов
 

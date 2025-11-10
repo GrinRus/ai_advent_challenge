@@ -29,6 +29,7 @@ dependencies {
     implementation "org.springframework.ai:spring-ai-starter-mcp-server"
     implementation "org.springframework.ai:spring-ai-starter-mcp-server-webmvc"
     implementation "org.springframework.ai:spring-ai-starter-model-openai"
+    implementation "org.springframework.ai:spring-ai-rag"
     implementation "org.springframework.ai:spring-ai-pgvector-store"
 
     implementation "org.springframework.boot:spring-boot-starter-webflux"

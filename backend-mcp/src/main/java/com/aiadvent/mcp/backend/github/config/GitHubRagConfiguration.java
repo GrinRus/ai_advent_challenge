@@ -5,6 +5,9 @@ import com.aiadvent.mcp.backend.github.rag.HeuristicRepoRagSearchReranker;
 import com.aiadvent.mcp.backend.github.rag.RepoRagSearchReranker;
 import com.aiadvent.mcp.backend.github.rag.RepoRagToolConfiguration;
 import javax.sql.DataSource;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
@@ -12,6 +15,8 @@ import org.springframework.ai.vectorstore.pgvector.PgVectorStore.PgDistanceType;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore.PgIdType;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore.PgIndexType;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -43,7 +48,32 @@ public class GitHubRagConfiguration {
   }
 
   @Bean
-  RepoRagSearchReranker repoRagSearchReranker(GitHubRagProperties properties) {
-    return new HeuristicRepoRagSearchReranker(properties);
+  RepoRagSearchReranker repoRagSearchReranker(
+      GitHubRagProperties properties,
+      @Qualifier("repoRagSnippetCompressorChatClientBuilder")
+          ObjectProvider<ChatClient.Builder> snippetCompressorBuilder) {
+    return new HeuristicRepoRagSearchReranker(properties, snippetCompressorBuilder);
+  }
+
+  @Bean(name = "repoRagQueryTransformerChatClientBuilder")
+  ChatClient.Builder repoRagQueryTransformerChatClientBuilder(
+      OpenAiChatModel chatModel, GitHubRagProperties properties) {
+    OpenAiChatOptions options =
+        OpenAiChatOptions.builder()
+            .model(properties.getQueryTransformers().getModel())
+            .temperature(properties.getQueryTransformers().getTemperature())
+            .build();
+    return ChatClient.builder(chatModel).defaultOptions(options);
+  }
+
+  @Bean(name = "repoRagSnippetCompressorChatClientBuilder")
+  ChatClient.Builder repoRagSnippetCompressorChatClientBuilder(
+      OpenAiChatModel chatModel, GitHubRagProperties properties) {
+    OpenAiChatOptions options =
+        OpenAiChatOptions.builder()
+            .model(properties.getPostProcessing().getLlmCompressionModel())
+            .temperature(properties.getPostProcessing().getLlmCompressionTemperature())
+            .build();
+    return ChatClient.builder(chatModel).defaultOptions(options);
   }
 }

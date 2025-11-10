@@ -3153,5 +3153,61 @@ databaseChangeLog:
               INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
               VALUES
                 ('repo.rag_search', 'GitHub · Repo RAG search', 'Возвращает релевантные чанки из namespace `repo:<owner>/<name>` с heuristic rerank.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
-                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 1))
+                (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
+
+  - changeSet:
+      id: 0210-update-repo-rag-search-schema
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_search', 2,
+                 $${"type":"object","properties":{"repoOwner":{"type":"string"},"repoName":{"type":"string"},"query":{"type":"string"},"topK":{"type":"integer","minimum":1,"maximum":40},"minScore":{"type":"number","minimum":0.1,"maximum":0.99},"rerankTopN":{"type":"integer","minimum":1,"maximum":40},"filters":{"type":"object","properties":{"languages":{"type":"array","items":{"type":"string"}},"pathGlobs":{"type":"array","items":{"type":"string"}}}},"filterExpression":{"type":"string"}},"required":["repoOwner","repoName","query"]}$$::jsonb,
+                 $${"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"snippet":{"type":"string"},"summary":{"type":"string"},"score":{"type":"number"},"metadata":{"type":"object"}},"required":["path","snippet","score"]}},"rerankApplied":{"type":"boolean"}},"required":["matches","rerankApplied"]}$$::jsonb,
+                 'checksum-repo.rag_search-v2', '[]'::jsonb, 'github', 'repo.rag_search', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              UPDATE tool_definition
+              SET schema_version_id = (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 2)
+              WHERE code = 'repo.rag_search';
+
+  - changeSet:
+      id: 0215-update-repo-rag-tools-wave31
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_search', 3,
+                 $${"type":"object","properties":{"repoOwner":{"type":"string"},"repoName":{"type":"string"},"rawQuery":{"type":"string"},"topK":{"type":"integer","minimum":1,"maximum":40},"minScore":{"type":"number","minimum":0.1,"maximum":0.99},"rerankTopN":{"type":"integer","minimum":1,"maximum":40},"filters":{"type":"object","properties":{"languages":{"type":"array","items":{"type":"string"}},"pathGlobs":{"type":"array","items":{"type":"string"}}}},"filterExpression":{"type":"string"},"history":{"type":"array","items":{"type":"object","properties":{"role":{"type":"string"},"content":{"type":"string"}},"required":["role","content"]}},"previousAssistantReply":{"type":"string"},"allowEmptyContext":{"type":"boolean"},"translateTo":{"type":"string"},"multiQuery":{"type":"object","properties":{"enabled":{"type":"boolean"},"queries":{"type":"integer","minimum":1,"maximum":40}}},"maxContextTokens":{"type":"integer","minimum":256},"generationLocale":{"type":"string"},"instructionsTemplate":{"type":"string"}},"required":["repoOwner","repoName","rawQuery"]}$$::jsonb,
+                 $${"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"snippet":{"type":"string"},"summary":{"type":"string"},"score":{"type":"number"},"metadata":{"type":"object"}},"required":["path","snippet","score"]}},"rerankApplied":{"type":"boolean"},"augmentedPrompt":{"type":"string"},"instructions":{"type":"string"},"contextMissing":{"type":"boolean"},"appliedModules":{"type":"array","items":{"type":"string"}}},"required":["matches","rerankApplied","contextMissing","appliedModules"]}$$::jsonb,
+                 'checksum-repo.rag_search-v3', '[]'::jsonb, 'github', 'repo.rag_search', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              UPDATE tool_definition
+              SET schema_version_id = (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search' AND version = 3)
+              WHERE code = 'repo.rag_search';
+
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_search_simple', 1,
+                 $${"type":"object","properties":{"rawQuery":{"type":"string"}},"required":["rawQuery"]}$$::jsonb,
+                 $${"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"snippet":{"type":"string"},"summary":{"type":"string"},"score":{"type":"number"},"metadata":{"type":"object"}},"required":["path","snippet","score"]}},"rerankApplied":{"type":"boolean"},"augmentedPrompt":{"type":"string"},"instructions":{"type":"string"},"contextMissing":{"type":"boolean"},"appliedModules":{"type":"array","items":{"type":"string"}}},"required":["matches","rerankApplied","contextMissing","appliedModules"]}$$::jsonb,
+                 'checksum-repo.rag_search_simple-v1', '[]'::jsonb, 'github', 'repo.rag_search_simple', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo.rag_search_simple', 'GitHub · Repo RAG search (auto repo)', 'Ищет контекст в последнем READY-namespace без указания repoOwner/repoName. Используется после github.repository_fetch, включает историю, перевод, multi-query и модульный post-processing.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search_simple' AND version = 1))
               ON CONFLICT (code) DO NOTHING;

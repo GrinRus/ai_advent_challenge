@@ -15,4 +15,6 @@ public interface RepoRagNamespaceStateRepository
       @Param("repoOwner") String repoOwner, @Param("repoName") String repoName);
 
   Optional<RepoRagNamespaceStateEntity> findByNamespace(String namespace);
+
+  Optional<RepoRagNamespaceStateEntity> findFirstByReadyTrueOrderByLastIndexedAtDesc();
 }

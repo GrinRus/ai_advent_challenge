@@ -1,74 +1,96 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.ContextWindowBudgetPostProcessor;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.HeuristicDocumentPostProcessor;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.LlmSnippetCompressionPostProcessor;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.Objects;
+import java.util.stream.IntStream;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
 import org.springframework.util.CollectionUtils;
 
 public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
 
   private final GitHubRagProperties properties;
+  private final ObjectProvider<ChatClient.Builder> snippetCompressorBuilderProvider;
 
-  public HeuristicRepoRagSearchReranker(GitHubRagProperties properties) {
+  public HeuristicRepoRagSearchReranker(
+      GitHubRagProperties properties,
+      ObjectProvider<ChatClient.Builder> snippetCompressorBuilderProvider) {
     this.properties = properties;
+    this.snippetCompressorBuilderProvider = snippetCompressorBuilderProvider;
   }
 
   @Override
-  public boolean rerank(String query, List<RepoRagSearchService.SearchMatch> matches, int topN) {
-    if (CollectionUtils.isEmpty(matches) || matches.size() == 1) {
+  public PostProcessingResult process(
+      Query query, List<Document> documents, RepoRagPostProcessingRequest request) {
+    if (CollectionUtils.isEmpty(documents)) {
+      return new PostProcessingResult(documents, false, List.of());
+    }
+    List<Document> current = documents;
+    boolean changed = false;
+    List<String> modules = new ArrayList<>();
+    for (NamedProcessor processor : buildProcessors(request)) {
+      List<Document> updated = processor.delegate().process(query, current);
+      if (hasChanged(current, updated)) {
+        changed = true;
+        modules.add(processor.name());
+      }
+      current = updated;
+    }
+    return new PostProcessingResult(current, changed, modules);
+  }
+
+  private List<NamedProcessor> buildProcessors(RepoRagPostProcessingRequest request) {
+    List<NamedProcessor> processors = new ArrayList<>();
+    processors.add(
+        new NamedProcessor(
+            "post.heuristic-rerank",
+            new HeuristicDocumentPostProcessor(properties.getRerank())));
+    if (request.maxContextTokens() > 0) {
+      processors.add(
+          new NamedProcessor(
+              "post.context-budget",
+              new ContextWindowBudgetPostProcessor(request.maxContextTokens())));
+    }
+    if (request.compressionEnabled()) {
+      processors.add(
+          new NamedProcessor(
+              "post.llm-compression",
+              new LlmSnippetCompressionPostProcessor(
+                  snippetCompressorBuilderProvider.getObject(),
+                  request.maxSnippetLines(),
+                  request.locale(),
+                  true,
+                  6)));
+    }
+    return processors;
+  }
+
+  private boolean hasChanged(List<Document> before, List<Document> after) {
+    if (before == after) {
       return false;
     }
-    int effectiveTopN = Math.max(1, Math.min(topN, matches.size()));
-    List<RepoRagSearchService.SearchMatch> head =
-        new ArrayList<>(matches.subList(0, effectiveTopN));
-    head.sort(
-        Comparator.comparingDouble(this::combinedScore).reversed());
-    for (int i = 0; i < head.size(); i++) {
-      matches.set(i, head.get(i));
+    if (before.size() != after.size()) {
+      return true;
     }
-    return true;
+    return IntStream.range(0, before.size())
+        .anyMatch(
+            index ->
+                !Objects.equals(fingerprint(before.get(index)), fingerprint(after.get(index))));
   }
 
-  private double combinedScore(RepoRagSearchService.SearchMatch match) {
-    double score = Math.max(0.0, match.score());
-    double span = extractLineSpan(match.metadata());
-    double normalizedSpan = span > 0 ? 1.0 / span : 1.0;
-    double scoreWeight = clamp(properties.getRerank().getScoreWeight(), 0.0, 1.0);
-    double spanWeight = clamp(properties.getRerank().getLineSpanWeight(), 0.0, 1.0);
-    if (scoreWeight + spanWeight == 0) {
-      scoreWeight = 0.7;
-      spanWeight = 0.3;
-    }
-    return (scoreWeight * score) + (spanWeight * normalizedSpan);
+  private String fingerprint(Document document) {
+    String path = document.getMetadata() != null ? (String) document.getMetadata().get("file_path") : "";
+    return path + "::" + document.getText();
   }
 
-  private double extractLineSpan(Map<String, Object> metadata) {
-    if (metadata == null || metadata.isEmpty()) {
-      return 50.0;
-    }
-    long lineStart = readLong(metadata.get("line_start"), 1);
-    long lineEnd = readLong(metadata.get("line_end"), lineStart);
-    return Math.max(1, lineEnd - lineStart + 1);
-  }
-
-  private long readLong(Object value, long defaultValue) {
-    if (value instanceof Number number) {
-      return number.longValue();
-    }
-    if (value instanceof String string && !string.isBlank()) {
-      try {
-        return Long.parseLong(string.trim());
-      } catch (NumberFormatException ignore) {
-        // fall through
-      }
-    }
-    return defaultValue;
-  }
-
-  private double clamp(double value, double min, double max) {
-    return Math.max(min, Math.min(max, value));
-  }
+  private record NamedProcessor(String name, DocumentPostProcessor delegate) {}
 }

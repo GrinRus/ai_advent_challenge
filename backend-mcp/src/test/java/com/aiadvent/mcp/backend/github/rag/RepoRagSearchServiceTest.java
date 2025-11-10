@@ -2,25 +2,27 @@ package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.rag.Query;
+import org.springframework.ai.vectorstore.filter.Filter;
 
 class RepoRagSearchServiceTest {
 
-  @Mock private VectorStore vectorStore;
+  @Mock private RepoRagRetrievalPipeline pipeline;
+  @Mock private RepoRagSearchReranker reranker;
   @Mock private RepoRagNamespaceStateService namespaceStateService;
 
   private GitHubRagProperties properties;
@@ -30,79 +32,114 @@ class RepoRagSearchServiceTest {
   void setUp() {
     MockitoAnnotations.openMocks(this);
     properties = new GitHubRagProperties();
-    properties.getRerank().setTopN(2);
-    properties.getRerank().setScoreWeight(0.4);
-    properties.getRerank().setLineSpanWeight(0.6);
-    properties.getRerank().setMaxSnippetLines(2);
-    RepoRagSearchReranker reranker = new HeuristicRepoRagSearchReranker(properties);
-    service = new RepoRagSearchService(vectorStore, properties, reranker, namespaceStateService);
+    service = new RepoRagSearchService(properties, pipeline, reranker, namespaceStateService);
   }
 
   @Test
-  void reranksTopMatchesByCombinedScore() {
-    Document wideSpanHighScore = document("A.java", 0.90, 1, 200);
-    Document narrowSpanLowerScore = document("B.java", 0.88, 10, 40);
-    Document fallback = document("C.java", 0.50, 5, 50);
-    when(vectorStore.similaritySearch(any(SearchRequest.class)))
-        .thenReturn(List.of(wideSpanHighScore, narrowSpanLowerScore, fallback));
+  void buildsFilterExpressionWithLanguagesAndRawExpression() {
     when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
         .thenReturn(Optional.of(readyState()));
-
-    RepoRagSearchService.SearchResponse response =
-        service.search(new RepoRagSearchService.SearchCommand("owner", "repo", "query", 3, null, null));
-
-    assertThat(response.matches()).hasSize(3);
-    assertThat(response.matches().get(0).path()).isEqualTo("B.java"); // better span
-    assertThat(response.matches().get(1).path()).isEqualTo("A.java");
-    assertThat(response.rerankApplied()).isTrue();
-  }
-
-  @Test
-  void limitsSnippetLinesAccordingToProperties() {
+    Query query = Query.builder().text("test").history(List.of()).build();
     Document doc =
         Document.builder()
-            .id("doc")
-            .text("line1\nline2\nline3\nline4")
-            .metadata(defaultMetadata("Snippet.java", 1, 20))
+            .id("1")
+            .text("snippet")
+            .metadata(Map.of("file_path", "src/Main.java"))
             .score(0.7)
             .build();
-    when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
+    when(pipeline.execute(any())).thenReturn(
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of("query.compression"), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+
+    RepoRagSearchFilters filters = new RepoRagSearchFilters(List.of("java"), List.of());
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw query",
+            5,
+            null,
+            null,
+            filters,
+            "repo_owner == 'owner'",
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null);
+    service.search(command);
+
+    ArgumentCaptor<RepoRagRetrievalPipeline.PipelineInput> captor =
+        ArgumentCaptor.forClass(RepoRagRetrievalPipeline.PipelineInput.class);
+    verify(pipeline).execute(captor.capture());
+    Filter.Expression expression = captor.getValue().filterExpression();
+    assertThat(expression).isNotNull();
+    assertThat(expression.toString()).contains("namespace").contains("language").contains("repo_owner");
+  }
+
+  @Test
+  void filtersDocumentsByPathGlobs() {
     when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
         .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("test").history(List.of()).build();
+    Document included =
+        Document.builder()
+            .id("1")
+            .text("ok")
+            .metadata(Map.of("file_path", "src/main/java/App.java"))
+            .score(0.8)
+            .build();
+    Document excluded =
+        Document.builder()
+            .id("2")
+            .text("skip")
+            .metadata(Map.of("file_path", "docs/readme.md"))
+            .score(0.9)
+            .build();
+    when(pipeline.execute(any())).thenReturn(
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(included, excluded), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(included), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
 
-    RepoRagSearchService.SearchResponse response =
-        service.search(new RepoRagSearchService.SearchCommand("owner", "repo", "query", 1, null, null));
+    RepoRagSearchFilters filters =
+        new RepoRagSearchFilters(List.of(), List.of("src/main/**"));
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw query",
+            5,
+            null,
+            null,
+            filters,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null);
+    RepoRagSearchService.SearchResponse response = service.search(command);
 
     assertThat(response.matches()).hasSize(1);
-    long lineCount = response.matches().get(0).snippet().lines().count();
-    assertThat(lineCount).isEqualTo(properties.getRerank().getMaxSnippetLines());
-  }
-
-  private Document document(String path, double score, int lineStart, int lineEnd) {
-    return Document.builder()
-        .id(path)
-        .text("snippet from " + path + "\nmore context")
-        .metadata(defaultMetadata(path, lineStart, lineEnd))
-        .score(score)
-        .build();
-  }
-
-  private Map<String, Object> defaultMetadata(String path, int lineStart, int lineEnd) {
-    Map<String, Object> metadata = new HashMap<>();
-    metadata.put("file_path", path);
-    metadata.put("line_start", lineStart);
-    metadata.put("line_end", lineEnd);
-    metadata.put("summary", "summary " + path);
-    metadata.put("namespace", "repo:owner/" + path.toLowerCase());
-    return metadata;
+    assertThat(response.matches().get(0).path()).isEqualTo("src/main/java/App.java");
   }
 
   private RepoRagNamespaceStateEntity readyState() {
-    RepoRagNamespaceStateEntity state = new RepoRagNamespaceStateEntity();
-    state.setNamespace("repo:owner/repo");
-    state.setRepoOwner("owner");
-    state.setRepoName("repo");
-    state.setReady(true);
-    return state;
+    RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
+    entity.setNamespace("repo:owner/repo");
+    entity.setRepoOwner("owner");
+    entity.setRepoName("repo");
+    entity.setReady(true);
+    return entity;
   }
 }
+

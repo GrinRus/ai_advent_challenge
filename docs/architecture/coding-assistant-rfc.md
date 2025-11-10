@@ -40,6 +40,12 @@
 
 Во всех сценариях Wave 30 добавляет промежуточный шаг `repo.rag_index_status` → `repo.rag_search`. После fetch агент опрашивает статус индексатора, ждёт `SUCCEEDED` и только затем добавляет heuristic-rerankнутые чанки в prompt `coding.generate_patch`/`coding.review_patch`. Это снижает ручной поиск файлов и обеспечивает стабильный контекст на уровне репозитория (namespace `repo:<owner>/<name>`).
 
+Wave 31 дополнил этот этап:
+- `repo.rag_search` автоматически сжимает историю, переписывает и переводит запрос перед multi-query (не нужно менять подсказку агента).
+- MCP возвращает `instructions`/`augmentedPrompt` — бот может просто подставить их в system prompt Claude/GPT без конкатенации вручную.
+- `appliedModules` логируется в telemetry и помогает понять, почему контекст пуст (например, `contextMissing=true` при включённом фильтре).
+- Для lightweight flow добавлен `repo.rag_search_simple`, который берёт последний READY namespace и пригоден для «fetch → спроси» сценариев.
+
 ## Архитектура
 
 ### Компоненты

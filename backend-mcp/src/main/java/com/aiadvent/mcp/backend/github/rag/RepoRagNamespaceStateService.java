@@ -106,6 +106,10 @@ public class RepoRagNamespaceStateService {
     return repository.findByRepoOwnerAndRepoName(normalize(repoOwner), normalize(repoName));
   }
 
+  public Optional<RepoRagNamespaceStateEntity> findLatestReady() {
+    return repository.findFirstByReadyTrueOrderByLastIndexedAtDesc();
+  }
+
   private String normalize(String value) {
     return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
   }

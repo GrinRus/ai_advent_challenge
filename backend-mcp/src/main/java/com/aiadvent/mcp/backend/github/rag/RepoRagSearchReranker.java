@@ -1,13 +1,15 @@
 package com.aiadvent.mcp.backend.github.rag;
 
+import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 import java.util.List;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.rag.Query;
 
 public interface RepoRagSearchReranker {
 
-  /**
-   * Reorders the provided matches in-place according to the rerank strategy.
-   *
-   * @return {@code true} if reranking was applied, {@code false} otherwise.
-   */
-  boolean rerank(String query, List<RepoRagSearchService.SearchMatch> matches, int topN);
+  PostProcessingResult process(
+      Query query, List<Document> documents, RepoRagPostProcessingRequest request);
+
+  record PostProcessingResult(
+      List<Document> documents, boolean changed, List<String> appliedModules) {}
 }
