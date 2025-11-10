@@ -10,6 +10,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -49,17 +51,21 @@ public class RepoRagIndexScheduler {
       RepoRagIndexService indexService,
       GitHubRagProperties properties,
       ObjectMapper objectMapper,
-      MeterRegistry meterRegistry) {
+      @Nullable MeterRegistry meterRegistry) {
     this.jobRepository = jobRepository;
     this.indexService = indexService;
     this.properties = properties;
     this.objectMapper = objectMapper;
     int poolSize = Math.max(1, properties.getMaxConcurrency());
     this.executor = new ScheduledThreadPoolExecutor(poolSize, new WorkerFactory());
-    Gauge.builder("repo_rag_queue_depth", queued, AtomicInteger::get).register(meterRegistry);
-    this.indexDuration = meterRegistry.timer("repo_rag_index_duration");
-    this.indexFailures = meterRegistry.counter("repo_rag_index_fail_total");
-    this.embeddingsTotal = meterRegistry.counter("repo_rag_embeddings_total");
+    MeterRegistry registry = meterRegistry;
+    if (registry == null) {
+      registry = new SimpleMeterRegistry();
+    }
+    Gauge.builder("repo_rag_queue_depth", queued, AtomicInteger::get).register(registry);
+    this.indexDuration = registry.timer("repo_rag_index_duration");
+    this.indexFailures = registry.counter("repo_rag_index_fail_total");
+    this.embeddingsTotal = registry.counter("repo_rag_embeddings_total");
   }
 
   public void scheduleIndexing(String repoOwner, String repoName, String workspaceId, String sourceRef, Instant fetchedAt) {
