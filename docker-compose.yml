@@ -156,8 +156,24 @@ services:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: github
       GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
+      GITHUB_MCP_DB_URL: ${GITHUB_MCP_DB_URL:-jdbc:postgresql://postgres:5432/ai_advent}
+      GITHUB_MCP_DB_USER: ${GITHUB_MCP_DB_USER:-ai_advent}
+      GITHUB_MCP_DB_PASSWORD: ${GITHUB_MCP_DB_PASSWORD:-ai_advent}
+      GITHUB_RAG_EMBEDDING_MODEL: ${GITHUB_RAG_EMBEDDING_MODEL:-text-embedding-3-small}
+      GITHUB_RAG_EMBEDDING_DIMENSIONS: ${GITHUB_RAG_EMBEDDING_DIMENSIONS:-1536}
+      GITHUB_RAG_MAX_CHUNK_BYTES: ${GITHUB_RAG_MAX_CHUNK_BYTES:-2048}
+      GITHUB_RAG_MAX_CHUNK_LINES: ${GITHUB_RAG_MAX_CHUNK_LINES:-160}
+      GITHUB_RAG_MAX_CONCURRENCY: ${GITHUB_RAG_MAX_CONCURRENCY:-2}
+      GITHUB_RAG_MAX_ATTEMPTS: ${GITHUB_RAG_MAX_ATTEMPTS:-5}
+      GITHUB_RAG_INITIAL_BACKOFF: ${GITHUB_RAG_INITIAL_BACKOFF:-PT15S}
+      GITHUB_RAG_NAMESPACE_PREFIX: ${GITHUB_RAG_NAMESPACE_PREFIX:-repo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-openai-key}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
     ports:
       - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
+    depends_on:
+      postgres:
+        condition: service_started
     volumes:
       - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
     stdin_open: true

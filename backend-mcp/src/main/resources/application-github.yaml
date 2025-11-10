@@ -2,6 +2,24 @@ server:
   port: ${GITHUB_MCP_HTTP_PORT:${SERVER_PORT:8080}}
 
 spring:
+  autoconfigure:
+    exclude: []
+  datasource:
+    url: ${GITHUB_MCP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
+    username: ${GITHUB_MCP_DB_USER:ai_advent}
+    password: ${GITHUB_MCP_DB_PASSWORD:ai_advent}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/github/db.changelog-master.yaml
+    contexts: github-rag
   ai:
     mcp:
       server:
@@ -24,6 +42,14 @@ spring:
       streamable-http:
         mcp-endpoint: /mcp
         keep-alive-interval: 30s
+    openai:
+      enabled: true
+      api-key: ${OPENAI_API_KEY:demo-openai-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      embedding:
+        options:
+          model: ${GITHUB_RAG_EMBEDDING_MODEL:text-embedding-3-small}
+          dimensions: ${GITHUB_RAG_EMBEDDING_DIMENSIONS:1536}
 
 github:
   backend:
@@ -37,3 +63,15 @@ github:
     tree-max-entries: ${GITHUB_TREE_MAX_ENTRIES:500}
     file-max-size-bytes: ${GITHUB_FILE_MAX_SIZE_BYTES:524288}
     user-agent: ${GITHUB_USER_AGENT:AI Advent GitHub MCP/0.1}
+  rag:
+    namespace-prefix: ${GITHUB_RAG_NAMESPACE_PREFIX:repo}
+    max-concurrency: ${GITHUB_RAG_MAX_CONCURRENCY:2}
+    chunk:
+      max-bytes: ${GITHUB_RAG_MAX_CHUNK_BYTES:2048}
+      max-lines: ${GITHUB_RAG_MAX_CHUNK_LINES:160}
+    retry:
+      max-attempts: ${GITHUB_RAG_MAX_ATTEMPTS:5}
+      initial-backoff: ${GITHUB_RAG_INITIAL_BACKOFF:PT15S}
+    embedding:
+      model: ${GITHUB_RAG_EMBEDDING_MODEL:text-embedding-3-small}
+      dimensions: ${GITHUB_RAG_EMBEDDING_DIMENSIONS:1536}

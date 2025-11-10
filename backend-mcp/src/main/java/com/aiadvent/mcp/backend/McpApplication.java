@@ -5,6 +5,7 @@ import com.aiadvent.mcp.backend.config.AgentOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.DockerRunnerProperties;
 import com.aiadvent.mcp.backend.config.FlowOpsBackendProperties;
 import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.config.InsightBackendProperties;
 import com.aiadvent.mcp.backend.config.NotesBackendProperties;
 import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
@@ -69,7 +70,7 @@ public class McpApplication {
             "com.aiadvent.mcp.backend.workspace",
             "com.aiadvent.mcp.backend.config"
     })
-    @EnableConfigurationProperties(GitHubBackendProperties.class)
+    @EnableConfigurationProperties({GitHubBackendProperties.class, GitHubRagProperties.class})
     public class GitHubConfig {
     }
 
