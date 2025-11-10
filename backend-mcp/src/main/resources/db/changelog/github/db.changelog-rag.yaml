@@ -199,3 +199,30 @@ databaseChangeLog:
             tableName: repo_rag_vector_store
             columnNames: namespace, file_path, chunk_index
             constraintName: uq_repo_rag_vector_store_namespace_path_idx
+  - changeSet:
+      id: github-rag-0003
+      author: ai-advent
+      context: github-rag
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              CREATE OR REPLACE FUNCTION repo_rag_vector_store_sync_columns()
+              RETURNS trigger AS $$
+              BEGIN
+                NEW.namespace := COALESCE(NEW.metadata ->> 'namespace', NEW.namespace);
+                NEW.file_path := COALESCE(NEW.metadata ->> 'file_path', NEW.file_path);
+                NEW.chunk_index := COALESCE((NEW.metadata ->> 'chunk_index')::INT, NEW.chunk_index);
+                NEW.chunk_hash := COALESCE(NEW.metadata ->> 'chunk_hash', NEW.chunk_hash);
+                NEW.language := COALESCE(NEW.metadata ->> 'language', NEW.language);
+                NEW.summary := COALESCE(NEW.metadata ->> 'summary', NEW.summary);
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+
+              DROP TRIGGER IF EXISTS repo_rag_vector_store_sync_columns ON repo_rag_vector_store;
+
+              CREATE TRIGGER repo_rag_vector_store_sync_columns
+              BEFORE INSERT OR UPDATE ON repo_rag_vector_store
+              FOR EACH ROW EXECUTE FUNCTION repo_rag_vector_store_sync_columns();
