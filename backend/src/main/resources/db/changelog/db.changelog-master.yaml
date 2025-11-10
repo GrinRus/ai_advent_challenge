@@ -3,6 +3,7 @@ databaseChangeLog:
       id: 0001-create-help-table
       author: ai-advent
       context: local,prod
+      validCheckSum: 9:484fe1cf55423801c14efd9862b30088
       changes:
         - sql:
             splitStatements: false
