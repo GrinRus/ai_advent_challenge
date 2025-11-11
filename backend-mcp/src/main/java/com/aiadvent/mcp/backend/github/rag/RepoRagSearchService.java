@@ -105,7 +105,8 @@ public class RepoRagSearchService {
               maxContextTokens,
               resolveLocale(command),
               properties.getRerank().getMaxSnippetLines(),
-              properties.getPostProcessing().isLlmCompressionEnabled());
+              properties.getPostProcessing().isLlmCompressionEnabled(),
+              resolveRerankTopN(command.rerankTopN()));
       postProcessingResult =
           reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
     }
@@ -357,6 +358,14 @@ public class RepoRagSearchService {
     if (command.topKPerQuery() != null && command.topKPerQuery() > MAX_TOP_K) {
       throw new IllegalArgumentException("topKPerQuery must be <= " + MAX_TOP_K);
     }
+    if (command.rerankTopN() != null) {
+      if (command.rerankTopN() < 1) {
+        throw new IllegalArgumentException("rerankTopN must be >= 1");
+      }
+      if (command.rerankTopN() > MAX_TOP_K) {
+        throw new IllegalArgumentException("rerankTopN must be <= " + MAX_TOP_K);
+      }
+    }
     if (command.minScoreByLanguage() != null) {
       command.minScoreByLanguage().forEach(
           (language, threshold) -> {
@@ -413,6 +422,14 @@ public class RepoRagSearchService {
       return command.generationLocale();
     }
     return resolveTranslateTo(command);
+  }
+
+  private int resolveRerankTopN(Integer candidate) {
+    int defaultTopN = Math.max(1, Math.min(MAX_TOP_K, properties.getRerank().getTopN()));
+    if (candidate == null) {
+      return defaultTopN;
+    }
+    return Math.max(1, Math.min(MAX_TOP_K, candidate));
   }
 
   private RerankStrategy resolveRerankStrategy(String strategy) {

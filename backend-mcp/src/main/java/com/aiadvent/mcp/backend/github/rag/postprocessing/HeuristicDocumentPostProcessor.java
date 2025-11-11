@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
@@ -15,10 +16,16 @@ import org.springframework.util.CollectionUtils;
  */
 public class HeuristicDocumentPostProcessor implements DocumentPostProcessor {
 
-  private final GitHubRagProperties.Rerank rerank;
+  private final int headSize;
+  private final double scoreWeight;
+  private final double spanWeight;
 
-  public HeuristicDocumentPostProcessor(GitHubRagProperties.Rerank rerank) {
-    this.rerank = rerank;
+  public HeuristicDocumentPostProcessor(
+      GitHubRagProperties.Rerank rerank, Integer topNOverride) {
+    this.headSize =
+        Math.max(1, topNOverride != null ? topNOverride : Objects.requireNonNull(rerank).getTopN());
+    this.scoreWeight = rerank.getScoreWeight();
+    this.spanWeight = rerank.getLineSpanWeight();
   }
 
   @Override
@@ -26,8 +33,8 @@ public class HeuristicDocumentPostProcessor implements DocumentPostProcessor {
     if (CollectionUtils.isEmpty(documents) || documents.size() == 1) {
       return documents;
     }
-    int headSize = Math.max(1, Math.min(rerank.getTopN(), documents.size()));
-    List<Document> head = new ArrayList<>(documents.subList(0, headSize));
+    int effectiveHeadSize = Math.max(1, Math.min(headSize, documents.size()));
+    List<Document> head = new ArrayList<>(documents.subList(0, effectiveHeadSize));
     head.sort(Comparator.comparingDouble(this::combinedScore).reversed());
     List<Document> result = new ArrayList<>(documents);
     for (int i = 0; i < head.size(); i++) {
@@ -39,8 +46,8 @@ public class HeuristicDocumentPostProcessor implements DocumentPostProcessor {
   private double combinedScore(Document document) {
     double score = document.getScore() != null ? document.getScore() : 0.0;
     double spanScore = 1.0 / Math.max(1.0, extractLineSpan(document.getMetadata()));
-    double scoreWeight = clamp(rerank.getScoreWeight(), 0.0, 1.0);
-    double spanWeight = clamp(rerank.getLineSpanWeight(), 0.0, 1.0);
+    double scoreWeight = clamp(this.scoreWeight, 0.0, 1.0);
+    double spanWeight = clamp(this.spanWeight, 0.0, 1.0);
     if (scoreWeight + spanWeight == 0) {
       scoreWeight = 0.7;
       spanWeight = 0.3;
@@ -75,4 +82,3 @@ public class HeuristicDocumentPostProcessor implements DocumentPostProcessor {
     return Math.max(min, Math.min(max, value));
   }
 }
-

@@ -53,7 +53,7 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
     processors.add(
         new NamedProcessor(
             "post.heuristic-rerank",
-            new HeuristicDocumentPostProcessor(properties.getRerank())));
+            new HeuristicDocumentPostProcessor(properties.getRerank(), request.rerankTopN())));
     if (request.maxContextTokens() > 0) {
       processors.add(
           new NamedProcessor(
