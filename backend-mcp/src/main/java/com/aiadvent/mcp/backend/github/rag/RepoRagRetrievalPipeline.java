@@ -50,17 +50,27 @@ public class RepoRagRetrievalPipeline {
   private final VectorStore vectorStore;
   private final GitHubRagProperties properties;
   private final ObjectProvider<ChatClient.Builder> queryTransformerChatClientBuilder;
+  private final MultiQueryExecutor multiQueryExecutor;
 
   public RepoRagRetrievalPipeline(
       VectorStore vectorStore,
       GitHubRagProperties properties,
       @Qualifier("repoRagQueryTransformerChatClientBuilder")
           ObjectProvider<ChatClient.Builder> repoRagQueryTransformerChatClientBuilder) {
+    this(vectorStore, properties, repoRagQueryTransformerChatClientBuilder, new DefaultMultiQueryExecutor());
+  }
+
+  RepoRagRetrievalPipeline(
+      VectorStore vectorStore,
+      GitHubRagProperties properties,
+      ObjectProvider<ChatClient.Builder> repoRagQueryTransformerChatClientBuilder,
+      MultiQueryExecutor multiQueryExecutor) {
     this.vectorStore = Objects.requireNonNull(vectorStore, "vectorStore");
     this.properties = Objects.requireNonNull(properties, "properties");
     this.queryTransformerChatClientBuilder =
         Objects.requireNonNull(
             repoRagQueryTransformerChatClientBuilder, "repoRagQueryTransformerChatClientBuilder");
+    this.multiQueryExecutor = Objects.requireNonNull(multiQueryExecutor, "multiQueryExecutor");
   }
 
   public PipelineResult execute(PipelineInput input) {
@@ -164,13 +174,8 @@ public class RepoRagRetrievalPipeline {
     if (count <= 1) {
       return List.of(query);
     }
-    MultiQueryExpander expander =
-        MultiQueryExpander.builder()
-            .chatClientBuilder(queryTransformerChatClientBuilder.getObject().clone())
-            .numberOfQueries(count)
-            .includeOriginal(true)
-            .build();
-    List<Query> expanded = expander.expand(query);
+    List<Query> expanded =
+        multiQueryExecutor.expand(query, count, queryTransformerChatClientBuilder.getObject());
     appliedModules.add("retrieval.multi-query");
     return expanded;
   }
@@ -361,4 +366,22 @@ public class RepoRagRetrievalPipeline {
   }
 
   private record QueryRetrievalResult(int index, Query query, List<Document> documents) {}
+
+  interface MultiQueryExecutor {
+    List<Query> expand(Query baseQuery, int count, ChatClient.Builder builder);
+  }
+
+  private static final class DefaultMultiQueryExecutor implements MultiQueryExecutor {
+
+    @Override
+    public List<Query> expand(Query baseQuery, int count, ChatClient.Builder builder) {
+      MultiQueryExpander expander =
+          MultiQueryExpander.builder()
+              .chatClientBuilder(builder.clone())
+              .numberOfQueries(count)
+              .includeOriginal(true)
+              .build();
+      return expander.expand(baseQuery);
+    }
+  }
 }
