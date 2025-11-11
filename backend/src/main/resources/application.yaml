@@ -203,6 +203,9 @@ app:
         - code: repo.rag_search
           schema-version: 1
           execution-mode: MANUAL
+        - code: repo.rag_search_global
+          schema-version: 1
+          execution-mode: MANUAL
         - code: coding.generate_patch
           schema-version: 1
           execution-mode: AUTO

@@ -3244,3 +3244,26 @@ databaseChangeLog:
               UPDATE tool_definition
               SET schema_version_id = (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search_simple' AND version = 2)
               WHERE code = 'repo.rag_search_simple';
+
+  - changeSet:
+      id: 0217-add-repo-rag-search-global
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('repo.rag_search_global', 1,
+                 $${"type":"object","properties":{"rawQuery":{"type":"string"}},"required":["rawQuery"]}$$::jsonb,
+                 $${"type":"object","properties":{"matches":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"snippet":{"type":"string"},"summary":{"type":"string"},"score":{"type":"number"},"metadata":{"type":"object"}},"required":["path","snippet","score"]}},"rerankApplied":{"type":"boolean"},"augmentedPrompt":{"type":"string"},"instructions":{"type":"string"},"contextMissing":{"type":"boolean"},"noResults":{"type":"boolean"},"noResultsReason":{"type":["string","null"]},"appliedModules":{"type":"array","items":{"type":"string"}}},"required":["matches","rerankApplied","contextMissing","noResults","appliedModules"]}$$::jsonb,
+                 'checksum-repo.rag_search_global-v1', '[]'::jsonb, 'github', 'repo.rag_search_global', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('repo.rag_search_global', 'GitHub · Repo RAG search (global)', 'Ищет релевантные чанки по всем READY namespace (без указания repoOwner/repoName). Подходит для разведочных запросов и возвращает repo_owner/repo_name в metadata.', 'github', 'MANUAL', '["github","rag"]'::jsonb, '["github-read"]'::jsonb, NULL, NULL, 120000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'repo.rag_search_global' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;

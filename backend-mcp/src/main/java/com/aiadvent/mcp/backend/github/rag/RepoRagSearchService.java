@@ -93,6 +93,7 @@ public class RepoRagSearchService {
             applyLanguageThresholds(
                 pipelineResult.documents(), command.minScoreByLanguage()), command.filters());
 
+    String locale = resolveLocale(command);
     RepoRagSearchReranker.PostProcessingResult postProcessingResult;
     RerankStrategy rerankStrategy = resolveRerankStrategy(command.rerankStrategy());
     if (rerankStrategy == RerankStrategy.NONE) {
@@ -103,7 +104,7 @@ public class RepoRagSearchService {
       RepoRagPostProcessingRequest postProcessingRequest =
           new RepoRagPostProcessingRequest(
               maxContextTokens,
-              resolveLocale(command),
+              locale,
               properties.getRerank().getMaxSnippetLines(),
               properties.getPostProcessing().isLlmCompressionEnabled(),
               resolveRerankTopN(command.rerankTopN()));
@@ -122,7 +123,7 @@ public class RepoRagSearchService {
                 postProcessingResult.documents(),
                 command.repoOwner(),
                 command.repoName(),
-                resolveLocale(command),
+                locale,
                 allowEmptyContext));
 
     if (generationResult.contextMissing() && !allowEmptyContext) {
@@ -135,7 +136,99 @@ public class RepoRagSearchService {
     List<SearchMatch> matches = toMatches(postProcessingResult.documents());
     String instructions =
         renderInstructions(
-            command,
+            command.repoOwner(),
+            command.repoName(),
+            command.instructionsTemplate(),
+            locale,
+            pipelineResult.finalQuery(),
+            generationResult.augmentedPrompt(),
+            generationResult.contextMissing(),
+            generationResult.instructions());
+
+    boolean noResults = matches.isEmpty();
+    return new SearchResponse(
+        matches,
+        postProcessingResult.changed(),
+        generationResult.augmentedPrompt(),
+        instructions,
+        generationResult.contextMissing(),
+        noResults,
+        generationResult.noResultsReason(),
+        allModules);
+  }
+
+  public SearchResponse searchGlobal(GlobalSearchCommand command) {
+    validateGlobal(command);
+    int topK = resolveTopK(command.topK());
+    int topKPerQuery = resolveTopKPerQuery(command.topKPerQuery(), topK);
+    double minScore = resolveMinScore(command.minScore());
+
+    Query query =
+        retrievalPipeline.buildQuery(
+            command.rawQuery(),
+            command.history(),
+            command.previousAssistantReply(),
+            properties.getQueryTransformers().getMaxHistoryTokens());
+
+    Filter.Expression expression = buildGlobalFilterExpression(command);
+    RepoRagRetrievalPipeline.PipelineInput pipelineInput =
+        new RepoRagRetrievalPipeline.PipelineInput(
+            query,
+            expression,
+            command.multiQuery(),
+            topK,
+            topKPerQuery,
+            minScore,
+            resolveTranslateTo(command.translateTo()),
+            command.useCompression());
+
+    RepoRagRetrievalPipeline.PipelineResult pipelineResult =
+        retrievalPipeline.execute(pipelineInput);
+    List<Document> documents =
+        applyPathFilters(
+            applyLanguageThresholds(
+                pipelineResult.documents(), command.minScoreByLanguage()), command.filters());
+
+    String locale = resolveLocale(command.generationLocale(), command.translateTo());
+    int maxContextTokens = resolveMaxContextTokens(command.maxContextTokens());
+    RepoRagPostProcessingRequest postProcessingRequest =
+        new RepoRagPostProcessingRequest(
+            maxContextTokens,
+            locale,
+            properties.getRerank().getMaxSnippetLines(),
+            properties.getPostProcessing().isLlmCompressionEnabled(),
+            resolveRerankTopN(command.rerankTopN()));
+    RepoRagSearchReranker.PostProcessingResult postProcessingResult =
+        reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
+
+    List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
+    appliedModules.addAll(postProcessingResult.appliedModules());
+
+    boolean allowEmptyContext = resolveAllowEmptyContext(command.allowEmptyContext());
+    RepoRagGenerationService.GenerationResult generationResult =
+        generationService.generate(
+            new RepoRagGenerationService.GenerationCommand(
+                pipelineResult.finalQuery(),
+                postProcessingResult.documents(),
+                safeDisplay(command.displayRepoOwner()),
+                safeDisplay(command.displayRepoName()),
+                locale,
+                allowEmptyContext));
+
+    if (generationResult.contextMissing() && !allowEmptyContext) {
+      throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
+    }
+
+    List<String> allModules = new ArrayList<>(appliedModules);
+    allModules.addAll(generationResult.appliedModules());
+
+    List<SearchMatch> matches = toMatches(postProcessingResult.documents());
+    String instructions =
+        renderInstructions(
+            safeDisplay(command.displayRepoOwner()),
+            safeDisplay(command.displayRepoName()),
+            command.instructionsTemplate(),
+            locale,
             pipelineResult.finalQuery(),
             generationResult.augmentedPrompt(),
             generationResult.contextMissing(),
@@ -190,6 +283,34 @@ public class RepoRagSearchService {
     } catch (RuntimeException ex) {
       throw new IllegalArgumentException(
           "Invalid filterExpression: " + ex.getMessage(), ex);
+    }
+  }
+
+  private Filter.Expression buildGlobalFilterExpression(GlobalSearchCommand command) {
+    List<String> clauses = new ArrayList<>();
+
+    RepoRagSearchFilters filters = command.filters();
+    if (filters != null && filters.hasLanguages()) {
+      String languageClause =
+          filters.languages().stream()
+              .map(this::escapeLiteral)
+              .map(value -> "'" + value + "'")
+              .collect(Collectors.joining(", "));
+      clauses.add("language IN [" + languageClause + "]");
+    }
+
+    if (StringUtils.hasText(command.filterExpression())) {
+      clauses.add("(" + command.filterExpression().trim() + ")");
+    }
+
+    if (clauses.isEmpty()) {
+      return null;
+    }
+    String expressionText = String.join(" AND ", clauses);
+    try {
+      return filterExpressionParser.parse(expressionText);
+    } catch (RuntimeException ex) {
+      throw new IllegalArgumentException("Invalid filterExpression: " + ex.getMessage(), ex);
     }
   }
 
@@ -394,16 +515,52 @@ public class RepoRagSearchService {
     }
   }
 
+  private void validateGlobal(GlobalSearchCommand command) {
+    if (!StringUtils.hasText(command.rawQuery())) {
+      throw new IllegalArgumentException("rawQuery must not be blank");
+    }
+    if (command.topK() != null && command.topK() > MAX_TOP_K) {
+      throw new IllegalArgumentException("topK must be <= " + MAX_TOP_K);
+    }
+    if (command.topKPerQuery() != null && command.topKPerQuery() > MAX_TOP_K) {
+      throw new IllegalArgumentException("topKPerQuery must be <= " + MAX_TOP_K);
+    }
+    if (command.rerankTopN() != null) {
+      if (command.rerankTopN() < 1 || command.rerankTopN() > MAX_TOP_K) {
+        throw new IllegalArgumentException("rerankTopN must be between 1 and " + MAX_TOP_K);
+      }
+    }
+    if (command.minScoreByLanguage() != null) {
+      command.minScoreByLanguage().forEach(
+          (language, threshold) -> {
+            if (threshold != null && (threshold < 0.1d || threshold > 0.99d)) {
+              throw new IllegalArgumentException("minScoreByLanguage values must be between 0.1 and 0.99");
+            }
+          });
+    }
+    if (StringUtils.hasText(command.filterExpression())) {
+      filterExpressionParser.parse(command.filterExpression());
+    }
+  }
+
   private String resolveTranslateTo(SearchCommand command) {
-    if (StringUtils.hasText(command.translateTo())) {
-      return command.translateTo();
+    return resolveTranslateTo(command.translateTo());
+  }
+
+  private String resolveTranslateTo(String candidate) {
+    if (StringUtils.hasText(candidate)) {
+      return candidate;
     }
     return properties.getQueryTransformers().getDefaultTargetLanguage();
   }
 
   private boolean resolveAllowEmptyContext(SearchCommand command) {
-    if (command.allowEmptyContext() != null) {
-      return command.allowEmptyContext();
+    return resolveAllowEmptyContext(command.allowEmptyContext());
+  }
+
+  private boolean resolveAllowEmptyContext(Boolean candidate) {
+    if (candidate != null) {
+      return candidate;
     }
     return properties.getGeneration().isAllowEmptyContext();
   }
@@ -418,10 +575,14 @@ public class RepoRagSearchService {
   }
 
   private String resolveLocale(SearchCommand command) {
-    if (StringUtils.hasText(command.generationLocale())) {
-      return command.generationLocale();
+    return resolveLocale(command.generationLocale(), command.translateTo());
+  }
+
+  private String resolveLocale(String generationLocale, String translateTo) {
+    if (StringUtils.hasText(generationLocale)) {
+      return generationLocale;
     }
-    return resolveTranslateTo(command);
+    return resolveTranslateTo(translateTo);
   }
 
   private int resolveRerankTopN(Integer candidate) {
@@ -443,23 +604,26 @@ public class RepoRagSearchService {
   }
 
   private String renderInstructions(
-      SearchCommand command,
+      String repoOwner,
+      String repoName,
+      String instructionsTemplate,
+      String locale,
       Query query,
       String augmentedPrompt,
       boolean contextMissing,
       String defaultInstructions) {
-    if (!StringUtils.hasText(command.instructionsTemplate())) {
+    if (!StringUtils.hasText(instructionsTemplate)) {
       return defaultInstructions;
     }
     Map<String, String> replacements =
         Map.of(
             "{{rawQuery}}", query.text(),
-            "{{repoOwner}}", command.repoOwner(),
-            "{{repoName}}", command.repoName(),
-            "{{locale}}", resolveLocale(command),
+            "{{repoOwner}}", repoOwner,
+            "{{repoName}}", repoName,
+            "{{locale}}", locale,
             "{{augmentedPrompt}}", augmentedPrompt,
             "{{contextStatus}}", contextMissing ? "missing" : "ready");
-    String instructions = command.instructionsTemplate();
+    String instructions = instructionsTemplate;
     for (Map.Entry<String, String> entry : replacements.entrySet()) {
       instructions = instructions.replace(entry.getKey(), entry.getValue());
     }
@@ -488,6 +652,27 @@ public class RepoRagSearchService {
       String generationLocale,
       String instructionsTemplate) {}
 
+  public record GlobalSearchCommand(
+      String rawQuery,
+      Integer topK,
+      Integer topKPerQuery,
+      Double minScore,
+      Map<String, Double> minScoreByLanguage,
+      Integer rerankTopN,
+      RepoRagSearchFilters filters,
+      String filterExpression,
+      List<RepoRagSearchConversationTurn> history,
+      String previousAssistantReply,
+      Boolean allowEmptyContext,
+      Boolean useCompression,
+      String translateTo,
+      RepoRagMultiQueryOptions multiQuery,
+      Integer maxContextTokens,
+      String generationLocale,
+      String instructionsTemplate,
+      String displayRepoOwner,
+      String displayRepoName) {}
+
   public record SearchResponse(
       List<SearchMatch> matches,
       boolean rerankApplied,
@@ -504,5 +689,12 @@ public class RepoRagSearchService {
   private enum RerankStrategy {
     AUTO,
     NONE
+  }
+
+  private String safeDisplay(String value) {
+    if (StringUtils.hasText(value)) {
+      return value;
+    }
+    return "global";
   }
 }

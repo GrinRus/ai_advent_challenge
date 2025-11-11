@@ -203,6 +203,63 @@ class RepoRagSearchServiceTest {
     assertThat(response.matches().get(0).path()).isEqualTo("src/Strong.java");
   }
 
+  @Test
+  void searchGlobalBuildsFilterAndAnnotatesMatches() {
+    Query query = Query.builder().text("global").history(List.of()).build();
+    Document javaDoc =
+        Document.builder()
+            .id("1")
+            .text("content")
+            .metadata(
+                Map.of(
+                    "file_path", "repoA/src/App.java",
+                    "repo_owner", "repoA",
+                    "repo_name", "demo"))
+            .score(0.9)
+            .build();
+    when(pipeline.execute(any()))
+        .thenReturn(
+            new RepoRagRetrievalPipeline.PipelineResult(
+                query, List.of(javaDoc), List.of("retrieval.multi-query"), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(javaDoc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+
+    RepoRagSearchService.GlobalSearchCommand command =
+        new RepoRagSearchService.GlobalSearchCommand(
+            "deployment checklist",
+            5,
+            null,
+            null,
+            Map.of("java", 0.6),
+            null,
+            new RepoRagSearchFilters(List.of("java"), List.of()),
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "global-owner",
+            "global-mixed");
+
+    RepoRagSearchService.SearchResponse response = service.searchGlobal(command);
+
+    assertThat(response.matches()).hasSize(1);
+    assertThat(response.matches().get(0).metadata().get("repo_owner")).isEqualTo("repoA");
+
+    ArgumentCaptor<RepoRagRetrievalPipeline.PipelineInput> captor =
+        ArgumentCaptor.forClass(RepoRagRetrievalPipeline.PipelineInput.class);
+    verify(pipeline).execute(captor.capture());
+    Filter.Expression expression = captor.getValue().filterExpression();
+    assertThat(expression).isNotNull();
+    assertThat(expression.toString()).contains("language");
+  }
+
   private RepoRagNamespaceStateEntity readyState() {
     RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
     entity.setNamespace("repo:owner/repo");

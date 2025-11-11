@@ -61,7 +61,10 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_search",
       description =
-          "Выполняет similarity search по namespace `repo:<owner>/<name>` и возвращает релевантные чанки.")
+          "Основной инструмент для получения контекста из проиндексированного репозитория. Требует явные "
+              + "`repoOwner`/`repoName` и принимает все настройки модульного pipeline (история, multi-query,"
+              + " фильтры, лимиты токенов, инструкции). Возвращает чанки с метаданными, `augmentedPrompt`,"
+              + " `instructions`, признаки `contextMissing`/`noResults` и список сработавших модулей.")
   public RepoRagSearchResponse ragSearch(RepoRagSearchInput input) {
     validateRepoInput(input.repoOwner(), input.repoName());
     if (!StringUtils.hasText(input.rawQuery())) {
@@ -96,8 +99,10 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_search_simple",
       description =
-          "Быстрый RAG-поиск по последнему успешно проиндексированному репозиторию после `github.repository_fetch`. "
-              + "На вход принимает только rawQuery.")
+          "Быстрый поиск в репозитории из последнего `github.repository_fetch`. Не требует owner/name,"
+              + " принимает только `rawQuery`, автоматически включает историю/перевод/multi-query и подходит"
+              + " для первых вопросов после fetch. Если активного (READY) репозитория нет, вернёт ошибку и"
+              + " попросит запустить fetch или дождаться индексации.")
   public RepoRagSearchResponse ragSearchSimple(RepoRagSimpleSearchInput input) {
     if (!StringUtils.hasText(input.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
@@ -147,6 +152,41 @@ public class RepoRagTools {
             null,
             null);
     return toResponse(searchService.search(command));
+  }
+
+  @Tool(
+      name = "repo.rag_search_global",
+      description =
+          "Глобальный поиск по всем готовым namespace. Полезен для разведки (\"какие репы покрывают эту тему\") "
+              + "или когда конкретный owner/name неизвестны. Принимает `rawQuery` и основные параметры (`topK`, "
+              + "multi-query, фильтры по языку/пути, maxContextTokens и т.д.), возвращает такой же ответ, как "
+              + "`repo.rag_search`, но в `matches[].metadata` указывает фактический `repo_owner`/`repo_name`.")
+  public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
+    if (!StringUtils.hasText(input.rawQuery())) {
+      throw new IllegalArgumentException("rawQuery must not be blank");
+    }
+    RepoRagSearchService.GlobalSearchCommand command =
+        new RepoRagSearchService.GlobalSearchCommand(
+            input.rawQuery(),
+            input.topK(),
+            input.topKPerQuery(),
+            input.minScore(),
+            input.minScoreByLanguage(),
+            input.rerankTopN(),
+            input.filters(),
+            input.filterExpression(),
+            input.history(),
+            input.previousAssistantReply(),
+            input.allowEmptyContext(),
+            input.useCompression(),
+            input.translateTo(),
+            input.multiQuery(),
+            input.maxContextTokens(),
+            input.generationLocale(),
+            input.instructionsTemplate(),
+            input.displayRepoOwner(),
+            input.displayRepoName());
+    return toResponse(searchService.searchGlobal(command));
   }
 
   private RepoRagSearchResponse toResponse(RepoRagSearchService.SearchResponse serviceResponse) {
@@ -227,6 +267,27 @@ public class RepoRagTools {
       String instructionsTemplate) {}
 
   public record RepoRagSimpleSearchInput(String rawQuery) {}
+
+  public record RepoRagGlobalSearchInput(
+      String rawQuery,
+      Integer topK,
+      Integer topKPerQuery,
+      Double minScore,
+      Map<String, Double> minScoreByLanguage,
+      Integer rerankTopN,
+      RepoRagSearchFilters filters,
+      String filterExpression,
+      List<RepoRagSearchConversationTurn> history,
+      String previousAssistantReply,
+      Boolean allowEmptyContext,
+      Boolean useCompression,
+      String translateTo,
+      RepoRagMultiQueryOptions multiQuery,
+      Integer maxContextTokens,
+      String generationLocale,
+      String instructionsTemplate,
+      String displayRepoOwner,
+      String displayRepoName) {}
 
   public record RepoRagSearchMatch(
       String path, String snippet, String summary, double score, java.util.Map<String, Object> metadata) {}

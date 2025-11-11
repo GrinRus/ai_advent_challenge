@@ -48,7 +48,8 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 ### Repo RAG (GitHub MCP)
 1. **После fetch:** `github.repository_fetch` возвращает `workspaceId` и ставит job в очередь индексатора. Следите за прогрессом через `repo.rag_index_status` (`status`, `progress`, `etaSeconds`, `lastError`). Ждём `ready=true`, иначе search вернёт пустой контекст.
 2. **Быстрый поиск:** `repo.rag_search_simple` принимает только `rawQuery` и повторно использует репозиторий из последней `github.repository_fetch` (если индекс уже готов). Это защищает от выбора «чужого» репозитория, но требует сначала вызвать fetch и дождаться READY статуса.
-3. **Расширенный поиск (`repo.rag_search` v4):**
+3. **Глобальный поиск:** `repo.rag_search_global` ищет по всей базе RAG (все READY namespace). Поддерживает те же параметры, что `repo.rag_search`, но не требует `repoOwner/repoName`. В ответе `matches[].metadata.repo_owner` / `repo_name` подсказывают, где найден фрагмент.
+4. **Расширенный поиск (`repo.rag_search` v4):**
    - Вход: `rawQuery`, `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, `history[]`, `previousAssistantReply`, `allowEmptyContext`, `useCompression`, `translateTo`, `multiQuery.enabled/queries/maxQueries`, `maxContextTokens`, `generationLocale`, `instructionsTemplate`, `filters.languages[]/pathGlobs[]`, `filterExpression`.
    - MCP автоматически валидирует лимиты (`topK<=40`, `maxQueries<=6`, `maxContextTokens<=4000`); ошибки прилетают до вызова Spring AI.
    - Выход: `matches`, `augmentedPrompt`, `instructions`, `contextMissing`, `noResults`, `noResultsReason`, `appliedModules`. Если `noResults=true`, similarity search ничего не вернул (даже если генерация разрешила пустой контекст).
@@ -58,6 +59,46 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 6. **Runbook:** логируйте `repoOwner/repoName`, `appliedModules`, `contextMissing`, `noResults`, `maxContextTokens`. При ручной очистке workspace всегда повторяйте fetch → status → search.
 
 > Подробнее о LEGO-модулях pipeline см. `docs/architecture/github-rag-modular.md`.
+
+#### Когда вызывать `repo.rag_search_simple`
+- Используется сразу после свежего `github.repository_fetch`, когда оператор или агент тестирует общий тон запроса («расскажи про архитектуру», «какие шаги сборки?») и пока не нужно фильтровать по языку/пути.
+- Требования: хотя бы один READY namespace (иначе инструмент падает) и уверенность, что текущая сессия работает именно с последним fetch (иначе вызывайте обычный `repo.rag_search` с явными параметрами).
+- Запрос содержит ровно одно поле `rawQuery`. MCP автоматически подставит repoOwner/repoName из fetch и включит дефолтные модули (compression, translation, multi-query).
+- Возможные ответы:
+  * `contextMissing=true` и `noResultsReason="CONTEXT_NOT_FOUND"` — индекс готов, но похожих чанков нет. Сообщите пользователю и предложите уточнить запрос.
+  * Исключение «Нет активного репозитория» — агент забыл вызвать fetch/подождать READY; повторите `github.repository_fetch` → `repo.rag_index_status`.
+- Рекомендации для LLM:
+  1. Перед вызовом удостоверься, что пользователь явно говорил о последнем fetch. Если есть сомнения относительно нужного репозитория, переключайся на `repo.rag_search`.
+  2. Если запрос требует фильтрации (например «покажи только .ts файлы»), простой инструмент не подойдёт — сразу используй расширенный вариант.
+
+#### Когда вызывать `repo.rag_search_global`
+- Сценарии разведки: «найди любой пример feature flag», «где описаны политики безопасности». Инструмент ищет сразу по всем READY namespace и возвращает список смешанных чанков.
+- Вход: `rawQuery` + те же дополнительные параметры, что у `repo.rag_search` (фильтры, multi-query, maxContextTokens). Owner/name не нужны.
+- В ответе обязательно проверяйте `matches[].metadata.repo_owner`/`repo_name`, чтобы понять источник. Эти значения стоит цитировать в последующих сообщениях.
+- Если результат пустой, проверь `noResultsReason`: `INDEX_NOT_READY` означает, что база ещё не полная (подождите индексатор или уточните фильтры).
+- Рекомендации:
+  1. Используй глобальный поиск только тогда, когда пользователь явно просит «найти где угодно» или owner/name неизвестны. Для уточнённых задач в одном репозитории выбери `repo.rag_search`.
+  2. Всегда напоминай пользователю, что ответ собран из разных репозиториев, и цитируй путь вместе с `repo_owner/repo_name`, чтобы избежать путаницы.
+
+#### Когда вызывать `repo.rag_search`
+- Это основной инструмент для всех сценариев: уточнённые запросы, фильтры по путь/языку, ручная настройка мульти-запросов или бюджетов токенов.
+- Обязательные аргументы: `repoOwner`, `repoName`, `rawQuery`. Всё остальное — опциональные тюнинги. LLM должна передавать только необходимые override, чтобы не нарушать лимиты.
+- Типичные параметры:
+  * `filters.languages[] / pathGlobs[]` — если нужно ограничиться языком или подпапкой.
+  * `multiQuery.enabled/queries/maxQueries` — когда пользователь просит «разбей вопрос на несколько аспектов».
+  * `maxContextTokens` — при подготовке длинных ответов, чтобы сократить контекст.
+  * `allowEmptyContext=false` — когда пользователь требует отказа при пустом индексе.
+  * `instructionsTemplate` — если нужно переопределить системный промпт (например, попросить цитировать конкретным форматом).
+- Ответ всегда содержит:
+  * `matches[]` — список чанков (путь, сниппет, метаданные). Сохраняй их для последующих вызовов инструмента или генерации патча.
+  * `augmentedPrompt` — тот же текст, с которым ContextualQueryAugmenter пойдёт в LLM; полезно передавать напрямую в генерацию.
+  * `instructions` — готовый system prompt (учитывает шаблон/локаль).
+  * `appliedModules` — подтверждает, какие этапы сработали (compression, multi-query, llm-compression и т.д.).
+  * `noResults`/`contextMissing`/`noResultsReason` — помогают решать, что делать дальше (ожидать индекс, переформулировать запрос, собрать больше контекста).
+- Рекомендации для LLM:
+  1. Перед повторным вызовом старайся добавить короткую историю (`history[]` или `previousAssistantReply`), чтобы QueryTransformers понимали контекст диалога и подбирали правильные follow-up запросы.
+  2. Никогда не превышай задокументированные лимиты (`topK<=40`, `maxQueries<=6`, `maxContextTokens<=4000`). При сомнении лучше опускай параметр — сервер подставит безопасный дефолт.
+  3. Если пользователь явно попросил «дождись индексации», сначала проверяй `repo.rag_index_status`. Только после статуса READY вызывай `repo.rag_search`, иначе получишь пустой ответ или исключение.
 
 ## Примеры запросов
 

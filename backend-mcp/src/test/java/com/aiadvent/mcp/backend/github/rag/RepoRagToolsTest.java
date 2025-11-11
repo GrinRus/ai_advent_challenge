@@ -69,4 +69,41 @@ class RepoRagToolsTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("github.repository_fetch");
   }
+
+  @Test
+  void ragSearchGlobalUsesService() {
+    RepoRagSearchService.SearchResponse response =
+        new RepoRagSearchService.SearchResponse(
+            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+    when(searchService.searchGlobal(any())).thenReturn(response);
+
+    RepoRagTools.RepoRagGlobalSearchInput input =
+        new RepoRagTools.RepoRagGlobalSearchInput(
+            "How to build?",
+            5,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "global-owner",
+            "mixed");
+
+    RepoRagTools.RepoRagSearchResponse result = tools.ragSearchGlobal(input);
+    assertThat(result.instructions()).isEqualTo("instructions");
+    ArgumentCaptor<RepoRagSearchService.GlobalSearchCommand> captor =
+        ArgumentCaptor.forClass(RepoRagSearchService.GlobalSearchCommand.class);
+    verify(searchService).searchGlobal(captor.capture());
+    assertThat(captor.getValue().displayRepoOwner()).isEqualTo("global-owner");
+  }
 }
