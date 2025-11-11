@@ -12,7 +12,7 @@
 | Pre-Retrieval | `CompressionQueryTransformer` | Сжимает историю + follow-up запрос в standalone текст (до `github.rag.query-transformers.max-history-tokens` ≈ 1600 т.) | отключается, если история пуста или `github.rag.query-transformers.enabled=false` |
 | Pre-Retrieval | `RewriteQueryTransformer` | Удаляет шум, перефразирует вопрос | всегда после compression |
 | Pre-Retrieval | `TranslationQueryTransformer` | Переводит на язык embedding модели (по умолчанию `ru`, можно переопределить `translateTo`) | пропускается, если target совпадает с исходным языком |
-| Retrieval | `MultiQueryExpander` | Генерирует N подзапросов, каждый выполняет topK search, результат объединяется `ConcatenationDocumentJoiner` | `github.rag.multi-query.enabled`, `multiQuery.queries<=maxQueries` |
+| Retrieval | `MultiQueryExpander` + кастомный дедупликатор | Генерирует N подзапросов, каждый выполняет topK search, результаты склеиваются в порядке подзапросов и дедуплицируются по `chunk_hash`, фиксируя `generatedBySubQuery` | `github.rag.multi-query.enabled`, `multiQuery.queries<=maxQueries` |
 | Post-Retrieval | Heuristic rerank (`DocumentPostProcessor`) | Сортирует топ-N по взвешенному score/span (`github.rag.rerank`) | меняет только head списка |
 | Post-Retrieval | `ContextWindowBudgetPostProcessor` | Срезает список по лимиту токенов (`maxContextTokens`, ≥256) | минимум 1 документ всегда сохраняется |
 | Post-Retrieval | LLM Snippet Compressor | ChatClient (`gpt-4o-mini`, T=0.1) сжимает первые 6 сниппетов до `maxSnippetLines`, сохраняя ключевые факты | включается, если `github.rag.post-processing.llm-compression-enabled=true` и сниппет длиннее лимита |
