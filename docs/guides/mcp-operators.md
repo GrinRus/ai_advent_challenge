@@ -47,13 +47,13 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 
 ### Repo RAG (GitHub MCP)
 1. **После fetch:** `github.repository_fetch` возвращает `workspaceId` и ставит job в очередь индексатора. Следите за прогрессом через `repo.rag_index_status` (`status`, `progress`, `etaSeconds`, `lastError`). Ждём `ready=true`, иначе search вернёт пустой контекст.
-2. **Быстрый поиск:** `repo.rag_search_simple` принимает только `rawQuery` и использует последний READY namespace. Удобно в чатах/flows, когда мы гарантированно работаем с одним репозиторием. Если READY нет, MCP бросит ошибку.
+2. **Быстрый поиск:** `repo.rag_search_simple` принимает только `rawQuery` и повторно использует репозиторий из последней `github.repository_fetch` (если индекс уже готов). Это защищает от выбора «чужого» репозитория, но требует сначала вызвать fetch и дождаться READY статуса.
 3. **Расширенный поиск (`repo.rag_search` v4):**
    - Вход: `rawQuery`, `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, `history[]`, `previousAssistantReply`, `allowEmptyContext`, `useCompression`, `translateTo`, `multiQuery.enabled/queries/maxQueries`, `maxContextTokens`, `generationLocale`, `instructionsTemplate`, `filters.languages[]/pathGlobs[]`, `filterExpression`.
    - MCP автоматически валидирует лимиты (`topK<=40`, `maxQueries<=6`, `maxContextTokens<=4000`); ошибки прилетают до вызова Spring AI.
    - Выход: `matches`, `augmentedPrompt`, `instructions`, `contextMissing`, `noResults`, `noResultsReason`, `appliedModules`. Если `noResults=true`, similarity search ничего не вернул (даже если генерация разрешила пустой контекст).
    - `appliedModules` отражает цепочку модулей (semantic chunking → compression → rewrite → translation → multi-query → context-budget → llm-компрессор). Если модуль отсутствует, он отключён или не внёс изменений.
-4. **Разбор ответов:** `instructions` — готовый system prompt для агента (учитывает `generationLocale` и шаблон). `augmentedPrompt` содержит упакованный контекст (первые 5 сниппетов). `matches[].metadata.generatedBySubQuery` помогает понять, какой подзапрос вернул чанк; дополнительно доступны `parent_symbol`, `span_hash`, `overlap_lines` для расследований и сборки соседних чанков.
+4. **Разбор ответов:** `instructions` — готовый system prompt (учитывает `generationLocale` и шаблон). `augmentedPrompt` теперь отражает исходный output `ContextualQueryAugmenter` (запрос + контекст, как он пойдёт в LLM), поэтому можно буквально увидеть, что будет отправлено модели до подстановки шаблонов. `matches[].metadata.generatedBySubQuery` помогает понять, какой подзапрос вернул чанк; дополнительно доступны `parent_symbol`, `span_hash`, `overlap_lines`.
 5. **Наблюдаемость:** графики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. При очереди >5 или ≥3 fail подряд проверяйте свободное место `/var/tmp/aiadvent/mcp-workspaces` и наличие зависших job.
 6. **Runbook:** логируйте `repoOwner/repoName`, `appliedModules`, `contextMissing`, `noResults`, `maxContextTokens`. При ручной очистке workspace всегда повторяйте fetch → status → search.
 

@@ -31,9 +31,12 @@ import org.springframework.util.StringUtils;
 class GitHubWorkspaceTools {
 
   private final WorkspaceAccessService accessService;
+  private final GitHubRepositoryFetchRegistry fetchRegistry;
 
-  GitHubWorkspaceTools(WorkspaceAccessService accessService) {
+  GitHubWorkspaceTools(
+      WorkspaceAccessService accessService, GitHubRepositoryFetchRegistry fetchRegistry) {
     this.accessService = Objects.requireNonNull(accessService, "accessService");
+    this.fetchRegistry = Objects.requireNonNull(fetchRegistry, "fetchRegistry");
   }
 
   @Tool(
@@ -53,7 +56,7 @@ class GitHubWorkspaceTools {
             new RepositoryRef(
                 repositoryInput.owner(), repositoryInput.name(), repositoryInput.ref()),
             request.requestId());
-    return new GitHubRepositoryFetchResponse(
+    GitHubRepositoryFetchResponse response = new GitHubRepositoryFetchResponse(
         toRepositoryInfo(result.repository()),
         result.workspaceId(),
         result.workspacePath().toString(),
@@ -65,6 +68,17 @@ class GitHubWorkspaceTools {
         result.strategy().name().toLowerCase(Locale.ROOT),
         result.keyFiles(),
         result.fetchedAt());
+
+    fetchRegistry.record(
+        new GitHubRepositoryFetchRegistry.LastFetchContext(
+            response.repository().owner(),
+            response.repository().name(),
+            response.resolvedRef(),
+            response.commitSha(),
+            response.workspaceId(),
+            response.fetchedAt()));
+
+    return response;
   }
 
   @Tool(

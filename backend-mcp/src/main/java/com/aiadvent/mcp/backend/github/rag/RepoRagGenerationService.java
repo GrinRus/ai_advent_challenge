@@ -51,7 +51,7 @@ public class RepoRagGenerationService {
     }
     String noResultsReason =
         contextMissing ? properties.getGeneration().getNoResultsReason() : null;
-    return new GenerationResult(formattedContext, augmented.text(), contextMissing, noResultsReason, modules);
+    return new GenerationResult(augmented.text(), augmented.text(), contextMissing, noResultsReason, modules);
   }
 
   private String resolveTemplate(String template, GenerationCommand command) {

@@ -34,7 +34,7 @@
 {
   "matches": [...],
   "rerankApplied": true,
-  "augmentedPrompt": "Запрос + сжатый контекст",
+  "augmentedPrompt": "Готовый prompt от ContextualQueryAugmenter",
   "instructions": "Готовая подсказка для агента",
   "contextMissing": false,
   "noResults": false,
@@ -47,7 +47,7 @@
 - `instructionsTemplate` поддерживает плейсхолдеры `{{rawQuery}}`, `{{repoOwner}}`, `{{repoName}}`, `{{locale}}`, `{{augmentedPrompt}}`.
 
 ## Когда использовать simple-версию
-`repo.rag_search_simple` подходит для flow’ов уровня «fetch → ждем READY → спроси про проект». MCP берёт последний READY namespace (`RepoRagNamespaceState.lastIndexedAt`) и возвращает полный DTO, чтобы не дублировать repoOwner/repoName в prompt. Ограничения:
+`repo.rag_search_simple` подходит для flow’ов уровня «github.repository_fetch → ждем READY → спроси про проект». MCP берёт репозиторий именно из последнего fetch (реестр обновляется после вызова инструмента) и возвращает полный DTO, чтобы не дублировать repoOwner/repoName в prompt. Ограничения:
 - Требует хотя бы одного READY-репозитория (иначе ошибка).
 - Не принимает фильтры — используется как быстрый старт перед более точным `repo.rag_search`.
 

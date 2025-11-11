@@ -1,5 +1,6 @@
 package com.aiadvent.mcp.backend.github.rag;
 
+import com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry;
 import com.aiadvent.mcp.backend.github.rag.RepoRagStatusService.StatusView;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.util.List;
@@ -16,14 +17,17 @@ public class RepoRagTools {
   private final RepoRagStatusService statusService;
   private final RepoRagSearchService searchService;
   private final RepoRagNamespaceStateService namespaceStateService;
+  private final GitHubRepositoryFetchRegistry fetchRegistry;
 
   public RepoRagTools(
       RepoRagStatusService statusService,
       RepoRagSearchService searchService,
-      RepoRagNamespaceStateService namespaceStateService) {
+      RepoRagNamespaceStateService namespaceStateService,
+      GitHubRepositoryFetchRegistry fetchRegistry) {
     this.statusService = statusService;
     this.searchService = searchService;
     this.namespaceStateService = namespaceStateService;
+    this.fetchRegistry = fetchRegistry;
   }
 
   @Tool(
@@ -98,13 +102,28 @@ public class RepoRagTools {
     if (!StringUtils.hasText(input.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
-    RepoRagNamespaceStateEntity state =
-        namespaceStateService
-            .findLatestReady()
+    com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry.LastFetchContext context =
+        fetchRegistry
+            .latest()
             .orElseThrow(
                 () ->
                     new IllegalStateException(
-                        "Нет готового репозитория: выполните github.repository_fetch"));
+                        "Нет активного репозитория: выполните github.repository_fetch"));
+    String repoOwner = normalize(context.repoOwner());
+    String repoName = normalize(context.repoName());
+    RepoRagNamespaceStateEntity state =
+        namespaceStateService
+            .findByRepoOwnerAndRepoName(repoOwner, repoName)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "Репозиторий %s/%s ещё не индексировался — дождитесь завершения github.repository_fetch"
+                            .formatted(context.repoOwner(), context.repoName())));
+    if (!state.isReady()) {
+      throw new IllegalStateException(
+          "Репозиторий %s/%s ещё индексируется: проверьте repo.rag_index_status после github.repository_fetch"
+              .formatted(context.repoOwner(), context.repoName()));
+    }
     RepoRagSearchService.SearchCommand command =
         new RepoRagSearchService.SearchCommand(
             state.getRepoOwner(),
@@ -157,6 +176,10 @@ public class RepoRagTools {
     if (!StringUtils.hasText(owner) || !StringUtils.hasText(name)) {
       throw new IllegalArgumentException("repoOwner and repoName must be provided");
     }
+  }
+
+  private String normalize(String value) {
+    return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
   }
 
   public record RepoRagIndexStatusInput(String repoOwner, String repoName) {}
