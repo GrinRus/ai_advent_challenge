@@ -19,6 +19,7 @@ public class LineChunkingStrategy implements ChunkingStrategy {
     List<String> buffer = new ArrayList<>();
     int chunkStartLine = 1;
     int bytesBudget = 0;
+    int overlapFromPrevious = 0;
 
     for (int lineNumber = 1; lineNumber <= lines.size(); lineNumber++) {
       String line = lines.get(lineNumber - 1);
@@ -27,11 +28,12 @@ public class LineChunkingStrategy implements ChunkingStrategy {
       boolean wouldExceedLines = buffer.size() >= parameters.maxLines;
       boolean wouldExceedBytes = !buffer.isEmpty() && (bytesBudget + lineBytes + newlineBytes > parameters.maxBytes);
       if (wouldExceedLines || wouldExceedBytes) {
-        appendChunk(chunks, buffer, chunkStartLine, context);
+        overlapFromPrevious = appendChunk(chunks, buffer, chunkStartLine, context, overlapFromPrevious);
         int preserved = Math.min(parameters.overlapLines, buffer.size());
         buffer = new ArrayList<>(buffer.subList(Math.max(buffer.size() - preserved, 0), buffer.size()));
         chunkStartLine = lineNumber - preserved;
         bytesBudget = recomputeBytes(buffer);
+        overlapFromPrevious = preserved;
       }
       if (!buffer.isEmpty()) {
         bytesBudget += 1;
@@ -39,7 +41,7 @@ public class LineChunkingStrategy implements ChunkingStrategy {
       buffer.add(line);
       bytesBudget += lineBytes;
     }
-    appendChunk(chunks, buffer, chunkStartLine, context);
+    appendChunk(chunks, buffer, chunkStartLine, context, overlapFromPrevious);
     return chunks;
   }
 
@@ -68,10 +70,14 @@ public class LineChunkingStrategy implements ChunkingStrategy {
     return total;
   }
 
-  private void appendChunk(
-      List<Chunk> target, List<String> buffer, int chunkStartLine, ChunkingContext context) {
+  private int appendChunk(
+      List<Chunk> target,
+      List<String> buffer,
+      int chunkStartLine,
+      ChunkingContext context,
+      int overlapFromPrevious) {
     if (buffer.isEmpty()) {
-      return;
+      return overlapFromPrevious;
     }
     String text = String.join("\n", buffer);
     Chunk chunk =
@@ -80,10 +86,12 @@ public class LineChunkingStrategy implements ChunkingStrategy {
             chunkStartLine,
             chunkStartLine + buffer.size() - 1,
             context.file().language(),
-            context.file().parentSymbolResolver());
+            context.file().parentSymbolResolver(),
+            overlapFromPrevious);
     if (chunk != null) {
       target.add(chunk);
     }
+    return 0;
   }
 
   private record Parameters(int maxLines, int maxBytes, int overlapLines) {}

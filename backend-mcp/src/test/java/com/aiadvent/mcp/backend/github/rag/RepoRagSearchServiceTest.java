@@ -81,6 +81,7 @@ class RepoRagSearchServiceTest {
             null,
             null,
             null,
+            null,
             null);
     service.search(command);
 
@@ -139,6 +140,7 @@ class RepoRagSearchServiceTest {
             null,
             null,
             null,
+            null,
             null);
     RepoRagSearchService.SearchResponse response = service.search(command);
 
@@ -189,6 +191,7 @@ class RepoRagSearchServiceTest {
             List.of(),
             null,
             Boolean.TRUE,
+            null,
             null,
             null,
             null,

@@ -19,7 +19,7 @@ public final class ParentSymbolResolver {
       Pattern.compile("^class\\s+([A-Za-z_][\\w]*)", Pattern.CASE_INSENSITIVE);
 
   private static final Pattern DEF_PATTERN =
-      Pattern.compile("^def\\s+([A-Za-z_][\\w]*)\\s*\\(");
+      Pattern.compile("^(?:async\\s+)?def\\s+([A-Za-z_][\\w]*)\\s*\\(", Pattern.CASE_INSENSITIVE);
 
   private static final Pattern METHOD_PATTERN =
       Pattern.compile(
@@ -32,6 +32,9 @@ public final class ParentSymbolResolver {
 
   private static final Pattern FN_PATTERN =
       Pattern.compile("^fn\\s+([A-Za-z_][\\w]*)\\s*\\(");
+
+  private static final Pattern FUN_PATTERN =
+      Pattern.compile("^fun\\s+([A-Za-z_][\\w]*)\\s*\\(");
 
   private static final Pattern JS_FUNCTION_PATTERN =
       Pattern.compile("^function\\s+([A-Za-z_$][\\w$]*)\\s*\\(", Pattern.CASE_INSENSITIVE);
@@ -65,7 +68,7 @@ public final class ParentSymbolResolver {
     return null;
   }
 
-  private String detectSymbol(String line) {
+  public static String detectSymbol(String line) {
     if (!StringUtils.hasText(line)) {
       return null;
     }
@@ -100,6 +103,10 @@ public final class ParentSymbolResolver {
     matcher = FN_PATTERN.matcher(trimmed);
     if (matcher.find()) {
       return "fn " + matcher.group(1);
+    }
+    matcher = FUN_PATTERN.matcher(trimmed);
+    if (matcher.find()) {
+      return "fun " + matcher.group(1);
     }
     matcher = ARROW_PATTERN.matcher(trimmed);
     if (matcher.find()) {

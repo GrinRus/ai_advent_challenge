@@ -11,6 +11,7 @@ public class RepoRagChunker {
   private final GitHubRagProperties properties;
   private final LineChunkingStrategy lineStrategy = new LineChunkingStrategy();
   private final TokenChunkingStrategy tokenStrategy = new TokenChunkingStrategy();
+  private final SemanticCodeChunker semanticStrategy = new SemanticCodeChunker(lineStrategy);
 
   public RepoRagChunker(GitHubRagProperties properties) {
     this.properties = Objects.requireNonNull(properties, "properties");
@@ -31,19 +32,9 @@ public class RepoRagChunker {
       case BYTE, LINE -> lineStrategy;
       case TOKEN -> tokenStrategy;
       case SEMANTIC ->
-          properties.getChunking().getSemantic().isEnabled() && isSemanticSupported()
-              ? tokenStrategy
+          properties.getChunking().getSemantic().isEnabled()
+              ? semanticStrategy
               : lineStrategy;
     };
-  }
-
-  private boolean isSemanticSupported() {
-    String className = properties.getChunking().getSemantic().getSplitterClass();
-    try {
-      Class.forName(className, false, getClass().getClassLoader());
-      return true;
-    } catch (ClassNotFoundException ex) {
-      return false;
-    }
   }
 }

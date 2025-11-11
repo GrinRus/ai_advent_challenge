@@ -83,7 +83,8 @@ public class RepoRagSearchService {
             topK,
             topKPerQuery,
             minScore,
-            resolveTranslateTo(command));
+            resolveTranslateTo(command),
+            command.useCompression());
 
     RepoRagRetrievalPipeline.PipelineResult pipelineResult =
         retrievalPipeline.execute(pipelineInput);
@@ -139,12 +140,14 @@ public class RepoRagSearchService {
             generationResult.contextMissing(),
             generationResult.instructions());
 
+    boolean noResults = matches.isEmpty();
     return new SearchResponse(
         matches,
         postProcessingResult.changed(),
         generationResult.augmentedPrompt(),
         instructions,
         generationResult.contextMissing(),
+        noResults,
         generationResult.noResultsReason(),
         allModules);
   }
@@ -365,6 +368,21 @@ public class RepoRagSearchService {
     if (StringUtils.hasText(command.rerankStrategy())) {
       resolveRerankStrategy(command.rerankStrategy());
     }
+    if (command.maxContextTokens() != null
+        && command.maxContextTokens() > properties.getPostProcessing().getMaxContextTokens()) {
+      throw new IllegalArgumentException(
+          "maxContextTokens must be <= " + properties.getPostProcessing().getMaxContextTokens());
+    }
+    if (command.multiQuery() != null) {
+      int limit = properties.getMultiQuery().getMaxQueries();
+      RepoRagMultiQueryOptions options = command.multiQuery();
+      if (options.queries() != null && options.queries() > limit) {
+        throw new IllegalArgumentException("multiQuery.queries must be <= " + limit);
+      }
+      if (options.maxQueries() != null && options.maxQueries() > limit) {
+        throw new IllegalArgumentException("multiQuery.maxQueries must be <= " + limit);
+      }
+    }
   }
 
   private String resolveTranslateTo(SearchCommand command) {
@@ -382,10 +400,12 @@ public class RepoRagSearchService {
   }
 
   private int resolveMaxContextTokens(Integer candidate) {
+    int limit = properties.getPostProcessing().getMaxContextTokens();
     if (candidate != null && candidate > 0) {
-      return candidate;
+      int sanitized = Math.max(256, candidate);
+      return Math.min(sanitized, limit);
     }
-    return properties.getPostProcessing().getMaxContextTokens();
+    return limit;
   }
 
   private String resolveLocale(SearchCommand command) {
@@ -444,6 +464,7 @@ public class RepoRagSearchService {
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
       Boolean allowEmptyContext,
+      Boolean useCompression,
       String translateTo,
       RepoRagMultiQueryOptions multiQuery,
       Integer maxContextTokens,
@@ -456,6 +477,7 @@ public class RepoRagSearchService {
       String augmentedPrompt,
       String instructions,
       boolean contextMissing,
+      boolean noResults,
       String noResultsReason,
       List<String> appliedModules) {}
 

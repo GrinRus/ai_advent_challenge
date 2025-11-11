@@ -79,6 +79,7 @@ public class RepoRagTools {
             input.history(),
             input.previousAssistantReply(),
             input.allowEmptyContext(),
+            input.useCompression(),
             input.translateTo(),
             input.multiQuery(),
             input.maxContextTokens(),
@@ -124,6 +125,7 @@ public class RepoRagTools {
             null,
             null,
             null,
+            null,
             null);
     return toResponse(searchService.search(command));
   }
@@ -146,6 +148,7 @@ public class RepoRagTools {
         serviceResponse.augmentedPrompt(),
         serviceResponse.instructions(),
         serviceResponse.contextMissing(),
+        serviceResponse.noResults(),
         serviceResponse.noResultsReason(),
         serviceResponse.appliedModules());
   }
@@ -193,6 +196,7 @@ public class RepoRagTools {
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
       Boolean allowEmptyContext,
+      Boolean useCompression,
       String translateTo,
       RepoRagMultiQueryOptions multiQuery,
       Integer maxContextTokens,
@@ -210,6 +214,7 @@ public class RepoRagTools {
       String augmentedPrompt,
       String instructions,
       boolean contextMissing,
+      boolean noResults,
       String noResultsReason,
       List<String> appliedModules) {}
 }

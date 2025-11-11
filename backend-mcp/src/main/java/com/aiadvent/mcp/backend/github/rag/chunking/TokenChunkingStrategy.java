@@ -32,6 +32,7 @@ public class TokenChunkingStrategy implements ChunkingStrategy {
     int produced = 0;
     int start = 0;
     int lastStartIndex = -1;
+    int previousEndLine = 0;
 
     while (start < tokens.size() && produced < params.maxChunks()) {
       int end = Math.min(tokens.size(), start + params.chunkSize());
@@ -44,17 +45,20 @@ public class TokenChunkingStrategy implements ChunkingStrategy {
         }
         int charEnd = Math.min(content.length(), charStart + chunkText.length());
         LineIndex.LineRange range = context.file().lineIndex().rangeForSpan(charStart, charEnd);
+        int overlapLines = previousEndLine > 0 ? Math.max(0, previousEndLine - range.start() + 1) : 0;
         Chunk chunk =
             Chunk.from(
                 chunkText,
                 range.start(),
                 range.end(),
                 context.file().language(),
-                context.file().parentSymbolResolver());
+                context.file().parentSymbolResolver(),
+                overlapLines);
         if (chunk != null) {
           chunks.add(chunk);
           produced++;
           lastStartIndex = charStart;
+          previousEndLine = range.end();
         }
       }
       if (end >= tokens.size()) {

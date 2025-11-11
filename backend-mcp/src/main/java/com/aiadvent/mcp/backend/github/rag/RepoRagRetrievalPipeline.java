@@ -5,6 +5,7 @@ import com.aiadvent.mcp.backend.config.GitHubRagProperties.MultiQuery;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties.QueryTransformers;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -13,6 +14,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -69,11 +72,10 @@ public class RepoRagRetrievalPipeline {
 
     List<Query> queries = expandQueries(transformedQuery, input, appliedModules);
     Map<String, AggregatedDocument> dedup = new LinkedHashMap<>();
-    for (int i = 0; i < queries.size(); i++) {
-      Query query = queries.get(i);
-      List<Document> retrieved = retrieveDocuments(query, input);
-      for (Document document : retrieved) {
-        accumulateDocument(dedup, document, query, i);
+    List<QueryRetrievalResult> retrievalResults = retrieveAll(queries, input);
+    for (QueryRetrievalResult result : retrievalResults) {
+      for (Document document : result.documents()) {
+        accumulateDocument(dedup, document, result.query(), result.index());
       }
     }
 
@@ -95,7 +97,9 @@ public class RepoRagRetrievalPipeline {
       return current;
     }
     ChatClient.Builder builder = queryTransformerChatClientBuilder.getObject();
-    if (!CollectionUtils.isEmpty(current.history())) {
+    boolean allowCompression =
+        input.useCompression() == null || Boolean.TRUE.equals(input.useCompression());
+    if (allowCompression && !CollectionUtils.isEmpty(current.history())) {
       QueryTransformer compression =
           CompressionQueryTransformer.builder()
               .chatClientBuilder(builder.clone())
@@ -151,9 +155,12 @@ public class RepoRagRetrievalPipeline {
         input.multiQueryOptions() != null && input.multiQueryOptions().queries() != null
             ? input.multiQueryOptions().queries()
             : multiQueryProperties.getDefaultQueries();
-    int count =
-        Math.max(
-            1, Math.min(requestedCount, Math.max(1, multiQueryProperties.getMaxQueries())));
+    int maxAllowed = Math.max(1, multiQueryProperties.getMaxQueries());
+    if (input.multiQueryOptions() != null && input.multiQueryOptions().maxQueries() != null) {
+      maxAllowed =
+          Math.min(maxAllowed, Math.max(1, input.multiQueryOptions().maxQueries()));
+    }
+    int count = Math.max(1, Math.min(requestedCount, maxAllowed));
     if (count <= 1) {
       return List.of(query);
     }
@@ -179,6 +186,39 @@ public class RepoRagRetrievalPipeline {
     }
     VectorStoreDocumentRetriever retriever = builder.build();
     return retriever.retrieve(query);
+  }
+
+  private List<QueryRetrievalResult> retrieveAll(List<Query> queries, PipelineInput input) {
+    if (queries.size() <= 1) {
+      Query single = queries.get(0);
+      return List.of(new QueryRetrievalResult(0, single, retrieveDocuments(single, input)));
+    }
+    List<CompletableFuture<QueryRetrievalResult>> futures = new ArrayList<>(queries.size());
+    for (int i = 0; i < queries.size(); i++) {
+      int index = i;
+      Query query = queries.get(i);
+      futures.add(
+          CompletableFuture.supplyAsync(
+              () -> new QueryRetrievalResult(index, query, retrieveDocuments(query, input))));
+    }
+    List<QueryRetrievalResult> results = new ArrayList<>(queries.size());
+    for (CompletableFuture<QueryRetrievalResult> future : futures) {
+      try {
+        results.add(future.join());
+      } catch (CompletionException ex) {
+        throw unwrap(ex);
+      }
+    }
+    results.sort(Comparator.comparingInt(QueryRetrievalResult::index));
+    return results;
+  }
+
+  private RuntimeException unwrap(CompletionException ex) {
+    Throwable cause = ex.getCause();
+    if (cause instanceof RuntimeException runtime) {
+      return runtime;
+    }
+    return new IllegalStateException("Parallel retrieval failed", cause);
   }
 
   private void accumulateDocument(
@@ -251,7 +291,8 @@ public class RepoRagRetrievalPipeline {
       int topK,
       int topKPerQuery,
       double minScore,
-      String translateTo) {}
+      String translateTo,
+      Boolean useCompression) {}
 
   public record PipelineResult(
       Query finalQuery,
@@ -318,4 +359,6 @@ public class RepoRagRetrievalPipeline {
     }
     return Math.max(1, content.length() / 4);
   }
+
+  private record QueryRetrievalResult(int index, Query query, List<Document> documents) {}
 }

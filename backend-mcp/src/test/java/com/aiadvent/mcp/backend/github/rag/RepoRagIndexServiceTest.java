@@ -199,6 +199,30 @@ class RepoRagIndexServiceTest {
     verify(fileStateRepository, never()).save(any());
   }
 
+  @Test
+  void storesSpanHashAndOverlapMetadata() throws IOException {
+    properties.getChunking().getLine().setMaxLines(2);
+    properties.getChunking().setOverlapLines(1);
+    Path file = tempDir.resolve("Sample.java");
+    Files.writeString(file, "line1\nline2\nline3\n");
+
+    when(vectorStoreAdapter.listFilePaths(NAMESPACE)).thenReturn(mutableSet());
+    when(fileStateRepository.findByNamespace(NAMESPACE)).thenReturn(List.of());
+    when(workspaceService.findWorkspace("ws-span"))
+        .thenReturn(Optional.of(workspaceFor(tempDir)));
+
+    service.indexWorkspace(request("ws-span"));
+
+    ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
+    verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("Sample.java"), captor.capture());
+    List<Document> documents = captor.getValue();
+    assertThat(documents).hasSizeGreaterThan(1);
+    Document last = documents.get(documents.size() - 1);
+    assertThat(last.getMetadata()).containsKeys("span_hash", "overlap_lines");
+    assertThat(last.getMetadata().get("overlap_lines")).isEqualTo(1);
+    assertThat(last.getMetadata().get("span_hash")).isInstanceOf(String.class);
+  }
+
   private HashSet<String> mutableSet(String... values) {
     return new HashSet<>(Arrays.asList(values));
   }

@@ -13,14 +13,16 @@ public record Chunk(
     String language,
     String summary,
     String hash,
-    String parentSymbol) {
+    String parentSymbol,
+    int overlapLines) {
 
   public static Chunk from(
       String rawText,
       int lineStart,
       int lineEnd,
       String language,
-      ParentSymbolResolver parentSymbolResolver) {
+      ParentSymbolResolver parentSymbolResolver,
+      int overlapLines) {
     String normalized = normalize(rawText);
     if (!StringUtils.hasText(normalized)) {
       return null;
@@ -28,7 +30,15 @@ public record Chunk(
     String summary = buildSummary(normalized);
     String hash = sha256(normalized);
     String parentSymbol = parentSymbolResolver != null ? parentSymbolResolver.resolve(lineStart) : null;
-    return new Chunk(normalized, lineStart, lineEnd, language, summary, hash, parentSymbol);
+    return new Chunk(
+        normalized,
+        lineStart,
+        lineEnd,
+        language,
+        summary,
+        hash,
+        parentSymbol,
+        Math.max(0, overlapLines));
   }
 
   private static String normalize(String value) {

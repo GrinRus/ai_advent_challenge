@@ -41,9 +41,10 @@
 Во всех сценариях Wave 30 добавляет промежуточный шаг `repo.rag_index_status` → `repo.rag_search`. После fetch агент опрашивает статус индексатора, ждёт `SUCCEEDED` и только затем добавляет heuristic-rerankнутые чанки в prompt `coding.generate_patch`/`coding.review_patch`. Это снижает ручной поиск файлов и обеспечивает стабильный контекст на уровне репозитория (namespace `repo:<owner>/<name>`).
 
 Wave 31 дополнил этот этап:
-- `repo.rag_search` автоматически сжимает историю, переписывает и переводит запрос перед multi-query (не нужно менять подсказку агента).
-- MCP возвращает `instructions`/`augmentedPrompt` — бот может просто подставить их в system prompt Claude/GPT без конкатенации вручную.
-- `appliedModules` логируется в telemetry и помогает понять, почему контекст пуст (например, `contextMissing=true` при включённом фильтре).
+- `repo.rag_search` автоматически сжимает историю, переписывает и переводит запрос перед multi-query (не нужно менять подсказку агента) и позволяет отключить compression (`useCompression=false`), задать `topKPerQuery`, `multiQuery.maxQueries`, `maxContextTokens` (clamp ≤4000) напрямую из flow.
+- Индексатор переключён на семантический chunking Spring AI: чанки выравниваются по классам/функциям, метаданные пополняются `parent_symbol`, `span_hash`, `overlap_lines`. Это упрощает ручной мердж соседних отрывков и расследования «почему попал именно этот файл».
+- MCP возвращает `instructions`/`augmentedPrompt` и новые флаги `noResults`, `noResultsReason` — бот может показать оператору, что similarity search пуст, даже если `allowEmptyContext=true` позволил продолжить диалог.
+- `appliedModules` логируется в telemetry и помогает понять, почему контекст пуст (например, `contextMissing=true` при включённом фильтре или отключённом translation).
 - Для lightweight flow добавлен `repo.rag_search_simple`, который берёт последний READY namespace и пригоден для «fetch → спроси» сценариев.
 
 ## Архитектура

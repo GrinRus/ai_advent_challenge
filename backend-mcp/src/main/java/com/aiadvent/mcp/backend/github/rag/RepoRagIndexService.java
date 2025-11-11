@@ -252,6 +252,8 @@ public class RepoRagIndexService {
       metadata.put("chunk_hash", chunk.hash());
       metadata.put("language", chunk.language());
       metadata.put("summary", chunk.summary());
+      metadata.put("overlap_lines", chunk.overlapLines());
+      metadata.put("span_hash", hashSpan(relativePath, chunk));
       if (StringUtils.hasText(chunk.parentSymbol())) {
         metadata.put("parent_symbol", chunk.parentSymbol());
       }
@@ -404,6 +406,11 @@ public class RepoRagIndexService {
     } catch (NoSuchAlgorithmException ex) {
       throw new IllegalStateException("SHA-256 algorithm is not available", ex);
     }
+  }
+
+  private String hashSpan(String relativePath, Chunk chunk) {
+    String payload = relativePath + ":" + chunk.lineStart() + ":" + chunk.lineEnd();
+    return hashBytes(payload.getBytes(StandardCharsets.UTF_8));
   }
 
   private String decodeUtf8(byte[] data) throws CharacterCodingException {
