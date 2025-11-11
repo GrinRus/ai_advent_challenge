@@ -3,13 +3,15 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.chunking.ChunkableFile;
+import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagVectorStoreAdapter;
@@ -46,15 +48,18 @@ class RepoRagIndexServiceTest {
 
   private RepoRagIndexService service;
   private GitHubRagProperties properties;
+  private RepoRagChunker chunker;
 
   @BeforeEach
   void setUp() {
     properties = new GitHubRagProperties();
-    properties.getChunk().setMaxBytes(1024);
-    properties.getChunk().setMaxLines(50);
+    properties.getChunking().getLine().setMaxBytes(1024);
+    properties.getChunking().getLine().setMaxLines(50);
+    properties.getChunking().setOverlapLines(0);
+    chunker = new RepoRagChunker(properties);
     service =
         new RepoRagIndexService(
-            workspaceService, vectorStoreAdapter, fileStateRepository, properties);
+            workspaceService, vectorStoreAdapter, fileStateRepository, chunker, properties);
   }
 
   @Test
@@ -93,7 +98,7 @@ class RepoRagIndexServiceTest {
 
   @Test
   void splitsLargeFileIntoMultipleChunks() throws IOException {
-    properties.getChunk().setMaxLines(3);
+    properties.getChunking().getLine().setMaxLines(3);
     Path file = tempDir.resolve("Large.java");
     String content = String.join("\n", List.of("line1", "line2", "line3", "line4", "line5", "line6"));
     Files.writeString(file, content);
@@ -153,14 +158,17 @@ class RepoRagIndexServiceTest {
     when(workspaceService.findWorkspace("ws-4"))
         .thenReturn(Optional.of(workspaceFor(tempDir)));
 
-    RepoRagIndexService serviceSpy = spy(service);
-    doThrow(new IOException("boom")).when(serviceSpy).chunkFile(any(Path.class));
+    RepoRagChunker failingChunker = mock(RepoRagChunker.class);
+    when(failingChunker.chunk(any(ChunkableFile.class))).thenThrow(new RuntimeException("boom"));
+    RepoRagIndexService flakyService =
+        new RepoRagIndexService(
+            workspaceService, vectorStoreAdapter, fileStateRepository, failingChunker, properties);
 
     RepoRagIndexService.IndexResult result =
-        serviceSpy.indexWorkspace(request("ws-4"));
+        flakyService.indexWorkspace(request("ws-4"));
 
     assertThat(result.filesProcessed()).isZero();
-    assertThat(result.warnings()).anyMatch(w -> w.contains("Skipped broken file"));
+    assertThat(result.warnings()).anyMatch(w -> w.contains("chunking failed"));
 
     verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("broken.txt"), any());
     verify(vectorStoreAdapter, never()).deleteFile(NAMESPACE, "broken.txt");

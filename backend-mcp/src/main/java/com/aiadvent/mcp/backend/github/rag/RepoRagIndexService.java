@@ -1,15 +1,20 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.chunking.Chunk;
+import com.aiadvent.mcp.backend.github.rag.chunking.ChunkableFile;
+import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagVectorStoreAdapter;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -62,16 +67,19 @@ public class RepoRagIndexService {
   private final TempWorkspaceService workspaceService;
   private final RepoRagVectorStoreAdapter vectorStoreAdapter;
   private final RepoRagFileStateRepository fileStateRepository;
+  private final RepoRagChunker chunker;
   private final GitHubRagProperties properties;
 
   public RepoRagIndexService(
       TempWorkspaceService workspaceService,
       RepoRagVectorStoreAdapter vectorStoreAdapter,
       RepoRagFileStateRepository fileStateRepository,
+      RepoRagChunker chunker,
       GitHubRagProperties properties) {
     this.workspaceService = workspaceService;
     this.vectorStoreAdapter = vectorStoreAdapter;
     this.fileStateRepository = fileStateRepository;
+    this.chunker = chunker;
     this.properties = properties;
   }
 
@@ -130,29 +138,48 @@ public class RepoRagIndexService {
                 return FileVisitResult.CONTINUE;
               }
 
-              List<Chunk> fileChunks;
+              byte[] rawBytes;
               try {
-                fileChunks = chunkFile(file);
+                rawBytes = Files.readAllBytes(file);
               } catch (IOException ex) {
                 appendWarning(
-                    warnings, "Skipped broken file " + relativePath + ": " + ex.getMessage());
+                    warnings, "Skipped file (unable to read) " + relativePath + ": " + ex.getMessage());
                 log.warn("Failed to read {}: {}", relativePath, ex.getMessage());
                 return FileVisitResult.CONTINUE;
               }
 
-              String fileHash;
-              try {
-                fileHash = hashFile(file);
-              } catch (IOException ex) {
-                appendWarning(
-                    warnings, "Skipped file (unable to hash) " + relativePath + ": " + ex.getMessage());
-                log.warn("Failed to hash {}: {}", relativePath, ex.getMessage());
-                return FileVisitResult.CONTINUE;
-              }
-
+              String fileHash = hashBytes(rawBytes);
               RepoRagFileStateEntity existingState = stateByPath.get(relativePath);
               if (existingState != null && fileHash.equals(existingState.getFileHash())) {
                 filesSkipped.incrementAndGet();
+                return FileVisitResult.CONTINUE;
+              }
+
+              String content;
+              try {
+                content = decodeUtf8(rawBytes);
+              } catch (CharacterCodingException ex) {
+                appendWarning(
+                    warnings, "Skipped non-text file " + relativePath + ": " + ex.getMessage());
+                log.warn("Failed to decode {}: {}", relativePath, ex.getMessage());
+                return FileVisitResult.CONTINUE;
+              }
+
+              ChunkableFile chunkableFile =
+                  ChunkableFile.from(
+                      file,
+                      relativePath,
+                      detectLanguage(file),
+                      content);
+
+              List<Chunk> fileChunks;
+              try {
+                fileChunks = chunker.chunk(chunkableFile);
+              } catch (RuntimeException ex) {
+                appendWarning(
+                    warnings,
+                    "Skipped file (chunking failed) " + relativePath + ": " + ex.getMessage());
+                log.warn("Failed to chunk {}: {}", relativePath, ex.getMessage());
                 return FileVisitResult.CONTINUE;
               }
 
@@ -225,6 +252,9 @@ public class RepoRagIndexService {
       metadata.put("chunk_hash", chunk.hash());
       metadata.put("language", chunk.language());
       metadata.put("summary", chunk.summary());
+      if (StringUtils.hasText(chunk.parentSymbol())) {
+        metadata.put("parent_symbol", chunk.parentSymbol());
+      }
       if (request.sourceRef() != null) {
         metadata.put("source_ref", request.sourceRef());
       }
@@ -234,7 +264,7 @@ public class RepoRagIndexService {
       Document document =
           Document.builder()
               .id(buildChunkId(relativePath, i, chunk.hash()))
-              .text(chunk.content())
+              .text(chunk.text())
               .metadata(metadata)
               .build();
       documents.add(document);
@@ -332,44 +362,6 @@ public class RepoRagIndexService {
     }
   }
 
-  List<Chunk> chunkFile(Path file) throws IOException {
-    List<Chunk> chunks = new ArrayList<>();
-    int maxBytes = properties.getChunk().getMaxBytes();
-    int maxLines = properties.getChunk().getMaxLines();
-    int lineNumber = 0;
-    int chunkStart = 1;
-    String language = detectLanguage(file);
-
-    try (BufferedReader reader =
-        new BufferedReader(new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8))) {
-      StringBuilder builder = new StringBuilder();
-      String line;
-      while ((line = reader.readLine()) != null) {
-        lineNumber++;
-        if (builder.length() + line.length() + 1 > maxBytes || (lineNumber - chunkStart) >= maxLines) {
-          if (builder.length() > 0) {
-            chunks.add(toChunk(builder.toString(), chunkStart, lineNumber - 1, language));
-            builder.setLength(0);
-          }
-          chunkStart = lineNumber;
-        }
-        builder.append(line).append('\n');
-      }
-      if (builder.length() > 0) {
-        chunks.add(toChunk(builder.toString(), chunkStart, lineNumber, language));
-      }
-    }
-    return chunks;
-  }
-
-  private Chunk toChunk(String content, int lineStart, int lineEnd, String language) {
-    String trimmed = content.trim();
-    String summary =
-        trimmed.lines().limit(2).collect(Collectors.joining(" ")).trim();
-    String hash = sha256(trimmed);
-    return new Chunk(trimmed, lineStart, lineEnd, language, summary, hash);
-  }
-
   private void appendWarning(List<String> warnings, String warning) {
     if (warnings.size() >= MAX_WARNINGS) {
       return;
@@ -404,14 +396,21 @@ public class RepoRagIndexService {
     };
   }
 
-  private String sha256(String value) {
+  private String hashBytes(byte[] data) {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      return bytesToHex(hash);
+      digest.update(data);
+      return bytesToHex(digest.digest());
     } catch (NoSuchAlgorithmException ex) {
       throw new IllegalStateException("SHA-256 algorithm is not available", ex);
     }
+  }
+
+  private String decodeUtf8(byte[] data) throws CharacterCodingException {
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+    decoder.onMalformedInput(CodingErrorAction.REPORT);
+    decoder.onUnmappableCharacter(CodingErrorAction.REPORT);
+    return decoder.decode(ByteBuffer.wrap(data)).toString();
   }
 
   private String bytesToHex(byte[] hash) {
@@ -438,7 +437,4 @@ public class RepoRagIndexService {
       long filesSkipped,
       long filesDeleted,
       List<String> warnings) {}
-
-  private record Chunk(
-      String content, int lineStart, int lineEnd, String language, String summary, String hash) {}
 }

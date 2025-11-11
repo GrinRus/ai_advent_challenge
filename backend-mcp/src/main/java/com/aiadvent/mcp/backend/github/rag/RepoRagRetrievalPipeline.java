@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -77,7 +78,11 @@ public class RepoRagRetrievalPipeline {
     }
 
     List<Document> merged =
-        dedup.values().stream().map(AggregatedDocument::toDocument).toList();
+        dedup.values().stream().map(AggregatedDocument::toDocument).collect(Collectors.toList());
+    if (merged.size() > input.topK()) {
+      return new PipelineResult(
+          transformedQuery, merged.subList(0, input.topK()), appliedModules, queries);
+    }
 
     return new PipelineResult(transformedQuery, merged, appliedModules, queries);
   }
@@ -167,7 +172,7 @@ public class RepoRagRetrievalPipeline {
     VectorStoreDocumentRetriever.Builder builder =
         VectorStoreDocumentRetriever.builder()
             .vectorStore(vectorStore)
-            .topK(input.topK())
+            .topK(input.topKPerQuery())
             .similarityThreshold(input.minScore());
     if (input.filterExpression() != null) {
       builder.filterExpression(input.filterExpression());
@@ -244,6 +249,7 @@ public class RepoRagRetrievalPipeline {
       Filter.Expression filterExpression,
       RepoRagMultiQueryOptions multiQueryOptions,
       int topK,
+      int topKPerQuery,
       double minScore,
       String translateTo) {}
 

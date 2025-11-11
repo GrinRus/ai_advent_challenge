@@ -2,8 +2,6 @@ package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
-import java.util.ArrayList;
-import java.util.List;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,6 +29,7 @@ public class RepoRagSearchService {
   private final GitHubRagProperties properties;
   private final RepoRagRetrievalPipeline retrievalPipeline;
   private final RepoRagSearchReranker reranker;
+  private final RepoRagGenerationService generationService;
   private final RepoRagNamespaceStateService namespaceStateService;
   private final FilterExpressionTextParser filterExpressionParser = new FilterExpressionTextParser();
 
@@ -38,10 +37,12 @@ public class RepoRagSearchService {
       GitHubRagProperties properties,
       RepoRagRetrievalPipeline retrievalPipeline,
       RepoRagSearchReranker reranker,
+      RepoRagGenerationService generationService,
       RepoRagNamespaceStateService namespaceStateService) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.retrievalPipeline = Objects.requireNonNull(retrievalPipeline, "retrievalPipeline");
     this.reranker = Objects.requireNonNull(reranker, "reranker");
+    this.generationService = Objects.requireNonNull(generationService, "generationService");
     this.namespaceStateService =
         Objects.requireNonNull(namespaceStateService, "namespaceStateService");
   }
@@ -49,6 +50,7 @@ public class RepoRagSearchService {
   public SearchResponse search(SearchCommand command) {
     validate(command);
     int topK = resolveTopK(command.topK());
+    int topKPerQuery = resolveTopKPerQuery(command.topKPerQuery(), topK);
     double minScore = resolveMinScore(command.minScore());
     RepoRagNamespaceStateEntity state =
         namespaceStateService
@@ -79,43 +81,72 @@ public class RepoRagSearchService {
             expression,
             command.multiQuery(),
             topK,
+            topKPerQuery,
             minScore,
             resolveTranslateTo(command));
 
     RepoRagRetrievalPipeline.PipelineResult pipelineResult =
         retrievalPipeline.execute(pipelineInput);
-    List<Document> documents = applyPathFilters(pipelineResult.documents(), command.filters());
+    List<Document> documents =
+        applyPathFilters(
+            applyLanguageThresholds(
+                pipelineResult.documents(), command.minScoreByLanguage()), command.filters());
 
-    boolean contextMissing = documents.isEmpty();
-    if (contextMissing && Boolean.FALSE.equals(command.allowEmptyContext())) {
-      throw new IllegalStateException("Индекс не содержит подходящих документов");
+    RepoRagSearchReranker.PostProcessingResult postProcessingResult;
+    RerankStrategy rerankStrategy = resolveRerankStrategy(command.rerankStrategy());
+    if (rerankStrategy == RerankStrategy.NONE) {
+      postProcessingResult =
+          new RepoRagSearchReranker.PostProcessingResult(documents, false, List.of());
+    } else {
+      int maxContextTokens = resolveMaxContextTokens(command.maxContextTokens());
+      RepoRagPostProcessingRequest postProcessingRequest =
+          new RepoRagPostProcessingRequest(
+              maxContextTokens,
+              resolveLocale(command),
+              properties.getRerank().getMaxSnippetLines(),
+              properties.getPostProcessing().isLlmCompressionEnabled());
+      postProcessingResult =
+          reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
     }
-    int maxContextTokens = resolveMaxContextTokens(command.maxContextTokens());
-    RepoRagPostProcessingRequest postProcessingRequest =
-        new RepoRagPostProcessingRequest(
-            maxContextTokens,
-            resolveLocale(command),
-            properties.getRerank().getMaxSnippetLines(),
-            properties.getPostProcessing().isLlmCompressionEnabled());
-
-    RepoRagSearchReranker.PostProcessingResult postProcessingResult =
-        reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
 
     List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
     appliedModules.addAll(postProcessingResult.appliedModules());
 
+    boolean allowEmptyContext = resolveAllowEmptyContext(command);
+    RepoRagGenerationService.GenerationResult generationResult =
+        generationService.generate(
+            new RepoRagGenerationService.GenerationCommand(
+                pipelineResult.finalQuery(),
+                postProcessingResult.documents(),
+                command.repoOwner(),
+                command.repoName(),
+                resolveLocale(command),
+                allowEmptyContext));
+
+    if (generationResult.contextMissing() && !allowEmptyContext) {
+      throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
+    }
+
+    List<String> allModules = new ArrayList<>(appliedModules);
+    allModules.addAll(generationResult.appliedModules());
+
     List<SearchMatch> matches = toMatches(postProcessingResult.documents());
-    String augmentedPrompt = buildAugmentedPrompt(pipelineResult.finalQuery(), matches);
     String instructions =
-        renderInstructions(command, pipelineResult.finalQuery(), augmentedPrompt, contextMissing);
+        renderInstructions(
+            command,
+            pipelineResult.finalQuery(),
+            generationResult.augmentedPrompt(),
+            generationResult.contextMissing(),
+            generationResult.instructions());
 
     return new SearchResponse(
         matches,
         postProcessingResult.changed(),
-        augmentedPrompt,
+        generationResult.augmentedPrompt(),
         instructions,
-        contextMissing,
-        appliedModules);
+        generationResult.contextMissing(),
+        generationResult.noResultsReason(),
+        allModules);
   }
 
   private List<SearchMatch> toMatches(List<Document> documents) {
@@ -156,6 +187,42 @@ public class RepoRagSearchService {
       throw new IllegalArgumentException(
           "Invalid filterExpression: " + ex.getMessage(), ex);
     }
+  }
+
+  private List<Document> applyLanguageThresholds(
+      List<Document> documents, Map<String, Double> thresholds) {
+    if (CollectionUtils.isEmpty(documents) || thresholds == null || thresholds.isEmpty()) {
+      return documents;
+    }
+    Map<String, Double> normalized = new HashMap<>();
+    thresholds.forEach(
+        (language, value) -> {
+          if (StringUtils.hasText(language) && value != null) {
+            normalized.put(language.toLowerCase(Locale.ROOT), clampScore(value));
+          }
+        });
+    if (normalized.isEmpty()) {
+      return documents;
+    }
+    return documents.stream()
+        .filter(
+            document -> {
+              Map<String, Object> metadata = document.getMetadata();
+              if (metadata == null) {
+                return true;
+              }
+              Object language = metadata.get("language");
+              if (!(language instanceof String lang) || !StringUtils.hasText(lang)) {
+                return true;
+              }
+              Double threshold = normalized.get(lang.toLowerCase(Locale.ROOT));
+              if (threshold == null) {
+                return true;
+              }
+              Double score = document.getScore();
+              return score == null || score >= threshold;
+            })
+        .collect(Collectors.toList());
   }
 
   private List<Document> applyPathFilters(
@@ -256,11 +323,22 @@ public class RepoRagSearchService {
     return Math.max(1, Math.min(MAX_TOP_K, candidate));
   }
 
+  private int resolveTopKPerQuery(Integer candidate, int fallback) {
+    if (candidate == null) {
+      return fallback;
+    }
+    return Math.max(1, Math.min(MAX_TOP_K, candidate));
+  }
+
   private double resolveMinScore(Double candidate) {
     if (candidate == null) {
       return DEFAULT_MIN_SCORE;
     }
-    return Math.max(0.1d, Math.min(0.99d, candidate));
+    return clampScore(candidate);
+  }
+
+  private double clampScore(double value) {
+    return Math.max(0.1d, Math.min(0.99d, value));
   }
 
   private void validate(SearchCommand command) {
@@ -273,6 +351,20 @@ public class RepoRagSearchService {
     if (command.topK() != null && command.topK() > MAX_TOP_K) {
       throw new IllegalArgumentException("topK must be <= " + MAX_TOP_K);
     }
+    if (command.topKPerQuery() != null && command.topKPerQuery() > MAX_TOP_K) {
+      throw new IllegalArgumentException("topKPerQuery must be <= " + MAX_TOP_K);
+    }
+    if (command.minScoreByLanguage() != null) {
+      command.minScoreByLanguage().forEach(
+          (language, threshold) -> {
+            if (threshold != null && (threshold < 0.1d || threshold > 0.99d)) {
+              throw new IllegalArgumentException("minScoreByLanguage values must be between 0.1 and 0.99");
+            }
+          });
+    }
+    if (StringUtils.hasText(command.rerankStrategy())) {
+      resolveRerankStrategy(command.rerankStrategy());
+    }
   }
 
   private String resolveTranslateTo(SearchCommand command) {
@@ -280,6 +372,13 @@ public class RepoRagSearchService {
       return command.translateTo();
     }
     return properties.getQueryTransformers().getDefaultTargetLanguage();
+  }
+
+  private boolean resolveAllowEmptyContext(SearchCommand command) {
+    if (command.allowEmptyContext() != null) {
+      return command.allowEmptyContext();
+    }
+    return properties.getGeneration().isAllowEmptyContext();
   }
 
   private int resolveMaxContextTokens(Integer candidate) {
@@ -296,33 +395,25 @@ public class RepoRagSearchService {
     return resolveTranslateTo(command);
   }
 
-  private String buildAugmentedPrompt(Query query, List<SearchMatch> matches) {
-    StringBuilder builder =
-        new StringBuilder("Запрос:\n").append(query.text()).append("\n\nКонтекст:\n");
-    for (int i = 0; i < Math.min(5, matches.size()); i++) {
-      SearchMatch match = matches.get(i);
-      builder
-          .append(i + 1)
-          .append(". ")
-          .append(match.path())
-          .append("\n")
-          .append(match.snippet())
-          .append("\n\n");
+  private RerankStrategy resolveRerankStrategy(String strategy) {
+    if (!StringUtils.hasText(strategy)) {
+      return RerankStrategy.AUTO;
     }
-    return builder.toString().trim();
+    if ("none".equalsIgnoreCase(strategy)) {
+      return RerankStrategy.NONE;
+    }
+    return RerankStrategy.AUTO;
   }
 
   private String renderInstructions(
-      SearchCommand command, Query query, String augmentedPrompt, boolean contextMissing) {
-    String template =
-        StringUtils.hasText(command.instructionsTemplate())
-            ? command.instructionsTemplate()
-            : """
-Запусти рассуждение на языке {{locale}}, используя контекст GitHub.
-Если список контекста пуст, сообщи: \"Индекс не содержит подходящих документов\".
-Запрос: {{rawQuery}}
-Контекст:\n{{augmentedPrompt}}
-""";
+      SearchCommand command,
+      Query query,
+      String augmentedPrompt,
+      boolean contextMissing,
+      String defaultInstructions) {
+    if (!StringUtils.hasText(command.instructionsTemplate())) {
+      return defaultInstructions;
+    }
     Map<String, String> replacements =
         Map.of(
             "{{rawQuery}}", query.text(),
@@ -331,7 +422,7 @@ public class RepoRagSearchService {
             "{{locale}}", resolveLocale(command),
             "{{augmentedPrompt}}", augmentedPrompt,
             "{{contextStatus}}", contextMissing ? "missing" : "ready");
-    String instructions = template;
+    String instructions = command.instructionsTemplate();
     for (Map.Entry<String, String> entry : replacements.entrySet()) {
       instructions = instructions.replace(entry.getKey(), entry.getValue());
     }
@@ -343,8 +434,11 @@ public class RepoRagSearchService {
       String repoName,
       String rawQuery,
       Integer topK,
+      Integer topKPerQuery,
       Double minScore,
+      Map<String, Double> minScoreByLanguage,
       Integer rerankTopN,
+      String rerankStrategy,
       RepoRagSearchFilters filters,
       String filterExpression,
       List<RepoRagSearchConversationTurn> history,
@@ -362,8 +456,14 @@ public class RepoRagSearchService {
       String augmentedPrompt,
       String instructions,
       boolean contextMissing,
+      String noResultsReason,
       List<String> appliedModules) {}
 
   public record SearchMatch(
       String path, String snippet, String summary, double score, Map<String, Object> metadata) {}
+
+  private enum RerankStrategy {
+    AUTO,
+    NONE
+  }
 }

@@ -4,6 +4,7 @@ import com.aiadvent.mcp.backend.github.rag.RepoRagStatusService.StatusView;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
@@ -68,8 +69,11 @@ public class RepoRagTools {
             input.repoName(),
             input.rawQuery(),
             input.topK(),
+            input.topKPerQuery(),
             input.minScore(),
+            input.minScoreByLanguage(),
             input.rerankTopN(),
+            input.rerankStrategy(),
             input.filters(),
             input.filterExpression(),
             input.history(),
@@ -110,6 +114,9 @@ public class RepoRagTools {
             null,
             null,
             null,
+            null,
+            null,
+            null,
             List.of(),
             null,
             Boolean.TRUE,
@@ -139,6 +146,7 @@ public class RepoRagTools {
         serviceResponse.augmentedPrompt(),
         serviceResponse.instructions(),
         serviceResponse.contextMissing(),
+        serviceResponse.noResultsReason(),
         serviceResponse.appliedModules());
   }
 
@@ -175,8 +183,11 @@ public class RepoRagTools {
       String repoName,
       String rawQuery,
       Integer topK,
+      Integer topKPerQuery,
       Double minScore,
+      Map<String, Double> minScoreByLanguage,
       Integer rerankTopN,
+      String rerankStrategy,
       RepoRagSearchFilters filters,
       String filterExpression,
       List<RepoRagSearchConversationTurn> history,
@@ -199,5 +210,6 @@ public class RepoRagTools {
       String augmentedPrompt,
       String instructions,
       boolean contextMissing,
+      String noResultsReason,
       List<String> appliedModules) {}
 }

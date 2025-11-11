@@ -66,9 +66,24 @@ github:
   rag:
     namespace-prefix: ${GITHUB_RAG_NAMESPACE_PREFIX:repo}
     max-concurrency: ${GITHUB_RAG_MAX_CONCURRENCY:2}
-    chunk:
-      max-bytes: ${GITHUB_RAG_MAX_CHUNK_BYTES:2048}
-      max-lines: ${GITHUB_RAG_MAX_CHUNK_LINES:160}
+    chunking:
+      strategy: ${GITHUB_RAG_CHUNKING_STRATEGY:line}
+      overlap-lines: ${GITHUB_RAG_CHUNKING_OVERLAP_LINES:20}
+      overlap-tokens: ${GITHUB_RAG_CHUNKING_OVERLAP_TOKENS:120}
+      line:
+        max-lines: ${GITHUB_RAG_CHUNKING_LINE_MAX_LINES:160}
+        max-bytes: ${GITHUB_RAG_CHUNKING_LINE_MAX_BYTES:2048}
+      byte-strategy:
+        max-bytes: ${GITHUB_RAG_CHUNKING_BYTE_MAX_BYTES:4096}
+      token:
+        chunk-size-tokens: ${GITHUB_RAG_CHUNKING_TOKEN_CHUNK_SIZE:800}
+        min-chunk-chars: ${GITHUB_RAG_CHUNKING_TOKEN_MIN_CHARS:200}
+        min-chunk-length-to-embed: ${GITHUB_RAG_CHUNKING_TOKEN_MIN_EMBED:40}
+        max-num-chunks: ${GITHUB_RAG_CHUNKING_TOKEN_MAX_CHUNKS:10000}
+      semantic:
+        enabled: ${GITHUB_RAG_CHUNKING_SEMANTIC_ENABLED:false}
+        splitter-class: ${GITHUB_RAG_CHUNKING_SEMANTIC_SPLITTER:org.springframework.ai.transformer.splitter.SemanticTextSplitter}
+        chunk-size-tokens: ${GITHUB_RAG_CHUNKING_SEMANTIC_CHUNK_SIZE:1024}
     retry:
       max-attempts: ${GITHUB_RAG_MAX_ATTEMPTS:5}
       initial-backoff: ${GITHUB_RAG_INITIAL_BACKOFF:PT15S}
@@ -95,3 +110,9 @@ github:
       llm-compression-enabled: ${GITHUB_RAG_POST_LLM_COMPRESSION_ENABLED:true}
       llm-compression-model: ${GITHUB_RAG_POST_LLM_COMPRESSION_MODEL:gpt-4o-mini}
       llm-compression-temperature: ${GITHUB_RAG_POST_LLM_COMPRESSION_TEMPERATURE:0.1}
+    generation:
+      allow-empty-context: ${GITHUB_RAG_GENERATION_ALLOW_EMPTY_CONTEXT:true}
+      prompt-template: classpath:prompts/github-rag-context.st
+      empty-context-template: classpath:prompts/github-rag-empty-context.st
+      no-results-reason: ${GITHUB_RAG_GENERATION_NO_RESULTS_REASON:CONTEXT_NOT_FOUND}
+      empty-context-message: "${GITHUB_RAG_GENERATION_EMPTY_MESSAGE:Индекс не содержит подходящих документов}"

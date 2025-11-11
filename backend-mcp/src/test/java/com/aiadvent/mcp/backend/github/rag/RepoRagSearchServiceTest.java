@@ -6,6 +6,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.RepoRagGenerationService;
+import com.aiadvent.mcp.backend.github.rag.RepoRagGenerationService.GenerationResult;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +26,7 @@ class RepoRagSearchServiceTest {
   @Mock private RepoRagRetrievalPipeline pipeline;
   @Mock private RepoRagSearchReranker reranker;
   @Mock private RepoRagNamespaceStateService namespaceStateService;
+  @Mock private RepoRagGenerationService generationService;
 
   private GitHubRagProperties properties;
   private RepoRagSearchService service;
@@ -32,7 +35,11 @@ class RepoRagSearchServiceTest {
   void setUp() {
     MockitoAnnotations.openMocks(this);
     properties = new GitHubRagProperties();
-    service = new RepoRagSearchService(properties, pipeline, reranker, namespaceStateService);
+    service =
+        new RepoRagSearchService(
+            properties, pipeline, reranker, generationService, namespaceStateService);
+    when(generationService.generate(any()))
+        .thenReturn(new GenerationResult("context", "instructions", false, null, List.of()));
   }
 
   @Test
@@ -60,6 +67,9 @@ class RepoRagSearchServiceTest {
             "repo",
             "raw query",
             5,
+            null,
+            null,
+            null,
             null,
             null,
             filters,
@@ -117,6 +127,9 @@ class RepoRagSearchServiceTest {
             5,
             null,
             null,
+            null,
+            null,
+            null,
             filters,
             null,
             List.of(),
@@ -133,6 +146,60 @@ class RepoRagSearchServiceTest {
     assertThat(response.matches().get(0).path()).isEqualTo("src/main/java/App.java");
   }
 
+  @Test
+  void appliesLanguageThresholds() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("test").history(List.of()).build();
+    Document weak =
+        Document.builder()
+            .id("1")
+            .text("weak")
+            .metadata(Map.of("file_path", "src/Weak.java", "language", "java"))
+            .score(0.5)
+            .build();
+    Document strong =
+        Document.builder()
+            .id("2")
+            .text("strong")
+            .metadata(Map.of("file_path", "src/Strong.java", "language", "java"))
+            .score(0.9)
+            .build();
+    when(pipeline.execute(any()))
+        .thenReturn(
+            new RepoRagRetrievalPipeline.PipelineResult(
+                query, List.of(weak, strong), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(strong), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw query",
+            5,
+            null,
+            null,
+            Map.of("java", 0.8d),
+            null,
+            null,
+            new RepoRagSearchFilters(List.of(), List.of()),
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    RepoRagSearchService.SearchResponse response = service.search(command);
+    assertThat(response.matches()).hasSize(1);
+    assertThat(response.matches().get(0).path()).isEqualTo("src/Strong.java");
+  }
+
   private RepoRagNamespaceStateEntity readyState() {
     RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
     entity.setNamespace("repo:owner/repo");
@@ -142,4 +209,3 @@ class RepoRagSearchServiceTest {
     return entity;
   }
 }
-
