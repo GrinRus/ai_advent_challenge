@@ -3,7 +3,10 @@ package com.aiadvent.mcp.backend.github.config;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.HeuristicRepoRagSearchReranker;
 import com.aiadvent.mcp.backend.github.rag.RepoRagSearchReranker;
+import com.aiadvent.mcp.backend.github.rag.RepoRagSymbolService;
 import com.aiadvent.mcp.backend.github.rag.RepoRagToolConfiguration;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentMapper;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentRepository;
 import javax.sql.DataSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -51,8 +54,12 @@ public class GitHubRagConfiguration {
   RepoRagSearchReranker repoRagSearchReranker(
       GitHubRagProperties properties,
       @Qualifier("repoRagSnippetCompressorChatClientBuilder")
-          ObjectProvider<ChatClient.Builder> snippetCompressorBuilder) {
-    return new HeuristicRepoRagSearchReranker(properties, snippetCompressorBuilder);
+          ObjectProvider<ChatClient.Builder> snippetCompressorBuilder,
+      RepoRagDocumentRepository documentRepository,
+      RepoRagDocumentMapper documentMapper,
+      RepoRagSymbolService symbolService) {
+    return new HeuristicRepoRagSearchReranker(
+        properties, snippetCompressorBuilder, documentRepository, documentMapper, symbolService);
   }
 
   @Bean(name = "repoRagQueryTransformerChatClientBuilder")

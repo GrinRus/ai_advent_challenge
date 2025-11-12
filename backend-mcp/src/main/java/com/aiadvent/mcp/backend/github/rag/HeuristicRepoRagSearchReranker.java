@@ -5,6 +5,9 @@ import com.aiadvent.mcp.backend.github.rag.postprocessing.CodeAwareDocumentPostP
 import com.aiadvent.mcp.backend.github.rag.postprocessing.ContextWindowBudgetPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.HeuristicDocumentPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.LlmSnippetCompressionPostProcessor;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentMapper;
+import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentRepository;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.NeighborChunkDocumentPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,12 +24,21 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
 
   private final GitHubRagProperties properties;
   private final ObjectProvider<ChatClient.Builder> snippetCompressorBuilderProvider;
+  private final RepoRagDocumentRepository documentRepository;
+  private final RepoRagDocumentMapper documentMapper;
+  private final RepoRagSymbolService symbolService;
 
   public HeuristicRepoRagSearchReranker(
       GitHubRagProperties properties,
-      ObjectProvider<ChatClient.Builder> snippetCompressorBuilderProvider) {
+      ObjectProvider<ChatClient.Builder> snippetCompressorBuilderProvider,
+      RepoRagDocumentRepository documentRepository,
+      RepoRagDocumentMapper documentMapper,
+      RepoRagSymbolService symbolService) {
     this.properties = properties;
     this.snippetCompressorBuilderProvider = snippetCompressorBuilderProvider;
+    this.documentRepository = documentRepository;
+    this.documentMapper = documentMapper;
+    this.symbolService = symbolService;
   }
 
   @Override
@@ -65,6 +77,18 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
         new NamedProcessor(
             "post.heuristic-rerank",
             new HeuristicDocumentPostProcessor(properties.getRerank(), request.rerankTopN())));
+    if (request.neighborEnabled()) {
+      processors.add(
+          new NamedProcessor(
+              "post.neighbor-expand",
+              new NeighborChunkDocumentPostProcessor(
+                  documentRepository,
+                  documentMapper,
+                  symbolService,
+                  request.neighborStrategy(),
+                  request.neighborRadius(),
+                  request.neighborLimit())));
+    }
     if (request.maxContextTokens() > 0) {
       processors.add(
           new NamedProcessor(

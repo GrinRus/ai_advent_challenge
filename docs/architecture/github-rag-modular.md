@@ -33,6 +33,7 @@
 ### Code-aware & Neighbor настройки
 - `github.rag.rerank.code-aware.*` описывает поведение code-aware шага: веса `score/ span`, бонусы `language-bonus.{lang}` (например, `java=1.2`), `symbol-priority.{class,method_public,...}`, списки `path-penalty.allowPrefixes/denyPrefixes` с `penaltyMultiplier`, а также лимиты `diversity.maxPerFile` и `maxPerSymbol`. Клиент может временно отключить шаг (`codeAwareEnabled=false`) или расширить голову за счёт `codeAwareHeadMultiplier` (но не выше `max-head-multiplier`, по умолчанию 4.0).
 - `github.rag.post-processing.neighbor.{enabled,default-radius,default-limit,max-radius,max-limit,strategy}` задаёт дефолтные значения для расширения соседних чанков. Параметры `neighborRadius`, `neighborLimit`, `neighborStrategy` в DTO позволяют переключаться между `OFF`, `LINEAR`, `PARENT_SYMBOL`, `CALL_GRAPH`, но сервер всё равно придерживается верхнего порога `max-limit` (и абсолютного хардкапа 400).
+  Вставленные чанки помечаются `metadata.neighborOfSpanHash`, чтобы генерация/клиенты понимали, вокруг какого исходного span случилось расширение.
 
 ## Ответ инструмента v4
 ```json

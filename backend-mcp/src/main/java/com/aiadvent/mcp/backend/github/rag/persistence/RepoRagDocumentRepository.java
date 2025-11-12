@@ -1,5 +1,6 @@
 package com.aiadvent.mcp.backend.github.rag.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,4 +25,13 @@ public interface RepoRagDocumentRepository
 
   @Query("select distinct d.filePath from RepoRagDocumentEntity d where d.namespace = :namespace")
   List<String> findDistinctFilePathsByNamespace(@Param("namespace") String namespace);
+
+  @Query(
+      "select d from RepoRagDocumentEntity d where d.namespace = :namespace and d.filePath = :filePath and d.chunkIndex in :chunkIndexes")
+  List<RepoRagDocumentEntity> findByNamespaceAndFilePathAndChunkIndexIn(
+      @Param("namespace") String namespace,
+      @Param("filePath") String filePath,
+      @Param("chunkIndexes") Collection<Integer> chunkIndexes);
+
+  List<RepoRagDocumentEntity> findByNamespaceAndFilePath(String namespace, String filePath);
 }
