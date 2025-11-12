@@ -804,6 +804,7 @@ public class RepoRagSearchService {
     }
     Map<String, String> replacements =
         Map.of(
+            "{{query}}", query.text(),
             "{{rawQuery}}", query.text(),
             "{{repoOwner}}", repoOwner,
             "{{repoName}}", repoName,

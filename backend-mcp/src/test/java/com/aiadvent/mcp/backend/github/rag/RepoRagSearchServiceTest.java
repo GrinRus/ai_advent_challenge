@@ -159,6 +159,56 @@ class RepoRagSearchServiceTest {
   }
 
   @Test
+  void renderInstructionsReplacesLegacyQueryPlaceholder() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("legacy").history(List.of()).build();
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("snippet")
+            .metadata(Map.of("file_path", "src/Main.java"))
+            .score(0.7)
+            .build();
+    when(pipeline.execute(any())).thenReturn(
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "legacy",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "Answer {{query}}");
+
+    RepoRagSearchService.SearchResponse response = service.search(command);
+    assertThat(response.instructions()).isEqualTo("Answer legacy");
+  }
+
+  @Test
   void appliesLanguageThresholds() {
     when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
         .thenReturn(Optional.of(readyState()));
