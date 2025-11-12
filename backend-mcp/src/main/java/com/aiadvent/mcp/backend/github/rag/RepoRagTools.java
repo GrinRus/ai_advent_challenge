@@ -100,8 +100,7 @@ public class RepoRagTools {
           • `useCompression` — включить Query Compression перед обращением к LLM.
           • `translateTo` — язык, на котором нужно получить финальный ответ (пример `"en"`).
           • `generationLocale` — локаль, используемая в шаблоне инструкций (например `"ru-RU"`).
-          • `instructionsTemplate` — кастомный System Prompt. Поддерживаемые плейсхолдеры:
-            `{{rawQuery}}`, `{{repoOwner}}`, `{{repoName}}`, `{{locale}}`, `{{augmentedPrompt}}`, `{{contextStatus}}`.
+          • `instructionsTemplate` — кастомный System Prompt.
 
           Выход: список `matches[]` (путь/сниппет/метаданные), `augmentedPrompt`, `instructions`,
           признаки `contextMissing` и `noResults`, причина `noResultsReason`, список этапов `appliedModules`,
