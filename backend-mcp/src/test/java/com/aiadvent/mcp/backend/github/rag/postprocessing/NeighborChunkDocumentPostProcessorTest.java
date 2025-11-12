@@ -92,7 +92,10 @@ class NeighborChunkDocumentPostProcessorTest {
         Map.of("symbol_fqn", "class Demo"));
     RepoRagDocumentEntity referenced = entity("repo:demo", "src/Service.java", 2, "hash-6");
     when(symbolService.findCallGraphNeighbors("repo:demo", "class Demo"))
-        .thenReturn(List.of(new SymbolNeighbor("src/Service.java", 2, "CALLS")));
+        .thenReturn(
+            List.of(
+                new SymbolNeighbor(
+                    "src/Service.java", 2, "hash-6", "CALLS", "com.demo.Service#doWork")));
     when(documentRepository.findByNamespaceAndFilePathAndChunkIndexIn(
             "repo:demo", "src/Service.java", List.of(2)))
         .thenReturn(List.of(referenced));

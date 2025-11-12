@@ -395,3 +395,76 @@ databaseChangeLog:
             referencedColumnNames: id
             constraintName: fk_repo_rag_namespace_state_job
             onDelete: SET NULL
+  - changeSet:
+      id: github-rag-0005
+      author: ai-advent
+      context: github-rag
+      changes:
+        - createTable:
+            tableName: repo_rag_symbol_graph
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: namespace
+                  type: VARCHAR(256)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: file_path
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chunk_index
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: chunk_hash
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: symbol_fqn
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: symbol_kind
+                  type: VARCHAR(64)
+              - column:
+                  name: referenced_symbol_fqn
+                  type: TEXT
+              - column:
+                  name: relation
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: repo_rag_symbol_graph
+            indexName: idx_repo_rag_symbol_graph_symbol
+            columns:
+              - column:
+                  name: namespace
+              - column:
+                  name: symbol_fqn
+        - createIndex:
+            tableName: repo_rag_symbol_graph
+            indexName: idx_repo_rag_symbol_graph_referenced
+            columns:
+              - column:
+                  name: namespace
+              - column:
+                  name: referenced_symbol_fqn

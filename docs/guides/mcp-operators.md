@@ -49,6 +49,8 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 1. **После fetch:** `github.repository_fetch` возвращает `workspaceId` и ставит job в очередь индексатора. Следите за прогрессом через `repo.rag_index_status` (`status`, `progress`, `etaSeconds`, `lastError`). Ждём `ready=true`, иначе search вернёт пустой контекст.
 2. **Быстрый поиск:** `repo.rag_search_simple` принимает только `rawQuery` и повторно использует репозиторий из последней `github.repository_fetch` (если индекс уже готов). Это защищает от выбора «чужого» репозитория, но требует сначала вызвать fetch и дождаться READY статуса.
 3. **Глобальный поиск:** `repo.rag_search_global` ищет по всей базе RAG (все READY namespace). Поддерживает те же параметры, что `repo.rag_search`, но не требует `repoOwner/repoName`. В ответе `matches[].metadata.repo_owner` / `repo_name` подсказывают, где найден фрагмент.
+> После применения миграций `github-rag-0005` (таблица `repo_rag_symbol_graph`) существующие namespace переходят на новый формат только после следующего `github.repository_fetch` и полного индексирования. Фонового backfill-а нет — обязательно повторите fetch для критичных репозиториев.
+
 4. **Расширенный поиск (`repo.rag_search` v4):**
    - Вход: `rawQuery`, `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, `history[]`, `previousAssistantReply`, `allowEmptyContext`, `useCompression`, `translateTo`, `multiQuery.enabled/queries/maxQueries`, `maxContextTokens`, `generationLocale`, `instructionsTemplate`, `filters.languages[]/pathGlobs[]`, `filterExpression`.
    - Настройки пост-обработки:

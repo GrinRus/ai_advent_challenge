@@ -219,6 +219,58 @@ class RepoRagSearchServiceTest {
   }
 
   @Test
+  void mergesAppliedModulesFromReranker() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("test").history(List.of()).build();
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("snippet")
+            .metadata(Map.of("file_path", "src/App.java"))
+            .score(0.7)
+            .build();
+    RepoRagRetrievalPipeline.PipelineResult pipelineResult =
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of("retrieval.multi-query"), List.of(query));
+    when(pipeline.execute(any())).thenReturn(pipelineResult);
+    RepoRagSearchReranker.PostProcessingResult postProcessingResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), true, List.of("post.neighbor-expand"));
+    when(reranker.process(any(), any(), any())).thenReturn(postProcessingResult);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw query",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    RepoRagSearchService.SearchResponse response = service.search(command);
+    assertThat(response.appliedModules())
+        .containsExactly("retrieval.multi-query", "post.neighbor-expand");
+  }
+
+  @Test
   void searchGlobalBuildsFilterAndAnnotatesMatches() {
     Query query = Query.builder().text("global").history(List.of()).build();
     Document javaDoc =
