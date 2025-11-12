@@ -33,7 +33,16 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_index_status",
       description =
-          "Возвращает состояние асинхронного индексатора GitHub RAG по паре repoOwner/repoName.")
+          """
+          Следи за прогрессом GitHub RAG индексатора для конкретного `repoOwner`/`repoName`.
+          • `status` показывает фазу (QUEUED, RUNNING, FAILED, READY).
+          • `progress`, `etaSeconds`, `filesProcessed`, `chunksProcessed` помогают строить UI/alerts.
+          • `lastError` и `attempt/maxAttempts` пригодятся, если очередь упала и нужно перезапускать fetch.
+          • Флаг `ready=true` означает, что можно безопасно вызывать `repo.rag_search`/`repo.rag_search_simple`.
+
+          Рекомендуемый сценарий: после `github.repository_fetch` периодически опрашивай инструмент,
+          пока `ready` не станет true или не появится ошибка.
+          """)
   public RepoRagIndexStatusResponse ragIndexStatus(RepoRagIndexStatusInput input) {
     validateRepoInput(input.repoOwner(), input.repoName());
     StatusView status = statusService.currentStatus(input.repoOwner(), input.repoName());
@@ -61,10 +70,30 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_search",
       description =
-          "Основной инструмент для получения контекста из проиндексированного репозитория. Требует явные "
-              + "`repoOwner`/`repoName` и принимает все настройки модульного pipeline (история, multi-query,"
-              + " фильтры, лимиты токенов, инструкции). Возвращает чанки с метаданными, `augmentedPrompt`,"
-              + " `instructions`, признаки `contextMissing`/`noResults` и список сработавших модулей.")
+          """
+          Основной инструмент поиска по GitHub RAG. Передавай `repoOwner`, `repoName` и `rawQuery`,
+          остальные параметры управляют этапами pipeline:
+
+          Retrieval
+          • `topK`/`topKPerQuery` (1–40) контролируют количество документов.
+          • `multiQuery` включает/настраивает генерацию подзапросов.
+          • `filters`/`filterExpression` ограничивают язык и путь.
+
+          Post-processing
+          • `rerankTopN`, `codeAwareEnabled`, `codeAwareHeadMultiplier` управляют rerank’ом.
+          • `neighborStrategy` ОБЯЗАТЕЛЬНО из OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH; подбирай его
+            вместе с `neighborRadius` (0–5) и `neighborLimit` (≤12). Для простого сценария указывай
+            LINEAR + radius/limit из бизнес-контекста. CALL_GRAPH доступен, только когда индекс содержит AST.
+          • `maxContextTokens` срезает выдачу для генерации.
+
+          Generation
+          • `allowEmptyContext`, `useCompression`, `translateTo`, `generationLocale`,
+            `instructionsTemplate` управляют финальным ответом.
+
+          Возвращает чанки с метаданными, `augmentedPrompt`, финальные инструкции, признаки
+          `contextMissing`/`noResults` и список `appliedModules`. Если параметр не требуется,
+          передавай `null`, чтобы использовать конфиг сервера.
+          """)
   public RepoRagSearchResponse ragSearch(RepoRagSearchInput input) {
     validateRepoInput(input.repoOwner(), input.repoName());
     if (!StringUtils.hasText(input.rawQuery())) {
@@ -104,10 +133,15 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_search_simple",
       description =
-          "Быстрый поиск в репозитории из последнего `github.repository_fetch`. Не требует owner/name,"
-              + " принимает только `rawQuery`, автоматически включает историю/перевод/multi-query и подходит"
-              + " для первых вопросов после fetch. Если активного (READY) репозитория нет, вернёт ошибку и"
-              + " попросит запустить fetch или дождаться индексации.")
+          """
+          Шорткат для свежего fetch: инструмент берёт пару owner/name из последнего
+          `github.repository_fetch` (статус READY) и выполняет `repo.rag_search` с дефолтными
+          настройками. Нужно указать только `rawQuery`.
+
+          Используй, когда пользователь сразу после fetch задаёт вопросы про репозиторий, и неважны тонкие
+          параметры. Если активного namespace нет или он ещё индексируется, вернётся понятная ошибка с
+          подсказкой вызвать `github.repository_fetch` или `repo.rag_index_status`.
+          """)
   public RepoRagSearchResponse ragSearchSimple(RepoRagSimpleSearchInput input) {
     if (!StringUtils.hasText(input.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
@@ -167,10 +201,18 @@ public class RepoRagTools {
   @Tool(
       name = "repo.rag_search_global",
       description =
-          "Глобальный поиск по всем готовым namespace. Полезен для разведки (\"какие репы покрывают эту тему\") "
-              + "или когда конкретный owner/name неизвестны. Принимает `rawQuery` и основные параметры (`topK`, "
-              + "multi-query, фильтры по языку/пути, maxContextTokens и т.д.), возвращает такой же ответ, как "
-              + "`repo.rag_search`, но в `matches[].metadata` указывает фактический `repo_owner`/`repo_name`.")
+          """
+          Делает RAG-поиск сразу по всем `READY` namespace и возвращает те же поля, что `repo.rag_search`,
+          добавляя в `matches[].metadata` фактический `repo_owner`/`repo_name` найденного документа. Полезно,
+          когда пользователь не знает конкретный репозиторий или хочет разведку по каталогу.
+
+          • Поддерживает те же параметры Retrieval/Post-processing: `topK`, `multiQuery`, `filters`,
+            `neighborStrategy` (OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH), `maxContextTokens` и т.п.
+          • Параметры `displayRepoOwner`/`displayRepoName` позволяют задать, как подписывать выдачу в UI
+            (например, «mixed results for {org}»), если нужно отличать фактический репо от выбранного фильтра.
+          • Остальные поля (`allowEmptyContext`, `useCompression`, `generationLocale`, `instructionsTemplate`)
+            управляют генерацией ответа аналогично `repo.rag_search`.
+          """)
   public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
     if (!StringUtils.hasText(input.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
