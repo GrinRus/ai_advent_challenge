@@ -30,6 +30,11 @@
 - `useCompression=false` отключает `CompressionQueryTransformer`, что полезно для коротких follow-up запросов, но SLA 120 сек. сохраняется только при валидных параметрах.
 - Время выполнения инструмента прежнее — до 120 секунд. Multi-query и LLM-компрессия добавляют ~2–4 c при включении.
 
+### RepoRagToolInputSanitizer
+- Перед построением `SearchCommand` все DTO (`repo.rag_search`, `repo.rag_search_global`, `repo.rag_search_simple`) проходят через `RepoRagToolInputSanitizer`. Он триммит строки, выставляет дефолты `neighbor*`, `multiQuery`, `generationLocale`, нормализует `filters.languages`, приводит `neighborStrategy`/`translateTo` к каноническим значениям и проверяет диапазоны (`topK<=40`, `neighborLimit<=max-limit`, `multiQuery.maxQueries<=6`).
+- При отсутствии `repoOwner/repoName` (или `displayRepo*` в global-режиме) санитайзер пытается взять последний READY namespace через `GitHubRepositoryFetchRegistry`. Если индекс ещё не READY, инструмент сразу возвращает ошибку, чтобы агенты повторили fetch.
+- `instructionsTemplate` работает в режиме «жёлтая карточка»: `{{query}}` автоматически заменяется на `{{rawQuery}}`, неизвестные плейсхолдеры удаляются. Все автоисправления складываются в `warnings[]` ответа и инкрементируют метрику `repo_rag_tool_input_fix_total`.
+
 ### Code-aware & Neighbor настройки
 - `github.rag.rerank.code-aware.*` описывает поведение code-aware шага: веса `score/ span`, бонусы `language-bonus.{lang}` (например, `java=1.2`), `symbol-priority.{class,method_public,...}`, списки `path-penalty.allowPrefixes/denyPrefixes` с `penaltyMultiplier`, а также лимиты `diversity.maxPerFile` и `maxPerSymbol`. Клиент может временно отключить шаг (`codeAwareEnabled=false`) или расширить голову за счёт `codeAwareHeadMultiplier` (но не выше `max-head-multiplier`, по умолчанию 4.0).
 - `github.rag.post-processing.neighbor.{enabled,default-radius,default-limit,max-radius,max-limit,strategy}` задаёт дефолтные значения для расширения соседних чанков. Параметры `neighborRadius`, `neighborLimit`, `neighborStrategy` в DTO позволяют переключаться между `OFF`, `LINEAR`, `PARENT_SYMBOL`, `CALL_GRAPH`, но сервер всё равно придерживается верхнего порога `max-limit` (и абсолютного хардкапа 400).
@@ -45,11 +50,13 @@
   "contextMissing": false,
   "noResults": false,
   "noResultsReason": null,
-  "appliedModules": ["query.compression","retrieval.multi-query","post.llm-compression"]
+  "appliedModules": ["query.compression","retrieval.multi-query","post.llm-compression"],
+  "warnings": ["repoOwner заполнен автоматически значением ai-advent/challenge"]
 }
 ```
 - `contextMissing=true` ⇒ UI показывает «Индекс не содержит подходящих документов». Если `allowEmptyContext=false`, MCP бросает `IllegalStateException`.
 - `noResults=true` фиксирует ситуацию «векторный поиск ничего не вернул», даже если `allowEmptyContext=true` и генерация продолжилась. `noResultsReason` подсказка для операторов (`CONTEXT_NOT_FOUND`, `INDEX_NOT_READY`).
+- `warnings[]` содержит список автоисправлений (нормализация плейсхолдеров, автозаполнение owner/name, ограничение лимитов). Пустой список означает, что параметры прошли без корректировок.
 - `instructionsTemplate` поддерживает плейсхолдеры `{{rawQuery}}`, `{{repoOwner}}`, `{{repoName}}`, `{{locale}}`, `{{augmentedPrompt}}`.
 
 ## Когда использовать simple-версию

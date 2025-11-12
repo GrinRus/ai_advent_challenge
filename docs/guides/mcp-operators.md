@@ -66,6 +66,12 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 5. **Наблюдаемость:** графики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. При очереди >5 или ≥3 fail подряд проверяйте свободное место `/var/tmp/aiadvent/mcp-workspaces` и наличие зависших job.
 6. **Runbook:** логируйте `repoOwner/repoName`, `appliedModules`, `contextMissing`, `noResults`, `maxContextTokens`. При ручной очистке workspace всегда повторяйте fetch → status → search.
 
+#### Нормализация входных DTO
+- Все инструменты `repo.rag_*` теперь прогоняют входные данные через `RepoRagToolInputSanitizer`: строки триммятся, `neighbor*`, `multiQuery`, `generationLocale` получают дефолты из `application.yaml`, `filters.languages` приводятся к lower-case, а универсальные глобы (`*`, `**/*`) выкидываются.
+- Если `repoOwner/repoName` (для `repo.rag_search`) или `displayRepo*` (для `repo.rag_search_global`) отсутствуют, санитайзер пытается использовать последний READY namespace (`github.repository_fetch`). При отсутствии готового индекса инструмент вернёт ошибку с подсказкой повторить fetch.
+- Синонимы/локализации: `neighborStrategy` понимает `graph`, `callgraph`, `parent`, `off/disabled`; языковые фильтры — `py`, `js`, `c#`, `golang`; `translateTo` — `english/английский`, `russian/русский`. Диапазоны (`topK≤40`, `neighborLimit≤конфигурации`, `multiQuery.maxQueries≤6`) жёстко валидируются и при превышении приводятся к допустимому значению.
+- `instructionsTemplate` работает в режиме «жёлтая карточка»: `{{query}}` автоматически заменяется на `{{rawQuery}}`, неизвестные плейсхолдеры удаляются. Все автоисправления возвращаются в `warnings[]` ответа (`repo.rag_search`, `repo.rag_search_global`, `repo.rag_search_simple`) и учитываются метрикой `repo_rag_tool_input_fix_total`.
+
 > Подробнее о LEGO-модулях pipeline см. `docs/architecture/github-rag-modular.md`.
 
 #### Когда вызывать `repo.rag_search_simple`

@@ -1192,12 +1192,12 @@
 ## Wave 35 — RAG input normalization layer
 Цель: научить MCP самоисправлять «свободные» запросы от LLM/агентов, чтобы инструменты RAG всегда получали валидный DTO и не падали от некорректных плейсхолдеров или параметров.
 
-- [ ] Добавить сервис `RepoRagToolInputSanitizer`, который принимает DTO (`RepoRagSearchInput`, `RepoRagGlobalSearchInput`, `RepoRagSimpleSearchInput`) и возвращает нормализованные значения: трим строк, дефолты для `neighbor*`, `multiQuery`, `generationLocale`, фильтры. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagToolInputSanitizer.java`
-  - [ ] Дополнительно нормализовать `RepoRagSearchFilters`: приводить `languages` к lower-case, выкидывать пустые/универсальные глобы (`"**/*"`, пустые строки) и не передавать фильтр дальше, если после очистки ограничений нет.
-- [ ] Встроить детектор/исправитель плейсхолдеров `instructionsTemplate`: `{{query}}` → `{{rawQuery}}`, неизвестные переменные удаляются или выдают user-friendly ошибку. → `RepoRagToolInputSanitizer`, `RepoRagSearchService.renderInstructions`
-  - [ ] Дефолтный режим — «жёлтая карточка»: незнакомые плейсхолдеры удаляются, а в ответе `RepoRagSearchResponse`/`repo.rag_*` добавляется `warnings[]` с перечислением исправлений.
-- [ ] Добавить словарь синонимов/локализаций для enum-полей (`neighborStrategy`, `translateTo`, языки фильтров) + валидатор диапазонов (topK, neighborLimit, multiQuery). → `RepoRagToolInputSanitizer`
-- [ ] Реализовать автозаполнение owner/name: при пустых значениях использовать последний READY namespace (`GitHubRepositoryFetchRegistry`) либо `displayRepo*` (для global). → `RepoRagToolInputSanitizer`, `RepoRagTools`
-- [ ] Интегрировать санитайзер в `RepoRagTools` перед формированием `SearchCommand`, добавить метрики/логи о применённых исправлениях. → `RepoRagTools`, `docs/architecture/github-rag-modular.md`
-- [ ] Покрыть санитайзер unit-тестами и обновить документацию: список поддерживаемых плейсхолдеров, правила нормализации, типовые автозамены. → `backend-mcp/src/test/java/...`, `docs/guides/mcp-operators.md`
-- [ ] Добавить обязательные тесты на всю новую логику нормализации (санитайзер, обновлённые фильтры, warnings): unit + интеграционные smoke-прогоны `repo.rag_*`, которые подтверждают автокоррекцию и выдачу предупреждений.
+- [x] Добавить сервис `RepoRagToolInputSanitizer`, который принимает DTO (`RepoRagSearchInput`, `RepoRagGlobalSearchInput`, `RepoRagSimpleSearchInput`) и возвращает нормализованные значения: трим строк, дефолты для `neighbor*`, `multiQuery`, `generationLocale`, фильтры. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagToolInputSanitizer.java`
+  - [x] Дополнительно нормализовать `RepoRagSearchFilters`: приводить `languages` к lower-case, выкидывать пустые/универсальные глобы (`"**/*"`, пустые строки) и не передавать фильтр дальше, если после очистки ограничений нет.
+- [x] Встроить детектор/исправитель плейсхолдеров `instructionsTemplate`: `{{query}}` → `{{rawQuery}}`, неизвестные переменные удаляются или выдают user-friendly ошибку. → `RepoRagToolInputSanitizer`, `RepoRagSearchService.renderInstructions`
+  - [x] Дефолтный режим — «жёлтая карточка»: незнакомые плейсхолдеры удаляются, а в ответе `RepoRagSearchResponse`/`repo.rag_*` добавляется `warnings[]` с перечислением исправлений.
+- [x] Добавить словарь синонимов/локализаций для enum-полей (`neighborStrategy`, `translateTo`, языки фильтров) + валидатор диапазонов (topK, neighborLimit, multiQuery). → `RepoRagToolInputSanitizer`
+- [x] Реализовать автозаполнение owner/name: при пустых значениях использовать последний READY namespace (`GitHubRepositoryFetchRegistry`) либо `displayRepo*` (для global). → `RepoRagToolInputSanitizer`, `RepoRagTools`
+- [x] Интегрировать санитайзер в `RepoRagTools` перед формированием `SearchCommand`, добавить метрики/логи о применённых исправлениях. → `RepoRagTools`, `docs/architecture/github-rag-modular.md`
+- [x] Покрыть санитайзер unit-тестами и обновить документацию: список поддерживаемых плейсхолдеров, правила нормализации, типовые автозамены. → `backend-mcp/src/test/java/...`, `docs/guides/mcp-operators.md`
+- [x] Добавить обязательные тесты на всю новую логику нормализации (санитайзер, обновлённые фильтры, warnings): unit + интеграционные smoke-прогоны `repo.rag_*`, которые подтверждают автокоррекцию и выдачу предупреждений.

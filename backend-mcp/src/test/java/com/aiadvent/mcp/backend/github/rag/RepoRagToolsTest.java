@@ -23,13 +23,26 @@ class RepoRagToolsTest {
   @Mock private RepoRagSearchService searchService;
   @Mock private RepoRagNamespaceStateService namespaceStateService;
   @Mock private GitHubRepositoryFetchRegistry fetchRegistry;
+  @Mock private RepoRagToolInputSanitizer inputSanitizer;
 
   private RepoRagTools tools;
 
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
-    tools = new RepoRagTools(statusService, searchService, namespaceStateService, fetchRegistry);
+    tools =
+        new RepoRagTools(
+            statusService, searchService, namespaceStateService, fetchRegistry, inputSanitizer);
+    when(inputSanitizer.sanitizeSimple(any()))
+        .thenAnswer(
+            invocation ->
+                new RepoRagToolInputSanitizer.SanitizationResult<>(
+                    invocation.getArgument(0), List.of()));
+    when(inputSanitizer.sanitizeGlobal(any()))
+        .thenAnswer(
+            invocation ->
+                new RepoRagToolInputSanitizer.SanitizationResult<>(
+                    invocation.getArgument(0), List.of()));
   }
 
   @Test
@@ -54,6 +67,7 @@ class RepoRagToolsTest {
         tools.ragSearchSimple(new RepoRagTools.RepoRagSimpleSearchInput("Что нового?"));
 
     assertThat(result.instructions()).isEqualTo("instructions");
+    assertThat(result.warnings()).isEmpty();
     ArgumentCaptor<RepoRagSearchService.SearchCommand> captor =
         ArgumentCaptor.forClass(RepoRagSearchService.SearchCommand.class);
     verify(searchService).search(captor.capture());
@@ -104,8 +118,12 @@ class RepoRagToolsTest {
             "global-owner",
             "mixed");
 
+    when(inputSanitizer.sanitizeGlobal(any()))
+        .thenReturn(new RepoRagToolInputSanitizer.SanitizationResult<>(input, List.of("autofix")));
+
     RepoRagTools.RepoRagSearchResponse result = tools.ragSearchGlobal(input);
     assertThat(result.instructions()).isEqualTo("instructions");
+    assertThat(result.warnings()).containsExactly("autofix");
     ArgumentCaptor<RepoRagSearchService.GlobalSearchCommand> captor =
         ArgumentCaptor.forClass(RepoRagSearchService.GlobalSearchCommand.class);
     verify(searchService).searchGlobal(captor.capture());

@@ -18,16 +18,19 @@ public class RepoRagTools {
   private final RepoRagSearchService searchService;
   private final RepoRagNamespaceStateService namespaceStateService;
   private final GitHubRepositoryFetchRegistry fetchRegistry;
+  private final RepoRagToolInputSanitizer inputSanitizer;
 
   public RepoRagTools(
       RepoRagStatusService statusService,
       RepoRagSearchService searchService,
       RepoRagNamespaceStateService namespaceStateService,
-      GitHubRepositoryFetchRegistry fetchRegistry) {
+      GitHubRepositoryFetchRegistry fetchRegistry,
+      RepoRagToolInputSanitizer inputSanitizer) {
     this.statusService = statusService;
     this.searchService = searchService;
     this.namespaceStateService = namespaceStateService;
     this.fetchRegistry = fetchRegistry;
+    this.inputSanitizer = inputSanitizer;
   }
 
   @Tool(
@@ -95,39 +98,42 @@ public class RepoRagTools {
           передавай `null`, чтобы использовать конфиг сервера.
           """)
   public RepoRagSearchResponse ragSearch(RepoRagSearchInput input) {
-    validateRepoInput(input.repoOwner(), input.repoName());
-    if (!StringUtils.hasText(input.rawQuery())) {
+    RepoRagToolInputSanitizer.SanitizationResult<RepoRagSearchInput> sanitized =
+        inputSanitizer.sanitizeSearch(input);
+    RepoRagSearchInput normalized = sanitized.value();
+    validateRepoInput(normalized.repoOwner(), normalized.repoName());
+    if (!StringUtils.hasText(normalized.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
     RepoRagSearchService.SearchCommand command =
         new RepoRagSearchService.SearchCommand(
-            input.repoOwner(),
-            input.repoName(),
-            input.rawQuery(),
-            input.topK(),
-            input.topKPerQuery(),
-            input.minScore(),
-            input.minScoreByLanguage(),
-            input.rerankTopN(),
-            input.rerankStrategy(),
-            input.codeAwareEnabled(),
-            input.codeAwareHeadMultiplier(),
-            input.neighborRadius(),
-            input.neighborLimit(),
-            input.neighborStrategy(),
-            input.filters(),
-            input.filterExpression(),
-            input.history(),
-            input.previousAssistantReply(),
-            input.allowEmptyContext(),
-            input.useCompression(),
-            input.translateTo(),
-            input.multiQuery(),
-            input.maxContextTokens(),
-            input.generationLocale(),
-            input.instructionsTemplate());
+            normalized.repoOwner(),
+            normalized.repoName(),
+            normalized.rawQuery(),
+            normalized.topK(),
+            normalized.topKPerQuery(),
+            normalized.minScore(),
+            normalized.minScoreByLanguage(),
+            normalized.rerankTopN(),
+            normalized.rerankStrategy(),
+            normalized.codeAwareEnabled(),
+            normalized.codeAwareHeadMultiplier(),
+            normalized.neighborRadius(),
+            normalized.neighborLimit(),
+            normalized.neighborStrategy(),
+            normalized.filters(),
+            normalized.filterExpression(),
+            normalized.history(),
+            normalized.previousAssistantReply(),
+            normalized.allowEmptyContext(),
+            normalized.useCompression(),
+            normalized.translateTo(),
+            normalized.multiQuery(),
+            normalized.maxContextTokens(),
+            normalized.generationLocale(),
+            normalized.instructionsTemplate());
     RepoRagSearchService.SearchResponse response = searchService.search(command);
-    return toResponse(response);
+    return toResponse(response, sanitized.warnings());
   }
 
   @Tool(
@@ -143,7 +149,9 @@ public class RepoRagTools {
           подсказкой вызвать `github.repository_fetch` или `repo.rag_index_status`.
           """)
   public RepoRagSearchResponse ragSearchSimple(RepoRagSimpleSearchInput input) {
-    if (!StringUtils.hasText(input.rawQuery())) {
+    RepoRagToolInputSanitizer.SanitizationResult<RepoRagSimpleSearchInput> sanitized =
+        inputSanitizer.sanitizeSimple(input);
+    if (!StringUtils.hasText(sanitized.value().rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
     com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry.LastFetchContext context =
@@ -172,7 +180,7 @@ public class RepoRagTools {
         new RepoRagSearchService.SearchCommand(
             state.getRepoOwner(),
             state.getRepoName(),
-            input.rawQuery(),
+            sanitized.value().rawQuery(),
             null,
             null,
             null,
@@ -195,7 +203,8 @@ public class RepoRagTools {
             null,
             null,
             null);
-    return toResponse(searchService.search(command));
+    RepoRagSearchService.SearchResponse response = searchService.search(command);
+    return toResponse(response, sanitized.warnings());
   }
 
   @Tool(
@@ -214,39 +223,42 @@ public class RepoRagTools {
             управляют генерацией ответа аналогично `repo.rag_search`.
           """)
   public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
-    if (!StringUtils.hasText(input.rawQuery())) {
+    RepoRagToolInputSanitizer.SanitizationResult<RepoRagGlobalSearchInput> sanitized =
+        inputSanitizer.sanitizeGlobal(input);
+    if (!StringUtils.hasText(sanitized.value().rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
     RepoRagSearchService.GlobalSearchCommand command =
         new RepoRagSearchService.GlobalSearchCommand(
-            input.rawQuery(),
-            input.topK(),
-            input.topKPerQuery(),
-            input.minScore(),
-            input.minScoreByLanguage(),
-            input.rerankTopN(),
-            input.codeAwareEnabled(),
-            input.codeAwareHeadMultiplier(),
-            input.neighborRadius(),
-            input.neighborLimit(),
-            input.neighborStrategy(),
-            input.filters(),
-            input.filterExpression(),
-            input.history(),
-            input.previousAssistantReply(),
-            input.allowEmptyContext(),
-            input.useCompression(),
-            input.translateTo(),
-            input.multiQuery(),
-            input.maxContextTokens(),
-            input.generationLocale(),
-            input.instructionsTemplate(),
-            input.displayRepoOwner(),
-            input.displayRepoName());
-    return toResponse(searchService.searchGlobal(command));
+            sanitized.value().rawQuery(),
+            sanitized.value().topK(),
+            sanitized.value().topKPerQuery(),
+            sanitized.value().minScore(),
+            sanitized.value().minScoreByLanguage(),
+            sanitized.value().rerankTopN(),
+            sanitized.value().codeAwareEnabled(),
+            sanitized.value().codeAwareHeadMultiplier(),
+            sanitized.value().neighborRadius(),
+            sanitized.value().neighborLimit(),
+            sanitized.value().neighborStrategy(),
+            sanitized.value().filters(),
+            sanitized.value().filterExpression(),
+            sanitized.value().history(),
+            sanitized.value().previousAssistantReply(),
+            sanitized.value().allowEmptyContext(),
+            sanitized.value().useCompression(),
+            sanitized.value().translateTo(),
+            sanitized.value().multiQuery(),
+            sanitized.value().maxContextTokens(),
+            sanitized.value().generationLocale(),
+            sanitized.value().instructionsTemplate(),
+            sanitized.value().displayRepoOwner(),
+            sanitized.value().displayRepoName());
+    return toResponse(searchService.searchGlobal(command), sanitized.warnings());
   }
 
-  private RepoRagSearchResponse toResponse(RepoRagSearchService.SearchResponse serviceResponse) {
+  private RepoRagSearchResponse toResponse(
+      RepoRagSearchService.SearchResponse serviceResponse, List<String> warnings) {
     List<RepoRagSearchMatch> matches =
         serviceResponse.matches().stream()
             .map(
@@ -266,7 +278,8 @@ public class RepoRagTools {
         serviceResponse.contextMissing(),
         serviceResponse.noResults(),
         serviceResponse.noResultsReason(),
-        serviceResponse.appliedModules());
+        serviceResponse.appliedModules(),
+        warnings == null ? List.of() : List.copyOf(warnings));
   }
 
   private void validateRepoInput(String owner, String name) {
@@ -367,5 +380,6 @@ public class RepoRagTools {
       boolean contextMissing,
       boolean noResults,
       String noResultsReason,
-      List<String> appliedModules) {}
+      List<String> appliedModules,
+      List<String> warnings) {}
 }
