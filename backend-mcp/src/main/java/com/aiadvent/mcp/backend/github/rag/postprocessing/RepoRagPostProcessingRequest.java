@@ -5,4 +5,19 @@ public record RepoRagPostProcessingRequest(
     String locale,
     int maxSnippetLines,
     boolean compressionEnabled,
-    Integer rerankTopN) {}
+    int rerankTopN,
+    boolean codeAwareEnabled,
+    double codeAwareHeadMultiplier,
+    String requestedLanguage,
+    boolean neighborEnabled,
+    int neighborRadius,
+    int neighborLimit,
+    NeighborStrategy neighborStrategy) {
+
+  public enum NeighborStrategy {
+    OFF,
+    LINEAR,
+    PARENT_SYMBOL,
+    CALL_GRAPH
+  }
+}

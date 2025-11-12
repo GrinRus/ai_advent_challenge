@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.CodeAwareDocumentPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.ContextWindowBudgetPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.HeuristicDocumentPostProcessor;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.LlmSnippetCompressionPostProcessor;
@@ -50,6 +51,16 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
 
   private List<NamedProcessor> buildProcessors(RepoRagPostProcessingRequest request) {
     List<NamedProcessor> processors = new ArrayList<>();
+    if (request.codeAwareEnabled()) {
+      processors.add(
+          new NamedProcessor(
+              "post.code-aware",
+              new CodeAwareDocumentPostProcessor(
+                  properties.getRerank().getCodeAware(),
+                  request.rerankTopN(),
+                  request.codeAwareHeadMultiplier(),
+                  request.requestedLanguage())));
+    }
     processors.add(
         new NamedProcessor(
             "post.heuristic-rerank",

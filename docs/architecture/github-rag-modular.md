@@ -13,6 +13,7 @@
 | Pre-Retrieval | `RewriteQueryTransformer` | Удаляет шум, перефразирует вопрос | всегда после compression |
 | Pre-Retrieval | `TranslationQueryTransformer` | Переводит на язык embedding модели (по умолчанию `ru`, можно переопределить `translateTo`) | пропускается, если target совпадает с исходным языком |
 | Retrieval | `MultiQueryExpander` + кастомный дедупликатор | Генерирует N подзапросов, каждый выполняет topK search, результаты склеиваются в порядке подзапросов и дедуплицируются по `chunk_hash`, фиксируя `generatedBySubQuery` | `github.rag.multi-query.enabled`, `multiQuery.queries<=maxQueries` |
+| Post-Retrieval | Code-aware rerank (`CodeAwareDocumentPostProcessor`) | Перенастраивает голову списка (до `ceil(rerankTopN * codeAwareHeadMultiplier)`) с учётом языка запроса, типа символа, штрафов за `generated/` пути и лимитов `diversity.maxPerFile/maxPerSymbol` | `codeAwareEnabled=true`, `appliedModules+=post.code-aware`, веса и бонусы задаёт `github.rag.rerank.code-aware.*` |
 | Post-Retrieval | Heuristic rerank (`DocumentPostProcessor`) | Сортирует топ-N по взвешенному score/span (`github.rag.rerank`) | меняет только head списка |
 | Post-Retrieval | `ContextWindowBudgetPostProcessor` | Срезает список по лимиту токенов (`maxContextTokens`, ≥256) | минимум 1 документ всегда сохраняется |
 | Post-Retrieval | LLM Snippet Compressor | ChatClient (`gpt-4o-mini`, T=0.1) сжимает первые 6 сниппетов до `maxSnippetLines`, сохраняя ключевые факты | включается, если `github.rag.post-processing.llm-compression-enabled=true` и сниппет длиннее лимита |
@@ -28,6 +29,10 @@
 - `maxContextTokens` можно занижать, но MCP не позволит поставить значения <256 или >`github.rag.post-processing.max-context-tokens` (по умолчанию 4000).
 - `useCompression=false` отключает `CompressionQueryTransformer`, что полезно для коротких follow-up запросов, но SLA 120 сек. сохраняется только при валидных параметрах.
 - Время выполнения инструмента прежнее — до 120 секунд. Multi-query и LLM-компрессия добавляют ~2–4 c при включении.
+
+### Code-aware & Neighbor настройки
+- `github.rag.rerank.code-aware.*` описывает поведение code-aware шага: веса `score/ span`, бонусы `language-bonus.{lang}` (например, `java=1.2`), `symbol-priority.{class,method_public,...}`, списки `path-penalty.allowPrefixes/denyPrefixes` с `penaltyMultiplier`, а также лимиты `diversity.maxPerFile` и `maxPerSymbol`. Клиент может временно отключить шаг (`codeAwareEnabled=false`) или расширить голову за счёт `codeAwareHeadMultiplier` (но не выше `max-head-multiplier`, по умолчанию 4.0).
+- `github.rag.post-processing.neighbor.{enabled,default-radius,default-limit,max-radius,max-limit,strategy}` задаёт дефолтные значения для расширения соседних чанков. Параметры `neighborRadius`, `neighborLimit`, `neighborStrategy` в DTO позволяют переключаться между `OFF`, `LINEAR`, `PARENT_SYMBOL`, `CALL_GRAPH`, но сервер всё равно придерживается верхнего порога `max-limit` (и абсолютного хардкапа 400).
 
 ## Ответ инструмента v4
 ```json

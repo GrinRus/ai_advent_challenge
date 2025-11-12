@@ -25,6 +25,7 @@ public class RepoRagSearchService {
   private static final int DEFAULT_TOP_K = 8;
   private static final int MAX_TOP_K = 40;
   private static final double DEFAULT_MIN_SCORE = 0.55d;
+  private static final int ABSOLUTE_MAX_NEIGHBOR_LIMIT = 400;
 
   private final GitHubRagProperties properties;
   private final RepoRagRetrievalPipeline retrievalPipeline;
@@ -102,12 +103,16 @@ public class RepoRagSearchService {
     } else {
       int maxContextTokens = resolveMaxContextTokens(command.maxContextTokens());
       RepoRagPostProcessingRequest postProcessingRequest =
-          new RepoRagPostProcessingRequest(
-              maxContextTokens,
+          buildPostProcessingRequest(
               locale,
-              properties.getRerank().getMaxSnippetLines(),
-              properties.getPostProcessing().isLlmCompressionEnabled(),
-              resolveRerankTopN(command.rerankTopN()));
+              command.filters(),
+              command.rerankTopN(),
+              command.codeAwareEnabled(),
+              command.codeAwareHeadMultiplier(),
+              command.neighborRadius(),
+              command.neighborLimit(),
+              command.neighborStrategy(),
+              maxContextTokens);
       postProcessingResult =
           reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
     }
@@ -192,12 +197,16 @@ public class RepoRagSearchService {
     String locale = resolveLocale(command.generationLocale(), command.translateTo());
     int maxContextTokens = resolveMaxContextTokens(command.maxContextTokens());
     RepoRagPostProcessingRequest postProcessingRequest =
-        new RepoRagPostProcessingRequest(
-            maxContextTokens,
+        buildPostProcessingRequest(
             locale,
-            properties.getRerank().getMaxSnippetLines(),
-            properties.getPostProcessing().isLlmCompressionEnabled(),
-            resolveRerankTopN(command.rerankTopN()));
+            command.filters(),
+            command.rerankTopN(),
+            command.codeAwareEnabled(),
+            command.codeAwareHeadMultiplier(),
+            command.neighborRadius(),
+            command.neighborLimit(),
+            command.neighborStrategy(),
+            maxContextTokens);
     RepoRagSearchReranker.PostProcessingResult postProcessingResult =
         reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
 
@@ -487,6 +496,17 @@ public class RepoRagSearchService {
         throw new IllegalArgumentException("rerankTopN must be <= " + MAX_TOP_K);
       }
     }
+    if (command.codeAwareHeadMultiplier() != null) {
+      double multiplier = command.codeAwareHeadMultiplier();
+      if (multiplier < 1.0d) {
+        throw new IllegalArgumentException("codeAwareHeadMultiplier must be >= 1.0");
+      }
+      double maxMultiplier = properties.getRerank().getCodeAware().getMaxHeadMultiplier();
+      if (multiplier > maxMultiplier) {
+        throw new IllegalArgumentException(
+            "codeAwareHeadMultiplier must be <= " + maxMultiplier);
+      }
+    }
     if (command.minScoreByLanguage() != null) {
       command.minScoreByLanguage().forEach(
           (language, threshold) -> {
@@ -497,6 +517,29 @@ public class RepoRagSearchService {
     }
     if (StringUtils.hasText(command.rerankStrategy())) {
       resolveRerankStrategy(command.rerankStrategy());
+    }
+    if (StringUtils.hasText(command.neighborStrategy())) {
+      resolveNeighborStrategy(command.neighborStrategy());
+    }
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    if (command.neighborRadius() != null) {
+      int radius = command.neighborRadius();
+      if (radius < 0) {
+        throw new IllegalArgumentException("neighborRadius must be >= 0");
+      }
+      if (radius > neighbor.getMaxRadius()) {
+        throw new IllegalArgumentException("neighborRadius must be <= " + neighbor.getMaxRadius());
+      }
+    }
+    if (command.neighborLimit() != null) {
+      int limit = command.neighborLimit();
+      if (limit < 0) {
+        throw new IllegalArgumentException("neighborLimit must be >= 0");
+      }
+      int effectiveMax = Math.min(neighbor.getMaxLimit(), ABSOLUTE_MAX_NEIGHBOR_LIMIT);
+      if (limit > effectiveMax) {
+        throw new IllegalArgumentException("neighborLimit must be <= " + effectiveMax);
+      }
     }
     if (command.maxContextTokens() != null
         && command.maxContextTokens() > properties.getPostProcessing().getMaxContextTokens()) {
@@ -530,6 +573,17 @@ public class RepoRagSearchService {
         throw new IllegalArgumentException("rerankTopN must be between 1 and " + MAX_TOP_K);
       }
     }
+    if (command.codeAwareHeadMultiplier() != null) {
+      double multiplier = command.codeAwareHeadMultiplier();
+      if (multiplier < 1.0d) {
+        throw new IllegalArgumentException("codeAwareHeadMultiplier must be >= 1.0");
+      }
+      double maxMultiplier = properties.getRerank().getCodeAware().getMaxHeadMultiplier();
+      if (multiplier > maxMultiplier) {
+        throw new IllegalArgumentException(
+            "codeAwareHeadMultiplier must be <= " + maxMultiplier);
+      }
+    }
     if (command.minScoreByLanguage() != null) {
       command.minScoreByLanguage().forEach(
           (language, threshold) -> {
@@ -540,6 +594,29 @@ public class RepoRagSearchService {
     }
     if (StringUtils.hasText(command.filterExpression())) {
       filterExpressionParser.parse(command.filterExpression());
+    }
+    if (StringUtils.hasText(command.neighborStrategy())) {
+      resolveNeighborStrategy(command.neighborStrategy());
+    }
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    if (command.neighborRadius() != null) {
+      int radius = command.neighborRadius();
+      if (radius < 0) {
+        throw new IllegalArgumentException("neighborRadius must be >= 0");
+      }
+      if (radius > neighbor.getMaxRadius()) {
+        throw new IllegalArgumentException("neighborRadius must be <= " + neighbor.getMaxRadius());
+      }
+    }
+    if (command.neighborLimit() != null) {
+      int limit = command.neighborLimit();
+      if (limit < 0) {
+        throw new IllegalArgumentException("neighborLimit must be >= 0");
+      }
+      int effectiveMax = Math.min(neighbor.getMaxLimit(), ABSOLUTE_MAX_NEIGHBOR_LIMIT);
+      if (limit > effectiveMax) {
+        throw new IllegalArgumentException("neighborLimit must be <= " + effectiveMax);
+      }
     }
   }
 
@@ -593,6 +670,116 @@ public class RepoRagSearchService {
     return Math.max(1, Math.min(MAX_TOP_K, candidate));
   }
 
+  private RepoRagPostProcessingRequest buildPostProcessingRequest(
+      String locale,
+      RepoRagSearchFilters filters,
+      Integer rerankTopNOverride,
+      Boolean codeAwareEnabledOverride,
+      Double codeAwareHeadMultiplierOverride,
+      Integer neighborRadiusOverride,
+      Integer neighborLimitOverride,
+      String neighborStrategyOverride,
+      int maxContextTokens) {
+    int rerankTopN = resolveRerankTopN(rerankTopNOverride);
+    boolean codeAwareEnabled = resolveCodeAwareEnabled(codeAwareEnabledOverride);
+    double headMultiplier = resolveCodeAwareHeadMultiplier(codeAwareHeadMultiplierOverride);
+    String requestedLanguage = resolveRequestedLanguage(filters);
+    RepoRagPostProcessingRequest.NeighborStrategy neighborStrategy =
+        resolveNeighborStrategy(neighborStrategyOverride);
+    int neighborRadius = resolveNeighborRadius(neighborRadiusOverride);
+    int neighborLimit = resolveNeighborLimit(neighborLimitOverride);
+    boolean neighborEnabled = resolveNeighborEnabled(neighborStrategy);
+    return new RepoRagPostProcessingRequest(
+        maxContextTokens,
+        locale,
+        properties.getRerank().getMaxSnippetLines(),
+        properties.getPostProcessing().isLlmCompressionEnabled(),
+        rerankTopN,
+        codeAwareEnabled,
+        headMultiplier,
+        requestedLanguage,
+        neighborEnabled,
+        neighborRadius,
+        neighborLimit,
+        neighborStrategy);
+  }
+
+  private boolean resolveCodeAwareEnabled(Boolean candidate) {
+    if (candidate != null) {
+      return candidate;
+    }
+    return properties.getRerank().getCodeAware().isEnabled();
+  }
+
+  private double resolveCodeAwareHeadMultiplier(Double candidate) {
+    GitHubRagProperties.CodeAware codeAware = properties.getRerank().getCodeAware();
+    double defaultValue = Math.max(1.0d, codeAware.getDefaultHeadMultiplier());
+    double value = candidate != null ? candidate : defaultValue;
+    double sanitized = Math.max(1.0d, value);
+    double maxAllowed = Math.max(1.0d, codeAware.getMaxHeadMultiplier());
+    return Math.min(sanitized, maxAllowed);
+  }
+
+  private String resolveRequestedLanguage(RepoRagSearchFilters filters) {
+    if (filters == null || !filters.hasLanguages()) {
+      return null;
+    }
+    List<String> languages = filters.languages();
+    if (languages.size() != 1) {
+      return null;
+    }
+    String language = languages.get(0);
+    if (!StringUtils.hasText(language)) {
+      return null;
+    }
+    return language.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private RepoRagPostProcessingRequest.NeighborStrategy resolveNeighborStrategy(String candidate) {
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    String value =
+        StringUtils.hasText(candidate) ? candidate : neighbor.getStrategy();
+    if (!StringUtils.hasText(value)) {
+      return RepoRagPostProcessingRequest.NeighborStrategy.OFF;
+    }
+    try {
+      return RepoRagPostProcessingRequest.NeighborStrategy.valueOf(value.trim().toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException ex) {
+      throw new IllegalArgumentException("neighborStrategy must be one of OFF, LINEAR, PARENT_SYMBOL, CALL_GRAPH");
+    }
+  }
+
+  private int resolveNeighborRadius(Integer candidate) {
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    int maxRadius = Math.max(0, neighbor.getMaxRadius());
+    int defaultRadius = Math.max(0, neighbor.getDefaultRadius());
+    if (candidate == null) {
+      return Math.min(defaultRadius, maxRadius);
+    }
+    int sanitized = Math.max(0, candidate);
+    return Math.min(sanitized, maxRadius);
+  }
+
+  private int resolveNeighborLimit(Integer candidate) {
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    int maxLimit = Math.max(0, neighbor.getMaxLimit());
+    maxLimit = Math.min(maxLimit, ABSOLUTE_MAX_NEIGHBOR_LIMIT);
+    int defaultLimit = Math.max(0, neighbor.getDefaultLimit());
+    defaultLimit = Math.min(defaultLimit, maxLimit);
+    if (candidate == null) {
+      return defaultLimit;
+    }
+    int sanitized = Math.max(0, candidate);
+    return Math.min(sanitized, maxLimit);
+  }
+
+  private boolean resolveNeighborEnabled(RepoRagPostProcessingRequest.NeighborStrategy strategy) {
+    if (!properties.getPostProcessing().getNeighbor().isEnabled()) {
+      return false;
+    }
+    return strategy != RepoRagPostProcessingRequest.NeighborStrategy.OFF;
+  }
+
   private RerankStrategy resolveRerankStrategy(String strategy) {
     if (!StringUtils.hasText(strategy)) {
       return RerankStrategy.AUTO;
@@ -640,6 +827,11 @@ public class RepoRagSearchService {
       Map<String, Double> minScoreByLanguage,
       Integer rerankTopN,
       String rerankStrategy,
+      Boolean codeAwareEnabled,
+      Double codeAwareHeadMultiplier,
+      Integer neighborRadius,
+      Integer neighborLimit,
+      String neighborStrategy,
       RepoRagSearchFilters filters,
       String filterExpression,
       List<RepoRagSearchConversationTurn> history,
@@ -659,6 +851,11 @@ public class RepoRagSearchService {
       Double minScore,
       Map<String, Double> minScoreByLanguage,
       Integer rerankTopN,
+      Boolean codeAwareEnabled,
+      Double codeAwareHeadMultiplier,
+      Integer neighborRadius,
+      Integer neighborLimit,
+      String neighborStrategy,
       RepoRagSearchFilters filters,
       String filterExpression,
       List<RepoRagSearchConversationTurn> history,

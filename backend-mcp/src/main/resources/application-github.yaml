@@ -95,6 +95,25 @@ github:
       score-weight: ${GITHUB_RAG_RERANK_SCORE_WEIGHT:0.8}
       line-span-weight: ${GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT:0.2}
       max-snippet-lines: ${GITHUB_RAG_MAX_SNIPPET_LINES:8}
+      code-aware:
+        enabled: ${GITHUB_RAG_RERANK_CODE_AWARE_ENABLED:true}
+        default-head-multiplier: ${GITHUB_RAG_RERANK_CODE_AWARE_HEAD_MULTIPLIER:2.0}
+        max-head-multiplier: ${GITHUB_RAG_RERANK_CODE_AWARE_MAX_HEAD_MULTIPLIER:4.0}
+        score:
+          weight: ${GITHUB_RAG_RERANK_CODE_AWARE_SCORE_WEIGHT:0.75}
+          span-weight: ${GITHUB_RAG_RERANK_CODE_AWARE_SPAN_WEIGHT:0.25}
+        diversity:
+          max-per-file: ${GITHUB_RAG_RERANK_CODE_AWARE_DIVERSITY_MAX_PER_FILE:3}
+          max-per-symbol: ${GITHUB_RAG_RERANK_CODE_AWARE_DIVERSITY_MAX_PER_SYMBOL:2}
+        path-penalty:
+          penalty-multiplier: ${GITHUB_RAG_RERANK_CODE_AWARE_PATH_PENALTY:0.6}
+          deny-prefixes:
+            - generated/
+            - testdata/
+            - node_modules/
+          allow-prefixes: []
+        language-bonus: {}
+        symbol-priority: {}
     query-transformers:
       enabled: ${GITHUB_RAG_QUERY_TRANSFORMERS_ENABLED:true}
       max-history-tokens: ${GITHUB_RAG_QUERY_TRANSFORMERS_MAX_HISTORY_TOKENS:1600}
@@ -110,6 +129,13 @@ github:
       llm-compression-enabled: ${GITHUB_RAG_POST_LLM_COMPRESSION_ENABLED:true}
       llm-compression-model: ${GITHUB_RAG_POST_LLM_COMPRESSION_MODEL:gpt-4o-mini}
       llm-compression-temperature: ${GITHUB_RAG_POST_LLM_COMPRESSION_TEMPERATURE:0.1}
+      neighbor:
+        enabled: ${GITHUB_RAG_POST_NEIGHBOR_ENABLED:true}
+        default-radius: ${GITHUB_RAG_POST_NEIGHBOR_DEFAULT_RADIUS:1}
+        default-limit: ${GITHUB_RAG_POST_NEIGHBOR_DEFAULT_LIMIT:6}
+        max-radius: ${GITHUB_RAG_POST_NEIGHBOR_MAX_RADIUS:5}
+        max-limit: ${GITHUB_RAG_POST_NEIGHBOR_MAX_LIMIT:12}
+        strategy: ${GITHUB_RAG_POST_NEIGHBOR_STRATEGY:LINEAR}
     generation:
       allow-empty-context: ${GITHUB_RAG_GENERATION_ALLOW_EMPTY_CONTEXT:true}
       prompt-template: classpath:prompts/github-rag-context.st
