@@ -209,6 +209,60 @@ class RepoRagSearchServiceTest {
   }
 
   @Test
+  void generationFallsBackToRawQueryWhenPipelineQueryMissing() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("snippet")
+            .metadata(Map.of("file_path", "src/Main.java"))
+            .score(0.7)
+            .build();
+    RepoRagRetrievalPipeline.PipelineResult pipelineResult =
+        new RepoRagRetrievalPipeline.PipelineResult(null, List.of(doc), List.of(), List.of());
+    when(pipeline.execute(any())).thenReturn(pipelineResult);
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "fallback query",
+            5,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    service.search(command);
+
+    ArgumentCaptor<RepoRagGenerationService.GenerationCommand> captor =
+        ArgumentCaptor.forClass(RepoRagGenerationService.GenerationCommand.class);
+    verify(generationService).generate(captor.capture());
+    assertThat(captor.getValue().query().text()).isEqualTo("fallback query");
+  }
+
+  @Test
   void appliesLanguageThresholds() {
     when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
         .thenReturn(Optional.of(readyState()));

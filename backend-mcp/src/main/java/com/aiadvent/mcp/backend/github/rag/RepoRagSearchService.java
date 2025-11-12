@@ -89,6 +89,7 @@ public class RepoRagSearchService {
 
     RepoRagRetrievalPipeline.PipelineResult pipelineResult =
         retrievalPipeline.execute(pipelineInput);
+    Query finalQuery = ensureQueryText(pipelineResult.finalQuery(), command.rawQuery());
     List<Document> documents =
         applyPathFilters(
             applyLanguageThresholds(
@@ -114,7 +115,7 @@ public class RepoRagSearchService {
               command.neighborStrategy(),
               maxContextTokens);
       postProcessingResult =
-          reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
+          reranker.process(finalQuery, documents, postProcessingRequest);
     }
 
     List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
@@ -124,7 +125,7 @@ public class RepoRagSearchService {
     RepoRagGenerationService.GenerationResult generationResult =
         generationService.generate(
             new RepoRagGenerationService.GenerationCommand(
-                pipelineResult.finalQuery(),
+                finalQuery,
                 postProcessingResult.documents(),
                 command.repoOwner(),
                 command.repoName(),
@@ -145,7 +146,7 @@ public class RepoRagSearchService {
             command.repoName(),
             command.instructionsTemplate(),
             locale,
-            pipelineResult.finalQuery(),
+            finalQuery,
             generationResult.augmentedPrompt(),
             generationResult.contextMissing(),
             generationResult.instructions());
@@ -189,6 +190,7 @@ public class RepoRagSearchService {
 
     RepoRagRetrievalPipeline.PipelineResult pipelineResult =
         retrievalPipeline.execute(pipelineInput);
+    Query finalQuery = ensureQueryText(pipelineResult.finalQuery(), command.rawQuery());
     List<Document> documents =
         applyPathFilters(
             applyLanguageThresholds(
@@ -208,7 +210,7 @@ public class RepoRagSearchService {
             command.neighborStrategy(),
             maxContextTokens);
     RepoRagSearchReranker.PostProcessingResult postProcessingResult =
-        reranker.process(pipelineResult.finalQuery(), documents, postProcessingRequest);
+        reranker.process(finalQuery, documents, postProcessingRequest);
 
     List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
     appliedModules.addAll(postProcessingResult.appliedModules());
@@ -217,7 +219,7 @@ public class RepoRagSearchService {
     RepoRagGenerationService.GenerationResult generationResult =
         generationService.generate(
             new RepoRagGenerationService.GenerationCommand(
-                pipelineResult.finalQuery(),
+                finalQuery,
                 postProcessingResult.documents(),
                 safeDisplay(command.displayRepoOwner()),
                 safeDisplay(command.displayRepoName()),
@@ -238,7 +240,7 @@ public class RepoRagSearchService {
             safeDisplay(command.displayRepoName()),
             command.instructionsTemplate(),
             locale,
-            pipelineResult.finalQuery(),
+            finalQuery,
             generationResult.augmentedPrompt(),
             generationResult.contextMissing(),
             generationResult.instructions());
@@ -622,6 +624,24 @@ public class RepoRagSearchService {
 
   private String resolveTranslateTo(SearchCommand command) {
     return resolveTranslateTo(command.translateTo());
+  }
+
+  private Query ensureQueryText(Query candidate, String fallback) {
+    String text = candidate != null ? candidate.text() : null;
+    if (!StringUtils.hasText(text)) {
+      text = fallback;
+    }
+    if (!StringUtils.hasText(text)) {
+      throw new IllegalArgumentException("rawQuery must not be blank");
+    }
+    List<org.springframework.ai.chat.messages.Message> history =
+        candidate != null && candidate.history() != null ? candidate.history() : List.of();
+    Map<String, Object> context =
+        candidate != null && candidate.context() != null ? candidate.context() : Map.of();
+    if (candidate != null && text.equals(candidate.text())) {
+      return candidate;
+    }
+    return Query.builder().text(text).history(history).context(context).build();
   }
 
   private String resolveTranslateTo(String candidate) {
