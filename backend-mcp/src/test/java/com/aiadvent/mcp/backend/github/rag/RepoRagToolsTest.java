@@ -85,6 +85,54 @@ class RepoRagToolsTest {
   }
 
   @Test
+  void ragSearchSimpleGlobalUsesGlobalSearch() {
+    GitHubRepositoryFetchRegistry.LastFetchContext context =
+        new GitHubRepositoryFetchRegistry.LastFetchContext(
+            "Example", "Repo", "refs/heads/main", "sha", "ws", Instant.now());
+    when(fetchRegistry.latest()).thenReturn(Optional.of(context));
+    RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
+    entity.setNamespace("repo:example/repo");
+    entity.setRepoOwner("example");
+    entity.setRepoName("repo");
+    entity.setReady(true);
+    when(namespaceStateService.findByRepoOwnerAndRepoName("example", "repo"))
+        .thenReturn(Optional.of(entity));
+    RepoRagSearchService.SearchResponse response =
+        new RepoRagSearchService.SearchResponse(
+            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+    when(searchService.searchGlobal(any())).thenReturn(response);
+
+    RepoRagTools.RepoRagSearchResponse result =
+        tools.ragSearchSimpleGlobal(new RepoRagTools.RepoRagSimpleGlobalSearchInput("Query"));
+
+    assertThat(result.instructions()).isEqualTo("instructions");
+    assertThat(result.warnings()).isEmpty();
+    ArgumentCaptor<RepoRagSearchService.GlobalSearchCommand> captor =
+        ArgumentCaptor.forClass(RepoRagSearchService.GlobalSearchCommand.class);
+    verify(searchService).searchGlobal(captor.capture());
+    assertThat(captor.getValue().displayRepoOwner()).isEqualTo("example");
+    assertThat(captor.getValue().displayRepoName()).isEqualTo("repo");
+  }
+
+  @Test
+  void ragSearchSimpleGlobalFallsBackWithoutFetch() {
+    when(fetchRegistry.latest()).thenReturn(Optional.empty());
+    RepoRagSearchService.SearchResponse response =
+        new RepoRagSearchService.SearchResponse(
+            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+    when(searchService.searchGlobal(any())).thenReturn(response);
+
+    RepoRagTools.RepoRagSearchResponse result =
+        tools.ragSearchSimpleGlobal(new RepoRagTools.RepoRagSimpleGlobalSearchInput("any"));
+
+    assertThat(result.warnings()).isEmpty();
+    ArgumentCaptor<RepoRagSearchService.GlobalSearchCommand> captor =
+        ArgumentCaptor.forClass(RepoRagSearchService.GlobalSearchCommand.class);
+    verify(searchService).searchGlobal(captor.capture());
+    assertThat(captor.getValue().displayRepoOwner()).isEqualTo("global");
+  }
+
+  @Test
   void ragSearchGlobalUsesService() {
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(

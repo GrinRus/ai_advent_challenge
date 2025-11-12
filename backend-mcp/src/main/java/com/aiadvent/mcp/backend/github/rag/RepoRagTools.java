@@ -74,28 +74,54 @@ public class RepoRagTools {
       name = "repo.rag_search",
       description =
           """
-          Основной инструмент поиска по GitHub RAG. Передавай `repoOwner`, `repoName` и `rawQuery`,
-          остальные параметры управляют этапами pipeline:
+          Основной инструмент поиска по GitHub RAG.
 
-          Retrieval
-          • `topK`/`topKPerQuery` (1–40) контролируют количество документов.
-          • `multiQuery` включает/настраивает генерацию подзапросов.
-          • `filters`/`filterExpression` ограничивают язык и путь.
+          Обязательные аргументы:
+          • `repoOwner` — владелец репозитория (строка, пример `"GrinRus"`).
+          • `repoName` — имя репозитория (пример `"ai_advent_challenge"`).
+          • `rawQuery` — текст запроса/вопроса пользователя.
 
-          Post-processing
-          • `rerankTopN`, `codeAwareEnabled`, `codeAwareHeadMultiplier` управляют rerank’ом.
-          • `neighborStrategy` ОБЯЗАТЕЛЬНО из OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH; подбирай его
-            вместе с `neighborRadius` (0–5) и `neighborLimit` (≤12). Для простого сценария указывай
-            LINEAR + radius/limit из бизнес-контекста. CALL_GRAPH доступен, только когда индекс содержит AST.
-          • `maxContextTokens` срезает выдачу для генерации.
+          Retrieval (поиск):
+          • `topK` / `topKPerQuery` — сколько документов вернуть (1–40). Если не переданы, берутся дефолты сервера.
+          • `multiQuery` — объект `{enabled, queries, maxQueries}` для генерации подзапросов.
+          • `filters.languages` — массив языков (например `["java","python"]`), приводится к lower-case.
+          • `filters.pathGlobs` — массив glob-шаблонов (`["backend/**","docs/*.md"]`).
+          • `filterExpression` — текстовое условие vector store (например `"repo_owner == 'grinrus'"`).
+          • `minScore` / `minScoreByLanguage` — пороги сходства (0.1–0.99).
 
-          Generation
-          • `allowEmptyContext`, `useCompression`, `translateTo`, `generationLocale`,
-            `instructionsTemplate` управляют финальным ответом.
+          Post-processing:
+          • `rerankTopN`, `codeAwareEnabled`, `codeAwareHeadMultiplier` — управление code-aware rerank’ом.
+          • `neighborStrategy` (OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH) + `neighborRadius` (0–5) + `neighborLimit` (≤12) —
+            логика расширения контекста соседями.
+          • `maxContextTokens` — лимит токенов после post-processing (≥256).
 
-          Возвращает чанки с метаданными, `augmentedPrompt`, финальные инструкции, признаки
-          `contextMissing`/`noResults` и список `appliedModules`. Если параметр не требуется,
-          передавай `null`, чтобы использовать конфиг сервера.
+          Generation:
+          • `allowEmptyContext` — разрешить пустой контекст (true/false).
+          • `useCompression` — включить Query Compression перед обращением к LLM.
+          • `translateTo` — язык, на котором нужно получить финальный ответ (пример `"en"`).
+          • `generationLocale` — локаль, используемая в шаблоне инструкций (например `"ru-RU"`).
+          • `instructionsTemplate` — кастомный System Prompt. Поддерживаемые плейсхолдеры:
+            `{{rawQuery}}`, `{{repoOwner}}`, `{{repoName}}`, `{{locale}}`, `{{augmentedPrompt}}`, `{{contextStatus}}`.
+
+          Выход: список `matches[]` (путь/сниппет/метаданные), `augmentedPrompt`, `instructions`,
+          признаки `contextMissing` и `noResults`, причина `noResultsReason`, список этапов `appliedModules`,
+          а также `warnings[]` с автокоррекциями входных параметров.
+
+          Пример вызова:
+          ```
+          {
+            "repoOwner": "GrinRus",
+            "repoName": "ai_advent_challenge",
+            "rawQuery": "Как устроен backend?",
+            "topK": 12,
+            "filters": {"languages": ["java"], "pathGlobs": ["backend/**"]},
+            "neighborStrategy": "LINEAR",
+            "neighborRadius": 1,
+            "neighborLimit": 6,
+            "allowEmptyContext": false,
+            "generationLocale": "ru"
+          }
+          ```
           """)
   public RepoRagSearchResponse ragSearch(RepoRagSearchInput input) {
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagSearchInput> sanitized =
@@ -208,19 +234,101 @@ public class RepoRagTools {
   }
 
   @Tool(
+      name = "repo.rag_search_simple_global",
+      description =
+          """
+          Быстрый глобальный поиск по всем READY namespace. Принимает только `rawQuery`, все остальные
+          параметры — дефолтные (как у `repo.rag_search_global`). Для подсказок в UI использует пару
+          owner/name из последнего `github.repository_fetch` (должен быть READY).
+          """)
+  public RepoRagSearchResponse ragSearchSimpleGlobal(RepoRagSimpleGlobalSearchInput input) {
+    RepoRagToolInputSanitizer.SanitizationResult<RepoRagSimpleSearchInput> sanitized =
+        inputSanitizer.sanitizeSimple(new RepoRagSimpleSearchInput(input.rawQuery()));
+    if (!StringUtils.hasText(sanitized.value().rawQuery())) {
+      throw new IllegalArgumentException("rawQuery must not be blank");
+    }
+    List<String> warnings = new java.util.ArrayList<>(sanitized.warnings());
+    java.util.concurrent.atomic.AtomicReference<String> displayOwner = new java.util.concurrent.atomic.AtomicReference<>("global");
+    java.util.concurrent.atomic.AtomicReference<String> displayName = new java.util.concurrent.atomic.AtomicReference<>("global");
+    fetchRegistry
+        .latest()
+        .ifPresent(
+            context -> {
+              String normalizedOwner = normalize(context.repoOwner());
+              String normalizedName = normalize(context.repoName());
+              namespaceStateService
+                  .findByRepoOwnerAndRepoName(normalizedOwner, normalizedName)
+                  .filter(RepoRagNamespaceStateEntity::isReady)
+                  .ifPresentOrElse(
+                      state -> {
+                        displayOwner.set(state.getRepoOwner());
+                        displayName.set(state.getRepoName());
+                      },
+                      () ->
+                          warnings.add(
+                              "Последний github.repository_fetch ещё не READY — выдача будет с общим тегом global"));
+            });
+    RepoRagSearchService.GlobalSearchCommand command =
+        new RepoRagSearchService.GlobalSearchCommand(
+            sanitized.value().rawQuery(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            displayOwner.get(),
+            displayName.get());
+    RepoRagSearchService.SearchResponse response = searchService.searchGlobal(command);
+    return toResponse(response, warnings);
+  }
+
+  @Tool(
       name = "repo.rag_search_global",
       description =
           """
-          Делает RAG-поиск сразу по всем `READY` namespace и возвращает те же поля, что `repo.rag_search`,
-          добавляя в `matches[].metadata` фактический `repo_owner`/`repo_name` найденного документа. Полезно,
-          когда пользователь не знает конкретный репозиторий или хочет разведку по каталогу.
+          Делает RAG-поиск по всем `READY` namespace.
 
-          • Поддерживает те же параметры Retrieval/Post-processing: `topK`, `multiQuery`, `filters`,
-            `neighborStrategy` (OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH), `maxContextTokens` и т.п.
-          • Параметры `displayRepoOwner`/`displayRepoName` позволяют задать, как подписывать выдачу в UI
-            (например, «mixed results for {org}»), если нужно отличать фактический репо от выбранного фильтра.
-          • Остальные поля (`allowEmptyContext`, `useCompression`, `generationLocale`, `instructionsTemplate`)
-            управляют генерацией ответа аналогично `repo.rag_search`.
+          Обязательный аргумент:
+          • `rawQuery` — текст запроса.
+
+          Дополнительные параметры идентичны `repo.rag_search` (см. описание выше), за исключением
+          отсутствия `repoOwner/repoName`. Обратите внимание:
+          • `filters` и `filterExpression` применяются ко всем namespace (например, `language == 'python'`).
+          • `displayRepoOwner` / `displayRepoName` — псевдонимы, которые покажет UI в ответе
+            (пример: `"Mixed"` / `"catalog"`). В `matches[].metadata` всегда будут реальные `repo_owner`/`repo_name`.
+          • `neighborStrategy`, `neighborRadius`, `neighborLimit`, `topK`, `multiQuery`, `maxContextTokens`,
+            `allowEmptyContext`, `useCompression`, `generationLocale`, `instructionsTemplate` работают аналогично.
+
+          Пример вызова:
+          ```
+          {
+            "rawQuery": "policy engine implementation",
+            "filters": {"languages": ["go"], "pathGlobs": ["**/policy/**"]},
+            "topK": 15,
+            "multiQuery": {"enabled": true, "queries": 4},
+            "neighborStrategy": "CALL_GRAPH",
+            "neighborRadius": 1,
+            "neighborLimit": 4,
+            "displayRepoOwner": "Mixed",
+            "displayRepoName": "catalog"
+          }
+          ```
           """)
   public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagGlobalSearchInput> sanitized =
@@ -382,4 +490,6 @@ public class RepoRagTools {
       String noResultsReason,
       List<String> appliedModules,
       List<String> warnings) {}
+
+  public record RepoRagSimpleGlobalSearchInput(String rawQuery) {}
 }

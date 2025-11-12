@@ -122,15 +122,20 @@ public class RepoRagSearchService {
     appliedModules.addAll(postProcessingResult.appliedModules());
 
     boolean allowEmptyContext = resolveAllowEmptyContext(command);
-    RepoRagGenerationService.GenerationResult generationResult =
-        generationService.generate(
-            new RepoRagGenerationService.GenerationCommand(
-                finalQuery,
-                postProcessingResult.documents(),
-                command.repoOwner(),
-                command.repoName(),
-                locale,
-                allowEmptyContext));
+    RepoRagGenerationService.GenerationResult generationResult;
+    try {
+      generationResult =
+          generationService.generate(
+              new RepoRagGenerationService.GenerationCommand(
+                  finalQuery,
+                  postProcessingResult.documents(),
+                  command.repoOwner(),
+                  command.repoName(),
+                  locale,
+                  allowEmptyContext));
+    } catch (IllegalArgumentException ex) {
+      throw enrichGenerationException(ex);
+    }
 
     if (generationResult.contextMissing() && !allowEmptyContext) {
       throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
@@ -216,15 +221,20 @@ public class RepoRagSearchService {
     appliedModules.addAll(postProcessingResult.appliedModules());
 
     boolean allowEmptyContext = resolveAllowEmptyContext(command.allowEmptyContext());
-    RepoRagGenerationService.GenerationResult generationResult =
-        generationService.generate(
-            new RepoRagGenerationService.GenerationCommand(
-                finalQuery,
-                postProcessingResult.documents(),
-                safeDisplay(command.displayRepoOwner()),
-                safeDisplay(command.displayRepoName()),
-                locale,
-                allowEmptyContext));
+    RepoRagGenerationService.GenerationResult generationResult;
+    try {
+      generationResult =
+          generationService.generate(
+              new RepoRagGenerationService.GenerationCommand(
+                  finalQuery,
+                  postProcessingResult.documents(),
+                  safeDisplay(command.displayRepoOwner()),
+                  safeDisplay(command.displayRepoName()),
+                  locale,
+                  allowEmptyContext));
+    } catch (IllegalArgumentException ex) {
+      throw enrichGenerationException(ex);
+    }
 
     if (generationResult.contextMissing() && !allowEmptyContext) {
       throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
@@ -642,6 +652,32 @@ public class RepoRagSearchService {
       return candidate;
     }
     return Query.builder().text(text).history(history).context(context).build();
+  }
+
+  private IllegalArgumentException enrichGenerationException(IllegalArgumentException ex) {
+    String message = ex.getMessage();
+    if (!StringUtils.hasText(message)) {
+      return ex;
+    }
+    if (message.contains("Missing variable names")) {
+      String missing = extractBracketContent(message);
+      String detailed =
+          "LLM prompt требует заполнить переменные "
+              + (StringUtils.hasText(missing) ? missing : "query/context")
+              + ". Убедись, что `rawQuery` не пустой и инструкции/шаблоны включают допустимые плейсхолдеры: "
+              + "{{rawQuery}}, {{repoOwner}}, {{repoName}}, {{locale}}, {{augmentedPrompt}}, {{contextStatus}}.";
+      return new IllegalArgumentException(detailed, ex);
+    }
+    return ex;
+  }
+
+  private String extractBracketContent(String source) {
+    int start = source.indexOf('[');
+    int end = source.indexOf(']', start + 1);
+    if (start >= 0 && end > start) {
+      return source.substring(start + 1, end);
+    }
+    return "";
   }
 
   private String resolveTranslateTo(String candidate) {

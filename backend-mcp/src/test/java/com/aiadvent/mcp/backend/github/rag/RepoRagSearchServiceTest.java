@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -260,6 +261,62 @@ class RepoRagSearchServiceTest {
         ArgumentCaptor.forClass(RepoRagGenerationService.GenerationCommand.class);
     verify(generationService).generate(captor.capture());
     assertThat(captor.getValue().query().text()).isEqualTo("fallback query");
+  }
+
+  @Test
+  void surfacesDetailedMissingPlaceholderError() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("raw").history(List.of()).build();
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("snippet")
+            .metadata(Map.of("file_path", "src/Main.java"))
+            .score(0.7)
+            .build();
+    when(pipeline.execute(any())).thenReturn(
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult rerankResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(rerankResult);
+    when(generationService.generate(any()))
+        .thenThrow(
+            new IllegalArgumentException(
+                "Not all variables were replaced in the template. Missing variable names are: [query]"));
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(),
+            null,
+            Boolean.TRUE,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null);
+
+    assertThatThrownBy(() -> service.search(command))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("LLM prompt")
+        .hasMessageContaining("query");
   }
 
   @Test
