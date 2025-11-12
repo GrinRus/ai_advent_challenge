@@ -1188,3 +1188,13 @@
   - [ ] Диаграмма AST-aware пайплайна (fetch → tree-sitter → chunking → vector store → call graph) + таблица поддерживаемых языков/ограничений.
   - [ ] Operator playbook: признаки успешного AST шага (флаг `ast_available`, `appliedModules`), типичные ошибки загрузки либ и как их чинить.
   - [ ] README: новая секция «AST-aware indexing», примеры env-конфига `github.rag.ast.*`, команды для пересборки грамматик, обновление примеров `repo.rag_search` с `neighborOfSpanHash`.
+
+## Wave 35 — RAG input normalization layer
+Цель: научить MCP самоисправлять «свободные» запросы от LLM/агентов, чтобы инструменты RAG всегда получали валидный DTO и не падали от некорректных плейсхолдеров или параметров.
+
+- [ ] Добавить сервис `RepoRagToolInputSanitizer`, который принимает DTO (`RepoRagSearchInput`, `RepoRagGlobalSearchInput`, `RepoRagSimpleSearchInput`) и возвращает нормализованные значения: трим строк, дефолты для `neighbor*`, `multiQuery`, `generationLocale`, фильтры. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RepoRagToolInputSanitizer.java`
+- [ ] Встроить детектор/исправитель плейсхолдеров `instructionsTemplate`: `{{query}}` → `{{rawQuery}}`, неизвестные переменные удаляются или выдают user-friendly ошибку. → `RepoRagToolInputSanitizer`, `RepoRagSearchService.renderInstructions`
+- [ ] Добавить словарь синонимов/локализаций для enum-полей (`neighborStrategy`, `translateTo`, языки фильтров) + валидатор диапазонов (topK, neighborLimit, multiQuery). → `RepoRagToolInputSanitizer`
+- [ ] Реализовать автозаполнение owner/name: при пустых значениях использовать последний READY namespace (`GitHubRepositoryFetchRegistry`) либо `displayRepo*` (для global). → `RepoRagToolInputSanitizer`, `RepoRagTools`
+- [ ] Интегрировать санитайзер в `RepoRagTools` перед формированием `SearchCommand`, добавить метрики/логи о применённых исправлениях. → `RepoRagTools`, `docs/architecture/github-rag-modular.md`
+- [ ] Покрыть санитайзер unit-тестами и обновить документацию: список поддерживаемых плейсхолдеров, правила нормализации, типовые автозамены. → `backend-mcp/src/test/java/...`, `docs/guides/mcp-operators.md`
