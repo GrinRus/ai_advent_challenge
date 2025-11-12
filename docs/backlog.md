@@ -1147,7 +1147,9 @@
 
 ### Persistence, тесты и документация
 - [ ] Добавить Liquibase-изменения: таблица `repo_rag_symbol_graph`, возможное обновление `metadata` default. Описать rollback и оставить замечание, что существующие namespace переходят на новый формат только после повторного fetch/index (никаких фоновых backfill). → `backend-mcp/src/main/resources/db/changelog/github/db.changelog-rag.yaml`
-- [ ] Расширить тестовое покрытие: unit-тесты `TreeSitterAnalyzer` (mock grammar), `CodeAwareDocumentPostProcessor`, `NeighborChunkDocumentPostProcessor`; интеграции, покрывающие добавление соседей, CALL_GRAPH стратегию, проверки лимитов и smoke-тест загрузки нативных либ на CI. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/*`
+- [ ] Расширить слой persistence: `RepoRagSymbolGraphEntity`/Repository + интеграция с `RepoRagSymbolService`, чтобы стратегия `neighborStrategy=CALL_GRAPH` использовала реальные данные (fallback допускается только до окончания Wave 34). → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/persistence/*`, `RepoRagSymbolService.java`
+- [ ] Расширить тестовое покрытие: unit-тесты `CodeAwareDocumentPostProcessor`, `NeighborChunkDocumentPostProcessor`, интеграции `RepoRagSearchService`/`RepoRagTools` с проверкой `appliedModules`, лимитов, валидаций и CALL_GRAPH. Добавить smoke-тест CLI/CI, который убеждается, что neighbor параметры документированы и не ломают SLA. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/*`
+- [ ] Обновить README: перечислить новые параметры (`codeAwareEnabled`, `codeAwareHeadMultiplier`, `neighborRadius/Limit/Strategy`), привести пример ответа с `appliedModules+=post.neighbor-expand` и `metadata.neighborOfSpanHash`, сослаться на Spring AI docs. → `README.md`, `docs/guides/mcp-operators.md`, `docs/architecture/github-rag-modular.md`
 
 
 ## Wave 34 — AST-aware indexing & metadata
