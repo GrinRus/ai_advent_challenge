@@ -2,7 +2,9 @@ package com.aiadvent.mcp.backend.config;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "github.rag")
@@ -292,6 +294,7 @@ public class GitHubRagProperties {
     private double scoreWeight = 0.8;
     private double lineSpanWeight = 0.2;
     private int maxSnippetLines = 8;
+    private final CodeAware codeAware = new CodeAware();
 
     public int getTopN() {
       return topN;
@@ -323,6 +326,137 @@ public class GitHubRagProperties {
 
     public void setMaxSnippetLines(int maxSnippetLines) {
       this.maxSnippetLines = maxSnippetLines;
+    }
+
+    public CodeAware getCodeAware() {
+      return codeAware;
+    }
+  }
+
+  public static class CodeAware {
+    private boolean enabled = true;
+    private double defaultHeadMultiplier = 2.0;
+    private double maxHeadMultiplier = 4.0;
+    private final Map<String, Double> languageBonus = new HashMap<>();
+    private final Map<String, Double> symbolPriority = new HashMap<>();
+    private final PathPenalty pathPenalty = new PathPenalty();
+    private final Diversity diversity = new Diversity();
+    private final Score score = new Score();
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public double getDefaultHeadMultiplier() {
+      return defaultHeadMultiplier;
+    }
+
+    public void setDefaultHeadMultiplier(double defaultHeadMultiplier) {
+      this.defaultHeadMultiplier = defaultHeadMultiplier;
+    }
+
+    public double getMaxHeadMultiplier() {
+      return maxHeadMultiplier;
+    }
+
+    public void setMaxHeadMultiplier(double maxHeadMultiplier) {
+      this.maxHeadMultiplier = maxHeadMultiplier;
+    }
+
+    public Map<String, Double> getLanguageBonus() {
+      return languageBonus;
+    }
+
+    public Map<String, Double> getSymbolPriority() {
+      return symbolPriority;
+    }
+
+    public PathPenalty getPathPenalty() {
+      return pathPenalty;
+    }
+
+    public Diversity getDiversity() {
+      return diversity;
+    }
+
+    public Score getScore() {
+      return score;
+    }
+  }
+
+  public static class PathPenalty {
+    private List<String> denyPrefixes = new ArrayList<>();
+    private List<String> allowPrefixes = new ArrayList<>();
+    private double penaltyMultiplier = 0.6;
+
+    public List<String> getDenyPrefixes() {
+      return denyPrefixes;
+    }
+
+    public void setDenyPrefixes(List<String> denyPrefixes) {
+      this.denyPrefixes = denyPrefixes;
+    }
+
+    public List<String> getAllowPrefixes() {
+      return allowPrefixes;
+    }
+
+    public void setAllowPrefixes(List<String> allowPrefixes) {
+      this.allowPrefixes = allowPrefixes;
+    }
+
+    public double getPenaltyMultiplier() {
+      return penaltyMultiplier;
+    }
+
+    public void setPenaltyMultiplier(double penaltyMultiplier) {
+      this.penaltyMultiplier = penaltyMultiplier;
+    }
+  }
+
+  public static class Diversity {
+    private int maxPerFile = 3;
+    private int maxPerSymbol = 2;
+
+    public int getMaxPerFile() {
+      return maxPerFile;
+    }
+
+    public void setMaxPerFile(int maxPerFile) {
+      this.maxPerFile = maxPerFile;
+    }
+
+    public int getMaxPerSymbol() {
+      return maxPerSymbol;
+    }
+
+    public void setMaxPerSymbol(int maxPerSymbol) {
+      this.maxPerSymbol = maxPerSymbol;
+    }
+  }
+
+  public static class Score {
+    private double weight = 0.75;
+    private double spanWeight = 0.25;
+
+    public double getWeight() {
+      return weight;
+    }
+
+    public void setWeight(double weight) {
+      this.weight = weight;
+    }
+
+    public double getSpanWeight() {
+      return spanWeight;
+    }
+
+    public void setSpanWeight(double spanWeight) {
+      this.spanWeight = spanWeight;
     }
   }
 
@@ -409,6 +543,7 @@ public class GitHubRagProperties {
     private boolean llmCompressionEnabled = true;
     private String llmCompressionModel = "gpt-4o-mini";
     private double llmCompressionTemperature = 0.0;
+    private final Neighbor neighbor = new Neighbor();
 
     public int getMaxContextTokens() {
       return maxContextTokens;
@@ -440,6 +575,67 @@ public class GitHubRagProperties {
 
     public void setLlmCompressionTemperature(double llmCompressionTemperature) {
       this.llmCompressionTemperature = llmCompressionTemperature;
+    }
+
+    public Neighbor getNeighbor() {
+      return neighbor;
+    }
+  }
+
+  public static class Neighbor {
+    private boolean enabled = true;
+    private int defaultRadius = 1;
+    private int defaultLimit = 6;
+    private int maxRadius = 5;
+    private int maxLimit = 12;
+    private String strategy = "LINEAR";
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public int getDefaultRadius() {
+      return defaultRadius;
+    }
+
+    public void setDefaultRadius(int defaultRadius) {
+      this.defaultRadius = defaultRadius;
+    }
+
+    public int getDefaultLimit() {
+      return defaultLimit;
+    }
+
+    public void setDefaultLimit(int defaultLimit) {
+      this.defaultLimit = defaultLimit;
+    }
+
+    public int getMaxRadius() {
+      return maxRadius;
+    }
+
+    public void setMaxRadius(int maxRadius) {
+      this.maxRadius = maxRadius;
+    }
+
+    public int getMaxLimit() {
+      return maxLimit;
+    }
+
+    public void setMaxLimit(int maxLimit) {
+      this.maxLimit = maxLimit;
+    }
+
+    public String getStrategy() {
+      return strategy;
+    }
+
+    public void setStrategy(String strategy) {
+      this.strategy = strategy;
     }
   }
 
