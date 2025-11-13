@@ -1228,3 +1228,14 @@
   - REST-smoke: `RepoRagToolsIT` (Spring-контекст с реальными `RepoRagToolInputSanitizer` + `RagParameterGuard`) подтверждает выбор профиля и модуль `profile:*`.
   - E2E сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) будут выполнены совместно с клиентскими командами после перевода UI/агентов на новый контракт.
   - Документация и релизные заметки: `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `docs/releases/wave36.md`.
+
+## Wave 37 — RAG free-form coverage & dual responses
+Цель: обеспечить «свободный» ввод пользователя (описание проекта, вопросы без технических терминов) устойчивым покрытием и возвращать как короткий summary, так и полный raw-ответ, даже если основное retrieval не нашло релевантных чанков.
+
+### Retrieval resilience
+- [ ] **Адаптивный aggressive-профиль**: добавить в `GitHubRagProperties.RagParameterProfile` поля `minScoreFallback`, `minScoreClassifier`, `overviewBoostKeywords[]`, обновить `application-github.yaml` и валидацию (`GitHubRagProperties.java`, `docs/guides/mcp-operators.md`). Guard должен уметь переключать план в «пониженный порог» режим (`plan.mode=LOW_THRESHOLD`) и логировать `appliedModules+=retrieval.low-threshold`, если классификатор распознал общий вопрос. → `GitHubRagProperties`, `RagParameterGuard`, `RepoRagSearchService.SearchCommand`
+- [ ] **Seeded fallback run**: при `matches.isEmpty()` выполнять вторую попытку поиска с тем же профилем, но (1) пониженным `minScore`, (2) принудительным multi-query (подсказки «project overview», «README summary»), (3) фильтром по README/backlog путям. В ответ добавлять `warnings[]` и модуль `retrieval.overview-seed`. → `RepoRagRetrievalPipeline`, `RepoRagSearchService`, `RepoRagTools`
+
+### Response UX
+- [ ] **Dual-channel ответы**: обновить DTO `RepoRagSearchResponse`/`RepoRagSearchMatch` и GenerationService, чтобы возвращать `summary` (3–4 предложения) и `rawAnswer` (полный augmented prompt). Summary генерируется отдельным prompt (`prompts/github-rag-summary.st`), rawAnswer остаётся текущим `augmentedPrompt`. Во входящих DTO инструментов добавить флаг или enum (`responseChannel=summary|raw|both`), по которому SearchService формирует нужные каналы; дефолт — `both`. Обновить MCP инструменты и UI, чтобы клиенты могли явно выбирать, что показывать. → `RepoRagGenerationService`, `RepoRagTools`, `frontend`, `docs/guides/mcp-operators.md`
+- [ ] **Telemetry & tests**: покрыть новую ветку fallback (unit `RepoRagSearchServiceTest`, integration `RepoRagToolsIT`), обновить release notes (`docs/releases/wave37.md`). Проверить, что summary/raw доступны в API и что warnings отражаются в логах. → `backend-mcp/src/test/java/...`, `docs/releases/wave37.md`, `README.md`
