@@ -140,6 +140,9 @@ public class GitHubRagProperties implements InitializingBean {
     Integer topK = validateTopK(raw.getTopK(), "topK", name);
     Integer topKPerQuery = validateTopK(raw.getTopKPerQuery(), "topKPerQuery", name);
     Double minScore = validateScore(raw.getMinScore(), "minScore", name);
+    Double minScoreFallback = validateScore(raw.getMinScoreFallback(), "minScoreFallback", name);
+    String minScoreClassifier = normalizeClassifier(raw.getMinScoreClassifier());
+    List<String> overviewBoostKeywords = sanitizeOverviewKeywords(raw.getOverviewBoostKeywords());
     Map<String, Double> minScoreByLanguage = sanitizeLanguageThresholds(raw.getMinScoreByLanguage(), name);
     Integer rerankTopN = validateTopK(raw.getRerankTopN(), "rerankTopN", name);
     Boolean codeAwareEnabled = raw.getCodeAwareEnabled();
@@ -157,7 +160,10 @@ public class GitHubRagProperties implements InitializingBean {
         codeAwareEnabled,
         codeAwareHeadMultiplier,
         multiQuery,
-        neighbor);
+        neighbor,
+        minScoreFallback,
+        minScoreClassifier,
+        overviewBoostKeywords);
   }
 
   private Integer validateTopK(Integer candidate, String field, String profileName) {
@@ -216,6 +222,35 @@ public class GitHubRagProperties implements InitializingBean {
           sanitized.put(language.toLowerCase(Locale.ROOT), threshold);
         });
     return Collections.unmodifiableMap(sanitized);
+  }
+
+  private List<String> sanitizeOverviewKeywords(List<String> source) {
+    if (source == null || source.isEmpty()) {
+      return List.of();
+    }
+    List<String> normalized = new ArrayList<>();
+    for (String keyword : source) {
+      if (!StringUtils.hasText(keyword)) {
+        continue;
+      }
+      String token = keyword.trim().toLowerCase(Locale.ROOT);
+      if (!normalized.contains(token)) {
+        normalized.add(token);
+      }
+    }
+    return List.copyOf(normalized);
+  }
+
+  private String normalizeClassifier(String candidate) {
+    if (!StringUtils.hasText(candidate)) {
+      return null;
+    }
+    String value = candidate.trim().toLowerCase(Locale.ROOT);
+    if (!Set.of("overview").contains(value)) {
+      throw new IllegalStateException(
+          "Unsupported minScoreClassifier '%s'. Allowed values: overview".formatted(candidate));
+    }
+    return value;
   }
 
   private ResolvedRagParameterProfile.ResolvedNeighbor sanitizeNeighbor(
@@ -332,6 +367,9 @@ public class GitHubRagProperties implements InitializingBean {
     private Integer topKPerQuery;
     private Double minScore;
     private Map<String, Double> minScoreByLanguage = new HashMap<>();
+    private Double minScoreFallback;
+    private String minScoreClassifier;
+    private List<String> overviewBoostKeywords = new ArrayList<>();
     private Integer rerankTopN;
     private Boolean codeAwareEnabled;
     private Double codeAwareHeadMultiplier;
@@ -368,6 +406,31 @@ public class GitHubRagProperties implements InitializingBean {
 
     public void setMinScore(Double minScore) {
       this.minScore = minScore;
+    }
+
+    public Double getMinScoreFallback() {
+      return minScoreFallback;
+    }
+
+    public void setMinScoreFallback(Double minScoreFallback) {
+      this.minScoreFallback = minScoreFallback;
+    }
+
+    public String getMinScoreClassifier() {
+      return minScoreClassifier;
+    }
+
+    public void setMinScoreClassifier(String minScoreClassifier) {
+      this.minScoreClassifier = minScoreClassifier;
+    }
+
+    public List<String> getOverviewBoostKeywords() {
+      return overviewBoostKeywords;
+    }
+
+    public void setOverviewBoostKeywords(List<String> overviewBoostKeywords) {
+      this.overviewBoostKeywords =
+          overviewBoostKeywords != null ? new ArrayList<>(overviewBoostKeywords) : new ArrayList<>();
     }
 
     public Map<String, Double> getMinScoreByLanguage() {
@@ -482,7 +545,10 @@ public class GitHubRagProperties implements InitializingBean {
       Boolean codeAwareEnabled,
       Double codeAwareHeadMultiplier,
       ResolvedMultiQuery multiQuery,
-      ResolvedNeighbor neighbor) {
+      ResolvedNeighbor neighbor,
+      Double minScoreFallback,
+      String minScoreClassifier,
+      List<String> overviewBoostKeywords) {
 
     public record ResolvedMultiQuery(Boolean enabled, Integer queries, Integer maxQueries) {}
 
@@ -1058,6 +1124,7 @@ public class GitHubRagProperties implements InitializingBean {
     private boolean allowEmptyContext = true;
     private String promptTemplate = "classpath:prompts/github-rag-context.st";
     private String emptyContextTemplate = "classpath:prompts/github-rag-empty-context.st";
+    private String summaryTemplate = "classpath:prompts/github-rag-summary.st";
     private String noResultsReason = "CONTEXT_NOT_FOUND";
     private String emptyContextMessage = "Индекс не содержит подходящих документов";
 
@@ -1083,6 +1150,14 @@ public class GitHubRagProperties implements InitializingBean {
 
     public void setEmptyContextTemplate(String emptyContextTemplate) {
       this.emptyContextTemplate = emptyContextTemplate;
+    }
+
+    public String getSummaryTemplate() {
+      return summaryTemplate;
+    }
+
+    public void setSummaryTemplate(String summaryTemplate) {
+      this.summaryTemplate = summaryTemplate;
     }
 
     public String getNoResultsReason() {
