@@ -146,8 +146,8 @@ github:
     default-profile: ${GITHUB_RAG_DEFAULT_PROFILE:balanced}
     parameter-profiles:
       - name: conservative
-        top-k: 6
-        top-k-per-query: 6
+        top-k: 15
+        top-k-per-query: 15
         min-score: 0.65
         min-score-fallback: 0.5
         min-score-classifier: overview
@@ -168,9 +168,17 @@ github:
         code-aware-enabled: true
         code-aware-head-multiplier: 1.5
       - name: balanced
-        top-k: 10
-        top-k-per-query: 10
+        top-k: 24
+        top-k-per-query: 24
         min-score: 0.55
+        min-score-fallback: 0.45
+        min-score-classifier: overview
+        overview-boost-keywords:
+          - overview
+          - project overview
+          - описание проекта
+          - что за проект
+          - docs/backlog.md
         multi-query:
           enabled: true
           queries: 3
@@ -182,8 +190,8 @@ github:
         code-aware-enabled: true
         code-aware-head-multiplier: 2.0
       - name: aggressive
-        top-k: 14
-        top-k-per-query: 14
+        top-k: 35
+        top-k-per-query: 35
         min-score: 0.5
         min-score-fallback: 0.35
         min-score-classifier: overview

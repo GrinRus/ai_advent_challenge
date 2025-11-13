@@ -75,21 +75,36 @@ public class RepoRagSearchService {
     RetrievalAttemptResult finalAttempt = primaryAttempt;
     boolean lowThresholdApplied = false;
     boolean overviewSeedApplied = false;
-    if (primaryAttempt.documents().isEmpty() && shouldUseLowThreshold(command.rawQuery(), plan)) {
+    boolean overviewRetry =
+        primaryAttempt.documents().isEmpty()
+            && shouldUseOverviewFallback(command.rawQuery(), plan);
+    boolean identifierRetry =
+        primaryAttempt.documents().isEmpty()
+            && !overviewRetry
+            && shouldUseIdentifierFallback(command.rawQuery(), plan);
+    if (overviewRetry || identifierRetry) {
       lowThresholdApplied = true;
-      overviewSeedApplied = true;
       RagParameterGuard.ResolvedSearchPlan fallbackPlan = createLowThresholdPlan(plan);
-      String seededQuery = buildSeededRawQuery(command.rawQuery(), plan.overviewBoostKeywords());
+      String retryQuery =
+          overviewRetry
+              ? buildSeededRawQuery(command.rawQuery(), plan.overviewBoostKeywords())
+              : command.rawQuery();
       RetrievalAttemptResult fallbackAttempt =
           executeRepoAttempt(
-              seededQuery,
+              retryQuery,
               fallbackPlan,
               namespace,
               command.history(),
               command.previousAssistantReply(),
-              true);
-      serviceWarnings.add(
-          "Обзорный запрос выполнен повторно: понижен minScore и добавлены подсказки README/backlog.");
+              overviewRetry);
+      if (overviewRetry) {
+        overviewSeedApplied = true;
+        serviceWarnings.add(
+            "Обзорный запрос выполнен повторно: понижен minScore и добавлены подсказки README/backlog.");
+      } else {
+        serviceWarnings.add(
+            "Запрос похож на идентификатор: выполнен повторный поиск с пониженным minScore.");
+      }
       if (!fallbackAttempt.documents().isEmpty()) {
         finalAttempt = fallbackAttempt;
       }
@@ -274,9 +289,9 @@ public class RepoRagSearchService {
     }
   }
 
-  private boolean shouldUseLowThreshold(
+  private boolean shouldUseOverviewFallback(
       String rawQuery, RagParameterGuard.ResolvedSearchPlan plan) {
-    if (plan.fallbackMinScore() == null) {
+    if (!hasFallback(plan)) {
       return false;
     }
     String classifier = plan.minScoreClassifier();
@@ -287,6 +302,15 @@ public class RepoRagSearchService {
       return OverviewQueryClassifier.isOverview(rawQuery, plan.overviewBoostKeywords());
     }
     return false;
+  }
+
+  private boolean shouldUseIdentifierFallback(
+      String rawQuery, RagParameterGuard.ResolvedSearchPlan plan) {
+    return hasFallback(plan) && RepoRagQueryHeuristics.isCodeIdentifier(rawQuery);
+  }
+
+  private boolean hasFallback(RagParameterGuard.ResolvedSearchPlan plan) {
+    return plan.fallbackMinScore() != null;
   }
 
   private RagParameterGuard.ResolvedSearchPlan createLowThresholdPlan(

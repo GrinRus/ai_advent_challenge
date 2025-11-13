@@ -74,7 +74,7 @@ class RepoRagToolsIT {
     org.mockito.Mockito.verify(searchService).search(captor.capture());
     RagParameterGuard.ResolvedSearchPlan plan = captor.getValue().plan();
     assertThat(plan.profileName()).isEqualTo("aggressive");
-    assertThat(plan.topK()).isEqualTo(14);
+    assertThat(plan.topK()).isEqualTo(35);
     assertThat(plan.multiQuery().queries()).isEqualTo(4);
     assertThat(result.appliedModules()).contains("profile:aggressive");
   }
@@ -160,7 +160,7 @@ class RepoRagToolsIT {
     GitHubRagProperties gitHubRagProperties() {
       GitHubRagProperties properties = new GitHubRagProperties();
       properties.setParameterProfiles(
-          List.of(profile("balanced", 10, 3, "LINEAR", 1, 6), profile("aggressive", 14, 4, "CALL_GRAPH", 2, 10)));
+          List.of(profile("balanced", 24, 3, "LINEAR", 1, 6), profile("aggressive", 35, 4, "CALL_GRAPH", 2, 10)));
       properties.setDefaultProfile("balanced");
       try {
         properties.afterPropertiesSet();

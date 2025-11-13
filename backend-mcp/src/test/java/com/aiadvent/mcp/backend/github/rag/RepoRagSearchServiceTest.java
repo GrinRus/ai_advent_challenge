@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -112,6 +113,49 @@ class RepoRagSearchServiceTest {
         .hasMessageContaining("rawQuery");
   }
 
+  @Test
+  void retriesForCodeIdentifierWhenEmpty() {
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState()));
+    Query query = Query.builder().text("PatchGenerationService").history(List.of()).build();
+    RepoRagRetrievalPipeline.PipelineResult emptyResult =
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(), List.of(), List.of(query));
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("class PatchGenerationService {}\n")
+            .metadata(Map.of("file_path", "src/PatchGenerationService.java"))
+            .score(0.42)
+            .build();
+    RepoRagRetrievalPipeline.PipelineResult fallbackResult =
+        new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query));
+    when(pipeline.execute(any())).thenReturn(emptyResult, fallbackResult);
+
+    RepoRagSearchReranker.PostProcessingResult emptyPost =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(), false, List.of());
+    RepoRagSearchReranker.PostProcessingResult nonEmptyPost =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), true, List.of("post"));
+    when(reranker.process(any(), any(), any())).thenReturn(emptyPost, nonEmptyPost);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "PatchGenerationService",
+            planWithFallback("aggressive", 0.35d),
+            List.of(),
+            null,
+            RepoRagResponseChannel.BOTH);
+
+    RepoRagSearchService.SearchResponse response = service.search(command);
+
+    assertThat(response.matches()).hasSize(1);
+    assertThat(response.appliedModules()).contains("retrieval.low-threshold");
+    assertThat(response.warnings())
+        .anyMatch(message -> message.contains("идентификатор"));
+    verify(pipeline, times(2)).execute(any());
+  }
+
   private RepoRagNamespaceStateEntity readyState() {
     RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
     entity.setNamespace("repo:owner/repo");
@@ -122,6 +166,15 @@ class RepoRagSearchServiceTest {
   }
 
   private RagParameterGuard.ResolvedSearchPlan plan(String name) {
+    return plan(name, null, null);
+  }
+
+  private RagParameterGuard.ResolvedSearchPlan planWithFallback(String name, Double fallback) {
+    return plan(name, fallback, null);
+  }
+
+  private RagParameterGuard.ResolvedSearchPlan plan(
+      String name, Double fallback, String classifier) {
     return new RagParameterGuard.ResolvedSearchPlan(
         name,
         8,
@@ -134,8 +187,8 @@ class RepoRagSearchServiceTest {
         new RepoRagMultiQueryOptions(true, 3, 3),
         new RagParameterGuard.NeighborOptions("LINEAR", 1, 4),
         RagParameterGuard.SearchPlanMode.STANDARD,
-        null,
-        null,
+        fallback,
+        classifier,
         List.of());
   }
 }
