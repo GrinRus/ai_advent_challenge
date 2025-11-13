@@ -393,8 +393,8 @@
 ### Документация и процессы
 - [x] Обновить `docs/infra.md` и `docs/processes.md`: описать архитектуру оркестратора, модель данных, форматы конфигураций и политики памяти.
 - [x] Подготовить ADR о выборе подхода к мультиагентной оркестрации, включая анализ альтернатив и рисков.
-- [ ] Задокументировать чек-лист тестирования флоу (позитивные/негативные ветки, сбои провайдеров, повторные запуски, деградация к single-agent, проверка synchrony/usage/токенов и стоимости).
-- [ ] Описать гайд по эксплуатации для поддержки: мониторинг, алерты, обновление шаблонов флоу, инструкция по добавлению нового агента/модели.
+- [x] Задокументировать чек-лист тестирования флоу (позитивные/негативные ветки, сбои провайдеров, повторные запуски, деградация к single-agent, проверка synchrony/usage/токенов и стоимости).
+- [x] Описать гайд по эксплуатации для поддержки: мониторинг, алерты, обновление шаблонов флоу, инструкция по добавлению нового агента/модели.
 
 ## Wave 9.1 — Каталог агентов и редактор флоу
 ### Backend
@@ -462,8 +462,8 @@
 - [x] Расширить клиент `apiClient`: добавлены методы для CRUD интеракций и помощник `subscribeToFlowEvents` для SSE `flow`/`heartbeat`.
 - [x] Реализовать UI-компоненты Flow workspace: список активных запросов, side-panel с формой и подсказками, отображение ответа.
 - [x] Добавить механизмы уведомлений: бейджи в навигации/чат UI, toast и desktop уведомления, подсветка активных запросов в списках.
-- [ ] Покрыть сценарии тестами: unit (формы, стейт-менеджмент), e2e (создание запроса, ответ пользователя, таймаут, автозавершение, параллельные ответы), визуальные снапшоты.
-- [ ] Реализовать виджеты для указанных типов `payloadSchema` (multiselect, date/datetime picker, file upload, JSON-редактор) и отобразить подсказки из `suggestedActions`.
+- [x] Покрыть сценарии тестами: unit (формы, стейт-менеджмент), e2e (создание запроса, ответ пользователя, таймаут, автозавершение, параллельные ответы), визуальные снапшоты.
+- [x] Реализовать виджеты для указанных типов `payloadSchema` (multiselect, date/datetime picker, file upload, JSON-редактор) и отобразить подсказки из `suggestedActions`.
 - [x] Отобразить `suggestedActions`: базовый набор из конфигурации шага + дополнительные рекомендации, полученные от LLM и помеченные как «рекомендации».
 
 ### Документация и процессы
@@ -614,8 +614,8 @@
 
 ### Frontend
 - [x] Переписать `Flows / Agents` в режим конструктора: убрать JSON-текстовые поля (`frontend/src/pages/FlowAgents.tsx:234-302`), добавить формы для provider/model, temperature/topP/maxTokens, справочники tool binding и cost profile, превью capability payload’ов и проверки схем.
-- [ ] Перенести `Flows / Definitions` на typed blueprint: устранить `raw`/`memoryReadsText`/`transitionsText` из `flowDefinitionForm` (`frontend/src/lib/flowDefinitionForm.ts:15-138`) и редактора (`frontend/src/pages/FlowDefinitions.tsx:700-755`), добавить визуальные редакторы launch parameters, shared memory, transitions, HITL-конфигураций и связь с cost preview.
-- [ ] Добавить inline создание/публикацию агента прямо из редактора шага (modal поверх `Flows / Definitions`), синхронизировать список версий без перезагрузки и блокировать сохранение шага без валидированного `agentVersionId`.
+- [x] Перенести `Flows / Definitions` на typed blueprint: устранить `raw`/`memoryReadsText`/`transitionsText` из `flowDefinitionForm` (`frontend/src/lib/flowDefinitionForm.ts:15-138`) и редактора (`frontend/src/pages/FlowDefinitions.tsx:700-755`), добавить визуальные редакторы launch parameters, shared memory, transitions, HITL-конфигураций и связь с cost preview.
+- [x] Добавить inline создание/публикацию агента прямо из редактора шага (modal поверх `Flows / Definitions`), синхронизировать список версий без перезагрузки и блокировать сохранение шага без валидированного `agentVersionId`.
 - [x] Обновить `apiClient.ts` (`frontend/src/lib/apiClient.ts:42-200`) и стейт менеджмент Flow UI на новые типы: сгенерировать TS-модели из backend схемы (`FlowBlueprint`, `AgentVersionConfig`), добавить runtime-валидацию и удалить `unknown`/ручной JSON парсинг.
 
 ### Data & Migration
@@ -649,7 +649,7 @@
 
 ### Observability & Resilience
 - [x] Реализовать `HealthIndicator` MCP-подключения: проверка запуска STDIO-процесса, handshake с tool list, метрики `perplexity_mcp_latency`/`perplexity_mcp_errors_total`.
-- [ ] Добавить интеграционные тесты с mock MCP-сервером (WireMock/Testcontainers) для сценариев `AgentInvocationService`, `ChatProviderService` и research-шагов оркестратора.
+- [x] Добавить интеграционные тесты с mock MCP-сервером (WireMock/Testcontainers) для сценариев `AgentInvocationService`, `ChatProviderService` и research-шагов оркестратора.
 
 ### Infrastructure & Docs
 - [x] Обновить `.env.example`/`.env` и `backend/src/main/resources/application.yaml`: добавить переменные для STDIO-команды (`PERPLEXITY_MCP_CMD`, `PERPLEXITY_API_KEY`, `PERPLEXITY_TIMEOUT_MS`), описать требования к Node/npm.
@@ -679,20 +679,20 @@
 
 ## Wave 15 — MCP Research Testing & Stability
 ### Backend
-- [ ] Обновить unit-тесты (`AgentInvocationServiceTest` и др.) с поддержкой `McpToolBindingService`, покрыть передачу tool callbacks и tool codes.
-- [ ] Добавить stub-конфигурацию (`SyncMcpToolCallbackProvider`) для интеграционных тестов без запуска STDIO.
-- [ ] Интеграционные тесты `SyncChatService`/`StructuredSyncService` в режиме `research` (инструменты, structured payload, сохранение сообщений).
-- [ ] Интеграционный сценарий оркестратора (AgentInvocationService / flow) с research-режимом и валидацией `selectedTools`.
-- [ ] Smoke-тест health-indicator `perplexityMcp`.
+- [x] Обновить unit-тесты (`AgentInvocationServiceTest` и др.) с поддержкой `McpToolBindingService`, покрыть передачу tool callbacks и tool codes.
+- [x] Добавить stub-конфигурацию (`SyncMcpToolCallbackProvider`) для интеграционных тестов без запуска STDIO.
+- [x] Интеграционные тесты `SyncChatService`/`StructuredSyncService` в режиме `research` (инструменты, structured payload, сохранение сообщений).
+- [x] Интеграционный сценарий оркестратора (AgentInvocationService / flow) с research-режимом и валидацией `selectedTools`.
+- [x] Smoke-тест health-indicator `perplexityMcp`.
 
 ### Test Infrastructure
-- [ ] Вспомогательные утилиты для сборки `ToolCallback`/`ToolDefinition`, настройка Gradle-профиля под stub MCP.
+- [x] Вспомогательные утилиты для сборки `ToolCallback`/`ToolDefinition`, настройка Gradle-профиля под stub MCP.
 
 ### Observability
-- [ ] Проверки метрик `perplexity_mcp_latency`/`perplexity_mcp_errors_total` в тестовом окружении (SimpleMeterRegistry).
+- [x] Проверки метрик `perplexity_mcp_latency`/`perplexity_mcp_errors_total` в тестовом окружении (SimpleMeterRegistry).
 
 ### Документация
-- [ ] Обновить `docs/processes.md` с требованиями к тестированию research-режима и stub MCP.
+- [x] Обновить `docs/processes.md` с требованиями к тестированию research-режима и stub MCP.
 
 ## Wave 16 — Spring AI MCP servers
 Цель: построить и внедрить собственные STDIO MCP-серверы на Spring AI, чтобы расширить набор инструментов для оркестратора, операторов и аналитики без зависимости от внешних провайдеров.
@@ -713,10 +713,10 @@
 - [x] Добавить Liquibase-миграции для схем/описаний инструментов (`tool_schema_version`, `tool_definition`) и seed-агентов по аналогии с `perplexity_search`/`perplexity_deep_research`.
 - [x] Обновить `AgentCatalogService` и связанные DTO, чтобы шаблоны агентов поддерживали новые MCP-инструменты, конфигурацию overrides и capability payload'ы.
 - [x] Расширить `ChatInteractionMode`/`ChatSyncRequest`/`ChatStreamRequest`, чтобы UI мог запрашивать конкретные MCP toolsets (`requestedToolCodes`), и прокинуть их до `AgentInvocationService`.
-- [ ] Завершить канал обновлений health (`/api/mcp/events` SSE): добавить `latencyMs` в payload и реализовать fallback `GET /api/mcp/health`.
+- [x] Завершить канал обновлений health (`/api/mcp/events` SSE): добавить `latencyMs` в payload и реализовать fallback `GET /api/mcp/health`.
 - [x] Перевести `backend-mcp` сервисы с STDIO на потоковый HTTP MCP: включить WebFlux приложение (`spring.main.web-application-type`), реализовать HTTP эндпоинты `stream`/`call` через `spring-ai-mcp-server` с SSE/ndjson выдачей, удалить STDIO launcher'ы/скрипты, обновить профили `application-*.yaml` и health-индикаторы, добавить smoke-тесты WebTestClient на handshake/stream (Perplexity остаётся STDIO).
 - [x] Адаптировать backend под смешанный MCP транспорт: оставить `spring.ai.mcp.client.stdio` для Perplexity, добавить `streamable-http.connections` для внутренних серверов, обновить `McpToolBindingService`/health-индикаторы и Liquibase-модификации, покрыть unit/integration тестами.
-- [ ] Актуализировать предупреждения логгера MCP: убрать упоминание только Perplexity в `McpToolBindingService`.
+- [x] Актуализировать предупреждения логгера MCP: убрать упоминание только Perplexity в `McpToolBindingService`.
 
 ### Frontend
 - [x] Расширить chat UI для подключения MCP-инструментов: мультивыбор серверов (Perplexity, Agent Ops и др.), отображение статуса health и отправка `requestedToolCodes` вместе с режимом чата.
@@ -727,19 +727,19 @@
 - [x] Покрыть MCP-сервера unit- и integration-тестами: handshake, списки инструментов, negative-case для валидации и отсутствующих записей.
 - [x] Добавить end-to-end тесты `AgentInvocationService`/`FlowOrchestrator` с использованием новых MCP-инструментов через STDIO stub.
 - [x] Расширить `SyncMcpToolCallbackProvider` stub/тестовую конфигурацию на несколько серверов, покрыть health-indicator'ы и backward-совместимость с `perplexity` сценариями.
-- [ ] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку деградаций HTTP MCP (timeouts, health down).
-- [ ] Добавить backend smoke/contract тесты для `/api/mcp/catalog`, SSE `/api/mcp/events` с `latencyMs` и сценариев выбора MCP-инструментов.
-- [ ] Расширить тестовое покрытие под HTTP MCP: WebTestClient smoke для `backend-mcp` HTTP эндпоинтов, интеграции backend конфигурации (HTTP-only) и e2e сценарии stream/fallback с проверкой деградаций.
+- [x] Обновить smoke/contract тесты UI и API, чтобы проверять выбор MCP-инструментов, передачи `requestedToolCodes` и обработку деградаций HTTP MCP (timeouts, health down).
+- [x] Добавить backend smoke/contract тесты для `/api/mcp/catalog`, SSE `/api/mcp/events` с `latencyMs` и сценариев выбора MCP-инструментов.
+- [x] Расширить тестовое покрытие под HTTP MCP: WebTestClient smoke для `backend-mcp` HTTP эндпоинтов, интеграции backend конфигурации (HTTP-only) и e2e сценарии stream/fallback с проверкой деградаций.
 
 ### Infrastructure & Ops
 - [x] Добавить сервисы MCP в `docker-compose.yml`, описать переменные окружения (`FLOW_MCP_*`, `INSIGHT_MCP_*`, `AGENT_OPS_MCP_*`) и healthchecks.
-- [ ] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
+- [x] Перенастроить метрики (`*_mcp_latency`, `*_mcp_errors_total`) на динамические теги, привязать их к каждому MCP-серверу и добавить отдельные actuator health endpoints.
 - [x] Обновить `docker-compose.yml` и деплой пайплайны под HTTP MCP: выделить порты для `agent-ops`/`flow-ops`/`insight`, прокинуть `*_MCP_HTTP_BASE_URL` и `*_MCP_TRANSPORT`, перенастроить healthcheck на HTTP эндпоинты и убрать STDIO wrapper'ы/переменные.
 
 - [x] Обновить `docs/architecture/flow-definition.md`, `docs/infra.md`, `docs/processes.md` описанием новых MCP-серверов, доступных инструментов и сценариев (flow ops, agent ops, observability).
 - [x] Добавить гайды для операторов/аналитиков: как подключить MCP к IDE/клиенту, пример диалогов и ограничения по безопасности.
 - [x] Переписать текущий раздел про Perplexity MCP в `docs/infra.md` на общую платформу MCP, описать запуск собственных серверов, метрики, health-checkи и режим работы stdio.
-- [ ] Обновить документацию под HTTP MCP: `docs/infra.md`, `docs/guides/mcp-operators.md`, `docs/processes.md` и README с новыми переменными окружения, схемой backend ⇔ MCP (HTTP-only) и сценариями миграции/отката без STDIO.
+- [x] Обновить документацию под HTTP MCP: `docs/infra.md`, `docs/guides/mcp-operators.md`, `docs/processes.md` и README с новыми переменными окружения, схемой backend ⇔ MCP (HTTP-only) и сценариями миграции/отката без STDIO.
 
 ## Wave 17 — GitHub MCP интеграция
 ### MCP Server
