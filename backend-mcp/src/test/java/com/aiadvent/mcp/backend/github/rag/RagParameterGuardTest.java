@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,10 @@ class RagParameterGuardTest {
             null,
             10.0d,
             new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(true, 10, 12),
-            new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("CALL_GRAPH", 10, 500));
+            new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("CALL_GRAPH", 10, 500),
+            0.3d,
+            "overview",
+            List.of("overview"));
 
     RagParameterGuard.GuardResult result = guard.apply(profile);
 

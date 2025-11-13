@@ -37,7 +37,9 @@ class RepoRagSearchServiceTest {
         new RepoRagSearchService(
             properties, pipeline, reranker, generationService, namespaceStateService);
     when(generationService.generate(any()))
-        .thenReturn(new RepoRagGenerationService.GenerationResult("ctx", "instr", false, null, List.of()));
+        .thenReturn(
+            new RepoRagGenerationService.GenerationResult(
+                "ctx", "instr", false, null, List.of(), "summary", "raw"));
   }
 
   @Test
@@ -61,7 +63,8 @@ class RepoRagSearchServiceTest {
             "raw",
             plan("balanced"),
             List.of(),
-            null);
+            null,
+            RepoRagResponseChannel.BOTH);
 
     RepoRagSearchService.SearchResponse response = service.search(command);
 
@@ -84,7 +87,8 @@ class RepoRagSearchServiceTest {
             "raw",
             plan("balanced"),
             List.of(),
-            null);
+            null,
+            RepoRagResponseChannel.BOTH);
 
     assertThatThrownBy(() -> service.search(command))
         .isInstanceOf(IllegalStateException.class)
@@ -100,7 +104,8 @@ class RepoRagSearchServiceTest {
             List.of(),
             null,
             "global",
-            "global");
+            "global",
+            RepoRagResponseChannel.BOTH);
 
     assertThatThrownBy(() -> service.searchGlobal(command))
         .isInstanceOf(IllegalArgumentException.class)
@@ -127,6 +132,10 @@ class RepoRagSearchServiceTest {
         true,
         2.0d,
         new RepoRagMultiQueryOptions(true, 3, 3),
-        new RagParameterGuard.NeighborOptions("LINEAR", 1, 4));
+        new RagParameterGuard.NeighborOptions("LINEAR", 1, 4),
+        RagParameterGuard.SearchPlanMode.STANDARD,
+        null,
+        null,
+        List.of());
   }
 }

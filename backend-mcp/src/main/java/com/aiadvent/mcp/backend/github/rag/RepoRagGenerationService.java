@@ -23,19 +23,55 @@ public class RepoRagGenerationService {
   private final GitHubRagProperties properties;
   private final String promptTemplateRaw;
   private final String emptyTemplateRaw;
+  private final String summaryTemplateRaw;
 
   public RepoRagGenerationService(GitHubRagProperties properties, ResourceLoader resourceLoader) {
     this.properties = Objects.requireNonNull(properties, "properties");
-    this.promptTemplateRaw = loadTemplate(resourceLoader, properties.getGeneration().getPromptTemplate());
-    this.emptyTemplateRaw = loadTemplate(resourceLoader, properties.getGeneration().getEmptyContextTemplate());
+    GitHubRagProperties.Generation generation = properties.getGeneration();
+    this.promptTemplateRaw = loadTemplate(resourceLoader, generation.getPromptTemplate());
+    this.emptyTemplateRaw = loadTemplate(resourceLoader, generation.getEmptyContextTemplate());
+    this.summaryTemplateRaw = loadTemplate(resourceLoader, generation.getSummaryTemplate());
   }
 
   public GenerationResult generate(GenerationCommand command) {
     Objects.requireNonNull(command, "command");
     boolean contextMissing = command.documents().isEmpty();
     String formattedContext = formatDocuments(command.documents());
-    String promptTemplate = resolveTemplate(promptTemplateRaw, command);
-    String emptyTemplate = resolveTemplate(emptyTemplateRaw, command);
+    List<String> modules = new ArrayList<>();
+    Query rawAugmented = null;
+    Query summaryAugmented = null;
+    if (command.responseChannel().includeRaw()) {
+      rawAugmented =
+          augment(promptTemplateRaw, emptyTemplateRaw, formattedContext, command);
+      modules.add("generation.contextual-augmenter");
+    }
+    if (command.responseChannel().includeSummary()) {
+      summaryAugmented =
+          augment(summaryTemplateRaw, emptyTemplateRaw, formattedContext, command);
+      modules.add("generation.summary");
+    }
+    if (contextMissing) {
+      modules.add("generation.empty-context");
+    }
+    String rawAnswer = rawAugmented != null ? rawAugmented.text() : null;
+    String summary = summaryAugmented != null ? summaryAugmented.text() : null;
+    String primary = rawAnswer != null ? rawAnswer : summary;
+    if (primary == null) {
+      primary = "";
+    }
+    String noResultsReason =
+        contextMissing ? properties.getGeneration().getNoResultsReason() : null;
+    return new GenerationResult(
+        primary, primary, contextMissing, noResultsReason, modules, summary, rawAnswer);
+  }
+
+  private Query augment(
+      String templateRaw,
+      String emptyRaw,
+      String formattedContext,
+      GenerationCommand command) {
+    String promptTemplate = resolveTemplate(templateRaw, command);
+    String emptyTemplate = resolveTemplate(emptyRaw, command);
     ContextualQueryAugmenter augmenter =
         ContextualQueryAugmenter.builder()
             .promptTemplate(new PromptTemplate(promptTemplate))
@@ -43,15 +79,7 @@ public class RepoRagGenerationService {
             .allowEmptyContext(command.allowEmptyContext())
             .documentFormatter(docs -> formattedContext)
             .build();
-    Query augmented = augmenter.augment(command.query(), command.documents());
-    List<String> modules = new ArrayList<>();
-    modules.add("generation.contextual-augmenter");
-    if (contextMissing) {
-      modules.add("generation.empty-context");
-    }
-    String noResultsReason =
-        contextMissing ? properties.getGeneration().getNoResultsReason() : null;
-    return new GenerationResult(augmented.text(), augmented.text(), contextMissing, noResultsReason, modules);
+    return augmenter.augment(command.query(), command.documents());
   }
 
   private String resolveTemplate(String template, GenerationCommand command) {
@@ -100,12 +128,15 @@ public class RepoRagGenerationService {
       String repoOwner,
       String repoName,
       String locale,
-      boolean allowEmptyContext) {}
+      boolean allowEmptyContext,
+      RepoRagResponseChannel responseChannel) {}
 
   public record GenerationResult(
       String augmentedPrompt,
       String instructions,
       boolean contextMissing,
       String noResultsReason,
-      List<String> appliedModules) {}
+      List<String> appliedModules,
+      String summary,
+      String rawAnswer) {}
 }

@@ -51,6 +51,10 @@ public class RagParameterGuard {
     RepoRagMultiQueryOptions multiQuery =
         buildMultiQuery(profile.name(), profile.multiQuery(), warnings);
     NeighborOptions neighbor = buildNeighbor(profile.name(), profile.neighbor(), warnings);
+    List<String> overviewKeywords =
+        profile.overviewBoostKeywords() == null
+            ? List.of()
+            : List.copyOf(profile.overviewBoostKeywords());
 
     ResolvedSearchPlan plan =
         new ResolvedSearchPlan(
@@ -63,7 +67,11 @@ public class RagParameterGuard {
             codeAwareEnabled,
             codeAwareHeadMultiplier,
             multiQuery,
-            neighbor);
+            neighbor,
+            SearchPlanMode.STANDARD,
+            profile.minScoreFallback(),
+            profile.minScoreClassifier(),
+            overviewKeywords);
     return new GuardResult(plan, warnings.isEmpty() ? List.of() : List.copyOf(warnings));
   }
 
@@ -248,7 +256,38 @@ public class RagParameterGuard {
       boolean codeAwareEnabled,
       double codeAwareHeadMultiplier,
       RepoRagMultiQueryOptions multiQuery,
-      NeighborOptions neighbor) {}
+      NeighborOptions neighbor,
+      SearchPlanMode mode,
+      Double fallbackMinScore,
+      String minScoreClassifier,
+      List<String> overviewBoostKeywords) {
+
+    public ResolvedSearchPlan withOverrides(
+        SearchPlanMode newMode, double newMinScore, RepoRagMultiQueryOptions overrideMultiQuery) {
+      RepoRagMultiQueryOptions resultingMultiQuery =
+          overrideMultiQuery != null ? overrideMultiQuery : multiQuery;
+      return new ResolvedSearchPlan(
+          profileName,
+          topK,
+          topKPerQuery,
+          newMinScore,
+          minScoreByLanguage,
+          rerankTopN,
+          codeAwareEnabled,
+          codeAwareHeadMultiplier,
+          resultingMultiQuery,
+          neighbor,
+          newMode,
+          fallbackMinScore,
+          minScoreClassifier,
+          overviewBoostKeywords);
+    }
+  }
 
   public record NeighborOptions(String strategy, int radius, int limit) {}
+
+  public enum SearchPlanMode {
+    STANDARD,
+    LOW_THRESHOLD
+  }
 }

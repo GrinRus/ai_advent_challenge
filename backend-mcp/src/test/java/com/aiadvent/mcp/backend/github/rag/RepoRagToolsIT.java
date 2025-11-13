@@ -50,11 +50,22 @@ class RepoRagToolsIT {
 
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instr", false, false, null, List.of("retrieval"));
+            List.of(),
+            false,
+            "prompt",
+            "instr",
+            false,
+            false,
+            null,
+            List.of("retrieval"),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.search(any())).thenReturn(response);
 
     RepoRagTools.RepoRagSearchInput input =
-        new RepoRagTools.RepoRagSearchInput("owner", "repo", "Explain", "aggressive", List.of(), null);
+        new RepoRagTools.RepoRagSearchInput(
+            "owner", "repo", "Explain", "aggressive", List.of(), null, "both");
 
     RepoRagTools.RepoRagSearchResponse result = tools.ragSearch(input);
 
@@ -75,7 +86,17 @@ class RepoRagToolsIT {
         .thenReturn(Optional.of(readyState("owner", "repo")));
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instr", false, false, null, List.of("retrieval"));
+            List.of(),
+            false,
+            "prompt",
+            "instr",
+            false,
+            false,
+            null,
+            List.of("retrieval"),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.search(any())).thenReturn(response);
 
     RepoRagTools.RepoRagSearchResponse result =
@@ -92,7 +113,17 @@ class RepoRagToolsIT {
   void simpleGlobalFallsBackToDefaultProfile() {
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instr", false, false, null, List.of());
+            List.of(),
+            false,
+            "prompt",
+            "instr",
+            false,
+            false,
+            null,
+            List.of(),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.searchGlobal(any())).thenReturn(response);
     when(fetchRegistry.latest()).thenReturn(Optional.empty());
 

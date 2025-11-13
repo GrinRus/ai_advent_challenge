@@ -50,7 +50,8 @@ class RepoRagToolInputSanitizerTest {
         .thenReturn(Optional.of(state));
 
     RepoRagTools.RepoRagSearchInput input =
-        new RepoRagTools.RepoRagSearchInput(null, null, "  explain plan  ", null, List.of(), null);
+        new RepoRagTools.RepoRagSearchInput(
+            null, null, "  explain plan  ", null, List.of(), null, null);
 
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagSearchInput> result =
         sanitizer.sanitizeSearch(input);
@@ -60,6 +61,7 @@ class RepoRagToolInputSanitizerTest {
     assertThat(sanitized.repoName()).isEqualTo("repo");
     assertThat(sanitized.rawQuery()).isEqualTo("explain plan");
     assertThat(sanitized.profile()).isEqualTo("balanced");
+    assertThat(sanitized.responseChannel()).isEqualTo("both");
     assertThat(result.warnings())
         .containsExactly(
             "repoOwner заполнен автоматически значением org/repo",
@@ -71,7 +73,7 @@ class RepoRagToolInputSanitizerTest {
   void sanitizeSearchFailsWhenNoReadyNamespace() {
     when(fetchRegistry.latest()).thenReturn(Optional.empty());
     RepoRagTools.RepoRagSearchInput input =
-        new RepoRagTools.RepoRagSearchInput(null, null, "question", null, List.of(), null);
+        new RepoRagTools.RepoRagSearchInput(null, null, "question", null, List.of(), null, null);
 
     assertThatThrownBy(() -> sanitizer.sanitizeSearch(input))
         .isInstanceOf(IllegalStateException.class)
@@ -90,7 +92,8 @@ class RepoRagToolInputSanitizerTest {
             List.of(),
             null,
             "Mixed",
-            "Catalog");
+            "Catalog",
+            null);
 
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagGlobalSearchInput> result =
         sanitizer.sanitizeGlobal(input);
@@ -106,7 +109,7 @@ class RepoRagToolInputSanitizerTest {
   void sanitizeGlobalFallsBackToGlobalLabels() {
     when(fetchRegistry.latest()).thenReturn(Optional.empty());
     RepoRagTools.RepoRagGlobalSearchInput input =
-        new RepoRagTools.RepoRagGlobalSearchInput("test", null, List.of(), null, null, null);
+        new RepoRagTools.RepoRagGlobalSearchInput("test", null, List.of(), null, null, null, null);
 
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagGlobalSearchInput> result =
         sanitizer.sanitizeGlobal(input);
@@ -126,6 +129,9 @@ class RepoRagToolInputSanitizerTest {
         true,
         2.0d,
         new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(true, 3, 4),
-        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6));
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6),
+        null,
+        null,
+        List.of());
   }
 }

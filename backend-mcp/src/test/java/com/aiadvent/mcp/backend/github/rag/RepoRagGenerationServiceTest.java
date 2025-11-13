@@ -33,10 +33,17 @@ class RepoRagGenerationServiceTest {
     RepoRagGenerationService.GenerationResult result =
         generationService.generate(
             new RepoRagGenerationService.GenerationCommand(
-                query, List.of(document), "owner", "repo", "ru", true));
+                query,
+                List.of(document),
+                "owner",
+                "repo",
+                "ru",
+                true,
+                RepoRagResponseChannel.BOTH));
 
     assertThat(result.contextMissing()).isFalse();
-    assertThat(result.augmentedPrompt()).isEqualTo(result.instructions());
+    assertThat(result.rawAnswer()).isEqualTo(result.augmentedPrompt());
+    assertThat(result.summary()).isNotNull();
     assertThat(result.augmentedPrompt())
         .contains("Ты выступаешь экспертом")
         .contains("# Контекст")

@@ -105,6 +105,8 @@ public class RepoRagTools {
     GitHubRagProperties.ResolvedRagParameterProfile profile =
         properties.resolveProfile(normalized.profile());
     RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
+    RepoRagResponseChannel responseChannel =
+        RepoRagResponseChannel.fromToken(normalized.responseChannel());
     RepoRagSearchService.SearchCommand command =
       new RepoRagSearchService.SearchCommand(
           normalized.repoOwner(),
@@ -112,7 +114,8 @@ public class RepoRagTools {
           normalized.rawQuery(),
           guardResult.plan(),
           normalized.history(),
-          normalized.previousAssistantReply());
+          normalized.previousAssistantReply(),
+          responseChannel);
     RepoRagSearchService.SearchResponse response = searchService.search(command);
     return toResponse(
         response,
@@ -169,7 +172,8 @@ public class RepoRagTools {
             sanitized.value().rawQuery(),
             guardResult.plan(),
             List.of(),
-            null);
+            null,
+            RepoRagResponseChannel.BOTH);
     RepoRagSearchService.SearchResponse response = searchService.search(command);
     return toResponse(
         response,
@@ -221,7 +225,8 @@ public class RepoRagTools {
             List.of(),
             null,
             displayOwner.get(),
-            displayName.get());
+            displayName.get(),
+            RepoRagResponseChannel.BOTH);
     RepoRagSearchService.SearchResponse response = searchService.searchGlobal(command);
     return toResponse(
         response,
@@ -247,6 +252,8 @@ public class RepoRagTools {
     GitHubRagProperties.ResolvedRagParameterProfile profile =
         properties.resolveProfile(sanitized.value().profile());
     RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
+    RepoRagResponseChannel responseChannel =
+        RepoRagResponseChannel.fromToken(sanitized.value().responseChannel());
     RepoRagSearchService.GlobalSearchCommand command =
         new RepoRagSearchService.GlobalSearchCommand(
             sanitized.value().rawQuery(),
@@ -254,7 +261,8 @@ public class RepoRagTools {
             sanitized.value().history(),
             sanitized.value().previousAssistantReply(),
             sanitized.value().displayRepoOwner(),
-            sanitized.value().displayRepoName());
+            sanitized.value().displayRepoName(),
+            responseChannel);
     RepoRagSearchService.SearchResponse response = searchService.searchGlobal(command);
     return toResponse(
         response,
@@ -299,6 +307,7 @@ public class RepoRagTools {
     if (extraModules != null && !extraModules.isEmpty()) {
       appliedModules.addAll(extraModules);
     }
+    List<String> aggregatedWarnings = mergeWarnings(serviceResponse.warnings(), warnings);
     return new RepoRagSearchResponse(
         matches,
         serviceResponse.rerankApplied(),
@@ -308,7 +317,9 @@ public class RepoRagTools {
         serviceResponse.noResults(),
         serviceResponse.noResultsReason(),
         List.copyOf(appliedModules),
-        warnings == null ? List.of() : List.copyOf(warnings));
+        aggregatedWarnings,
+        serviceResponse.summary(),
+        serviceResponse.rawAnswer());
   }
 
   private void validateRepoInput(String owner, String name) {
@@ -350,7 +361,8 @@ public class RepoRagTools {
       String rawQuery,
       String profile,
       List<RepoRagSearchConversationTurn> history,
-      String previousAssistantReply) {}
+      String previousAssistantReply,
+      String responseChannel) {}
 
   public record RepoRagSimpleSearchInput(String rawQuery) {}
 
@@ -361,7 +373,8 @@ public class RepoRagTools {
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
       String displayRepoOwner,
-      String displayRepoName) {}
+      String displayRepoName,
+      String responseChannel) {}
 
   public record RepoRagSearchMatch(
       String path, String snippet, String summary, double score, java.util.Map<String, Object> metadata) {}
@@ -375,7 +388,9 @@ public class RepoRagTools {
       boolean noResults,
       String noResultsReason,
       List<String> appliedModules,
-      List<String> warnings) {}
+      List<String> warnings,
+      String summary,
+      String rawAnswer) {}
 
   public record RepoRagSimpleGlobalSearchInput(String rawQuery) {}
 }

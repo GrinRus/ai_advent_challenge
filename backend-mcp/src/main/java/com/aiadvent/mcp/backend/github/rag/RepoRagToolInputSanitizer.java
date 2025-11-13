@@ -79,12 +79,19 @@ public class RepoRagToolInputSanitizer {
 
     String rawQuery = normalizeRequired(input.rawQuery(), "rawQuery");
     String profile = normalizeProfile(input.profile(), warnings);
+    String responseChannel = normalizeResponseChannel(input.responseChannel(), warnings);
     List<RepoRagSearchConversationTurn> history = defaultHistory(input.history());
     String previousAssistantReply = trimToNull(input.previousAssistantReply());
 
     RepoRagTools.RepoRagSearchInput sanitized =
         new RepoRagTools.RepoRagSearchInput(
-            repoOwner, repoName, rawQuery, profile, history, previousAssistantReply);
+            repoOwner,
+            repoName,
+            rawQuery,
+            profile,
+            history,
+            previousAssistantReply,
+            responseChannel);
     return finalizeResult("repo.rag_search", sanitized, warnings);
   }
 
@@ -95,6 +102,7 @@ public class RepoRagToolInputSanitizer {
 
     String rawQuery = normalizeRequired(input.rawQuery(), "rawQuery");
     String profile = normalizeProfile(input.profile(), warnings);
+    String responseChannel = normalizeResponseChannel(input.responseChannel(), warnings);
     List<RepoRagSearchConversationTurn> history = defaultHistory(input.history());
     String previousAssistantReply = trimToNull(input.previousAssistantReply());
     String displayOwner = trimToNull(input.displayRepoOwner());
@@ -126,7 +134,13 @@ public class RepoRagToolInputSanitizer {
 
     RepoRagTools.RepoRagGlobalSearchInput sanitized =
         new RepoRagTools.RepoRagGlobalSearchInput(
-            rawQuery, profile, history, previousAssistantReply, displayOwner, displayName);
+            rawQuery,
+            profile,
+            history,
+            previousAssistantReply,
+            displayOwner,
+            displayName,
+            responseChannel);
     return finalizeResult("repo.rag_search_global", sanitized, warnings);
   }
 
@@ -150,6 +164,24 @@ public class RepoRagToolInputSanitizer {
       warnings.add("profile нормализован до %s".formatted(canonical));
     }
     return canonical;
+  }
+
+  private String normalizeResponseChannel(@Nullable String requested, List<String> warnings) {
+    String candidate = trimToNull(requested);
+    if (!StringUtils.hasText(candidate)) {
+      return "both";
+    }
+    String normalized = candidate.toLowerCase(Locale.ROOT);
+    if (normalized.equals("short")) {
+      normalized = "summary";
+    } else if (normalized.equals("full")) {
+      normalized = "raw";
+    }
+    if (!List.of("summary", "raw", "both").contains(normalized)) {
+      warnings.add("responseChannel сброшен на both: значение '%s' не поддерживается".formatted(candidate));
+      return "both";
+    }
+    return normalized;
   }
 
   private List<RepoRagSearchConversationTurn> defaultHistory(

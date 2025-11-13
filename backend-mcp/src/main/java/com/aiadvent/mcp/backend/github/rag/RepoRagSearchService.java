@@ -57,80 +57,71 @@ public class RepoRagSearchService {
                             .formatted(command.repoOwner(), command.repoName())));
     if (!state.isReady()) {
       throw new IllegalStateException(
-          "Namespace repo:%s/%s is still indexing".formatted(command.repoOwner(), command.repoName()));
+          "Namespace repo:%s/%s is still indexing"
+              .formatted(command.repoOwner(), command.repoName()));
     }
     String namespace = state.getNamespace();
+    List<String> serviceWarnings = new ArrayList<>();
 
-    Query query =
-        retrievalPipeline.buildQuery(
+    RetrievalAttemptResult primaryAttempt =
+        executeRepoAttempt(
             command.rawQuery(),
+            plan,
+            namespace,
             command.history(),
             command.previousAssistantReply(),
-            properties.getQueryTransformers().getMaxHistoryTokens());
+            false);
 
-    Filter.Expression expression = buildFilterExpression(namespace);
-
-    RepoRagRetrievalPipeline.PipelineInput pipelineInput =
-        new RepoRagRetrievalPipeline.PipelineInput(
-            query,
-            expression,
-            plan.multiQuery(),
-            plan.topK(),
-            plan.topKPerQuery(),
-            plan.minScore(),
-            defaultTranslateTo(),
-            properties.getPostProcessing().isLlmCompressionEnabled());
-
-    RepoRagRetrievalPipeline.PipelineResult pipelineResult =
-        retrievalPipeline.execute(pipelineInput);
-    Query finalQuery = ensureQueryText(pipelineResult.finalQuery(), command.rawQuery());
-    List<Document> documents =
-        applyLanguageThresholds(pipelineResult.documents(), plan.minScoreByLanguage());
-
-    String locale = defaultLocale();
-    RepoRagPostProcessingRequest postProcessingRequest =
-        buildPostProcessingRequest(locale, plan, resolveMaxContextTokens(null));
-    RepoRagSearchReranker.PostProcessingResult postProcessingResult =
-        reranker.process(finalQuery, documents, postProcessingRequest);
-
-    List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
-    appliedModules.addAll(postProcessingResult.appliedModules());
-
-    boolean allowEmptyContext = properties.getGeneration().isAllowEmptyContext();
-    RepoRagGenerationService.GenerationResult generationResult;
-    try {
-      generationResult =
-          generationService.generate(
-              new RepoRagGenerationService.GenerationCommand(
-                  finalQuery,
-                  postProcessingResult.documents(),
-                  command.repoOwner(),
-                  command.repoName(),
-                  locale,
-                  allowEmptyContext));
-    } catch (IllegalArgumentException ex) {
-      throw enrichGenerationException(ex);
+    RetrievalAttemptResult finalAttempt = primaryAttempt;
+    boolean lowThresholdApplied = false;
+    boolean overviewSeedApplied = false;
+    if (primaryAttempt.documents().isEmpty() && shouldUseLowThreshold(command.rawQuery(), plan)) {
+      lowThresholdApplied = true;
+      overviewSeedApplied = true;
+      RagParameterGuard.ResolvedSearchPlan fallbackPlan = createLowThresholdPlan(plan);
+      String seededQuery = buildSeededRawQuery(command.rawQuery(), plan.overviewBoostKeywords());
+      RetrievalAttemptResult fallbackAttempt =
+          executeRepoAttempt(
+              seededQuery,
+              fallbackPlan,
+              namespace,
+              command.history(),
+              command.previousAssistantReply(),
+              true);
+      serviceWarnings.add(
+          "Обзорный запрос выполнен повторно: понижен minScore и добавлены подсказки README/backlog.");
+      if (!fallbackAttempt.documents().isEmpty()) {
+        finalAttempt = fallbackAttempt;
+      }
     }
 
-    if (generationResult.contextMissing() && !allowEmptyContext) {
-      throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
-    }
+    RepoRagGenerationService.GenerationResult generationResult =
+        generateResult(command, finalAttempt);
 
-    List<String> allModules = new ArrayList<>(appliedModules);
+    List<String> allModules = new ArrayList<>(finalAttempt.appliedModules());
+    if (lowThresholdApplied || finalAttempt.plan().mode() == RagParameterGuard.SearchPlanMode.LOW_THRESHOLD) {
+      allModules.add("retrieval.low-threshold");
+    }
+    if (overviewSeedApplied) {
+      allModules.add("retrieval.overview-seed");
+    }
     allModules.addAll(generationResult.appliedModules());
     allModules.add("profile:" + plan.profileName());
 
-    List<SearchMatch> matches = toMatches(postProcessingResult.documents());
+    List<SearchMatch> matches = toMatches(finalAttempt.documents());
     boolean noResults = matches.isEmpty();
     return new SearchResponse(
         matches,
-        postProcessingResult.changed(),
+        finalAttempt.rerankApplied(),
         generationResult.augmentedPrompt(),
         generationResult.instructions(),
         generationResult.contextMissing(),
         noResults,
         generationResult.noResultsReason(),
-        allModules);
+        allModules,
+        serviceWarnings.isEmpty() ? List.of() : List.copyOf(serviceWarnings),
+        generationResult.summary(),
+        generationResult.rawAnswer());
   }
 
   public SearchResponse searchGlobal(GlobalSearchCommand command) {
@@ -170,25 +161,13 @@ public class RepoRagSearchService {
     List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
     appliedModules.addAll(postProcessingResult.appliedModules());
 
-    boolean allowEmptyContext = properties.getGeneration().isAllowEmptyContext();
-    RepoRagGenerationService.GenerationResult generationResult;
-    try {
-      generationResult =
-          generationService.generate(
-              new RepoRagGenerationService.GenerationCommand(
-                  finalQuery,
-                  postProcessingResult.documents(),
-                  safeDisplay(command.displayRepoOwner()),
-                  safeDisplay(command.displayRepoName()),
-                  locale,
-                  allowEmptyContext));
-    } catch (IllegalArgumentException ex) {
-      throw enrichGenerationException(ex);
-    }
-
-    if (generationResult.contextMissing() && !allowEmptyContext) {
-      throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
-    }
+    RepoRagGenerationService.GenerationResult generationResult =
+        generateResult(
+            finalQuery,
+            postProcessingResult.documents(),
+            safeDisplay(command.displayRepoOwner()),
+            safeDisplay(command.displayRepoName()),
+            command.responseChannel());
 
     List<String> allModules = new ArrayList<>(appliedModules);
     allModules.addAll(generationResult.appliedModules());
@@ -204,7 +183,222 @@ public class RepoRagSearchService {
         generationResult.contextMissing(),
         noResults,
         generationResult.noResultsReason(),
-        allModules);
+        allModules,
+        List.of(),
+        generationResult.summary(),
+        generationResult.rawAnswer());
+  }
+
+  private RetrievalAttemptResult executeRepoAttempt(
+      String rawQuery,
+      RagParameterGuard.ResolvedSearchPlan plan,
+      String namespace,
+      List<RepoRagSearchConversationTurn> history,
+      String previousAssistantReply,
+      boolean preferOverviewDocs) {
+    Query query =
+        retrievalPipeline.buildQuery(
+            rawQuery,
+            history,
+            previousAssistantReply,
+            properties.getQueryTransformers().getMaxHistoryTokens());
+
+    Filter.Expression expression = buildFilterExpression(namespace);
+
+    RepoRagRetrievalPipeline.PipelineInput pipelineInput =
+        new RepoRagRetrievalPipeline.PipelineInput(
+            query,
+            expression,
+            plan.multiQuery(),
+            plan.topK(),
+            plan.topKPerQuery(),
+            plan.minScore(),
+            defaultTranslateTo(),
+            properties.getPostProcessing().isLlmCompressionEnabled());
+
+    RepoRagRetrievalPipeline.PipelineResult pipelineResult =
+        retrievalPipeline.execute(pipelineInput);
+    Query finalQuery = ensureQueryText(pipelineResult.finalQuery(), rawQuery);
+    List<Document> documents =
+        applyLanguageThresholds(pipelineResult.documents(), plan.minScoreByLanguage());
+    if (preferOverviewDocs) {
+      documents = prioritizeOverviewDocuments(documents);
+    }
+
+    String locale = defaultLocale();
+    RepoRagPostProcessingRequest postProcessingRequest =
+        buildPostProcessingRequest(locale, plan, resolveMaxContextTokens(null));
+    RepoRagSearchReranker.PostProcessingResult postProcessingResult =
+        reranker.process(finalQuery, documents, postProcessingRequest);
+
+    List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
+    appliedModules.addAll(postProcessingResult.appliedModules());
+    return new RetrievalAttemptResult(
+        finalQuery, postProcessingResult.documents(), appliedModules, postProcessingResult.changed(), plan);
+  }
+
+  private RepoRagGenerationService.GenerationResult generateResult(
+      SearchCommand command, RetrievalAttemptResult attempt) {
+    return generateResult(
+        attempt.finalQuery(),
+        attempt.documents(),
+        command.repoOwner(),
+        command.repoName(),
+        command.responseChannel());
+  }
+
+  private RepoRagGenerationService.GenerationResult generateResult(
+      Query finalQuery,
+      List<Document> documents,
+      String repoOwner,
+      String repoName,
+      RepoRagResponseChannel responseChannel) {
+    boolean allowEmptyContext = properties.getGeneration().isAllowEmptyContext();
+    try {
+      RepoRagGenerationService.GenerationResult result =
+          generationService.generate(
+              new RepoRagGenerationService.GenerationCommand(
+                  finalQuery,
+                  documents,
+                  repoOwner,
+                  repoName,
+                  defaultLocale(),
+                  allowEmptyContext,
+                  responseChannel));
+      if (result.contextMissing() && !allowEmptyContext) {
+        throw new IllegalStateException(properties.getGeneration().getEmptyContextMessage());
+      }
+      return result;
+    } catch (IllegalArgumentException ex) {
+      throw enrichGenerationException(ex);
+    }
+  }
+
+  private boolean shouldUseLowThreshold(
+      String rawQuery, RagParameterGuard.ResolvedSearchPlan plan) {
+    if (plan.fallbackMinScore() == null) {
+      return false;
+    }
+    String classifier = plan.minScoreClassifier();
+    if (!StringUtils.hasText(classifier)) {
+      return false;
+    }
+    if ("overview".equals(classifier)) {
+      return OverviewQueryClassifier.isOverview(rawQuery, plan.overviewBoostKeywords());
+    }
+    return false;
+  }
+
+  private RagParameterGuard.ResolvedSearchPlan createLowThresholdPlan(
+      RagParameterGuard.ResolvedSearchPlan plan) {
+    double fallbackMinScore =
+        plan.fallbackMinScore() != null
+            ? plan.fallbackMinScore()
+            : Math.max(0.1d, plan.minScore() * 0.8d);
+    RepoRagMultiQueryOptions forcedMultiQuery = forceMultiQueryOptions(plan);
+    return plan.withOverrides(
+        RagParameterGuard.SearchPlanMode.LOW_THRESHOLD, fallbackMinScore, forcedMultiQuery);
+  }
+
+  private RepoRagMultiQueryOptions forceMultiQueryOptions(
+      RagParameterGuard.ResolvedSearchPlan plan) {
+    RepoRagMultiQueryOptions source = plan.multiQuery();
+    int defaultQueries = Math.max(3, properties.getMultiQuery().getDefaultQueries());
+    int maxQueries = Math.max(1, properties.getMultiQuery().getMaxQueries());
+    int targetQueries =
+        source != null && source.queries() != null ? source.queries() : defaultQueries;
+    targetQueries = Math.max(targetQueries, defaultQueries);
+    targetQueries = Math.min(targetQueries, maxQueries);
+    Integer sourceMax = source != null ? source.maxQueries() : null;
+    int targetMax = sourceMax != null ? Math.min(sourceMax, maxQueries) : maxQueries;
+    return new RepoRagMultiQueryOptions(true, targetQueries, targetMax);
+  }
+
+  private String buildSeededRawQuery(String rawQuery, List<String> keywords) {
+    StringBuilder builder = new StringBuilder();
+    if (StringUtils.hasText(rawQuery)) {
+      builder.append(rawQuery.trim());
+    }
+    builder.append("\n\n");
+    builder.append("Нужен обзор проекта: README.md, docs/backlog.md, ключевые особенности.");
+    if (!CollectionUtils.isEmpty(keywords)) {
+      builder.append(" Ключевые фразы: ").append(String.join(", ", keywords));
+    }
+    return builder.toString();
+  }
+
+  private List<Document> prioritizeOverviewDocuments(List<Document> documents) {
+    if (CollectionUtils.isEmpty(documents)) {
+      return documents;
+    }
+    List<Document> preferred = new ArrayList<>();
+    List<Document> rest = new ArrayList<>();
+    for (Document document : documents) {
+      if (isOverviewPath(document)) {
+        preferred.add(document);
+      } else {
+        rest.add(document);
+      }
+    }
+    if (preferred.isEmpty()) {
+      return documents;
+    }
+    preferred.addAll(rest);
+    return preferred;
+  }
+
+  private boolean isOverviewPath(Document document) {
+    Map<String, Object> metadata = document.getMetadata();
+    if (metadata == null) {
+      return false;
+    }
+    Object path = metadata.get("file_path");
+    if (!(path instanceof String str) || !StringUtils.hasText(str)) {
+      return false;
+    }
+    String normalized = str.toLowerCase(Locale.ROOT);
+    return normalized.contains("readme") || normalized.contains("docs/backlog");
+  }
+
+  private record RetrievalAttemptResult(
+      Query finalQuery,
+      List<Document> documents,
+      List<String> appliedModules,
+      boolean rerankApplied,
+      RagParameterGuard.ResolvedSearchPlan plan) {}
+
+  private static final class OverviewQueryClassifier {
+    private static final List<String> KEYWORDS =
+        List.of(
+            "что за проект",
+            "что делает проект",
+            "описание проекта",
+            "project overview",
+            "project summary",
+            "обзор проекта",
+            "что он делает");
+
+    private OverviewQueryClassifier() {}
+
+    static boolean isOverview(String rawQuery, List<String> extraKeywords) {
+      if (!StringUtils.hasText(rawQuery)) {
+        return false;
+      }
+      String normalized = rawQuery.toLowerCase(Locale.ROOT);
+      for (String keyword : KEYWORDS) {
+        if (normalized.contains(keyword)) {
+          return true;
+        }
+      }
+      if (extraKeywords != null) {
+        for (String keyword : extraKeywords) {
+          if (normalized.contains(keyword)) {
+            return true;
+          }
+        }
+      }
+      return normalized.length() < 72 && Pattern.compile("что|что-то|описание").matcher(normalized).find();
+    }
   }
 
   private List<SearchMatch> toMatches(List<Document> documents) {
@@ -419,7 +613,8 @@ public class RepoRagSearchService {
       String rawQuery,
       RagParameterGuard.ResolvedSearchPlan plan,
       List<RepoRagSearchConversationTurn> history,
-      String previousAssistantReply) {}
+      String previousAssistantReply,
+      RepoRagResponseChannel responseChannel) {}
 
   public record GlobalSearchCommand(
       String rawQuery,
@@ -427,7 +622,8 @@ public class RepoRagSearchService {
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
       String displayRepoOwner,
-      String displayRepoName) {}
+      String displayRepoName,
+      RepoRagResponseChannel responseChannel) {}
 
   public record SearchResponse(
       List<SearchMatch> matches,
@@ -437,7 +633,10 @@ public class RepoRagSearchService {
       boolean contextMissing,
       boolean noResults,
       String noResultsReason,
-      List<String> appliedModules) {}
+      List<String> appliedModules,
+      List<String> warnings,
+      String summary,
+      String rawAnswer) {}
 
   public record SearchMatch(
       String path, String snippet, String summary, double score, Map<String, Object> metadata) {}

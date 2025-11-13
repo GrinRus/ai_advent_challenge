@@ -77,7 +77,17 @@ class RepoRagToolsTest {
         .thenReturn(Optional.of(entity));
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instructions", false, true, null, List.of());
+            List.of(),
+            false,
+            "prompt",
+            "instructions",
+            false,
+            true,
+            null,
+            List.of(),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.search(any())).thenReturn(response);
 
     RepoRagTools.RepoRagSearchResponse result =
@@ -117,7 +127,17 @@ class RepoRagToolsTest {
         .thenReturn(Optional.of(entity));
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+            List.of(),
+            false,
+            "prompt",
+            "instructions",
+            false,
+            false,
+            null,
+            List.of(),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.searchGlobal(any())).thenReturn(response);
 
     RepoRagTools.RepoRagSearchResponse result =
@@ -137,7 +157,17 @@ class RepoRagToolsTest {
     when(fetchRegistry.latest()).thenReturn(Optional.empty());
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+            List.of(),
+            false,
+            "prompt",
+            "instructions",
+            false,
+            false,
+            null,
+            List.of(),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.searchGlobal(any())).thenReturn(response);
 
     RepoRagTools.RepoRagSearchResponse result =
@@ -154,7 +184,17 @@ class RepoRagToolsTest {
   void ragSearchGlobalUsesService() {
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
-            List.of(), false, "prompt", "instructions", false, false, null, List.of());
+            List.of(),
+            false,
+            "prompt",
+            "instructions",
+            false,
+            false,
+            null,
+            List.of(),
+            List.of(),
+            "summary",
+            "raw");
     when(searchService.searchGlobal(any())).thenReturn(response);
 
     RepoRagTools.RepoRagGlobalSearchInput input =
@@ -164,7 +204,8 @@ class RepoRagToolsTest {
             List.of(),
             null,
             "global-owner",
-            "mixed");
+            "mixed",
+            "both");
 
     when(inputSanitizer.sanitizeGlobal(any()))
         .thenReturn(new RepoRagToolInputSanitizer.SanitizationResult<>(input, List.of("autofix")));
@@ -190,7 +231,10 @@ class RepoRagToolsTest {
         true,
         2.0d,
         new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(true, 3, 3),
-        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6));
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6),
+        null,
+        null,
+        List.of());
   }
 
   private RagParameterGuard.ResolvedSearchPlan plan(String name) {
@@ -204,6 +248,10 @@ class RepoRagToolsTest {
         true,
         2.0d,
         new RepoRagMultiQueryOptions(true, 3, 3),
-        new RagParameterGuard.NeighborOptions("LINEAR", 1, 6));
+        new RagParameterGuard.NeighborOptions("LINEAR", 1, 6),
+        RagParameterGuard.SearchPlanMode.STANDARD,
+        null,
+        null,
+        List.of());
   }
 }
