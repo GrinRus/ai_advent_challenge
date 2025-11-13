@@ -82,53 +82,17 @@ public class RepoRagTools {
       name = "repo.rag_search",
       description =
           """
-          Основной инструмент поиска по GitHub RAG.
+          Основной инструмент GitHub RAG. Сервер сам управляет параметрами поиска через профили,
+          поэтому клиенту нужно указать только:
+          • `repoOwner` / `repoName` — репозиторий, по которому выполняем поиск.
+          • `rawQuery` — текст вопроса.
+          • `profile` — имя заранее настроенного пресета (`conservative`, `balanced`, `aggressive`).
+          • `conversationContext` — история (`history[]`) и `previousAssistantReply`, если нужно учесть прошлый ответ.
 
-          Обязательные аргументы:
-          • `repoOwner` — владелец репозитория (строка, пример `"GrinRus"`).
-          • `repoName` — имя репозитория (пример `"ai_advent_challenge"`).
-          • `rawQuery` — текст запроса/вопроса пользователя.
-
-          Retrieval (поиск):
-          • `topK` / `topKPerQuery` — сколько документов вернуть (1–40). Если не переданы, берутся дефолты сервера.
-          • `multiQuery` — объект `{enabled, queries, maxQueries}` для генерации подзапросов.
-          • `filters.languages` — массив языков (например `["java","python"]`), приводится к lower-case.
-          • `filters.pathGlobs` — массив glob-шаблонов (`["backend/**","docs/*.md"]`).
-          • `filterExpression` — текстовое условие vector store (например `"repo_owner == 'grinrus'"`).
-          • `minScore` / `minScoreByLanguage` — пороги сходства (0.1–0.99).
-
-          Post-processing:
-          • `rerankTopN`, `codeAwareEnabled`, `codeAwareHeadMultiplier` — управление code-aware rerank’ом.
-          • `neighborStrategy` (OFF | LINEAR | PARENT_SYMBOL | CALL_GRAPH) + `neighborRadius` (0–5) + `neighborLimit` (≤12) —
-            логика расширения контекста соседями.
-          • `maxContextTokens` — лимит токенов после post-processing (≥256).
-
-          Generation:
-          • `allowEmptyContext` — разрешить пустой контекст (true/false).
-          • `useCompression` — включить Query Compression перед обращением к LLM.
-          • `translateTo` — язык, на котором нужно получить финальный ответ (пример `"en"`).
-          • `generationLocale` — локаль, используемая в шаблоне инструкций (например `"ru-RU"`).
-          • `instructionsTemplate` — кастомный System Prompt.
-
-          Выход: список `matches[]` (путь/сниппет/метаданные), `augmentedPrompt`, `instructions`,
-          признаки `contextMissing` и `noResults`, причина `noResultsReason`, список этапов `appliedModules`,
-          а также `warnings[]` с автокоррекциями входных параметров.
-
-          Пример вызова:
-          ```
-          {
-            "repoOwner": "GrinRus",
-            "repoName": "ai_advent_challenge",
-            "rawQuery": "Как устроен backend?",
-            "topK": 12,
-            "filters": {"languages": ["java"], "pathGlobs": ["backend/**"]},
-            "neighborStrategy": "LINEAR",
-            "neighborRadius": 1,
-            "neighborLimit": 6,
-            "allowEmptyContext": false,
-            "generationLocale": "ru"
-          }
-          ```
+          Остальные параметры (topK, multiQuery, neighbor, code-aware, лимиты) подтягиваются из профиля,
+          а результат всегда включает `appliedModules += "profile:<name>"`, чтобы оператор видел, какой сетап применился.
+          Санитайзер сам подставит repoOwner/repoName из последнего READY namespace, если они опущены,
+          и вернёт предупреждения в `warnings[]`.
           """)
   public RepoRagSearchResponse ragSearch(RepoRagSearchInput input) {
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagSearchInput> sanitized =
@@ -269,33 +233,10 @@ public class RepoRagTools {
       name = "repo.rag_search_global",
       description =
           """
-          Делает RAG-поиск по всем `READY` namespace.
-
-          Обязательный аргумент:
-          • `rawQuery` — текст запроса.
-
-          Дополнительные параметры идентичны `repo.rag_search` (см. описание выше), за исключением
-          отсутствия `repoOwner/repoName`. Обратите внимание:
-          • `filters` и `filterExpression` применяются ко всем namespace (например, `language == 'python'`).
-          • `displayRepoOwner` / `displayRepoName` — псевдонимы, которые покажет UI в ответе
-            (пример: `"Mixed"` / `"catalog"`). В `matches[].metadata` всегда будут реальные `repo_owner`/`repo_name`.
-          • `neighborStrategy`, `neighborRadius`, `neighborLimit`, `topK`, `multiQuery`, `maxContextTokens`,
-            `allowEmptyContext`, `useCompression`, `generationLocale`, `instructionsTemplate` работают аналогично.
-
-          Пример вызова:
-          ```
-          {
-            "rawQuery": "policy engine implementation",
-            "filters": {"languages": ["go"], "pathGlobs": ["**/policy/**"]},
-            "topK": 15,
-            "multiQuery": {"enabled": true, "queries": 4},
-            "neighborStrategy": "CALL_GRAPH",
-            "neighborRadius": 1,
-            "neighborLimit": 4,
-            "displayRepoOwner": "Mixed",
-            "displayRepoName": "catalog"
-          }
-          ```
+          Глобальный вариант: ищет по всем READY namespace. Клиент передаёт `rawQuery`, `profile`,
+          `conversationContext`, а подписи для UI (`displayRepoOwner/displayRepoName`) используются только
+          для отображения ответа. Все параметры поиска подбираются в соответствии с профилем и фиксируются
+          в `appliedModules`.
           """)
   public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagGlobalSearchInput> sanitized =
