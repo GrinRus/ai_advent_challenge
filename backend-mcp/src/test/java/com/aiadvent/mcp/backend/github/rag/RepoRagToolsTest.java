@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,15 +26,25 @@ class RepoRagToolsTest {
   @Mock private RepoRagNamespaceStateService namespaceStateService;
   @Mock private GitHubRepositoryFetchRegistry fetchRegistry;
   @Mock private RepoRagToolInputSanitizer inputSanitizer;
+  @Mock private GitHubRagProperties properties;
+  @Mock private RagParameterGuard parameterGuard;
 
   private RepoRagTools tools;
+  private GitHubRagProperties.ResolvedRagParameterProfile balancedProfile;
+  private RagParameterGuard.ResolvedSearchPlan balancedPlan;
 
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
     tools =
         new RepoRagTools(
-            statusService, searchService, namespaceStateService, fetchRegistry, inputSanitizer);
+            statusService,
+            searchService,
+            namespaceStateService,
+            fetchRegistry,
+            inputSanitizer,
+            properties,
+            parameterGuard);
     when(inputSanitizer.sanitizeSimple(any()))
         .thenAnswer(
             invocation ->
@@ -43,6 +55,11 @@ class RepoRagToolsTest {
             invocation ->
                 new RepoRagToolInputSanitizer.SanitizationResult<>(
                     invocation.getArgument(0), List.of()));
+    balancedProfile = profile("balanced");
+    balancedPlan = plan("balanced");
+    when(properties.resolveProfile(any())).thenReturn(balancedProfile);
+    when(parameterGuard.apply(any()))
+        .thenReturn(new RagParameterGuard.GuardResult(balancedPlan, List.of()));
   }
 
   @Test
@@ -73,6 +90,7 @@ class RepoRagToolsTest {
     verify(searchService).search(captor.capture());
     assertThat(captor.getValue().repoOwner()).isEqualTo("example");
     assertThat(captor.getValue().repoName()).isEqualTo("repo");
+    assertThat(captor.getValue().plan().profileName()).isEqualTo("balanced");
   }
 
   @Test
@@ -142,26 +160,8 @@ class RepoRagToolsTest {
     RepoRagTools.RepoRagGlobalSearchInput input =
         new RepoRagTools.RepoRagGlobalSearchInput(
             "How to build?",
-            5,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            List.<RepoRagSearchConversationTurn>of(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
+            "balanced",
+            List.of(),
             null,
             "global-owner",
             "mixed");
@@ -176,5 +176,34 @@ class RepoRagToolsTest {
         ArgumentCaptor.forClass(RepoRagSearchService.GlobalSearchCommand.class);
     verify(searchService).searchGlobal(captor.capture());
     assertThat(captor.getValue().displayRepoOwner()).isEqualTo("global-owner");
+    assertThat(captor.getValue().plan().profileName()).isEqualTo("balanced");
+  }
+
+  private GitHubRagProperties.ResolvedRagParameterProfile profile(String name) {
+    return new GitHubRagProperties.ResolvedRagParameterProfile(
+        name,
+        8,
+        8,
+        0.55d,
+        Map.of(),
+        8,
+        true,
+        2.0d,
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(true, 3, 3),
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6));
+  }
+
+  private RagParameterGuard.ResolvedSearchPlan plan(String name) {
+    return new RagParameterGuard.ResolvedSearchPlan(
+        name,
+        8,
+        8,
+        0.55d,
+        Map.of(),
+        8,
+        true,
+        2.0d,
+        new RepoRagMultiQueryOptions(true, 3, 3),
+        new RagParameterGuard.NeighborOptions("LINEAR", 1, 6));
   }
 }

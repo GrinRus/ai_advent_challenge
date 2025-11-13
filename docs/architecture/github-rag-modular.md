@@ -6,6 +6,13 @@
 - Снизить стоимость и обеспечить прозрачность: каждое изменение фиксируется в `appliedModules`, лимиты и SLA задокументированы.
 - Перенести chunking на семантические правила Spring AI (см. [Semantic splitters](https://docs.spring.io/spring-ai/reference/api/rag/document-splitters.html)) и отдавать дополнительную мета-информацию (`parent_symbol`, `span_hash`, `overlap_lines`).
 
+## Wave 36 — Parameter governance
+- **Profile registry (`GitHubRagProperties.parameterProfiles`)** — YAML/ENV описывают стратегии `conservative/balanced/aggressive`. Профиль содержит retrieval (`topK`, `minScore`, `multiQuery`), post-processing (`neighbor`, `codeAware*`, `maxContextTokens`) и generation лимиты. В ответе `appliedModules` всегда появляется `profile:<name>`.
+- **Contract** — `repo.rag_search`, `repo.rag_search_global` принимают только `(owner?, name?, rawQuery, profile, conversationContext)`. Любая попытка пробросить «голые» параметры отклоняется санитайзером, поэтому сервер сам контролирует лимиты.
+- **RagParameterGuard** — центральная точка клампов. Получает `ResolvedRagParameterProfile`, ограничивает значения (например, `topK<=40`, `neighborLimit<=12`), пишет структурированные логи `rag_parameter_guard {profile,field,requested,applied}` и возвращает предупреждения, которые видит оператор.
+- **SearchService на планах** — `RepoRagSearchService` теперь получает `ResolvedSearchPlan` (готовый DTO от Guard) и не содержит разбросанных `resolveTopK()/neighborLimit()` проверок. Это упрощает дальнейшие изменения, т.к. достаточно скорректировать профиль.
+- **Breaking change** — UI/агенты должны передавать `profile`. Для старых сценариев создаём профиль `legacy` с прежними значениями и включаем его через `default-profile`, но не поддерживаем старый DTO.
+
 ## Лего-модули
 | Этап | Компонент | Назначение | Триггеры/ограничения |
 |------|-----------|------------|-----------------------|

@@ -1207,23 +1207,23 @@
 
 ### Option 1 — Profile-driven DTO и строгие стратегии
 - [x] **Конфигурационные профили**: `GitHubRagProperties.parameterProfiles[]` + `defaultProfile`, POJO/валидация, `resolveProfile()` и примеры (`backend-mcp/src/main/java/com/aiadvent/mcp/backend/config/GitHubRagProperties.java`, `backend-mcp/src/main/resources/application-github.yaml`, `docs/guides/mcp-operators.md`).
-- [ ] **Новый контракт инструментов**: 
+- [x] **Новый контракт инструментов**: 
   - DTO `RepoRagSearchInput`/`RepoRagGlobalSearchInput` содержат только `repoOwner?`, `repoName?`, `rawQuery`, `profile`, `conversationContext` (history + previousAssistantReply). Любой произвольный параметр (topK, neighbor и т.д.) считается ошибкой ещё до сборки `SearchCommand`.
   - `RepoRagToolInputSanitizer` авто-подставляет owner/name из последнего READY namespace, нормализует `profile` (aliases → canonical), добавляет warning при замене, а при неизвестном профиле возвращает человеко-читаемую ошибку. Санитайзер больше не клампит диапазоны — только приводит вход к «profile + raw query» и собирает diagnostics/warnings.
   - `RepoRagTools` добавляет `profile:<name>` в `RepoRagSearchResponse.appliedModules`, прокидывает профиль в MDC (`profile=balanced`) для трейсов и аудит-логов, а simple-инструменты (`rag_search_simple`, `_simple_global`) просто выбирают `defaultProfile`.
-- [ ] **SearchService на планах**:
+- [x] **SearchService на планах**:
   - `RepoRagSearchService.SearchCommand` → `(repoOwner, repoName, rawQuery, ResolvedSearchPlan plan, filters, history, previousAssistantReply, instructionsTemplate, displayNames)`.
   - Конструкция `ResolvedSearchPlan` включает все retrieval/post-processing параметры (topK, topKPerQuery, minScore, minScoreByLanguage, rerankTopN, code-aware флаги, multiQuery, neighbor). Валидации `resolveTopK()/neighborLimit()` удаляются, сервис опирается на уже проверенный план.
   - Фабрика команд (`RepoRagTools`/`LegacyAdapter`) отвечает за склейку профиля и пользовательских опций (например, filters/pathGlobs, instructionsTemplate). `RepoRagSearchService` только исполняет план, добавляя appliedModules + генерацию.
-- [ ] **RagParameterGuard**:
+- [x] **RagParameterGuard**:
   - Сервис принимает `ResolvedSearchPlan` + глобальные лимиты (`MAX_TOP_K`, `postProcessing.neighbor.maxLimit`, `rerank.codeAware.maxHeadMultiplier`, `multiQuery.maxQueries`) и возвращает клампнутый план + список предупреждений (`topK clamped to 40`, `neighborLimit reduced to 12`).
   - API: `clampTopK(int)`, `clampTopKPerQuery(int, int)`, `sanitizeMinScore(double)`, `clampNeighbor(NeighborSpec)`, `sanitizeHeadMultiplier(double)`, `sanitizeMultiQuery(MultiQuerySpec)`. Каждая операция пишет структурированное событие (`log.info` JSON, поля: profile, field, requested, applied, cause) и добавляет user-facing warning.
   - `RepoRagToolInputSanitizer` и `RepoRagSearchService` используют Guard вместо своих проверок, чтобы все ограничения были в одном месте.
-- [ ] **Совместимость (breaking contract)**:
+- [x] **Совместимость (breaking contract)**:
   - Включаем новый контракт сразу: инструменты принимают только `repoOwner?`, `repoName?`, `rawQuery`, `profile`, `conversationContext`. Любая попытка передать дополнительные поля приводит к ошибке `Unsupported parameter: ...`.
   - CHANGELOG и operator guide фиксируют breaking change, UI/агенты обновляются синхронно. Дополнительно публикуем dev-note о способе быстро переключать profile (например, `profile=legacy` с теми же значениями, что прежние дефолты).
 - [ ] **Документация и тесты**:
-  - Unit: `RepoRagToolInputSanitizerTest` (нормализация профиля, предупреждения о legacy), `RagParameterGuardTest` (clamp сценарии), `GitHubRagPropertiesTest` (уже есть, расширить кейсами на ошибки профилей).
-  - Integration: `RepoRagSearchServiceTest` с mock profiles (`conservative`, `aggressive`) проверяет, что SearchCommand исполняет план и appliedModules содержит `profile:<name>`.
-  - REST/E2E: `RepoRagToolsIT` + e2e сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global) подтверждают, что новая поверхность работает, simple-инструменты автоматически выбирают профиль, warnings отображаются.
-  - Документация: обновить архитектурный документ (описание profile-driven pipeline + Guard), operator guide (новый контракт, legacy adapter, инструкция по override профилей) и CHANGELOG (миграция, breaking changes).
+  - [x] Unit: `RepoRagToolInputSanitizerTest`, `RagParameterGuardTest`, `GitHubRagPropertiesTest`.
+  - [x] Integration: `RepoRagSearchServiceTest` (проверка применения профиля) + `RepoRagToolsTest` (санитайзер/guard).
+  - [ ] REST/E2E: `RepoRagToolsIT` и пользовательские сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) — выполнить после обновления клиентов.
+  - [x] Документация и релизные заметки: `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `docs/releases/wave36.md`.

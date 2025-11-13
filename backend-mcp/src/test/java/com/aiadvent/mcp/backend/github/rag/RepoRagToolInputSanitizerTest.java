@@ -1,11 +1,12 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry;
-import com.aiadvent.mcp.backend.github.rag.RepoRagSearchConversationTurn;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import java.time.Instant;
 import java.util.List;
@@ -18,133 +19,113 @@ import org.mockito.MockitoAnnotations;
 
 class RepoRagToolInputSanitizerTest {
 
+  @Mock private GitHubRagProperties properties;
   @Mock private GitHubRepositoryFetchRegistry fetchRegistry;
   @Mock private RepoRagNamespaceStateService namespaceStateService;
 
-  private GitHubRagProperties properties;
   private RepoRagToolInputSanitizer sanitizer;
+  private GitHubRagProperties.ResolvedRagParameterProfile balancedProfile;
 
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
-    properties = new GitHubRagProperties();
-    sanitizer = new RepoRagToolInputSanitizer(properties, fetchRegistry, namespaceStateService, null);
+    sanitizer =
+        new RepoRagToolInputSanitizer(properties, fetchRegistry, namespaceStateService, null);
+    balancedProfile = profile("balanced");
+    when(properties.resolveProfile(null)).thenReturn(balancedProfile);
+    when(properties.resolveProfile("balanced")).thenReturn(balancedProfile);
   }
 
   @Test
-  void sanitizeSearchFillsOwnerAndNormalizesFilters() {
+  void sanitizeSearchAutoFillsOwnerAndProfile() {
     GitHubRepositoryFetchRegistry.LastFetchContext context =
         new GitHubRepositoryFetchRegistry.LastFetchContext(
-            "Example", "Repo", "ref", "sha", "ws", Instant.now());
+            "Org", "Repo", "ref", "sha", "ws", Instant.now());
     RepoRagNamespaceStateEntity state = new RepoRagNamespaceStateEntity();
-    state.setRepoOwner("example");
+    state.setRepoOwner("org");
     state.setRepoName("repo");
     state.setReady(true);
     when(fetchRegistry.latest()).thenReturn(Optional.of(context));
-    when(namespaceStateService.findByRepoOwnerAndRepoName("example", "repo"))
+    when(namespaceStateService.findByRepoOwnerAndRepoName("org", "repo"))
         .thenReturn(Optional.of(state));
 
-    RepoRagSearchFilters filters =
-        new RepoRagSearchFilters(List.of("Python", "JS"), List.of("**/*", "src/**/*.java"));
     RepoRagTools.RepoRagSearchInput input =
-        new RepoRagTools.RepoRagSearchInput(
-            null,
-            null,
-            "  Explain RAG  ",
-            100,
-            null,
-            null,
-            Map.of("PY", 2.0d),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            "graph",
-            filters,
-            null,
-            List.<RepoRagSearchConversationTurn>of(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            "Ответ {{query}} по {{unknown}}");
+        new RepoRagTools.RepoRagSearchInput(null, null, "  explain plan  ", null, List.of(), null);
 
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagSearchInput> result =
         sanitizer.sanitizeSearch(input);
 
     RepoRagTools.RepoRagSearchInput sanitized = result.value();
-    assertThat(sanitized.repoOwner()).isEqualTo("example");
+    assertThat(sanitized.repoOwner()).isEqualTo("org");
     assertThat(sanitized.repoName()).isEqualTo("repo");
-    assertThat(sanitized.rawQuery()).isEqualTo("Explain RAG");
-    assertThat(sanitized.neighborRadius())
-        .isEqualTo(properties.getPostProcessing().getNeighbor().getDefaultRadius());
-    assertThat(sanitized.neighborLimit())
-        .isEqualTo(properties.getPostProcessing().getNeighbor().getDefaultLimit());
-    assertThat(sanitized.neighborStrategy()).isEqualTo("CALL_GRAPH");
-    assertThat(sanitized.filters()).isNotNull();
-    assertThat(sanitized.filters().languages()).containsExactly("python", "javascript");
-    assertThat(sanitized.filters().pathGlobs()).containsExactly("src/**/*.java");
-    assertThat(sanitized.minScoreByLanguage()).containsEntry("python", 0.99d);
-    assertThat(sanitized.instructionsTemplate()).isEqualTo("Ответ {{rawQuery}} по");
-    assertThat(result.warnings()).isNotEmpty();
+    assertThat(sanitized.rawQuery()).isEqualTo("explain plan");
+    assertThat(sanitized.profile()).isEqualTo("balanced");
+    assertThat(result.warnings())
+        .containsExactly(
+            "repoOwner заполнен автоматически значением org/repo",
+            "repoName заполнен автоматически значением org/repo",
+            "profile не указан — использован balanced");
   }
 
   @Test
-  void sanitizeGlobalFixesPlaceholdersAndLocales() {
-    GitHubRepositoryFetchRegistry.LastFetchContext context =
-        new GitHubRepositoryFetchRegistry.LastFetchContext(
-            "Org", "Service", "ref", "sha", "ws", Instant.now());
-    RepoRagNamespaceStateEntity state = new RepoRagNamespaceStateEntity();
-    state.setRepoOwner("org");
-    state.setRepoName("service");
-    state.setReady(true);
-    when(fetchRegistry.latest()).thenReturn(Optional.of(context));
-    when(namespaceStateService.findByRepoOwnerAndRepoName("org", "service"))
-        .thenReturn(Optional.of(state));
+  void sanitizeSearchFailsWhenNoReadyNamespace() {
+    when(fetchRegistry.latest()).thenReturn(Optional.empty());
+    RepoRagTools.RepoRagSearchInput input =
+        new RepoRagTools.RepoRagSearchInput(null, null, "question", null, List.of(), null);
+
+    assertThatThrownBy(() -> sanitizer.sanitizeSearch(input))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("github.repository_fetch");
+  }
+
+  @Test
+  void sanitizeGlobalKeepsDisplayAndNormalizesProfile() {
+    GitHubRagProperties.ResolvedRagParameterProfile aggressive = profile("aggressive");
+    when(properties.resolveProfile("AGGRESSIVE")).thenReturn(aggressive);
 
     RepoRagTools.RepoRagGlobalSearchInput input =
         new RepoRagTools.RepoRagGlobalSearchInput(
             " Что такое MCP? ",
+            "AGGRESSIVE",
+            List.of(),
             null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            "callgraph",
-            null,
-            null,
-            List.<RepoRagSearchConversationTurn>of(),
-            null,
-            null,
-            null,
-            "английский",
-            null,
-            null,
-            null,
-            "Answer {{query}} -> {{unknown}}",
-            null,
-            null);
+            "Mixed",
+            "Catalog");
 
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagGlobalSearchInput> result =
         sanitizer.sanitizeGlobal(input);
 
     RepoRagTools.RepoRagGlobalSearchInput sanitized = result.value();
     assertThat(sanitized.rawQuery()).isEqualTo("Что такое MCP?");
-    assertThat(sanitized.neighborStrategy()).isEqualTo("CALL_GRAPH");
-    assertThat(sanitized.translateTo()).isEqualTo("en");
-    assertThat(sanitized.generationLocale()).isEqualTo("en");
-    assertThat(sanitized.displayRepoOwner()).isEqualTo("org");
-    assertThat(sanitized.displayRepoName()).isEqualTo("service");
-    assertThat(sanitized.instructionsTemplate()).isEqualTo("Answer {{rawQuery}} ->");
-    assertThat(result.warnings()).hasSizeGreaterThanOrEqualTo(3);
+    assertThat(sanitized.profile()).isEqualTo("aggressive");
+    assertThat(sanitized.displayRepoOwner()).isEqualTo("Mixed");
+    assertThat(sanitized.displayRepoName()).isEqualTo("Catalog");
+  }
+
+  @Test
+  void sanitizeGlobalFallsBackToGlobalLabels() {
+    when(fetchRegistry.latest()).thenReturn(Optional.empty());
+    RepoRagTools.RepoRagGlobalSearchInput input =
+        new RepoRagTools.RepoRagGlobalSearchInput("test", null, List.of(), null, null, null);
+
+    RepoRagToolInputSanitizer.SanitizationResult<RepoRagTools.RepoRagGlobalSearchInput> result =
+        sanitizer.sanitizeGlobal(input);
+
+    assertThat(result.value().displayRepoOwner()).isEqualTo("global");
+    assertThat(result.value().displayRepoName()).isEqualTo("global");
+  }
+
+  private GitHubRagProperties.ResolvedRagParameterProfile profile(String name) {
+    return new GitHubRagProperties.ResolvedRagParameterProfile(
+        name,
+        8,
+        8,
+        0.55d,
+        Map.of(),
+        8,
+        true,
+        2.0d,
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(true, 3, 4),
+        new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("LINEAR", 1, 6));
   }
 }
