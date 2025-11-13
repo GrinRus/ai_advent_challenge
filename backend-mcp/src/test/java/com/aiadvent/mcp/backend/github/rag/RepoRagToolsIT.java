@@ -68,6 +68,26 @@ class RepoRagToolsIT {
   }
 
   @Test
+  void ragSearchSimpleUsesLatestFetchAndDefaultProfile() {
+    when(fetchRegistry.latest()).thenReturn(Optional.of(fetchContext("owner", "repo")));
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(readyState("owner", "repo")));
+    RepoRagSearchService.SearchResponse response =
+        new RepoRagSearchService.SearchResponse(
+            List.of(), false, "prompt", "instr", false, false, null, List.of("retrieval"));
+    when(searchService.search(any())).thenReturn(response);
+
+    RepoRagTools.RepoRagSearchResponse result =
+        tools.ragSearchSimple(new RepoRagTools.RepoRagSimpleSearchInput("simple"));
+
+    ArgumentCaptor<RepoRagSearchService.SearchCommand> captor =
+        ArgumentCaptor.forClass(RepoRagSearchService.SearchCommand.class);
+    org.mockito.Mockito.verify(searchService).search(captor.capture());
+    assertThat(captor.getValue().plan().profileName()).isEqualTo("balanced");
+    assertThat(result.appliedModules()).contains("profile:balanced");
+  }
+
+  @Test
   void simpleGlobalFallsBackToDefaultProfile() {
     RepoRagSearchService.SearchResponse response =
         new RepoRagSearchService.SearchResponse(
@@ -83,6 +103,20 @@ class RepoRagToolsIT {
     org.mockito.Mockito.verify(searchService).searchGlobal(captor.capture());
     assertThat(captor.getValue().plan().profileName()).isEqualTo("balanced");
     assertThat(result.appliedModules()).contains("profile:balanced");
+  }
+
+  private RepoRagNamespaceStateEntity readyState(String owner, String repo) {
+    RepoRagNamespaceStateEntity entity = new RepoRagNamespaceStateEntity();
+    entity.setNamespace("repo:" + owner + "/" + repo);
+    entity.setRepoOwner(owner);
+    entity.setRepoName(repo);
+    entity.setReady(true);
+    return entity;
+  }
+
+  private GitHubRepositoryFetchRegistry.LastFetchContext fetchContext(String owner, String repo) {
+    return new GitHubRepositoryFetchRegistry.LastFetchContext(
+        owner, repo, "refs/heads/main", "sha", "ws", java.time.Instant.now());
   }
 
   @TestConfiguration
