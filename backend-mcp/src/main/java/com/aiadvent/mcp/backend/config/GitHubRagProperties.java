@@ -226,10 +226,13 @@ public class GitHubRagProperties implements InitializingBean {
     String strategy = neighbor.getStrategy();
     if (StringUtils.hasText(strategy)) {
       String candidate = strategy.trim().toUpperCase(Locale.ROOT);
+      if ("FALSE".equals(candidate)) {
+        candidate = "OFF";
+      }
       if (!SUPPORTED_NEIGHBOR_STRATEGIES.contains(candidate)) {
         throw new IllegalStateException(
-            "neighbor.strategy for profile '%s' must be one of %s"
-                .formatted(profileName, SUPPORTED_NEIGHBOR_STRATEGIES));
+            "neighbor.strategy for profile '%s' must be one of %s (got '%s')"
+                .formatted(profileName, SUPPORTED_NEIGHBOR_STRATEGIES, candidate));
       }
       strategy = candidate;
     } else {
