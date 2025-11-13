@@ -2,13 +2,26 @@ package com.aiadvent.mcp.backend.config;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.util.StringUtils;
 
 @ConfigurationProperties(prefix = "github.rag")
-public class GitHubRagProperties {
+public class GitHubRagProperties implements InitializingBean {
+
+  private static final int MAX_TOP_K = 40;
+  private static final double MIN_SCORE = 0.1d;
+  private static final double MAX_SCORE = 0.99d;
+  private static final Set<String> SUPPORTED_NEIGHBOR_STRATEGIES =
+      Set.of("OFF", "LINEAR", "PARENT_SYMBOL", "CALL_GRAPH");
 
   private String namespacePrefix = "repo";
   private int maxConcurrency = 2;
@@ -21,6 +34,15 @@ public class GitHubRagProperties {
   private final MultiQuery multiQuery = new MultiQuery();
   private final PostProcessing postProcessing = new PostProcessing();
   private final Generation generation = new Generation();
+  private List<RagParameterProfile> parameterProfiles = new ArrayList<>();
+  private String defaultProfile;
+  private Map<String, ResolvedRagParameterProfile> profileIndex = Map.of();
+  private String resolvedDefaultProfile;
+
+  @Override
+  public void afterPropertiesSet() {
+    initializeProfiles();
+  }
 
   public String getNamespacePrefix() {
     return namespacePrefix;
@@ -72,6 +94,396 @@ public class GitHubRagProperties {
 
   public Generation getGeneration() {
     return generation;
+  }
+
+  private void initializeProfiles() {
+    if (parameterProfiles == null || parameterProfiles.isEmpty()) {
+      profileIndex = Map.of();
+      resolvedDefaultProfile = null;
+      return;
+    }
+    Map<String, ResolvedRagParameterProfile> index = new LinkedHashMap<>();
+    for (RagParameterProfile raw : parameterProfiles) {
+      ResolvedRagParameterProfile resolved = sanitizeProfile(raw);
+      String key = normalizeProfileName(resolved.name());
+      if (index.putIfAbsent(key, resolved) != null) {
+        throw new IllegalStateException(
+            "Duplicate RAG profile name: " + resolved.name());
+      }
+    }
+    profileIndex = Collections.unmodifiableMap(index);
+    resolvedDefaultProfile = determineDefaultProfile(index);
+  }
+
+  private String determineDefaultProfile(Map<String, ResolvedRagParameterProfile> index) {
+    if (index.isEmpty()) {
+      return null;
+    }
+    if (!StringUtils.hasText(defaultProfile)) {
+      return index.keySet().iterator().next();
+    }
+    String candidate = normalizeProfileName(defaultProfile);
+    if (!index.containsKey(candidate)) {
+      throw new IllegalStateException(
+          "Configured defaultProfile '%s' is not present in github.rag.parameterProfiles"
+              .formatted(defaultProfile));
+    }
+    return candidate;
+  }
+
+  private ResolvedRagParameterProfile sanitizeProfile(RagParameterProfile raw) {
+    Objects.requireNonNull(raw, "profile");
+    String name = raw.getName();
+    if (!StringUtils.hasText(name)) {
+      throw new IllegalStateException("RAG profile name must not be blank");
+    }
+    Integer topK = validateTopK(raw.getTopK(), "topK", name);
+    Integer topKPerQuery = validateTopK(raw.getTopKPerQuery(), "topKPerQuery", name);
+    Double minScore = validateScore(raw.getMinScore(), "minScore", name);
+    Map<String, Double> minScoreByLanguage = sanitizeLanguageThresholds(raw.getMinScoreByLanguage(), name);
+    Integer rerankTopN = validateTopK(raw.getRerankTopN(), "rerankTopN", name);
+    Boolean codeAwareEnabled = raw.getCodeAwareEnabled();
+    Double codeAwareHeadMultiplier = validateHeadMultiplier(raw.getCodeAwareHeadMultiplier(), name);
+    ResolvedRagParameterProfile.ResolvedNeighbor neighbor = sanitizeNeighbor(raw.getNeighbor(), name);
+    ResolvedRagParameterProfile.ResolvedMultiQuery multiQuery =
+        sanitizeMultiQuery(raw.getMultiQuery(), name);
+    return new ResolvedRagParameterProfile(
+        name.trim(),
+        topK,
+        topKPerQuery,
+        minScore,
+        minScoreByLanguage,
+        rerankTopN,
+        codeAwareEnabled,
+        codeAwareHeadMultiplier,
+        multiQuery,
+        neighbor);
+  }
+
+  private Integer validateTopK(Integer candidate, String field, String profileName) {
+    if (candidate == null) {
+      return null;
+    }
+    if (candidate < 1 || candidate > MAX_TOP_K) {
+      throw new IllegalStateException(
+          "%s for profile '%s' must be between 1 and %d"
+              .formatted(field, profileName, MAX_TOP_K));
+    }
+    return candidate;
+  }
+
+  private Double validateScore(Double candidate, String field, String profileName) {
+    if (candidate == null) {
+      return null;
+    }
+    if (candidate < MIN_SCORE || candidate > MAX_SCORE) {
+      throw new IllegalStateException(
+          "%s for profile '%s' must be between %.2f and %.2f"
+              .formatted(field, profileName, MIN_SCORE, MAX_SCORE));
+    }
+    return candidate;
+  }
+
+  private Double validateHeadMultiplier(Double candidate, String profileName) {
+    if (candidate == null) {
+      return null;
+    }
+    double maxAllowed = rerank.getCodeAware().getMaxHeadMultiplier();
+    if (candidate < 1.0d || candidate > maxAllowed) {
+      throw new IllegalStateException(
+          "codeAwareHeadMultiplier for profile '%s' must be between 1.0 and %s"
+              .formatted(profileName, maxAllowed));
+    }
+    return candidate;
+  }
+
+  private Map<String, Double> sanitizeLanguageThresholds(
+      Map<String, Double> source, String profileName) {
+    if (source == null || source.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, Double> sanitized = new LinkedHashMap<>();
+    source.forEach(
+        (language, threshold) -> {
+          if (!StringUtils.hasText(language) || threshold == null) {
+            return;
+          }
+          if (threshold < MIN_SCORE || threshold > MAX_SCORE) {
+            throw new IllegalStateException(
+                "minScoreByLanguage[%s] for profile '%s' must be between %.2f and %.2f"
+                    .formatted(language, profileName, MIN_SCORE, MAX_SCORE));
+          }
+          sanitized.put(language.toLowerCase(Locale.ROOT), threshold);
+        });
+    return Collections.unmodifiableMap(sanitized);
+  }
+
+  private ResolvedRagParameterProfile.ResolvedNeighbor sanitizeNeighbor(
+      RagParameterProfile.ProfileNeighbor neighbor, String profileName) {
+    if (neighbor == null) {
+      return new ResolvedRagParameterProfile.ResolvedNeighbor(null, null, null);
+    }
+    String strategy = neighbor.getStrategy();
+    if (StringUtils.hasText(strategy)) {
+      String candidate = strategy.trim().toUpperCase(Locale.ROOT);
+      if (!SUPPORTED_NEIGHBOR_STRATEGIES.contains(candidate)) {
+        throw new IllegalStateException(
+            "neighbor.strategy for profile '%s' must be one of %s"
+                .formatted(profileName, SUPPORTED_NEIGHBOR_STRATEGIES));
+      }
+      strategy = candidate;
+    } else {
+      strategy = null;
+    }
+    Integer radius = neighbor.getRadius();
+    if (radius != null) {
+      if (radius < 0 || radius > postProcessing.getNeighbor().getMaxRadius()) {
+        throw new IllegalStateException(
+            "neighbor.radius for profile '%s' must be between 0 and %d"
+                .formatted(profileName, postProcessing.getNeighbor().getMaxRadius()));
+      }
+    }
+    Integer limit = neighbor.getLimit();
+    if (limit != null) {
+      if (limit < 0 || limit > postProcessing.getNeighbor().getMaxLimit()) {
+        throw new IllegalStateException(
+            "neighbor.limit for profile '%s' must be between 0 and %d"
+                .formatted(profileName, postProcessing.getNeighbor().getMaxLimit()));
+      }
+    }
+    return new ResolvedRagParameterProfile.ResolvedNeighbor(strategy, radius, limit);
+  }
+
+  private ResolvedRagParameterProfile.ResolvedMultiQuery sanitizeMultiQuery(
+      RagParameterProfile.ProfileMultiQuery multiQuery, String profileName) {
+    if (multiQuery == null) {
+      return new ResolvedRagParameterProfile.ResolvedMultiQuery(null, null, null);
+    }
+    Integer queries = multiQuery.getQueries();
+    if (queries != null) {
+      if (queries < 1 || queries > this.multiQuery.getMaxQueries()) {
+        throw new IllegalStateException(
+            "multiQuery.queries for profile '%s' must be between 1 and %d"
+                .formatted(profileName, this.multiQuery.getMaxQueries()));
+      }
+    }
+    Integer maxQueries = multiQuery.getMaxQueries();
+    if (maxQueries != null) {
+      if (maxQueries < 1 || maxQueries > this.multiQuery.getMaxQueries()) {
+        throw new IllegalStateException(
+            "multiQuery.maxQueries for profile '%s' must be between 1 and %d"
+                .formatted(profileName, this.multiQuery.getMaxQueries()));
+      }
+    }
+    return new ResolvedRagParameterProfile.ResolvedMultiQuery(
+        multiQuery.getEnabled(), queries, maxQueries);
+  }
+
+  private String normalizeProfileName(String name) {
+    return name.trim().toLowerCase(Locale.ROOT);
+  }
+
+  public List<RagParameterProfile> getParameterProfiles() {
+    return parameterProfiles;
+  }
+
+  public void setParameterProfiles(List<RagParameterProfile> parameterProfiles) {
+    this.parameterProfiles = parameterProfiles != null ? parameterProfiles : new ArrayList<>();
+  }
+
+  public String getDefaultProfile() {
+    return defaultProfile;
+  }
+
+  public void setDefaultProfile(String defaultProfile) {
+    this.defaultProfile = defaultProfile;
+  }
+
+  public Map<String, ResolvedRagParameterProfile> getProfileIndex() {
+    return profileIndex;
+  }
+
+  public boolean hasProfiles() {
+    return !profileIndex.isEmpty();
+  }
+
+  public String getResolvedDefaultProfile() {
+    return resolvedDefaultProfile;
+  }
+
+  public ResolvedRagParameterProfile resolveProfile(String name) {
+    if (profileIndex.isEmpty()) {
+      throw new IllegalStateException("github.rag.parameterProfiles must be configured");
+    }
+    String key = StringUtils.hasText(name) ? normalizeProfileName(name) : resolvedDefaultProfile;
+    ResolvedRagParameterProfile profile = profileIndex.get(key);
+    if (profile == null) {
+      throw new IllegalStateException("Unknown RAG parameter profile: " + name);
+    }
+    return profile;
+  }
+
+  public static class RagParameterProfile {
+    private String name;
+    private Integer topK;
+    private Integer topKPerQuery;
+    private Double minScore;
+    private Map<String, Double> minScoreByLanguage = new HashMap<>();
+    private Integer rerankTopN;
+    private Boolean codeAwareEnabled;
+    private Double codeAwareHeadMultiplier;
+    private final ProfileMultiQuery multiQuery = new ProfileMultiQuery();
+    private final ProfileNeighbor neighbor = new ProfileNeighbor();
+
+    public String getName() {
+      return name;
+    }
+
+    public void setName(String name) {
+      this.name = name;
+    }
+
+    public Integer getTopK() {
+      return topK;
+    }
+
+    public void setTopK(Integer topK) {
+      this.topK = topK;
+    }
+
+    public Integer getTopKPerQuery() {
+      return topKPerQuery;
+    }
+
+    public void setTopKPerQuery(Integer topKPerQuery) {
+      this.topKPerQuery = topKPerQuery;
+    }
+
+    public Double getMinScore() {
+      return minScore;
+    }
+
+    public void setMinScore(Double minScore) {
+      this.minScore = minScore;
+    }
+
+    public Map<String, Double> getMinScoreByLanguage() {
+      return minScoreByLanguage;
+    }
+
+    public void setMinScoreByLanguage(Map<String, Double> minScoreByLanguage) {
+      this.minScoreByLanguage =
+          minScoreByLanguage != null ? new HashMap<>(minScoreByLanguage) : new HashMap<>();
+    }
+
+    public Integer getRerankTopN() {
+      return rerankTopN;
+    }
+
+    public void setRerankTopN(Integer rerankTopN) {
+      this.rerankTopN = rerankTopN;
+    }
+
+    public Boolean getCodeAwareEnabled() {
+      return codeAwareEnabled;
+    }
+
+    public void setCodeAwareEnabled(Boolean codeAwareEnabled) {
+      this.codeAwareEnabled = codeAwareEnabled;
+    }
+
+    public Double getCodeAwareHeadMultiplier() {
+      return codeAwareHeadMultiplier;
+    }
+
+    public void setCodeAwareHeadMultiplier(Double codeAwareHeadMultiplier) {
+      this.codeAwareHeadMultiplier = codeAwareHeadMultiplier;
+    }
+
+    public ProfileMultiQuery getMultiQuery() {
+      return multiQuery;
+    }
+
+    public ProfileNeighbor getNeighbor() {
+      return neighbor;
+    }
+
+    public static class ProfileMultiQuery {
+      private Boolean enabled;
+      private Integer queries;
+      private Integer maxQueries;
+
+      public Boolean getEnabled() {
+        return enabled;
+      }
+
+      public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+      }
+
+      public Integer getQueries() {
+        return queries;
+      }
+
+      public void setQueries(Integer queries) {
+        this.queries = queries;
+      }
+
+      public Integer getMaxQueries() {
+        return maxQueries;
+      }
+
+      public void setMaxQueries(Integer maxQueries) {
+        this.maxQueries = maxQueries;
+      }
+    }
+
+    public static class ProfileNeighbor {
+      private String strategy;
+      private Integer radius;
+      private Integer limit;
+
+      public String getStrategy() {
+        return strategy;
+      }
+
+      public void setStrategy(String strategy) {
+        this.strategy = strategy;
+      }
+
+      public Integer getRadius() {
+        return radius;
+      }
+
+      public void setRadius(Integer radius) {
+        this.radius = radius;
+      }
+
+      public Integer getLimit() {
+        return limit;
+      }
+
+      public void setLimit(Integer limit) {
+        this.limit = limit;
+      }
+    }
+  }
+
+  public record ResolvedRagParameterProfile(
+      String name,
+      Integer topK,
+      Integer topKPerQuery,
+      Double minScore,
+      Map<String, Double> minScoreByLanguage,
+      Integer rerankTopN,
+      Boolean codeAwareEnabled,
+      Double codeAwareHeadMultiplier,
+      ResolvedMultiQuery multiQuery,
+      ResolvedNeighbor neighbor) {
+
+    public record ResolvedMultiQuery(Boolean enabled, Integer queries, Integer maxQueries) {}
+
+    public record ResolvedNeighbor(String strategy, Integer radius, Integer limit) {}
   }
 
   public static class Chunking {
