@@ -171,6 +171,10 @@ public class FlowPayloadMapper {
       metadata.put("stepName", stepExecution.getStepName());
     }
     metadata.put("attempt", stepExecution.getAttempt());
+    String phase = normalizePhase(stepExecution.getStepId());
+    if (phase != null) {
+      metadata.put("phase", phase);
+    }
     if (stepExecution.getStatus() != null) {
       metadata.put("status", stepExecution.getStatus().name());
     }
@@ -260,5 +264,17 @@ public class FlowPayloadMapper {
       return objectMapper.nullNode();
     }
     return node.deepCopy();
+  }
+
+  private String normalizePhase(String stepId) {
+    if (!StringUtils.hasText(stepId)) {
+      return null;
+    }
+    return switch (stepId) {
+      case "fetch_workspace" -> "fetching";
+      case "inspect_workspace" -> "inspecting_workspace";
+      case "run_gradle_tests" -> "running_tests";
+      default -> stepId;
+    };
   }
 }

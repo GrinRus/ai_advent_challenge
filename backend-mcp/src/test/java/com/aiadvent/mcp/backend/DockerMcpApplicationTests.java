@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.aiadvent.mcp.backend.docker.DockerRunnerService;
 import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunInput;
@@ -87,6 +88,25 @@ class DockerMcpApplicationTests {
     assertThat(result.stderr()).anySatisfy(chunk -> assertThat(chunk).contains("Simulated failure"));
   }
 
+  @Test
+  void dockerGradleRunnerTimesOut() throws Exception {
+    TempWorkspaceService.Workspace workspace = createWorkspace("request-timeout");
+    createGradleWrapper(workspace.path());
+
+    assertThatThrownBy(
+            () ->
+                dockerRunnerService.runGradle(
+                    new DockerGradleRunInput(
+                        workspace.workspaceId(),
+                        null,
+                        List.of("test"),
+                        List.of(),
+                        Map.of("FAKE_DOCKER_BEHAVIOR", "timeout"),
+                        Duration.ofSeconds(1))))
+        .isInstanceOf(DockerRunnerService.DockerRunnerException.class)
+        .hasMessageContaining("timed out");
+  }
+
   private TempWorkspaceService.Workspace createWorkspace(String requestId) {
     return workspaceService.createWorkspace(
         new CreateWorkspaceRequest("example/demo-service", "refs/heads/main", requestId));
@@ -133,6 +153,9 @@ class DockerMcpApplicationTests {
           if [[ "$FAKE_DOCKER_BEHAVIOR" == "fail" ]]; then
             echo "Simulated failure for $*" 1>&2
             exit 17
+          fi
+          if [[ "$FAKE_DOCKER_BEHAVIOR" == "timeout" ]]; then
+            sleep 5
           fi
           echo "Simulated Gradle run for $*"
           echo "diagnostics: container executed" 1>&2

@@ -250,6 +250,16 @@ Flow позволяет операторам запускать Gradle-тест�
 4. `docker.gradle_runner` вызывается с `tasks=["test","check"]`, `timeoutSeconds=900`, сеть отключена.
 5. Flow событий: `fetching → inspecting_workspace → running_tests → report_ready`. Если `exitCode != 0`, агент возвращает статус `FAILED` и приложение подсвечивает кнопку «Retry step».
 
+#### Пример диалога
+```
+Operator: Запусти gradle тесты для sandbox-co/demo-service, ветка release/1.9 — задачи test,check.
+Flow: Статус fetching — готовлю workspace... (requestId=gradle-2025-11-13-01)
+Flow: Статус inspecting_workspace — нашёл модули [service-app, service-worker]. Нужен service-app?
+Operator: Да, выбираем service-app.
+Flow: Статус running_tests — docker.gradle_runner exitCode=0, duration=145s. Готово!
+```
+Flow снабжает каждый шаг ссылкой на события; payload `step.phase` = `fetching|inspecting_workspace|running_tests`, что позволяет UI и внешним клиентам отображать прогресс.
+
 ### Рекомендации операторам
 
 - Перед запуском уточняйте `tasks` и `projectPath`. Если путь известен заранее, укажите его в параметрах Flow, чтобы пропустить вопрос на шаге инспекции.
@@ -291,6 +301,7 @@ Flow позволяет операторам запускать Gradle-тест�
 ### Наблюдаемость
 
 - `github_repository_fetch_*`, `workspace_inspection_*`, `docker_gradle_runner_*` доступны на `/actuator/prometheus` у сервисов `backend` и `docker-runner-mcp`.
+- GitHub fetch, workspace inspector и Docker runner пишут структурированные события `gradle_mcp.fetch.*`, `gradle_mcp.inspect.*`, `gradle_mcp.docker.run.*` с `requestId`, идентификатором workspace, длительностью и кодами возврата — используйте их для диагностики инцидентов.
 - `requestId` передавайте в параметрах Flow — он попадает в логи fetch/inspector и облегчит поиск следов в Kibana.
 - Если `docker_gradle_runner_duration` стабильно растёт или `docker_gradle_runner_failure_total` > 3 за 15 минут, проверьте Docker-хост (disk space, доступность сокета) и параметры `DOCKER_RUNNER_IMAGE`, `DOCKER_RUNNER_TIMEOUT`.
 

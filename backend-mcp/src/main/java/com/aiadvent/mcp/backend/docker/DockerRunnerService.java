@@ -75,6 +75,7 @@ public class DockerRunnerService {
     TempWorkspaceService.Workspace workspace =
         workspaceService.findWorkspace(workspaceId).orElseThrow(
             () -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    String normalizedRequestId = normalizeRequestId(workspace.requestId());
 
     Path workspacePath = workspace.path();
     validateWorkspacePath(workspacePath);
@@ -146,6 +147,12 @@ public class DockerRunnerService {
     } catch (RuntimeException ex) {
       runFailureCounter.increment();
       sample.stop(runTimer);
+      log.warn(
+          "gradle_mcp.docker.run.failed requestId={} workspaceId={} projectPath={} message={}",
+          normalizedRequestId,
+          workspaceId,
+          projectPath,
+          ex.getMessage());
       throw ex;
     }
     Duration duration = Duration.between(startedAt, Instant.now());
@@ -159,18 +166,29 @@ public class DockerRunnerService {
       runFailureCounter.increment();
     }
 
-    return new DockerGradleRunResult(
-        workspaceId,
-        projectPath,
-        runnerExecutable,
-        dockerCommand,
-        result.exitCode(),
-        success ? "success" : "failed",
-        result.stdoutChunks(),
-        result.stderrChunks(),
-        duration,
-        startedAt,
-        Instant.now());
+    DockerGradleRunResult runResult =
+        new DockerGradleRunResult(
+            workspaceId,
+            projectPath,
+            runnerExecutable,
+            dockerCommand,
+            result.exitCode(),
+            success ? "success" : "failed",
+            result.stdoutChunks(),
+            result.stderrChunks(),
+            duration,
+            startedAt,
+            Instant.now());
+    log.info(
+      "gradle_mcp.docker.run.completed requestId={} workspaceId={} projectPath={} exitCode={} status={} durationMs={} tasks={}",
+      normalizedRequestId,
+      workspaceId,
+      projectPath,
+      runResult.exitCode(),
+      runResult.status(),
+      duration.toMillis(),
+      String.join(",", tasks));
+    return runResult;
   }
 
   private List<String> buildDockerCommand(
@@ -499,4 +517,8 @@ public class DockerRunnerService {
   }
 
   private record MountConfiguration(List<String> dockerArgs, Path containerWorkspaceRoot, String gradleUserHome) {}
+
+  private String normalizeRequestId(String requestId) {
+    return requestId != null && !requestId.isBlank() ? requestId : "n/a";
+  }
 }

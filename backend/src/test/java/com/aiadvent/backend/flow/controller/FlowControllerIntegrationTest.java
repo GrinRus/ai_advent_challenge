@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -498,6 +499,70 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     assertThat(completedSteps).isEqualTo(3);
   }
 
+  @Test
+  void githubGradleTestFlowEmitsProgressEvents() throws Exception {
+    FlowDefinition definition = prepareGithubGradleFlow();
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenReturn(successfulInvocation("Fetch complete"))
+        .thenReturn(successfulInvocation("Inspection complete"))
+        .thenReturn(successfulInvocation("Gradle execution complete"));
+
+    FlowStartResponse startResponse =
+        startFlow(definition.getId(), objectMapper.writeValueAsString(gradleFlowRequest()));
+
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+
+    FlowStatusResponse snapshot = snapshot(startResponse.sessionId());
+
+    assertThat(extractStepField(snapshot.events(), FlowEventType.STEP_STARTED, "phase"))
+        .containsExactly("fetching", "inspecting_workspace", "running_tests");
+    assertThat(extractStepField(snapshot.events(), FlowEventType.STEP_COMPLETED, "stepId"))
+        .containsExactly("fetch_workspace", "inspect_workspace", "run_gradle_tests");
+    assertThat(snapshot.events())
+        .filteredOn(event -> event.type() == FlowEventType.FLOW_COMPLETED)
+        .hasSize(1);
+  }
+
+  @Test
+  void githubGradleTestFlowFailsWhenGradleStepErrors() throws Exception {
+    FlowDefinition definition = prepareGithubGradleFlow();
+
+    Mockito.when(agentInvocationService.invoke(Mockito.any()))
+        .thenReturn(successfulInvocation("Fetch complete"))
+        .thenReturn(successfulInvocation("Inspection complete"))
+        .thenThrow(new RuntimeException("Gradle failed"));
+
+    FlowStartResponse startResponse =
+        startFlow(definition.getId(), objectMapper.writeValueAsString(gradleFlowRequest()));
+
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+    processNextJobWithRetry();
+
+    FlowSession session =
+        flowSessionRepository.findById(startResponse.sessionId()).orElseThrow();
+    assertThat(session.getStatus()).isEqualTo(FlowSessionStatus.FAILED);
+
+    FlowStatusResponse snapshot = snapshot(startResponse.sessionId());
+    assertThat(snapshot.events())
+        .filteredOn(event -> event.type() == FlowEventType.STEP_FAILED)
+        .hasSize(1);
+    assertThat(snapshot.events())
+        .filteredOn(event -> event.type() == FlowEventType.FLOW_FAILED)
+        .hasSize(1);
+    FlowEventDto failedEvent =
+        snapshot.events().stream()
+            .filter(event -> event.type() == FlowEventType.STEP_FAILED)
+            .findFirst()
+            .orElseThrow();
+    JsonNode failedPayload = payloadOf(failedEvent);
+    assertThat(failedPayload.path("context").path("launchParameters").path("repositoryUrl").asText())
+        .isEqualTo("https://github.com/example/project");
+  }
+
   private FlowStartResponse startFlow(UUID flowId, String body) throws Exception {
     var requestBuilder =
         post("/api/flows/" + flowId + "/start").contentType(MediaType.APPLICATION_JSON);
@@ -529,6 +594,55 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
         null,
         List.of(),
         null);
+  }
+
+  private FlowDefinition prepareGithubGradleFlow() {
+    AgentVersion fetchAgent =
+        persistAgent(
+            "repo-fetcher-test",
+            optionsWithToolBindings(List.of(toolBinding("github.repository_fetch"))));
+    AgentVersion navigatorAgent =
+        persistAgent(
+            "workspace-navigator-test",
+            optionsWithToolBindings(List.of(toolBinding("github.workspace_directory_inspector"))));
+    AgentVersion gradleAgent =
+        persistAgent(
+            "gradle-test-runner-test",
+            optionsWithToolBindings(List.of(toolBinding("docker.gradle_runner"))));
+
+    return persistGithubGradleTestFlow(
+        fetchAgent.getId(), navigatorAgent.getId(), gradleAgent.getId());
+  }
+
+  private ObjectNode gradleFlowRequest() {
+    ObjectNode request = objectMapper.createObjectNode();
+    ObjectNode parameters = request.putObject("parameters");
+    parameters.put("repositoryUrl", "https://github.com/example/project");
+    parameters.put("ref", "main");
+    parameters.putArray("tasks").add("test");
+    return request;
+  }
+
+  private FlowStatusResponse snapshot(UUID sessionId) throws Exception {
+    MvcResult snapshotResult =
+        mockMvc
+            .perform(get("/api/flows/" + sessionId + "/snapshot"))
+            .andExpect(status().isOk())
+            .andReturn();
+    return objectMapper.readValue(snapshotResult.getResponse().getContentAsString(), FlowStatusResponse.class);
+  }
+
+  private JsonNode payloadOf(FlowEventDto event) {
+    return objectMapper.valueToTree(event.payload());
+  }
+
+  private List<String> extractStepField(
+      List<FlowEventDto> events, FlowEventType type, String fieldName) {
+    return events.stream()
+        .filter(event -> event.type() == type)
+        .map(this::payloadOf)
+        .map(payload -> payload.path("step").path(fieldName).asText(null))
+        .collect(Collectors.toList());
   }
 
   private AgentInvocationOptions optionsWithToolBindings(

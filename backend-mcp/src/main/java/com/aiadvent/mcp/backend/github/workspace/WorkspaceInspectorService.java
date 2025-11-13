@@ -174,6 +174,7 @@ public class WorkspaceInspectorService {
           }
         };
 
+    String requestId = workspace.requestId();
     try {
       Files.walkFileTree(
           workspaceRoot,
@@ -183,6 +184,11 @@ public class WorkspaceInspectorService {
       inspectionSuccessCounter.increment();
     } catch (IOException | RuntimeException ex) {
       inspectionFailureCounter.increment();
+      log.warn(
+          "gradle_mcp.inspect.failed requestId={} workspaceId={} message={}",
+          normalizeRequestId(requestId),
+          workspaceId,
+          ex.getMessage());
       throw new WorkspaceInspectionException(
           "Failed to inspect workspace " + workspaceId, ex);
     } finally {
@@ -199,17 +205,26 @@ public class WorkspaceInspectorService {
             .findFirst()
             .orElse(null);
 
-    return new InspectWorkspaceResult(
+    InspectWorkspaceResult result =
+        new InspectWorkspaceResult(
+            workspaceId,
+            workspaceRoot,
+            List.copyOf(items),
+            truncated.get(),
+            List.copyOf(warnings),
+            multipleGradle,
+            recommended,
+            processed.get(),
+            duration,
+            inspectedAt);
+    log.info(
+        "gradle_mcp.inspect.completed requestId={} workspaceId={} durationMs={} items={} truncated={}",
+        normalizeRequestId(requestId),
         workspaceId,
-        workspaceRoot,
-        List.copyOf(items),
-        truncated.get(),
-        List.copyOf(warnings),
-        multipleGradle,
-        recommended,
+        duration.toMillis(),
         processed.get(),
-        duration,
-        inspectedAt);
+        truncated.get());
+    return result;
   }
 
   private List<PathMatcher> compileMatchers(@Nullable List<String> patterns) {
@@ -335,6 +350,10 @@ public class WorkspaceInspectorService {
       return "";
     }
     return path.replace('\\', '/');
+  }
+
+  private String normalizeRequestId(String requestId) {
+    return requestId != null && !requestId.isBlank() ? requestId : "n/a";
   }
 
   public record InspectWorkspaceRequest(

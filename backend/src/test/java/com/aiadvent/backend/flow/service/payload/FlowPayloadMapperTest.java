@@ -101,6 +101,7 @@ class FlowPayloadMapperTest {
     assertThat(json.path("context").path("launchParameters").path("foo").asText()).isEqualTo("bar");
     assertThat(json.path("step").path("stepExecutionId").asText()).isEqualTo(stepExecution.getId().toString());
     assertThat(json.path("step").path("agentVersion").path("modelId").asText()).isEqualTo("gpt-4.0");
+    assertThat(json.path("step").path("phase").asText()).isEqualTo("step-1");
   }
 
   @Test

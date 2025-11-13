@@ -22,16 +22,21 @@ import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.Inspe
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
 public class WorkspaceAccessService {
+
+  private static final Logger log = LoggerFactory.getLogger(WorkspaceAccessService.class);
 
   private final GitHubRepositoryService repositoryService;
   private final WorkspaceInspectorService inspectorService;
@@ -50,8 +55,36 @@ public class WorkspaceAccessService {
       GitFetchOptions options,
       RepositoryRef repositoryRef,
       String requestId) {
-    return repositoryService.fetchRepository(
-        new FetchRepositoryInput(repositoryRef, options, requestId));
+    String normalizedRequestId = normalizeRequestId(requestId);
+    Instant startedAt = Instant.now();
+    try {
+      FetchRepositoryResult result =
+          repositoryService.fetchRepository(
+              new FetchRepositoryInput(repositoryRef, options, requestId));
+      long durationMs =
+          result.downloadDuration() != null
+              ? result.downloadDuration().toMillis()
+              : Duration.between(startedAt, Instant.now()).toMillis();
+      log.info(
+          "gradle_mcp.fetch.completed requestId={} repository={}/{} ref={} downloadedBytes={} workspaceBytes={} durationMs={}",
+          normalizedRequestId,
+          repositoryRef.owner(),
+          repositoryRef.name(),
+          repositoryRef.ref(),
+          result.downloadedBytes(),
+          result.workspaceSizeBytes(),
+          durationMs);
+      return result;
+    } catch (RuntimeException exception) {
+      log.warn(
+          "gradle_mcp.fetch.failed requestId={} repository={}/{} ref={} message={}",
+          normalizedRequestId,
+          repositoryRef.owner(),
+          repositoryRef.name(),
+          repositoryRef.ref(),
+          exception.getMessage());
+      throw exception;
+    }
   }
 
   public CreateBranchResult createBranch(CreateBranchInput input) {
@@ -138,4 +171,8 @@ public class WorkspaceAccessService {
       String content,
       String base64Content,
       Instant readAt) {}
+
+  private String normalizeRequestId(String requestId) {
+    return requestId != null && !requestId.isBlank() ? requestId : "n/a";
+  }
 }
