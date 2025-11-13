@@ -1219,9 +1219,9 @@
   - Сервис принимает `ResolvedSearchPlan` + глобальные лимиты (`MAX_TOP_K`, `postProcessing.neighbor.maxLimit`, `rerank.codeAware.maxHeadMultiplier`, `multiQuery.maxQueries`) и возвращает клампнутый план + список предупреждений (`topK clamped to 40`, `neighborLimit reduced to 12`).
   - API: `clampTopK(int)`, `clampTopKPerQuery(int, int)`, `sanitizeMinScore(double)`, `clampNeighbor(NeighborSpec)`, `sanitizeHeadMultiplier(double)`, `sanitizeMultiQuery(MultiQuerySpec)`. Каждая операция пишет структурированное событие (`log.info` JSON, поля: profile, field, requested, applied, cause) и добавляет user-facing warning.
   - `RepoRagToolInputSanitizer` и `RepoRagSearchService` используют Guard вместо своих проверок, чтобы все ограничения были в одном месте.
-- [ ] **Совместимость**:
-  - Временный `LegacyRagInputAdapter` принимает старые DTO (с десятками полей), использует `RepoRagToolInputSanitizer` для нормализации, определяет профиль `legacy` и записывает итоги в warnings/appliedModules (`profile:legacy`, `legacyParamsStripped`).
-  - Adapter покрывается smoke-тестом: старая полезная нагрузка преобразуется в профиль `legacy` и идёт через новые пути без изменений поведения. CHANGELOG описывает дедлайн отключения adapter’а и инструкции для клиентов.
+- [ ] **Совместимость (breaking contract)**:
+  - Включаем новый контракт сразу: инструменты принимают только `repoOwner?`, `repoName?`, `rawQuery`, `profile`, `conversationContext`. Любая попытка передать дополнительные поля приводит к ошибке `Unsupported parameter: ...`.
+  - CHANGELOG и operator guide фиксируют breaking change, UI/агенты обновляются синхронно. Дополнительно публикуем dev-note о способе быстро переключать profile (например, `profile=legacy` с теми же значениями, что прежние дефолты).
 - [ ] **Документация и тесты**:
   - Unit: `RepoRagToolInputSanitizerTest` (нормализация профиля, предупреждения о legacy), `RagParameterGuardTest` (clamp сценарии), `GitHubRagPropertiesTest` (уже есть, расширить кейсами на ошибки профилей).
   - Integration: `RepoRagSearchServiceTest` с mock profiles (`conservative`, `aggressive`) проверяет, что SearchCommand исполняет план и appliedModules содержит `profile:<name>`.
