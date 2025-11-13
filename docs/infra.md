@@ -74,7 +74,7 @@ docker compose up --build docker-runner-mcp
 | `DOCKER_RUNNER_WORKSPACE_ROOT` | путь к общему workspace (shared с backend/github-mcp) | `/var/tmp/aiadvent/mcp-workspaces` |
 | `DOCKER_RUNNER_GRADLE_CACHE_PATH` | путь к Gradle cache | `/var/tmp/aiadvent/gradle-cache` |
 | `DOCKER_RUNNER_IMAGE` | образ с Gradle tooling | `aiadvent/mcp-gradle-runner:latest` |
-| `DOCKER_RUNNER_ENABLE_NETWORK` | включить сеть внутри контейнера | `false` |
+| `DOCKER_RUNNER_ENABLE_NETWORK` | включить сеть внутри контейнера | `true` (установите `false`, если нужен полностью офлайн режим) |
 | `DOCKER_RUNNER_TIMEOUT` | таймаут выполнения по умолчанию | `PT15M` |
 | `DOCKER_RUNNER_WORKSPACE_VOLUME`, `DOCKER_RUNNER_GRADLE_CACHE_VOLUME` | именованные volume'ы | не заданы (используются bind-монты) |
 
@@ -82,7 +82,7 @@ docker compose up --build docker-runner-mcp
 
 1. Backend, GitHub MCP и docker-runner должны указывать одинаковый `workspaceRoot`, иначе `docker.gradle_runner` не найдёт файлы.
 2. Хостовой пользователь должен иметь права на каталоги `workspace-root` и `gradle-cache`.
-3. Контейнеру нужен доступ к `/var/run/docker.sock`; убедитесь, что сокет смонтирован и пользователь имеет право выполнять `docker run`.
+3. Контейнеру нужен доступ к `/var/run/docker.sock`; убедитесь, что сокет смонтирован и пользователь имеет право выполнять `docker run`. Если нужно запретить интернет-доступ, выставьте `DOCKER_RUNNER_ENABLE_NETWORK=false` (по умолчанию сеть включена, чтобы Gradle мог скачивать зависимости).
 
 #### Repo RAG индексатор
 - **Поток:** `github.repository_fetch` → запись job в `repo_rag_index_job` → `RepoRagIndexScheduler` асинхронно обходит workspace (игнор `.git`, `.github`, `node_modules`, `dist`, `build` + `.mcpignore`) и сохраняет чанки (по умолчанию 2048 Б / 160 строк) в `repo_rag_vector_store`.
