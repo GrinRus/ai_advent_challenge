@@ -22,6 +22,14 @@ public class GitHubRagProperties implements InitializingBean {
   private static final double MAX_SCORE = 0.99d;
   private static final Set<String> SUPPORTED_NEIGHBOR_STRATEGIES =
       Set.of("OFF", "LINEAR", "PARENT_SYMBOL", "CALL_GRAPH");
+  private static final List<String> DEFAULT_OVERVIEW_KEYWORDS =
+      List.of(
+          "overview",
+          "project overview",
+          "описание проекта",
+          "что за проект",
+          "docs/backlog.md",
+          "readme");
 
   private String namespacePrefix = "repo";
   private int maxConcurrency = 2;
@@ -143,6 +151,9 @@ public class GitHubRagProperties implements InitializingBean {
     Double minScoreFallback = validateScore(raw.getMinScoreFallback(), "minScoreFallback", name);
     String minScoreClassifier = normalizeClassifier(raw.getMinScoreClassifier());
     List<String> overviewBoostKeywords = sanitizeOverviewKeywords(raw.getOverviewBoostKeywords());
+    if (overviewBoostKeywords.isEmpty() && "overview".equals(minScoreClassifier)) {
+      overviewBoostKeywords = DEFAULT_OVERVIEW_KEYWORDS;
+    }
     Map<String, Double> minScoreByLanguage = sanitizeLanguageThresholds(raw.getMinScoreByLanguage(), name);
     Integer rerankTopN = validateTopK(raw.getRerankTopN(), "rerankTopN", name);
     Boolean codeAwareEnabled = raw.getCodeAwareEnabled();
