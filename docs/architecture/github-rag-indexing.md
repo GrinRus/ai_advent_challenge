@@ -57,11 +57,20 @@ Scheduler повторно поднимает `FAILED` job до тех пор, �
 ## Инструменты MCP
 ### `repo.rag_index_status`
 - Вход: `repoOwner`, `repoName`.
-- Выход: статус job, процент прогресса (на основе processed_files / total_files), ETA, кол-во оставшихся попыток, последнее сообщение об ошибке.
+- Выход: status job, прогресс, ETA, попытки, `lastError`, READY-флаг и телеметрия последних job.
 
 ### `repo.rag_search`
-- Вход: `repoOwner`, `repoName`, `query`, `topK`, `rerankTopN`, опционально `filters` (например, файл/язык).
-- Выход: список чанков с `path`, `summary`, `score`, `snippet`.
+- Полный DTO (`rawQuery`, `repoOwner`/`repoName`, `profile`, история, фильтры, multi-query, `maxContextTokens`, `responseChannel` и пр.). MCP санитизирует параметры: автозаполняет owner/name по последнему READY namespace, нормализует `profile`, подставляет `defaultTranslateTo`, ограничивает `topK<=40`, `maxQueries<=6`, `maxContextTokens<=github.rag.post-processing.max-context-tokens`.
+- Ответ: `matches[]` (path/snippet/score/metadata + `generatedBySubQuery`/`neighborOfSpanHash`), `augmentedPrompt`, `instructions`, `contextMissing`, `noResults`, `noResultsReason`, `appliedModules`, `warnings`, `summary`, `rawAnswer`. `appliedModules` отражает реальный pipeline (`query.rewrite`, `retrieval.multi-query`, `post.neighbor-expand`, `generation.summary`, `profile:<name>` и т. д.), `warnings` агрегируют автосанитизацию и fallback-ветки (low-threshold, overview-seed, LINEAR neighbor).
+
+### `repo.rag_search_simple`
+- Вход: только `rawQuery`. Берёт owner/name из последнего READY fetch. Подходит для follow-up после `github.repository_fetch`; возвращает тот же DTO, что и `repo.rag_search`, включая `appliedModules`/`warnings`.
+
+### `repo.rag_search_global`
+- Ищет по всем READY namespace, принимает те же параметры, что `repo.rag_search`, но вместо `repoOwner/repoName` использует `displayRepoOwner/displayRepoName` (опциональные подписи для UI). Метаданные `matches[].metadata.repo_owner/repo_name` показывают найденный репозиторий.
+
+### `repo.rag_search_simple_global`
+- Упрощённый глобальный поиск: только `rawQuery`. Остальные параметры подтягиваются автоматически; подписи owner/name берутся из последнего fetch, иначе `global/global`.
 
 ## Ограничения и настройки
 - Игнор-листы: `.git`, `.github`, `node_modules`, `dist`, `build`, бинарные файлы > 1 MB, файлы из `.mcpignore` (если присутствует).
