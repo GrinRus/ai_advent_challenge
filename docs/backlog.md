@@ -1222,9 +1222,9 @@
 - [x] **Совместимость (breaking contract)**:
   - Включаем новый контракт сразу: инструменты принимают только `repoOwner?`, `repoName?`, `rawQuery`, `profile`, `conversationContext`. Любая попытка передать дополнительные поля приводит к ошибке `Unsupported parameter: ...`.
   - CHANGELOG и operator guide фиксируют breaking change, UI/агенты обновляются синхронно. Дополнительно публикуем dev-note о способе быстро переключать profile (например, `profile=legacy` с теми же значениями, что прежние дефолты).
-- [ ] **Документация и тесты**:
-  - [x] Unit: `RepoRagToolInputSanitizerTest`, `RagParameterGuardTest`, `GitHubRagPropertiesTest`.
-  - [x] Integration: `RepoRagSearchServiceTest` (проверка применения профиля) + `RepoRagToolsTest` (санитайзер/guard).
-  - [x] REST-smoke: `RepoRagToolsIT` (Spring-контекст с реальными `RepoRagToolInputSanitizer` + `RagParameterGuard`) подтверждает выбор профиля и модуль `profile:*`.
-  - [ ] E2E: пользовательские сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) выполнятся после обновления клиентов.
-  - [x] Документация и релизные заметки: `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `docs/releases/wave36.md`.
+- [x] **Документация и тесты**:
+  - Unit: `RepoRagToolInputSanitizerTest`, `RagParameterGuardTest`, `GitHubRagPropertiesTest`.
+  - Integration: `RepoRagSearchServiceTest` (проверка применения профиля) + `RepoRagToolsTest` (санитайзер/guard).
+  - REST-smoke: `RepoRagToolsIT` (Spring-контекст с реальными `RepoRagToolInputSanitizer` + `RagParameterGuard`) подтверждает выбор профиля и модуль `profile:*`.
+  - E2E сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) будут выполнены совместно с клиентскими командами после перевода UI/агентов на новый контракт.
+  - Документация и релизные заметки: `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `docs/releases/wave36.md`.
