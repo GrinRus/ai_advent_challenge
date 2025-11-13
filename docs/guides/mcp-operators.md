@@ -66,6 +66,11 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 5. **Наблюдаемость:** графики `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`. При очереди >5 или ≥3 fail подряд проверяйте свободное место `/var/tmp/aiadvent/mcp-workspaces` и наличие зависших job.
 6. **Runbook:** логируйте `repoOwner/repoName`, `appliedModules`, `contextMissing`, `noResults`, `maxContextTokens`. При ручной очистке workspace всегда повторяйте fetch → status → search.
 
+#### Профили параметров RAG
+- `github.rag.default-profile` — имя профиля, который применяется по умолчанию (значение можно переопределять через `GITHUB_RAG_DEFAULT_PROFILE` или `application-prod.yaml`). Используйте его, чтобы мгновенно переключать стратегию между `conservative`, `balanced`, `aggressive` без изменений кода.
+- `github.rag.parameter-profiles` — список стратегий. Каждый профиль задаёт `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, блок `multiQuery` (`enabled`, `queries`, `maxQueries`), `neighbor` (`strategy`, `radius`, `limit`) и настройки code-aware (`codeAwareEnabled`, `codeAwareHeadMultiplier`). Рабочий пример трёх профилей смотрите в `backend-mcp/src/main/resources/application-github.yaml`.
+- Для локальных override используйте стандартный Spring синтаксис: `GITHUB_RAG_PARAMETER_PROFILES_0__NAME=custom`, `GITHUB_RAG_PARAMETER_PROFILES_0__TOP_K=6`, `GITHUB_RAG_PARAMETER_PROFILES_0__NEIGHBOR__STRATEGY=OFF` и т.д. После перезапуска MCP новый профиль доступен инструментам `repo.rag_*`.
+
 #### Нормализация входных DTO
 - Все инструменты `repo.rag_*` теперь прогоняют входные данные через `RepoRagToolInputSanitizer`: строки триммятся, `neighbor*`, `multiQuery`, `generationLocale` получают дефолты из `application.yaml`, `filters.languages` приводятся к lower-case, а универсальные глобы (`*`, `**/*`) выкидываются.
 - Если `repoOwner/repoName` (для `repo.rag_search`) или `displayRepo*` (для `repo.rag_search_global`) отсутствуют, санитайзер пытается использовать последний READY namespace (`github.repository_fetch`). При отсутствии готового индекса инструмент вернёт ошибку с подсказкой повторить fetch.

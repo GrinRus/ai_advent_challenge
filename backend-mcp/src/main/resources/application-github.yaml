@@ -142,3 +142,47 @@ github:
       empty-context-template: classpath:prompts/github-rag-empty-context.st
       no-results-reason: ${GITHUB_RAG_GENERATION_NO_RESULTS_REASON:CONTEXT_NOT_FOUND}
       empty-context-message: "${GITHUB_RAG_GENERATION_EMPTY_MESSAGE:Индекс не содержит подходящих документов}"
+    default-profile: ${GITHUB_RAG_DEFAULT_PROFILE:balanced}
+    parameter-profiles:
+      - name: conservative
+        top-k: 6
+        top-k-per-query: 6
+        min-score: 0.65
+        multi-query:
+          enabled: false
+          queries: 1
+          max-queries: 3
+        neighbor:
+          strategy: OFF
+          radius: 0
+          limit: 0
+        code-aware-enabled: true
+        code-aware-head-multiplier: 1.5
+      - name: balanced
+        top-k: 10
+        top-k-per-query: 10
+        min-score: 0.55
+        multi-query:
+          enabled: true
+          queries: 3
+          max-queries: 4
+        neighbor:
+          strategy: LINEAR
+          radius: 1
+          limit: 6
+        code-aware-enabled: true
+        code-aware-head-multiplier: 2.0
+      - name: aggressive
+        top-k: 14
+        top-k-per-query: 14
+        min-score: 0.5
+        multi-query:
+          enabled: true
+          queries: 4
+          max-queries: 6
+        neighbor:
+          strategy: CALL_GRAPH
+          radius: 2
+          limit: 10
+        code-aware-enabled: true
+        code-aware-head-multiplier: 2.5
