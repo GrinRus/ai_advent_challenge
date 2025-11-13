@@ -88,6 +88,7 @@ public class RepoRagTools {
           • `rawQuery` — текст вопроса.
           • `profile` — имя заранее настроенного пресета (`conservative`, `balanced`, `aggressive`).
           • `conversationContext` — история (`history[]`) и `previousAssistantReply`, если нужно учесть прошлый ответ.
+          • `responseChannel` — управляет форматом ответа (`raw`, `summary`, `both`). По умолчанию MCP возвращает оба варианта: сырое сообщение (augmented prompt из vector store) и сжатое summary.
 
           Остальные параметры (topK, multiQuery, neighbor, code-aware, лимиты) подтягиваются из профиля,
           а результат всегда включает `appliedModules += "profile:<name>"`, чтобы оператор видел, какой сетап применился.
@@ -241,7 +242,8 @@ public class RepoRagTools {
           Глобальный вариант: ищет по всем READY namespace. Клиент передаёт `rawQuery`, `profile`,
           `conversationContext`, а подписи для UI (`displayRepoOwner/displayRepoName`) используются только
           для отображения ответа. Все параметры поиска подбираются в соответствии с профилем и фиксируются
-          в `appliedModules`.
+          в `appliedModules`. Поле `responseChannel` работает так же, как у `repo.rag_search` и по умолчанию
+          даёт и сырое, и summary-представление ответа.
           """)
   public RepoRagSearchResponse ragSearchGlobal(RepoRagGlobalSearchInput input) {
     RepoRagToolInputSanitizer.SanitizationResult<RepoRagGlobalSearchInput> sanitized =

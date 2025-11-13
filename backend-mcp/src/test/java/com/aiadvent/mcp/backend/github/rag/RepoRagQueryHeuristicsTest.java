@@ -12,7 +12,18 @@ class RepoRagQueryHeuristicsTest {
   }
 
   @Test
+  void detectsIdentifiersWithKeywordPrefix() {
+    assertThat(RepoRagQueryHeuristics.isCodeIdentifier("class OpenAiChatProviderAdapter")).isTrue();
+    assertThat(RepoRagQueryHeuristics.isCodeIdentifier("public static func patch_generation_service")).isTrue();
+  }
+
+  @Test
   void rejectsSentences() {
     assertThat(RepoRagQueryHeuristics.isCodeIdentifier("что такое сервис?")).isFalse();
+  }
+
+  @Test
+  void rejectsMultiWordDescriptionsEvenWithKeyword() {
+    assertThat(RepoRagQueryHeuristics.isCodeIdentifier("class diagrams for scheduler module")).isFalse();
   }
 }

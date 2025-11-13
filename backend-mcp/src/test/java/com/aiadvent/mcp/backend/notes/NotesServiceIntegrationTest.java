@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.notes;
 
 import com.aiadvent.mcp.backend.McpApplication;
+import com.aiadvent.mcp.backend.PostgresTestContainer;
 import com.aiadvent.mcp.backend.notes.service.NoteSearchService;
 import com.aiadvent.mcp.backend.notes.service.NoteSearchService.SearchCommand;
 import com.aiadvent.mcp.backend.notes.service.NotesService;
@@ -26,13 +27,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Testcontainers
 @SpringBootTest(
     classes = {McpApplication.class, NotesServiceIntegrationTest.TestNotesConfiguration.class},
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -40,16 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("notes")
 class NotesServiceIntegrationTest {
 
-  @Container
-  static final PostgreSQLContainer<?> postgres =
-      new PostgreSQLContainer<>("pgvector/pgvector:pg15").withReuse(true);
-
   @DynamicPropertySource
   static void registerDatasourceProperties(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", postgres::getJdbcUrl);
-    registry.add("spring.datasource.username", postgres::getUsername);
-    registry.add("spring.datasource.password", postgres::getPassword);
-    registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+    PostgresTestContainer.register(registry);
     registry.add(
         "spring.liquibase.change-log",
         () -> "classpath:db/changelog/notes/db.changelog-master.yaml");

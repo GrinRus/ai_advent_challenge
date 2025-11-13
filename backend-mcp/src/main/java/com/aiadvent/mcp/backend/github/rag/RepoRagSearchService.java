@@ -128,8 +128,8 @@ public class RepoRagSearchService {
     return new SearchResponse(
         matches,
         finalAttempt.rerankApplied(),
-        generationResult.augmentedPrompt(),
-        generationResult.instructions(),
+        generationResult.rawAugmentedPrompt(),
+        generationResult.summaryAugmentedPrompt(),
         generationResult.contextMissing(),
         noResults,
         generationResult.noResultsReason(),
@@ -193,8 +193,8 @@ public class RepoRagSearchService {
     return new SearchResponse(
         matches,
         postProcessingResult.changed(),
-        generationResult.augmentedPrompt(),
-        generationResult.instructions(),
+        generationResult.rawAugmentedPrompt(),
+        generationResult.summaryAugmentedPrompt(),
         generationResult.contextMissing(),
         noResults,
         generationResult.noResultsReason(),

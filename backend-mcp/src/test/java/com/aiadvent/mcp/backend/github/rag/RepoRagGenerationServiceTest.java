@@ -42,9 +42,9 @@ class RepoRagGenerationServiceTest {
                 RepoRagResponseChannel.BOTH));
 
     assertThat(result.contextMissing()).isFalse();
-    assertThat(result.rawAnswer()).isEqualTo(result.augmentedPrompt());
-    assertThat(result.summary()).isNotNull();
-    assertThat(result.augmentedPrompt())
+    assertThat(result.rawAnswer()).isEqualTo(result.rawAugmentedPrompt());
+    assertThat(result.summary()).isEqualTo(result.summaryAugmentedPrompt());
+    assertThat(result.rawAugmentedPrompt())
         .contains("Ты выступаешь экспертом")
         .contains("# Контекст")
         .contains("gradlew build запускает тесты");

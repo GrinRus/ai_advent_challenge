@@ -53,16 +53,24 @@ public class RepoRagGenerationService {
     if (contextMissing) {
       modules.add("generation.empty-context");
     }
-    String rawAnswer = rawAugmented != null ? rawAugmented.text() : null;
-    String summary = summaryAugmented != null ? summaryAugmented.text() : null;
-    String primary = rawAnswer != null ? rawAnswer : summary;
-    if (primary == null) {
-      primary = "";
+    String rawAugmentedText = rawAugmented != null ? rawAugmented.text() : null;
+    String summaryAugmentedText = summaryAugmented != null ? summaryAugmented.text() : null;
+    String fallback = rawAugmentedText != null ? rawAugmentedText : summaryAugmentedText;
+    if (fallback == null) {
+      fallback = "";
     }
+    String rawPrompt = rawAugmentedText != null ? rawAugmentedText : fallback;
+    String summaryPrompt = summaryAugmentedText != null ? summaryAugmentedText : fallback;
     String noResultsReason =
         contextMissing ? properties.getGeneration().getNoResultsReason() : null;
     return new GenerationResult(
-        primary, primary, contextMissing, noResultsReason, modules, summary, rawAnswer);
+        rawPrompt,
+        summaryPrompt,
+        contextMissing,
+        noResultsReason,
+        modules,
+        summaryAugmentedText,
+        rawAugmentedText);
   }
 
   private Query augment(
@@ -132,8 +140,8 @@ public class RepoRagGenerationService {
       RepoRagResponseChannel responseChannel) {}
 
   public record GenerationResult(
-      String augmentedPrompt,
-      String instructions,
+      String rawAugmentedPrompt,
+      String summaryAugmentedPrompt,
       boolean contextMissing,
       String noResultsReason,
       List<String> appliedModules,

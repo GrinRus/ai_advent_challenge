@@ -171,7 +171,7 @@ github:
         top-k: 24
         top-k-per-query: 24
         min-score: 0.55
-        min-score-fallback: 0.45
+        min-score-fallback: 0.35
         min-score-classifier: overview
         overview-boost-keywords:
           - overview
