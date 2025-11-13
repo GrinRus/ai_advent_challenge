@@ -56,6 +56,9 @@ public class RagParameterGuard {
             ? List.of()
             : List.copyOf(profile.overviewBoostKeywords());
 
+    Double fallbackMinScore =
+        clampFallback(profile.name(), profile.minScoreFallback(), minScore, warnings);
+
     ResolvedSearchPlan plan =
         new ResolvedSearchPlan(
             profile.name(),
@@ -69,7 +72,7 @@ public class RagParameterGuard {
             multiQuery,
             neighbor,
             SearchPlanMode.STANDARD,
-            profile.minScoreFallback(),
+            fallbackMinScore,
             profile.minScoreClassifier(),
             overviewKeywords);
     return new GuardResult(plan, warnings.isEmpty() ? List.of() : List.copyOf(warnings));
@@ -115,6 +118,26 @@ public class RagParameterGuard {
       warn(profileName, warnings, "minScore", value, MAX_SCORE);
       logClamp(profileName, "minScore", value, MAX_SCORE, "MAX_SCORE");
       return MAX_SCORE;
+    }
+    return value;
+  }
+
+  private Double clampFallback(
+      String profileName, Double candidate, double baseMinScore, List<String> warnings) {
+    if (candidate == null) {
+      return null;
+    }
+    double value = candidate;
+    if (value < MIN_SCORE) {
+      warn(profileName, warnings, "minScoreFallback", value, MIN_SCORE);
+      logClamp(profileName, "minScoreFallback", value, MIN_SCORE, "MIN_SCORE");
+      value = MIN_SCORE;
+    }
+    if (value > baseMinScore) {
+      warn(profileName, warnings, "minScoreFallback", value, baseMinScore);
+      logClamp(
+          profileName, "minScoreFallback", value, baseMinScore, "MIN_SCORE_FALLBACK_GT_MIN_SCORE");
+      value = baseMinScore;
     }
     return value;
   }

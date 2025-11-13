@@ -53,4 +53,28 @@ class RagParameterGuardTest {
         .anyMatch(message -> message.contains("topK"))
         .anyMatch(message -> message.contains("neighbor.limit"));
   }
+
+  @Test
+  void clampsFallbackGreaterThanMinScore() {
+    GitHubRagProperties.ResolvedRagParameterProfile profile =
+        new GitHubRagProperties.ResolvedRagParameterProfile(
+            "conservative",
+            6,
+            6,
+            0.65d,
+            Map.of(),
+            6,
+            true,
+            1.5d,
+            new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedMultiQuery(false, 1, 3),
+            new GitHubRagProperties.ResolvedRagParameterProfile.ResolvedNeighbor("OFF", 0, 0),
+            0.9d,
+            "overview",
+            List.of("overview"));
+
+    RagParameterGuard.GuardResult result = guard.apply(profile);
+
+    assertThat(result.plan().fallbackMinScore()).isEqualTo(0.65d);
+    assertThat(result.warnings()).anyMatch(message -> message.contains("minScoreFallback"));
+  }
 }

@@ -149,6 +149,14 @@ github:
         top-k: 6
         top-k-per-query: 6
         min-score: 0.65
+        min-score-fallback: 0.5
+        min-score-classifier: overview
+        overview-boost-keywords:
+          - overview
+          - project overview
+          - описание проекта
+          - что за проект
+          - docs/backlog.md
         multi-query:
           enabled: false
           queries: 1
@@ -181,8 +189,11 @@ github:
         min-score-classifier: overview
         overview-boost-keywords:
           - overview
+          - project overview
           - описание проекта
           - что за проект
+          - docs/backlog.md
+          - readme
         multi-query:
           enabled: true
           queries: 4
