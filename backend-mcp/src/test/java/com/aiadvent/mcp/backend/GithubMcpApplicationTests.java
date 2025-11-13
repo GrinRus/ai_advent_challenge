@@ -13,7 +13,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(classes = McpApplication.class, properties = "spring.profiles.active=github")
 @Import(GithubMcpApplicationTests.TestMetricsConfiguration.class)
 class GithubMcpApplicationTests {
