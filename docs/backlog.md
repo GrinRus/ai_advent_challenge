@@ -1225,5 +1225,6 @@
 - [ ] **Документация и тесты**:
   - [x] Unit: `RepoRagToolInputSanitizerTest`, `RagParameterGuardTest`, `GitHubRagPropertiesTest`.
   - [x] Integration: `RepoRagSearchServiceTest` (проверка применения профиля) + `RepoRagToolsTest` (санитайзер/guard).
-  - [ ] REST/E2E: `RepoRagToolsIT` и пользовательские сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) — выполнить после обновления клиентов.
+  - [x] REST-smoke: `RepoRagToolsIT` (Spring-контекст с реальными `RepoRagToolInputSanitizer` + `RagParameterGuard`) подтверждает выбор профиля и модуль `profile:*`.
+  - [ ] E2E: пользовательские сценарии (`repo.rag_search_simple`, `repo.rag_search` с профилем, global`) выполнятся после обновления клиентов.
   - [x] Документация и релизные заметки: `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `docs/releases/wave36.md`.
