@@ -229,6 +229,71 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 2. Сформируйте PR: вызывайте `github.open_pull_request`, затем из веб-интерфейса убедитесь, что reviewer/teams назначены правильно. Для отклонения сценария уберите один из обязательных параметров — инструмент вернёт 4xx с расшифровкой.
 3. Апрув/мердж: после обновления статуса проверок выполните `github.approve_pull_request` и `github.merge_pull_request`. В случае незелёного CI инструмент вернёт ошибку, которую нужно зафиксировать и устранить.
 
+## Gradle MCP flow (`github-gradle-test-flow`)
+
+Flow позволяет операторам запускать Gradle-тесты в Docker поверх любого репозитория GitHub. Его можно стартовать из раздела `Flows → github-gradle-test-flow` или прямо из чата, выбрав режим *Gradle tests*.
+
+### Шаги и статусы
+
+| Статус в UI | Инструмент | Детали |
+|-------------|------------|--------|
+| `fetching` | `github.repository_fetch` | Скачивает repo/ref, фиксирует `workspaceId`, `resolvedRef`, объём архива. При ошибке GitHub flow завершается со статусом `FAILED`. |
+| `inspecting_workspace` | `github.workspace_directory_inspector` | Сканирует workspace (maxDepth=4, maxResults=400) и предлагает `projectPath`. Если найдено несколько Gradle-модулей, агент задаёт уточняющий вопрос. |
+| `running_tests` | `docker.gradle_runner` | Монтирует workspace и Gradle cache, запускает `./gradlew <tasks>` или `gradle -p <path>`. В ответе — `exitCode`, `stdout`/`stderr` чанки, длительность и использованная команда. |
+| `report_ready` | Flow завершён | Итоговый отчёт содержит резюме агента (PASSED/FAILED), tail логов и советы по устранению ошибок. |
+
+### Минимальный сценарий
+
+1. Пользователь вводит: «Запусти `test,check` для `sandbox-co/demo-service`, ветка `release/1.9`».
+2. Flow создаёт `requestId=gradle-<timestamp>` и запускает `github.repository_fetch`.
+3. `workspace_directory_inspector` находит `service-app` и предлагает использовать его как `projectPath`.
+4. `docker.gradle_runner` вызывается с `tasks=["test","check"]`, `timeoutSeconds=900`, сеть отключена.
+5. Flow событий: `fetching → inspecting_workspace → running_tests → report_ready`. Если `exitCode != 0`, агент возвращает статус `FAILED` и приложение подсвечивает кнопку «Retry step».
+
+### Рекомендации операторам
+
+- Перед запуском уточняйте `tasks` и `projectPath`. Если путь известен заранее, укажите его в параметрах Flow, чтобы пропустить вопрос на шаге инспекции.
+- В статусе `inspecting_workspace` проверяйте, что нужный модуль есть в списке `entries`. При отсутствии — повторите шаг с другими `includeGlobs`.
+- При ошибке Gradle:
+  1. Скопируйте tail stdout/stderr из отчёта (они уже сохранены в ответе `docker.gradle_runner`).
+  2. Запустите «Retry step», добавив аргументы (`--rerun-tasks`, `--info`) либо переменные окружения (`env: {"CI":"true"}`).
+  3. Если нужен доступ к сети (npm/yarn), временно установите `DOCKER_RUNNER_ENABLE_NETWORK=true` и задокументируйте причину.
+- После успешного запуска добавьте ссылку на Flow в канал/тикет и сохраните `workspaceId` — по нему можно пересобрать артефакты или загрузить логи.
+
+### Примеры JSON
+
+```json
+{
+  "tool": "docker.gradle_runner",
+  "arguments": {
+    "workspaceId": "workspace-12345",
+    "projectPath": "service-app",
+    "tasks": ["test", "check"],
+    "arguments": ["--info"],
+    "env": {"CI": "true"},
+    "timeoutSeconds": 900
+  }
+}
+```
+
+```json
+{
+  "tool": "github.workspace_directory_inspector",
+  "arguments": {
+    "workspaceId": "workspace-12345",
+    "includeGlobs": ["**/build.gradle*", "**/settings.gradle*"],
+    "maxResults": 400,
+    "detectProjects": true
+  }
+}
+```
+
+### Наблюдаемость
+
+- `github_repository_fetch_*`, `workspace_inspection_*`, `docker_gradle_runner_*` доступны на `/actuator/prometheus` у сервисов `backend` и `docker-runner-mcp`.
+- `requestId` передавайте в параметрах Flow — он попадает в логи fetch/inspector и облегчит поиск следов в Kibana.
+- Если `docker_gradle_runner_duration` стабильно растёт или `docker_gradle_runner_failure_total` > 3 за 15 минут, проверьте Docker-хост (disk space, доступность сокета) и параметры `DOCKER_RUNNER_IMAGE`, `DOCKER_RUNNER_TIMEOUT`.
+
 ### Notes
 ```
 User: Сохрани заметку "Сводка звонка" и подбери похожие записи за последние встречи.

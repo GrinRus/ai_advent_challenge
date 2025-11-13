@@ -15,6 +15,7 @@
   - `flow-ops-mcp` — порт `7092` (HTTP MCP, профиль `flowops`).
   - `insight-mcp` — порт `7093` (HTTP MCP, профиль `insight`).
   - `github-mcp` — порт `7094` (HTTP MCP, профиль `github`).
+  - `docker-runner-mcp` — порт `7095` (HTTP MCP, профиль `docker`, инструмент `docker.gradle_runner`).
   - `notes-mcp` — порт `7097` (HTTP MCP, профиль `notes`, хранит заметки и эмбеддинги PgVector).
   - `coding-mcp` — порт `7098` (HTTP MCP, профиль `coding`, assisted coding flow).
 
@@ -59,6 +60,29 @@ docker compose up --build github-mcp
 | `GITHUB_PAT` | PAT с правами `repo`, `read:org`, `read:checks` | пусто, требуется задать в `.env` |
 | `GITHUB_MCP_DB_URL/USER/PASSWORD` | Postgres для хранения `repo_rag_index_job` и PgVector | `jdbc:postgresql://postgres:5432/ai_advent` / `ai_advent` / `ai_advent` |
 | `GITHUB_RAG_*` | настройки chunking, ретраев и rerank | см. `.env.example` |
+
+### Запуск Docker runner MCP отдельно
+Docker runner использует профиль `docker` и отвечает за инструмент `docker.gradle_runner`. По умолчанию он запускается в Compose вместе с остальными MCP, но его можно поднять отдельно:
+
+```bash
+docker compose up --build docker-runner-mcp
+```
+
+| Переменная | Назначение | Значение по умолчанию |
+|------------|------------|------------------------|
+| `DOCKER_MCP_HTTP_PORT` | проброшенный порт сервиса | `7095` |
+| `DOCKER_RUNNER_WORKSPACE_ROOT` | путь к общему workspace (shared с backend/github-mcp) | `/var/tmp/aiadvent/mcp-workspaces` |
+| `DOCKER_RUNNER_GRADLE_CACHE_PATH` | путь к Gradle cache | `/var/tmp/aiadvent/gradle-cache` |
+| `DOCKER_RUNNER_IMAGE` | образ с Gradle tooling | `aiadvent/mcp-gradle-runner:latest` |
+| `DOCKER_RUNNER_ENABLE_NETWORK` | включить сеть внутри контейнера | `false` |
+| `DOCKER_RUNNER_TIMEOUT` | таймаут выполнения по умолчанию | `PT15M` |
+| `DOCKER_RUNNER_WORKSPACE_VOLUME`, `DOCKER_RUNNER_GRADLE_CACHE_VOLUME` | именованные volume'ы | не заданы (используются bind-монты) |
+
+Требования:
+
+1. Backend, GitHub MCP и docker-runner должны указывать одинаковый `workspaceRoot`, иначе `docker.gradle_runner` не найдёт файлы.
+2. Хостовой пользователь должен иметь права на каталоги `workspace-root` и `gradle-cache`.
+3. Контейнеру нужен доступ к `/var/run/docker.sock`; убедитесь, что сокет смонтирован и пользователь имеет право выполнять `docker run`.
 
 #### Repo RAG индексатор
 - **Поток:** `github.repository_fetch` → запись job в `repo_rag_index_job` → `RepoRagIndexScheduler` асинхронно обходит workspace (игнор `.git`, `.github`, `node_modules`, `dist`, `build` + `.mcpignore`) и сохраняет чанки (по умолчанию 2048 Б / 160 строк) в `repo_rag_vector_store`.
