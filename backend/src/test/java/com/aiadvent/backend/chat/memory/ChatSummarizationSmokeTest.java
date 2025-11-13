@@ -46,6 +46,8 @@ import org.springframework.test.context.TestPropertySource;
 class ChatSummarizationSmokeTest extends PostgresTestContainer {
 
   private static final String KEY_FACT = "Order 42 shipped";
+  private static final String ASSISTANT_REPLY =
+      "Continuation acknowledged with summary context";
 
   @SpyBean private ChatMemorySummarizerService summarizerService;
   @Autowired private ChatSummarizationPreflightManager preflightManager;
@@ -91,14 +93,13 @@ class ChatSummarizationSmokeTest extends PostgresTestContainer {
     preflightManager.run(
         sessionId, new ChatProviderSelection("openai", "gpt-4o-mini"), "Continue", "smoke");
 
-    int sizeAfterAssistant =
-        appendMessage(
+    appendMessage(
         conversationId,
-        AssistantMessage.builder().content("Continuation acknowledged with summary context").build());
-    assertThat(sizeAfterAssistant)
-        .withFailMessage(
-            "sizeAfterAssistant=%s sizeAfterUser=%s", sizeAfterAssistant, sizeAfterUser)
-        .isEqualTo(sizeAfterUser + 1);
+        AssistantMessage.builder().content(ASSISTANT_REPLY).build());
+    List<Message> historyAfterAssistant = chatMemoryRepository.findByConversationId(conversationId);
+    assertThat(historyAfterAssistant)
+        .as("assistant reply should be present even if summarization trimmed history early")
+        .anySatisfy(message -> assertThat(message.getText()).contains(ASSISTANT_REPLY));
 
     var summaries = awaitSummary(sessionId);
     assertThat(summaries).hasSize(1);
