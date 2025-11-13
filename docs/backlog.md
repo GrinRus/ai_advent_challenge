@@ -1238,3 +1238,11 @@
 
 - [x] **Dual-channel ответы**: обновить DTO `RepoRagSearchResponse`/`RepoRagSearchMatch` и GenerationService, чтобы возвращать `summary` (3–4 предложения) и `rawAnswer` (полный augmented prompt). Summary генерируется отдельным prompt (`prompts/github-rag-summary.st`), rawAnswer остаётся текущим `augmentedPrompt`. Во входящих DTO инструментов добавить флаг или enum (`responseChannel=summary|raw|both`), по которому SearchService формирует нужные каналы; дефолт — `both`. Обновить MCP инструменты и UI, чтобы клиенты могли явно выбирать, что показывать. → `RepoRagGenerationService`, `RepoRagTools`, `frontend`, `docs/guides/mcp-operators.md`
 - [x] **Telemetry & tests**: покрыть новую ветку fallback (unit `RepoRagSearchServiceTest`, integration `RepoRagToolsIT`), обновить release notes (`docs/releases/wave37.md`). Проверить, что summary/raw доступны в API и что warnings отражаются в логах. → `backend-mcp/src/test/java/...`, `docs/releases/wave37.md`, `README.md`
+
+## Wave 38 — GitHub RAG UX Hardening
+### Backend (backend-mcp)
+- [ ] Скорректировать профили `conservative`/`aggressive`: задать `minScoreFallback`, список `overviewBoostKeywords`, обязательный override multi-query, обновить `application-github.yaml` и unit-тесты `RagParameterGuard`, чтобы высокоуровневые вопросы не заканчивались `CONTEXT_NOT_FOUND`. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/config/GitHubRagProperties.java`, `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/RagParameterGuard.java`, `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/RagParameterGuardTest.java`, `backend-mcp/src/main/resources/application-github.yaml`
+- [ ] Пробросить `warnings` и `appliedModules` до вызывающей стороны: обновить слой чат-бэкенда и контракт ответа так, чтобы клиенты получали эти поля и сами решали, как их отображать. → `backend/src/main/java/com/aiadvent/chat/service/RepoRagChatMapper.java`, `backend/src/main/java/com/aiadvent/chat/api/dto/RepoRagSearchDto.java`
+
+### Документация
+- [ ] Дополнить `docs/architecture/github-rag-indexing.md` и `docs/guides/mcp-operators.md`: расписать `repo.rag_search_simple`, `repo.rag_search_simple_global`, автоматические fallback-сценарии, семантику `warnings`/`appliedModules` и рекомендации по выбору профиля. → `docs/architecture/github-rag-indexing.md`, `docs/guides/mcp-operators.md`
