@@ -1,8 +1,10 @@
 package com.aiadvent.mcp.backend.github.rag;
 
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry;
 import com.aiadvent.mcp.backend.github.rag.RepoRagStatusService.StatusView;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -19,18 +21,24 @@ public class RepoRagTools {
   private final RepoRagNamespaceStateService namespaceStateService;
   private final GitHubRepositoryFetchRegistry fetchRegistry;
   private final RepoRagToolInputSanitizer inputSanitizer;
+  private final GitHubRagProperties properties;
+  private final RagParameterGuard parameterGuard;
 
   public RepoRagTools(
       RepoRagStatusService statusService,
       RepoRagSearchService searchService,
       RepoRagNamespaceStateService namespaceStateService,
       GitHubRepositoryFetchRegistry fetchRegistry,
-      RepoRagToolInputSanitizer inputSanitizer) {
+      RepoRagToolInputSanitizer inputSanitizer,
+      GitHubRagProperties properties,
+      RagParameterGuard parameterGuard) {
     this.statusService = statusService;
     this.searchService = searchService;
     this.namespaceStateService = namespaceStateService;
     this.fetchRegistry = fetchRegistry;
     this.inputSanitizer = inputSanitizer;
+    this.properties = properties;
+    this.parameterGuard = parameterGuard;
   }
 
   @Tool(
@@ -130,35 +138,22 @@ public class RepoRagTools {
     if (!StringUtils.hasText(normalized.rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
+    GitHubRagProperties.ResolvedRagParameterProfile profile =
+        properties.resolveProfile(normalized.profile());
+    RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
     RepoRagSearchService.SearchCommand command =
-        new RepoRagSearchService.SearchCommand(
-            normalized.repoOwner(),
-            normalized.repoName(),
-            normalized.rawQuery(),
-            normalized.topK(),
-            normalized.topKPerQuery(),
-            normalized.minScore(),
-            normalized.minScoreByLanguage(),
-            normalized.rerankTopN(),
-            normalized.rerankStrategy(),
-            normalized.codeAwareEnabled(),
-            normalized.codeAwareHeadMultiplier(),
-            normalized.neighborRadius(),
-            normalized.neighborLimit(),
-            normalized.neighborStrategy(),
-            normalized.filters(),
-            normalized.filterExpression(),
-            normalized.history(),
-            normalized.previousAssistantReply(),
-            normalized.allowEmptyContext(),
-            normalized.useCompression(),
-            normalized.translateTo(),
-            normalized.multiQuery(),
-            normalized.maxContextTokens(),
-            normalized.generationLocale(),
-            normalized.instructionsTemplate());
+      new RepoRagSearchService.SearchCommand(
+          normalized.repoOwner(),
+          normalized.repoName(),
+          normalized.rawQuery(),
+          guardResult.plan(),
+          normalized.history(),
+          normalized.previousAssistantReply());
     RepoRagSearchService.SearchResponse response = searchService.search(command);
-    return toResponse(response, sanitized.warnings());
+    return toResponse(
+        response,
+        mergeWarnings(sanitized.warnings(), guardResult.warnings()),
+        List.of("profile:" + guardResult.plan().profileName()));
   }
 
   @Tool(
@@ -201,35 +196,21 @@ public class RepoRagTools {
           "Репозиторий %s/%s ещё индексируется: проверьте repo.rag_index_status после github.repository_fetch"
               .formatted(context.repoOwner(), context.repoName()));
     }
+    GitHubRagProperties.ResolvedRagParameterProfile profile = properties.resolveProfile(null);
+    RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
     RepoRagSearchService.SearchCommand command =
         new RepoRagSearchService.SearchCommand(
             state.getRepoOwner(),
             state.getRepoName(),
             sanitized.value().rawQuery(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
+            guardResult.plan(),
             List.of(),
-            null,
-            Boolean.TRUE,
-            null,
-            null,
-            null,
-            null,
-            null,
             null);
     RepoRagSearchService.SearchResponse response = searchService.search(command);
-    return toResponse(response, sanitized.warnings());
+    return toResponse(
+        response,
+        mergeWarnings(sanitized.warnings(), guardResult.warnings()),
+        List.of("profile:" + guardResult.plan().profileName()));
   }
 
   @Tool(
@@ -267,34 +248,21 @@ public class RepoRagTools {
                           warnings.add(
                               "Последний github.repository_fetch ещё не READY — выдача будет с общим тегом global"));
             });
+    GitHubRagProperties.ResolvedRagParameterProfile profile = properties.resolveProfile(null);
+    RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
     RepoRagSearchService.GlobalSearchCommand command =
         new RepoRagSearchService.GlobalSearchCommand(
             sanitized.value().rawQuery(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
+            guardResult.plan(),
             List.of(),
-            null,
-            Boolean.TRUE,
-            null,
-            null,
-            null,
-            null,
-            null,
             null,
             displayOwner.get(),
             displayName.get());
     RepoRagSearchService.SearchResponse response = searchService.searchGlobal(command);
-    return toResponse(response, warnings);
+    return toResponse(
+        response,
+        mergeWarnings(warnings, guardResult.warnings()),
+        List.of("profile:" + guardResult.plan().profileName()));
   }
 
   @Tool(
@@ -335,37 +303,46 @@ public class RepoRagTools {
     if (!StringUtils.hasText(sanitized.value().rawQuery())) {
       throw new IllegalArgumentException("rawQuery must not be blank");
     }
+    GitHubRagProperties.ResolvedRagParameterProfile profile =
+        properties.resolveProfile(sanitized.value().profile());
+    RagParameterGuard.GuardResult guardResult = parameterGuard.apply(profile);
     RepoRagSearchService.GlobalSearchCommand command =
         new RepoRagSearchService.GlobalSearchCommand(
             sanitized.value().rawQuery(),
-            sanitized.value().topK(),
-            sanitized.value().topKPerQuery(),
-            sanitized.value().minScore(),
-            sanitized.value().minScoreByLanguage(),
-            sanitized.value().rerankTopN(),
-            sanitized.value().codeAwareEnabled(),
-            sanitized.value().codeAwareHeadMultiplier(),
-            sanitized.value().neighborRadius(),
-            sanitized.value().neighborLimit(),
-            sanitized.value().neighborStrategy(),
-            sanitized.value().filters(),
-            sanitized.value().filterExpression(),
+            guardResult.plan(),
             sanitized.value().history(),
             sanitized.value().previousAssistantReply(),
-            sanitized.value().allowEmptyContext(),
-            sanitized.value().useCompression(),
-            sanitized.value().translateTo(),
-            sanitized.value().multiQuery(),
-            sanitized.value().maxContextTokens(),
-            sanitized.value().generationLocale(),
-            sanitized.value().instructionsTemplate(),
             sanitized.value().displayRepoOwner(),
             sanitized.value().displayRepoName());
-    return toResponse(searchService.searchGlobal(command), sanitized.warnings());
+    RepoRagSearchService.SearchResponse response = searchService.searchGlobal(command);
+    return toResponse(
+        response,
+        mergeWarnings(sanitized.warnings(), guardResult.warnings()),
+        List.of("profile:" + guardResult.plan().profileName()));
+  }
+
+  private List<String> mergeWarnings(List<String> first, List<String> second) {
+    boolean emptyFirst = first == null || first.isEmpty();
+    boolean emptySecond = second == null || second.isEmpty();
+    if (emptyFirst && emptySecond) {
+      return List.of();
+    }
+    if (emptyFirst) {
+      return List.copyOf(second);
+    }
+    if (emptySecond) {
+      return List.copyOf(first);
+    }
+    List<String> merged = new java.util.ArrayList<>(first.size() + second.size());
+    merged.addAll(first);
+    merged.addAll(second);
+    return List.copyOf(merged);
   }
 
   private RepoRagSearchResponse toResponse(
-      RepoRagSearchService.SearchResponse serviceResponse, List<String> warnings) {
+      RepoRagSearchService.SearchResponse serviceResponse,
+      List<String> warnings,
+      List<String> extraModules) {
     List<RepoRagSearchMatch> matches =
         serviceResponse.matches().stream()
             .map(
@@ -377,6 +354,10 @@ public class RepoRagTools {
                         match.score(),
                         match.metadata()))
             .toList();
+    List<String> appliedModules = new java.util.ArrayList<>(serviceResponse.appliedModules());
+    if (extraModules != null && !extraModules.isEmpty()) {
+      appliedModules.addAll(extraModules);
+    }
     return new RepoRagSearchResponse(
         matches,
         serviceResponse.rerankApplied(),
@@ -385,7 +366,7 @@ public class RepoRagTools {
         serviceResponse.contextMissing(),
         serviceResponse.noResults(),
         serviceResponse.noResultsReason(),
-        serviceResponse.appliedModules(),
+        List.copyOf(appliedModules),
         warnings == null ? List.of() : List.copyOf(warnings));
   }
 
@@ -421,58 +402,23 @@ public class RepoRagTools {
       String workspaceId,
       boolean ready) {}
 
+  @JsonIgnoreProperties(ignoreUnknown = false)
   public record RepoRagSearchInput(
       String repoOwner,
       String repoName,
       String rawQuery,
-      Integer topK,
-      Integer topKPerQuery,
-      Double minScore,
-      Map<String, Double> minScoreByLanguage,
-      Integer rerankTopN,
-      String rerankStrategy,
-      Boolean codeAwareEnabled,
-      Double codeAwareHeadMultiplier,
-      Integer neighborRadius,
-      Integer neighborLimit,
-      String neighborStrategy,
-      RepoRagSearchFilters filters,
-      String filterExpression,
+      String profile,
       List<RepoRagSearchConversationTurn> history,
-      String previousAssistantReply,
-      Boolean allowEmptyContext,
-      Boolean useCompression,
-      String translateTo,
-      RepoRagMultiQueryOptions multiQuery,
-      Integer maxContextTokens,
-      String generationLocale,
-      String instructionsTemplate) {}
+      String previousAssistantReply) {}
 
   public record RepoRagSimpleSearchInput(String rawQuery) {}
 
+  @JsonIgnoreProperties(ignoreUnknown = false)
   public record RepoRagGlobalSearchInput(
       String rawQuery,
-      Integer topK,
-      Integer topKPerQuery,
-      Double minScore,
-      Map<String, Double> minScoreByLanguage,
-      Integer rerankTopN,
-      Boolean codeAwareEnabled,
-      Double codeAwareHeadMultiplier,
-      Integer neighborRadius,
-      Integer neighborLimit,
-      String neighborStrategy,
-      RepoRagSearchFilters filters,
-      String filterExpression,
+      String profile,
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
-      Boolean allowEmptyContext,
-      Boolean useCompression,
-      String translateTo,
-      RepoRagMultiQueryOptions multiQuery,
-      Integer maxContextTokens,
-      String generationLocale,
-      String instructionsTemplate,
       String displayRepoOwner,
       String displayRepoName) {}
 
