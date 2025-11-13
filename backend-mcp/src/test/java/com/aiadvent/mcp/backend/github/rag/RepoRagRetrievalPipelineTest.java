@@ -111,6 +111,39 @@ class RepoRagRetrievalPipelineTest {
         .noneMatch(message -> message.getText().contains("first message"));
   }
 
+  @Test
+  void skipsTransformersForCodeIdentifierQueries() {
+    GitHubRagProperties properties = new GitHubRagProperties();
+    properties.getQueryTransformers().setEnabled(true);
+    properties.getQueryTransformers().setDefaultTargetLanguage("ru");
+
+    StubVectorStore vectorStore =
+        new StubVectorStore(Map.of("ChatProviderAdapter", List.of(document("src/App.java", "hashA", 0.9))));
+
+    RepoRagRetrievalPipeline pipeline =
+        new RepoRagRetrievalPipeline(
+            vectorStore,
+            properties,
+            new StaticObjectProvider<>(new NoopChatClientBuilder()),
+            (query, count, builder) -> List.of(query));
+
+    RepoRagRetrievalPipeline.PipelineInput input =
+        new RepoRagRetrievalPipeline.PipelineInput(
+            Query.builder().text("ChatProviderAdapter").build(),
+            null,
+            new RepoRagMultiQueryOptions(false, null, null),
+            5,
+            5,
+            0.0,
+            null,
+            true);
+
+    RepoRagRetrievalPipeline.PipelineResult result = pipeline.execute(input);
+
+    assertThat(result.appliedModules()).doesNotContain("query.rewrite", "query.translation");
+    assertThat(result.documents()).hasSize(1);
+  }
+
   private static Document document(String path, String chunkHash, double score) {
     return Document.builder()
         .id(path + ":" + chunkHash)
