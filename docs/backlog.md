@@ -994,9 +994,6 @@
 - [x] Добавить конфиги feature-flag/ретраев: `coding.claude.enabled`, `coding.claude.max-retries`, стратегия fallback на patch-plan при деградации; документировать redaction stderr/usage и лимиты на повторные попытки. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/coding/CodingAssistantProperties.java`, `application-coding.yaml`
 - [x] Обновить `docs/guides/mcp-operators.md` и `docs/architecture/coding-assistant-rfc.md`: описать CLI-пайплайн, новые чек-листы диагностики (timeout, `claude --version`, Node/npm), управление ключами/пермишенами CLI, очистку temp-каталогов. → `docs/guides/mcp-operators.md`, `docs/architecture/coding-assistant-rfc.md`
 
-### Assisted Coding Flow
-- [ ] Провести e2e прогоны (web UI + Telegram): `github.repository_fetch` → `coding.generate_patch` (Claude CLI) → `coding.review_patch` → `coding.apply_patch_preview` → GitHub write-инструменты; задокументировать чек-лист оператора и негативные сценарии (CLI timeout, превышение лимита diff). → `frontend`, `docs/guides/mcp-operators.md`
-
 ## Wave 30 — GitHub Workspace RAG Indexing
 Цель: автоматически индексировать скачанные репозитории в PgVector после `github.repository_fetch`, чтобы агенты могли получать реранкнутый контекст по каждому файлу проекта в одном namespace на уровне репозитория.
 
