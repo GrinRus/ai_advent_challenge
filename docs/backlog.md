@@ -876,11 +876,12 @@
 
 ### Assisted Coding Flow (FE/TG → MCP)
 1. Пользователь задаёт репозиторий/задачу → `github.repository_fetch` + `github.workspace_directory_inspector` готовят workspace.
-2. `coding.generate_patch` возвращает diff и summary; по запросу `coding.review_patch` подсвечивает риски/tests/migrations.
-3. Оператор вручную подтверждает `coding.apply_patch_preview` (dry-run через Docker по whitelist-командам, доступно только при явном запросе).
-4. После успешного dry-run или явного решения пропустить его разблокируются `github.create_branch` → `github.commit_workspace_diff` → `github.push_branch` (каждый шаг требует отдельного подтверждения).
-5. `github.open_pull_request` создаёт PR; при необходимости подключаются анализаторы (`github.get_pull_request_diff/comments/checks`), а `github.approve_pull_request` и `github.merge_pull_request` доступны только после ручного подтверждения и проверки статуса проверок.
-6. Результаты ревью фиксируются через `github.set_pr_status` / `github.raise_veto`; цикл повторяется до merge.
+2. До внесения правок оператор создаёт локальную ветку через `github.create_branch` (MANUAL); ответ инструмента фиксирует `branchName`, `sourceSha`, `workspaceId`.
+3. `coding.generate_patch` возвращает diff/summary уже внутри новой ветки; при необходимости `coding.review_patch` акцентирует риски/tests/migrations.
+4. `coding.apply_patch_preview` запускается вручную (dry-run через Docker по whitelist-командам). Только успешный dry-run либо зафиксированное решение пропустить его позволяют двигаться дальше.
+5. После dry-run выполняются `github.commit_workspace_diff` → `github.push_branch` (каждый шаг подтверждается отдельно и выполняется строго после внесения кода).
+6. `github.open_pull_request` создаёт PR; при необходимости подключаются анализаторы (`github.get_pull_request_diff/comments/checks`), а `github.approve_pull_request`/`github.merge_pull_request` доступны лишь после ручной проверки статуса проверок.
+7. Результаты ревью фиксируются через `github.set_pr_status` / `github.raise_veto`; цикл повторяется до merge.
 
 ## Wave 26 — Комплексный аудит скачанных репозиториев
 ### Repo Analysis Service

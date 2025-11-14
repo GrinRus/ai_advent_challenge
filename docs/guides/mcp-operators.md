@@ -171,6 +171,15 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.approve_pull_request` — `MANUAL`. Создаёт review с действием `APPROVE`; `body` опционален (при пустом тексте создаётся формальный approve).
 - `github.merge_pull_request` — `MANUAL`. Выполняет merge (`MERGE|SQUASH|REBASE`), перед операцией проверяет `mergeable`, позволяет переопределить `commitTitle`/`commitMessage`, возвращает `mergeSha` и время выполнения.
 
+#### Порядок инструментов (ветка → код → коммит → push → PR)
+1. `github.repository_fetch` / `github.workspace_directory_inspector` — готовят workspace и подтверждают базовый SHA.
+2. `github.create_branch` — создаёт локальную/удалённую ветку **до** внесения любых правок; в ответе фиксируются `branchName`, `sourceSha`, `workspaceId`.
+3. `coding.generate_patch` → `coding.review_patch` — формируют изменения внутри новой ветки согласно инструкциям оператора.
+4. `coding.apply_patch_preview` — dry-run (git apply + whitelisted команды). Без успешного dry-run коммит/пуш заблокированы.
+5. `github.commit_workspace_diff` — фиксирует изменения в коммите; отклоняет пустой diff или «грязный» workspace.
+6. `github.push_branch` — публикует ветку без force-параметров.
+7. `github.open_pull_request` — создаёт PR; далее по необходимости `github.approve_pull_request` и `github.merge_pull_request`.
+
 #### Чек-лист безопасного выпуска
 - Убедитесь, что workspace получен через `github.repository_fetch`, а последний dry-run (`coding.apply_patch_preview`) завершился успехом и зафиксирован в UI/чат-логе.
 - Просмотрите diff (`git status`/`git diff`) в локальном workspace и подтвердите, что commit message отражает суть изменений и не содержит секретов.
@@ -328,7 +337,7 @@ Tool: coding.generate_patch → coding.review_patch → coding.apply_patch_previ
 - `coding.apply_patch_preview` помечен как `MANUAL`: в UI/Telegram запускается только после явного подтверждения оператора. Выполняет `git apply --check`, временное применение diff, `git diff --stat`, затем откат. Выполняется только первая непустая команда из `commands` (поддерживаются `./gradlew`/`gradle`, пустые команды пропускаются), дефолтный таймаут 10 минут. Ответ содержит изменённые файлы, предупреждения, рекомендации и метрики (`gitApplyCheck`, `filesTouched`, `durationMs`).
 - `coding.list_patches` возвращает все активные патчи workspace: статус (`generated`/`applied`/`discarded`), `requiresManualReview`, `hasDryRun`, `annotations`, `usage`, временные метки.
 - `coding.discard_patch` помечен как `MANUAL`: удаляет выбранный патч из реестра и возвращает сводку последнего состояния.
-- Если dry-run завершился успешно, backend разблокирует GitHub write-инструменты (`create_branch` → `commit_workspace_diff` → `push_branch` → `open_pull_request`). При ошибках оператор получает список конфликтов/логов и может повторить генерацию патча.
+- После создания ветки (`github.create_branch`) успешный dry-run разблокирует оставшиеся GitHub write-инструменты (`commit_workspace_diff` → `push_branch` → `open_pull_request`). При ошибках оператор получает список конфликтов/логов и может повторить генерацию патча.
 
 **Claude Code CLI / GLM**
 - CLI подключён к endpoint `https://api.z.ai/api/anthropic` (GLM-4.5/4.6). Ключ хранится в `ZHIPU_API_KEY`; убедитесь, что он определён перед запуском `coding-mcp`.

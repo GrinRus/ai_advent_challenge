@@ -36,7 +36,8 @@ class CodingTools {
               + "блокирует затрагивание файлов; списки не должны пересекаться. Чтобы "
               + "создать новый файл, добавьте путь в targetPaths и опишите содержимое во instructions - diff будет "
               + "включать блок с new file. Пример запроса: {\"workspaceId\": \"notes-1\", \"instructions\": \"добавь README\", "
-              + "\"targetPaths\": [\"docs/README.md\"], \"contextFiles\": [{\"path\": \"docs/index.md\"}]}.")
+              + "\"targetPaths\": [\"docs/README.md\"], \"contextFiles\": [{\"path\": \"docs/index.md\"}]}. "
+              + "Перед вызовом убедитесь, что рабочая ветка создана инструментом github.create_branch; именно в неё будет применён патч.")
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
     return codingAssistantService.generatePatch(request);
   }
@@ -62,7 +63,8 @@ class CodingTools {
               + "timeout подразумевает ISO 8601 duration (дефолт 10 минут). Выполняется только первая непустая команда; "
               + "поддерживаются runner'ы gradle/./gradlew, команды без задач пропускаются. После успешного "
               + "прогона diff откатывается, а метаданные dry-run обновляются в реестре. Пример запроса: {\"workspaceId\": "
-              + "\"notes-1\", \"patchId\": \"abc123\", \"commands\": [\"./gradlew test\"], \"dryRun\": true}.")
+              + "\"notes-1\", \"patchId\": \"abc123\", \"commands\": [\"./gradlew test\"], \"dryRun\": true}. "
+              + "Успешный запуск этого инструмента обязателен перед github.commit_workspace_diff и github.push_branch (если оператор явно не отказался от dry-run).")
   ApplyPatchPreviewResponse applyPatchPreview(ApplyPatchPreviewRequest request) {
     return codingAssistantService.applyPatchPreview(request);
   }

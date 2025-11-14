@@ -85,7 +85,9 @@ class GitHubWorkspaceTools {
       name = "github.create_branch",
       description =
           "Создаёт новую ветку в репозитории и локальном workspace. Требует workspaceId и branchName. "
-              + "sourceSha опционален (по умолчанию текущий HEAD workspace). Выполняется только после ручного подтверждения.")
+              + "sourceSha опционален (по умолчанию текущий HEAD workspace). Выполняется только после ручного подтверждения. "
+              + "Это первый шаг assisted-coding цепочки: вызывайте инструмент сразу после github.repository_fetch / "
+              + "github.workspace_directory_inspector и до любых вызовов coding.* или write-инструментов GitHub.")
   GitHubCreateBranchResponse createBranch(GitHubCreateBranchRequest request) {
     validateWorkspaceRequest(request.workspaceId());
     GitHubTools.RepositoryInput repositoryInput = requireRepository(request);
@@ -112,7 +114,9 @@ class GitHubWorkspaceTools {
       name = "github.commit_workspace_diff",
       description =
           "Формирует commit из изменений в workspace. Требует branchName, commitMessage и автора (name/email). "
-              + "Отклоняет пустой diff и превышение лимитов. Изменения остаются локальными до push.")
+              + "Отклоняет пустой diff и превышение лимитов. Изменения остаются локальными до push. "
+              + "Используйте только после того, как ветка создана через github.create_branch и изменения прошли dry-run "
+              + "через coding.apply_patch_preview (либо оператор задокументировал решение пропустить dry-run).")
   GitHubCommitWorkspaceDiffResponse commitWorkspaceDiff(GitHubCommitWorkspaceDiffRequest request) {
     validateWorkspaceRequest(request.workspaceId());
     if (!StringUtils.hasText(request.branchName())) {
@@ -150,7 +154,8 @@ class GitHubWorkspaceTools {
   @Tool(
       name = "github.push_branch",
       description =
-          "Публикует локальные commits в удалённую ветку. Force push запрещён. Требует workspaceId и branchName.")
+          "Публикует локальные commits в удалённую ветку. Force push запрещён. Требует workspaceId и branchName. "
+              + "Вызов разрешён только после успешного github.commit_workspace_diff; до этого шага ветка должна находиться локально.")
   GitHubPushBranchResponse pushBranch(GitHubPushBranchRequest request) {
     validateWorkspaceRequest(request.workspaceId());
     GitHubTools.RepositoryInput repositoryInput = requireRepository(request);

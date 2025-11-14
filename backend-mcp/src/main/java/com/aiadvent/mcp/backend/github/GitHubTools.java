@@ -235,7 +235,8 @@ class GitHubTools {
               + "\"reviewers\": [\"user1\"], \"teamReviewers\": [\"team-alpha\"], \"draft\": false}. "
               + "repository.owner/name, headBranch, baseBranch и title обязательны. body опционален. "
               + "Названия веток валидируются (запрещены пробелы, '..', завершающие '/'), headBranch не может совпадать с baseBranch. "
-              + "reviewers/teamReviewers — массивы логинов пользователей и команд. draft=true создаёт черновик.")
+              + "reviewers/teamReviewers — массивы логинов пользователей и команд. draft=true создаёт черновик. "
+              + "Вызывайте этот инструмент только после успешного github.push_branch, когда ветка уже опубликована на GitHub.")
   GitHubOpenPullRequestResponse openPullRequest(GitHubOpenPullRequestRequest request) {
     RepositoryInput repositoryInput = requireRepository(request);
     OpenPullRequestResult result =

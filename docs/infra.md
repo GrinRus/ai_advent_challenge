@@ -99,7 +99,13 @@ export GITHUB_MCP_HTTP_ENDPOINT=/mcp
 ```
 
 #### GitHub write-инструменты
-- Все write-операции помечены как `MANUAL` и требуют подтверждения в UI/Telegram. После успешного dry-run (`coding.apply_patch_preview`) backend разблокирует последовательность `github.create_branch` → `github.commit_workspace_diff` → `github.push_branch`; финальные шаги (`github.open_pull_request`, `github.approve_pull_request`, `github.merge_pull_request`) также остаются ручными.
+- Все write-операции помечены как `MANUAL` и требуют подтверждения в UI/Telegram. Порядок действий всегда один: сначала `github.create_branch` (локальная ветка до любых правок), затем инструменты coding (`generate_patch`/`review_patch`/`apply_patch_preview`) для внесения изменений, после успешного dry-run или явного разрешения становятся доступны `github.commit_workspace_diff` → `github.push_branch`, и только затем `github.open_pull_request` (при необходимости `github.approve_pull_request`, `github.merge_pull_request`). Таким образом соблюдается цепочка «ветка → код → коммит → push → PR».
+- Чёткая последовательность вызовов:  
+  1. `github.create_branch` — MANUAL, проверяет имя и исходный SHA.  
+  2. `coding.generate_patch`/`coding.review_patch`/`coding.apply_patch_preview` — вносят изменения и dry-run'ят их внутри созданной ветки.  
+  3. `github.commit_workspace_diff` — сохраняет diff в коммите, отклоняет пустые/грязные рабочие каталоги.  
+  4. `github.push_branch` — публикует ветку без force.  
+  5. `github.open_pull_request` — создаёт PR, после чего при необходимости выполняются `github.approve_pull_request` и `github.merge_pull_request`.
 - `github.create_branch` — валидация имени ветки, создание remote ref и локального checkout в workspace; отклоняет существующие ветки и несоответствие workspace/репозитория.
 - `github.commit_workspace_diff` — собирает staged diff, контролирует размер (по `github.backend.commit-diff-max-bytes`), формирует commit с автором и возвращает статистику.
 - `github.push_branch` — запрещает force-push, проверяет чистоту workspace, сообщает локальный и удалённый SHA, количество отправленных коммитов.
