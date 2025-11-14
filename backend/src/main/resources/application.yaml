@@ -223,7 +223,7 @@ app:
           execution-mode: MANUAL
         - code: github.workspace_git_state
           schema-version: 1
-          execution-mode: SAFE
+          execution-mode: AUTO
         - code: github.create_branch
           schema-version: 1
           execution-mode: MANUAL

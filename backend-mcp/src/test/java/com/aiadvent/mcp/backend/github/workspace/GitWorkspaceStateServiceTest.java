@@ -92,6 +92,7 @@ class GitWorkspaceStateServiceTest {
     Files.writeString(root.resolve("README.md"), "hello\n", StandardCharsets.UTF_8);
     runGit(root, "add", "README.md");
     runGit(root, "commit", "-m", "init");
+    runGit(root, "branch", "-M", "main");
     String headSha = runGit(root, "rev-parse", "HEAD").trim();
     workspaceService.updateGitMetadata(
         workspace.workspaceId(),
