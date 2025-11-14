@@ -12,6 +12,7 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryService.GitFetchOptions;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchInput;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.PushBranchResult;
 import com.aiadvent.mcp.backend.github.GitHubRepositoryService.RepositoryRef;
+import com.aiadvent.mcp.backend.github.workspace.GitWorkspaceStateService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
@@ -32,11 +33,16 @@ class GitHubWorkspaceTools {
 
   private final WorkspaceAccessService accessService;
   private final GitHubRepositoryFetchRegistry fetchRegistry;
+  private final GitWorkspaceStateService gitWorkspaceStateService;
 
   GitHubWorkspaceTools(
-      WorkspaceAccessService accessService, GitHubRepositoryFetchRegistry fetchRegistry) {
+      WorkspaceAccessService accessService,
+      GitHubRepositoryFetchRegistry fetchRegistry,
+      GitWorkspaceStateService gitWorkspaceStateService) {
     this.accessService = Objects.requireNonNull(accessService, "accessService");
     this.fetchRegistry = Objects.requireNonNull(fetchRegistry, "fetchRegistry");
+    this.gitWorkspaceStateService =
+        Objects.requireNonNull(gitWorkspaceStateService, "gitWorkspaceStateService");
   }
 
   @Tool(
@@ -243,6 +249,73 @@ class GitHubWorkspaceTools {
         payload.readAt());
   }
 
+  @Tool(
+      name = "github.workspace_git_state",
+      description =
+          "Возвращает актуальную ветку и состояние git в локальном workspace. Аргументы: workspaceId (обяз.), "
+              + "includeFileStatus (bool, по умолчанию true), includeUntracked (bool, по умолчанию true), "
+              + "maxEntries (по умолчанию 200, верхний предел задаётся конфигурацией) и includeSummaryOnly (bool). "
+              + "Ответ содержит branch{name,headSha,upstream,detached,ahead,behind}, summary (clean/staged/unstaged/untracked/conflicts) "
+              + "и, при необходимости, массив файлов c типом изменения. Триггерите инструмент перед coding.generate_patch/apply_patch_preview, "
+              + "чтобы убедиться, что workspace в нужной ветке и без лишних изменений.")
+  GitWorkspaceGitStateResponse workspaceGitState(GitWorkspaceGitStateRequest request) {
+    if (request == null || !StringUtils.hasText(request.workspaceId())) {
+      throw new IllegalArgumentException("workspaceId must not be blank");
+    }
+    GitWorkspaceStateService.WorkspaceGitStateResult result =
+        gitWorkspaceStateService.inspect(
+            new GitWorkspaceStateService.WorkspaceGitStateRequest(
+                request.workspaceId(),
+                request.includeFileStatus(),
+                request.includeUntracked(),
+                request.maxEntries(),
+                request.includeSummaryOnly()));
+    List<GitWorkspaceGitStateFileEntry> files =
+        result.files().stream().map(this::toGitFileEntry).toList();
+    return new GitWorkspaceGitStateResponse(
+        result.workspaceId(),
+        toBranchInfo(result.branch()),
+        toStatusSummary(result.status()),
+        files,
+        result.truncated(),
+        result.warnings(),
+        result.inspectedAt(),
+        result.durationMs());
+  }
+
+  private GitWorkspaceGitStateBranch toBranchInfo(
+      GitWorkspaceStateService.WorkspaceGitStateResult.BranchState branch) {
+    if (branch == null) {
+      return new GitWorkspaceGitStateBranch(null, null, null, null, true, null, null);
+    }
+    return new GitWorkspaceGitStateBranch(
+        branch.name(),
+        branch.headSha(),
+        branch.resolvedRef(),
+        branch.upstream(),
+        branch.detached(),
+        branch.ahead(),
+        branch.behind());
+  }
+
+  private GitWorkspaceGitStateStatus toStatusSummary(GitWorkspaceStateService.StatusSummary summary) {
+    if (summary == null) {
+      return new GitWorkspaceGitStateStatus(true, 0, 0, 0, 0);
+    }
+    return new GitWorkspaceGitStateStatus(
+        summary.clean(),
+        summary.staged(),
+        summary.unstaged(),
+        summary.untracked(),
+        summary.conflicts());
+  }
+
+  private GitWorkspaceGitStateFileEntry toGitFileEntry(
+      GitWorkspaceStateService.FileStatusEntry entry) {
+    return new GitWorkspaceGitStateFileEntry(
+        entry.path(), entry.previousPath(), entry.changeType(), entry.staged(), entry.unstaged(), entry.tracked());
+  }
+
   private GitHubTools.RepositoryInfo toRepositoryInfo(RepositoryRef repository) {
     if (repository == null) {
       return null;
@@ -445,4 +518,41 @@ class GitHubWorkspaceTools {
       Instant readAt) {}
 
   private record FilePayload(boolean binary, String encoding, String content, String base64) {}
+
+  record GitWorkspaceGitStateRequest(
+      String workspaceId,
+      Boolean includeFileStatus,
+      Boolean includeUntracked,
+      Integer maxEntries,
+      Boolean includeSummaryOnly) {}
+
+  record GitWorkspaceGitStateResponse(
+      String workspaceId,
+      GitWorkspaceGitStateBranch branch,
+      GitWorkspaceGitStateStatus status,
+      List<GitWorkspaceGitStateFileEntry> files,
+      boolean truncated,
+      List<String> warnings,
+      Instant inspectedAt,
+      long durationMs) {}
+
+  record GitWorkspaceGitStateBranch(
+      String name,
+      String headSha,
+      String resolvedRef,
+      String upstream,
+      boolean detached,
+      Integer ahead,
+      Integer behind) {}
+
+  record GitWorkspaceGitStateStatus(
+      boolean clean, int staged, int unstaged, int untracked, int conflicts) {}
+
+  record GitWorkspaceGitStateFileEntry(
+      String path,
+      String previousPath,
+      String changeType,
+      boolean staged,
+      boolean unstaged,
+      boolean tracked) {}
 }
