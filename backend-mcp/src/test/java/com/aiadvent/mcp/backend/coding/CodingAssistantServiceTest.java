@@ -252,7 +252,10 @@ class CodingAssistantServiceTest {
                       null,
                       0L,
                       null,
-                      List.of()));
+                      List.of(),
+                      null,
+                      null,
+                      null));
             });
 
     PatchGenerator patchGenerator = new PatchPlanGenerator();
