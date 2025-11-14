@@ -198,6 +198,13 @@ public class GitHubRepositoryService {
       TempWorkspaceService.Workspace updated =
           workspaceService.updateWorkspace(
               workspace.workspaceId(), workspaceSize, outcome.commitSha(), keyFiles);
+      String initialBranch = extractBranchName(repository.ref());
+      updateWorkspaceGitState(
+          workspace.workspaceId(),
+          initialBranch,
+          outcome.commitSha(),
+          outcome.resolvedRef(),
+          buildUpstream(initialBranch));
       Duration duration = Duration.between(startedAt, outcome.completedAt());
       fetchTimer.record(duration);
       fetchSuccessCounter.increment();
@@ -408,6 +415,12 @@ public class GitHubRepositoryService {
         sourceSha);
 
     Instant createdAt = Instant.now();
+    updateWorkspaceGitState(
+        workspace.workspaceId(),
+        branchName,
+        sourceSha,
+        "refs/heads/" + branchName,
+        buildUpstream(branchName));
     log.info(
         "github.write.create_branch success repo={} branch={} workspace={} sourceSha={} localHead={}",
         repository.fullName(),
@@ -510,6 +523,8 @@ public class GitHubRepositoryService {
         runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
     String commitSha = headResult.output().trim();
     workspaceService.updateWorkspace(workspace.workspaceId(), null, commitSha, null);
+    updateWorkspaceGitState(
+        workspace.workspaceId(), branchName, commitSha, null, buildUpstream(branchName));
 
     Instant committedAt = Instant.now();
     log.info(
@@ -594,6 +609,8 @@ public class GitHubRepositoryService {
     ProcessResult headResult =
         runGitCommand(workspacePath, Duration.ofSeconds(30), authHeader, token, "git", "rev-parse", "HEAD");
     String localHead = headResult.output().trim();
+    updateWorkspaceGitState(
+        workspace.workspaceId(), branchName, remoteHead, null, buildUpstream(branchName));
 
     Instant pushedAt = Instant.now();
     log.info(
@@ -2771,7 +2788,7 @@ public class GitHubRepositoryService {
     return sanitized.trim();
   }
 
-  private String extractBranchName(String ref) {
+  private String extractBranchName(@Nullable String ref) {
     if (!StringUtils.hasText(ref)) {
       return null;
     }
@@ -2783,10 +2800,10 @@ public class GitHubRepositoryService {
       return trimmed.substring("heads/".length());
     }
     if (trimmed.startsWith("refs/tags/")) {
-      return trimmed.substring("refs/".length());
+      return null;
     }
     if (trimmed.startsWith("tags/")) {
-      return trimmed;
+      return null;
     }
     if (isCommitSha(trimmed)) {
       return null;
@@ -3082,6 +3099,29 @@ public class GitHubRepositoryService {
     String name = repo.name().trim();
     String ref = StringUtils.hasText(repo.ref()) ? repo.ref().trim() : "heads/main";
     return new RepositoryRef(owner, name, ref);
+  }
+
+  private void updateWorkspaceGitState(
+      String workspaceId,
+      @Nullable String branchName,
+      @Nullable String headSha,
+      @Nullable String resolvedRef,
+      @Nullable String upstream) {
+    if (!StringUtils.hasText(workspaceId)) {
+      return;
+    }
+    try {
+      workspaceService.updateGitMetadata(
+          workspaceId,
+          new TempWorkspaceService.WorkspaceGitMetadata(branchName, headSha, resolvedRef, upstream));
+    } catch (RuntimeException ex) {
+      log.debug(
+          "Failed to persist git metadata for workspace {}: {}", workspaceId, ex.getMessage());
+    }
+  }
+
+  private String buildUpstream(@Nullable String branchName) {
+    return StringUtils.hasText(branchName) ? "origin/" + branchName.trim() : null;
   }
 
   private String normalizePath(String path) {
