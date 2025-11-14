@@ -8,13 +8,13 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -36,6 +36,7 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class TempWorkspaceService implements InitializingBean, DisposableBean {
@@ -182,6 +183,29 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
     return record.toWorkspace();
   }
 
+  public Workspace updateGitMetadata(String workspaceId, WorkspaceGitMetadata metadata) {
+    Objects.requireNonNull(metadata, "metadata");
+    WorkspaceRecord record = workspaces.get(workspaceId);
+    if (record == null) {
+      throw new IllegalArgumentException("Unknown workspaceId: " + workspaceId);
+    }
+    if (metadata.branchName() != null) {
+      record.setBranchName(sanitize(metadata.branchName()));
+    }
+    if (metadata.headSha() != null) {
+      record.setCommitSha(sanitize(metadata.headSha()));
+    }
+    if (metadata.resolvedRef() != null) {
+      record.setResolvedRef(sanitize(metadata.resolvedRef()));
+    }
+    if (metadata.upstream() != null) {
+      record.setUpstreamBranch(sanitize(metadata.upstream()));
+    }
+    record.touch();
+    writeMetadata(record);
+    return record.toWorkspace();
+  }
+
   public void cleanupExpired() {
     Instant now = Instant.now();
     List<String> expiredIds =
@@ -215,6 +239,13 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       throw new IllegalStateException(
           "Workspace size %d exceeds configured limit %d".formatted(sizeBytes, sizeLimitBytes));
     }
+  }
+
+  private String sanitize(@Nullable String value) {
+    if (!StringUtils.hasText(value)) {
+      return null;
+    }
+    return value.trim();
   }
 
   public Path getWorkspaceRoot() {
@@ -278,6 +309,9 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
                 null);
         writeMetadata(record);
         return Optional.of(record);
@@ -299,7 +333,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
               metadata.source(),
               metadata.sizeBytes(),
               metadata.commitSha(),
-              metadata.keyFiles());
+              metadata.keyFiles(),
+              metadata.branchName(),
+              metadata.resolvedRef(),
+              metadata.upstreamBranch());
       if (record.expiresAt().isBefore(Instant.now())) {
         deleteWorkspace(workspaceId);
         return Optional.empty();
@@ -321,7 +358,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
             new WorkspaceSource(record.sourceRepository(), record.sourceRef()),
             record.sizeBytes(),
             record.commitSha(),
-            record.keyFiles());
+            record.keyFiles(),
+            record.branchName(),
+            record.resolvedRef(),
+            record.upstreamBranch());
     try (OutputStream out = Files.newOutputStream(metadataPath)) {
       WorkspaceMetadata.write(metadata, out);
     } catch (IOException ex) {
@@ -416,6 +456,9 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
     private volatile long sizeBytes;
     private volatile String commitSha;
     private volatile List<String> keyFiles;
+    private volatile String branchName;
+    private volatile String resolvedRef;
+    private volatile String upstreamBranch;
 
     private WorkspaceRecord(
         String workspaceId,
@@ -428,7 +471,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
         Instant expiresAt,
         long sizeBytes,
         String commitSha,
-        List<String> keyFiles) {
+        List<String> keyFiles,
+        String branchName,
+        String resolvedRef,
+        String upstreamBranch) {
       this.workspaceId = workspaceId;
       this.path = path;
       this.ttl = ttl;
@@ -440,6 +486,9 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       this.sizeBytes = sizeBytes;
       this.commitSha = commitSha;
       this.keyFiles = keyFiles != null ? new ArrayList<>(keyFiles) : new ArrayList<>();
+      this.branchName = branchName;
+      this.resolvedRef = resolvedRef;
+      this.upstreamBranch = upstreamBranch;
     }
 
     static WorkspaceRecord newRecord(
@@ -456,7 +505,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
           now.plus(ttl),
           0L,
           null,
-          Collections.emptyList());
+          Collections.emptyList(),
+          null,
+          null,
+          null);
     }
 
     static WorkspaceRecord fromMetadata(
@@ -469,7 +521,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
         @Nullable WorkspaceSource source,
         @Nullable Long sizeBytes,
         @Nullable String commitSha,
-        @Nullable List<String> keyFiles) {
+        @Nullable List<String> keyFiles,
+        @Nullable String branchName,
+        @Nullable String resolvedRef,
+        @Nullable String upstreamBranch) {
       WorkspaceRecord record =
           new WorkspaceRecord(
               workspaceId,
@@ -482,7 +537,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
               expiresAt != null ? expiresAt : createdAt.plus(ttl),
               sizeBytes != null ? sizeBytes : 0L,
               commitSha,
-              keyFiles);
+              keyFiles,
+              branchName,
+              resolvedRef,
+              upstreamBranch);
       return record;
     }
 
@@ -542,6 +600,30 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       this.keyFiles = keyFiles != null ? new ArrayList<>(keyFiles) : new ArrayList<>();
     }
 
+    String branchName() {
+      return branchName;
+    }
+
+    void setBranchName(@Nullable String branchName) {
+      this.branchName = branchName;
+    }
+
+    String resolvedRef() {
+      return resolvedRef;
+    }
+
+    void setResolvedRef(@Nullable String resolvedRef) {
+      this.resolvedRef = resolvedRef;
+    }
+
+    String upstreamBranch() {
+      return upstreamBranch;
+    }
+
+    void setUpstreamBranch(@Nullable String upstreamBranch) {
+      this.upstreamBranch = upstreamBranch;
+    }
+
     Workspace toWorkspace() {
       return new Workspace(
           workspaceId,
@@ -553,7 +635,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
           sourceRef,
           sizeBytes,
           commitSha,
-          keyFiles());
+          keyFiles(),
+          branchName,
+          resolvedRef,
+          upstreamBranch);
     }
   }
 
@@ -567,7 +652,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       String ref,
       long sizeBytes,
       String commitSha,
-      List<String> keyFiles) {}
+      List<String> keyFiles,
+      String branchName,
+      String resolvedRef,
+      String upstreamBranch) {}
 
   public record CreateWorkspaceRequest(
       String repositoryFullName, String ref, String requestId) {}
@@ -579,7 +667,10 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
       WorkspaceSource source,
       Long sizeBytes,
       String commitSha,
-      List<String> keyFiles) {
+      List<String> keyFiles,
+      String branchName,
+      String resolvedRef,
+      String upstreamBranch) {
 
     static WorkspaceMetadata read(InputStream inputStream) throws IOException {
       return WorkspaceMetadataSerde.MAPPER.readValue(inputStream, WorkspaceMetadata.class);
@@ -591,6 +682,12 @@ public class TempWorkspaceService implements InitializingBean, DisposableBean {
   }
 
   private record WorkspaceSource(String repositoryFullName, String ref) {}
+
+  public record WorkspaceGitMetadata(
+      @Nullable String branchName,
+      @Nullable String headSha,
+      @Nullable String resolvedRef,
+      @Nullable String upstream) {}
 
   private static final class WorkspaceMetadataSerde {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
