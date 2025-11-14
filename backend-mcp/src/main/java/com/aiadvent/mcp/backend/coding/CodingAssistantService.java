@@ -53,7 +53,7 @@ class CodingAssistantService {
   private final CodingAssistantProperties properties;
   private final WorkspaceFileService workspaceFileService;
   private final PatchRegistry patchRegistry;
-  private final PatchGenerationService patchGenerationService;
+  private final PatchGenerator patchGenerator;
   private final DockerRunnerService dockerRunnerService;
   private final MeterRegistry meterRegistry;
   private final Counter patchAttemptCounter;
@@ -65,7 +65,7 @@ class CodingAssistantService {
       CodingAssistantProperties properties,
       WorkspaceFileService workspaceFileService,
       PatchRegistry patchRegistry,
-      PatchGenerationService patchGenerationService,
+      PatchGenerator patchGenerator,
       DockerRunnerService dockerRunnerService,
       @Nullable MeterRegistry meterRegistry) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
@@ -73,8 +73,7 @@ class CodingAssistantService {
     this.workspaceFileService =
         Objects.requireNonNull(workspaceFileService, "workspaceFileService");
     this.patchRegistry = Objects.requireNonNull(patchRegistry, "patchRegistry");
-    this.patchGenerationService =
-        Objects.requireNonNull(patchGenerationService, "patchGenerationService");
+    this.patchGenerator = Objects.requireNonNull(patchGenerator, "patchGenerator");
     this.dockerRunnerService =
         Objects.requireNonNull(dockerRunnerService, "dockerRunnerService");
     MeterRegistry registry = meterRegistry;
@@ -98,9 +97,11 @@ class CodingAssistantService {
     }
     validateInstructionLength(instructions);
 
-    workspaceService
-        .findWorkspace(workspaceId)
-        .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    TempWorkspaceService.Workspace workspace =
+        workspaceService
+            .findWorkspace(workspaceId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    Path workspacePath = workspace.path();
 
     List<String> targetPaths = normalizePaths(request.targetPaths());
     validatePathList(targetPaths, "targetPaths");
@@ -112,10 +113,18 @@ class CodingAssistantService {
     List<ContextSnippet> snippets = collectContext(workspaceId, normalizedContext);
 
     String patchId = UUID.randomUUID().toString();
-    PatchGenerationService.GenerationResult generation =
-        patchGenerationService.generate(
-            new PatchGenerationService.GeneratePatchCommand(
-                patchId, workspaceId, instructions, targetPaths, forbiddenPaths, snippets));
+    logPromptStructure(workspaceId, patchId, instructions, snippets, targetPaths, forbiddenPaths);
+
+    PatchGenerator.GenerationResult generation =
+        patchGenerator.generate(
+            new PatchGenerator.GeneratePatchCommand(
+                patchId,
+                workspaceId,
+                workspacePath,
+                instructions,
+                targetPaths,
+                forbiddenPaths,
+                snippets));
 
     Set<String> diffFiles = validateDiff(generation.diff());
     PatchAnnotations annotations = normalizeAnnotations(generation.annotations(), diffFiles);
@@ -509,6 +518,35 @@ class CodingAssistantService {
               payload.truncated()));
     }
     return snippets;
+  }
+
+  private void logPromptStructure(
+      String workspaceId,
+      String patchId,
+      String instructions,
+      List<ContextSnippet> snippets,
+      List<String> targetPaths,
+      List<String> forbiddenPaths) {
+    int instructionBytes = instructions.getBytes(StandardCharsets.UTF_8).length;
+    long contextBytes =
+        snippets.stream()
+            .mapToLong(
+                snippet -> {
+                  if (snippet.binary()) {
+                    return snippet.base64().getBytes(StandardCharsets.UTF_8).length;
+                  }
+                  return snippet.content().getBytes(StandardCharsets.UTF_8).length;
+                })
+            .sum();
+    log.info(
+        "Generating patch {} for workspace {} (instructionBytes={}, contextFiles={}, contextBytes={}, targetPaths={}, forbiddenPaths={})",
+        patchId,
+        workspaceId,
+        instructionBytes,
+        snippets.size(),
+        contextBytes,
+        targetPaths.size(),
+        forbiddenPaths.size());
   }
 
   private int safeContextLimit(Integer requested) {

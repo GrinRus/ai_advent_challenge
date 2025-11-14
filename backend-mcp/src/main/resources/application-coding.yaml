@@ -33,3 +33,11 @@ coding:
   patch-ttl: ${CODING_PATCH_TTL:PT24H}
   max-diff-bytes: ${CODING_MAX_DIFF_BYTES:262144}
   max-context-bytes: ${CODING_MAX_CONTEXT_BYTES:262144}
+  claude:
+    enabled: ${CODING_CLAUDE_ENABLED:true}
+    base-url: ${CODING_CLAUDE_BASE_URL:https://api.z.ai/api/anthropic}
+    model: ${CODING_CLAUDE_MODEL:GLM-4.5}
+    api-key: ${ZHIPU_API_KEY:}
+    max-retries: ${CODING_CLAUDE_MAX_RETRIES:1}
+    cli-bin: ${CLAUDE_CODE_BIN:claude}
+    cli-timeout: ${CLAUDE_CODE_TIMEOUT:PT2M}

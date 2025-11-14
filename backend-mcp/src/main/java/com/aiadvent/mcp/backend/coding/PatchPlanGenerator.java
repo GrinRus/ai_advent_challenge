@@ -3,26 +3,25 @@ package com.aiadvent.mcp.backend.coding;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * Temporary stubbed patch generation service. Generates a patch plan file that captures the
- * operator's instructions and context until LLM-powered generation is connected.
- *
- * <p>The structure mirrors the expected data contract so the surrounding flow (registry, apply
- * preview, review) can be developed independently of the eventual LLM backend.
+ * Fallback generator that creates a textual patch plan instead of touching real files. Keeps the
+ * surrounding flow functional when the CLI backend is disabled or unavailable.
  */
-@Service
-class PatchGenerationService {
+@Component
+class PatchPlanGenerator implements PatchGenerator {
 
   private static final String PATCH_PLAN_DIR = ".mcp";
 
-  GenerationResult generate(GeneratePatchCommand command) {
-    Objects.requireNonNull(command, "command");
+  @Override
+  public GenerationResult generate(GeneratePatchCommand command) {
+    if (command == null) {
+      throw new IllegalArgumentException("command must not be null");
+    }
     if (!StringUtils.hasText(command.patchId())) {
       throw new IllegalArgumentException("patchId must not be blank");
     }
@@ -149,19 +148,4 @@ class PatchGenerationService {
     }
     return builder.toString();
   }
-
-  record GeneratePatchCommand(
-      String patchId,
-      String workspaceId,
-      String instructions,
-      List<String> targetPaths,
-      List<String> forbiddenPaths,
-      List<ContextSnippet> contextSnippets) {}
-
-  record GenerationResult(
-      String summary,
-      String diff,
-      PatchAnnotations annotations,
-      PatchUsage usage,
-      boolean requiresManualReview) {}
 }

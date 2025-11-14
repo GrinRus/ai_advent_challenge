@@ -330,6 +330,11 @@ Tool: coding.generate_patch → coding.review_patch → coding.apply_patch_previ
 - `coding.discard_patch` помечен как `MANUAL`: удаляет выбранный патч из реестра и возвращает сводку последнего состояния.
 - Если dry-run завершился успешно, backend разблокирует GitHub write-инструменты (`create_branch` → `commit_workspace_diff` → `push_branch` → `open_pull_request`). При ошибках оператор получает список конфликтов/логов и может повторить генерацию патча.
 
+**Claude Code CLI / GLM**
+- CLI подключён к endpoint `https://api.z.ai/api/anthropic` (GLM-4.5/4.6). Ключ хранится в `ZHIPU_API_KEY`; убедитесь, что он определён перед запуском `coding-mcp`.
+- Переключатели: `CODING_CLAUDE_ENABLED` (feature-flag), `CODING_CLAUDE_MODEL` (GLM профиль), `CODING_CLAUDE_MAX_RETRIES`, `CLAUDE_CODE_BIN`, `CLAUDE_CODE_TIMEOUT`.
+- Проверка здоровья: `docker compose exec coding-mcp claude --version`. При ошибках генерации смотрите логи coding-mcp (`promptBytes/contextBytes/diffBytes`) и stderr CLI (уже маскируется).
+
 ```json
 {
   "tool": "coding.generate_patch",

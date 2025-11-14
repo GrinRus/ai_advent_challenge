@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
+import com.aiadvent.mcp.backend.coding.PatchGenerator;
+import com.aiadvent.mcp.backend.coding.PatchPlanGenerator;
 import com.aiadvent.mcp.backend.docker.DockerRunnerService;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
@@ -253,13 +255,15 @@ class CodingAssistantServiceTest {
                       List.of()));
             });
 
+    PatchGenerator patchGenerator = new PatchPlanGenerator();
+
     CodingAssistantService service =
         new CodingAssistantService(
             workspaceService,
             properties,
             workspaceFileService,
             patchRegistry,
-            new PatchGenerationService(),
+            patchGenerator,
             dockerRunnerService,
             meterRegistry);
 

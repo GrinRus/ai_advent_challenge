@@ -172,6 +172,12 @@ Backend подключает сервис через `spring.ai.mcp.client.strea
 - `coding.review_patch` — подсвечивает риски (build-файлы, TODO/FIXME, миграции), тестовые рекомендации и обновляет аннотации.
 - `coding.apply_patch_preview` — **MANUAL** инструмент. После явного подтверждения выполняет `git apply --check`, временно накладывает diff, собирает `git diff --stat`, откатывает изменения и (если переданы whitelisted команды) запускает dry-run через Docker. Ответ содержит статус dry-run, список изменённых файлов, рекомендации, аннотации и метрики (`coding_patch_*`).
 
+#### Claude Code CLI + GLM (z.ai)
+- CLI устанавливается в контейнер (`npm install -g @anthropic-ai/claude-code`, Node 18). Для локального стенда повторите команды вручную или используйте официальный скрипт установки z.ai; проверяйте `claude --version` после обновлений.
+- Ключ берётся из переменной `ZHIPU_API_KEY`, endpoint/модель задаются через `CODING_CLAUDE_BASE_URL` (по умолчанию `https://api.z.ai/api/anthropic`) и `CODING_CLAUDE_MODEL` (`GLM-4.6`, `GLM-4.5`, `GLM-4.5-Air`). Feature-flag `CODING_CLAUDE_ENABLED`, количество повторов `CODING_CLAUDE_MAX_RETRIES`, путь до бинаря `CLAUDE_CODE_BIN`, таймаут `CLAUDE_CODE_TIMEOUT`.
+- Кеш npm монтируется в volume `~/.npm`. При обновлении CLI очищайте кеш и перезапускайте контейнер, чтобы подтянуть новую версию бинаря.
+- В логах coding MCP фиксируются размеры промпта/дифа, stderr CLI маскируется. Для диагностики таймаутов включайте debug-логи и результирующий stdout/stderr CLI в Kubernetes/compose логах.
+
 Успешный dry-run разблокирует в backend цепочку GitHub write-инструментов (`create_branch → commit_workspace_diff → push_branch → open_pull_request`). При ошибках dry-run оператор получает список конфликтов и логи, после чего может скорректировать инструкции и повторить генерацию.
 
 ### Redis для fallback-оценки токенов

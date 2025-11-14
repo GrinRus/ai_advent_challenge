@@ -16,7 +16,11 @@ FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates docker.io \
+    && apt-get install -y --no-install-recommends curl git ca-certificates docker.io \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && npm config set update-notifier false \
     && rm -rf /var/lib/apt/lists/*
 
 ENV SPRING_MAIN_BANNER_MODE=off \
