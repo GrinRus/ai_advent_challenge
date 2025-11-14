@@ -27,6 +27,9 @@ public class GitHubBackendProperties {
   private Integer pullRequestMaxFiles = 300;
   private Integer pullRequestMaxCommits = 100;
   private String cloneBaseUrl;
+  private Integer workspaceGitStateMaxEntries = 200;
+  private Long workspaceGitStateMaxBytes = 64 * 1024L;
+  private Duration workspaceGitStateTimeout = Duration.ofSeconds(20);
 
   public String getBaseUrl() {
     return baseUrl;
@@ -194,5 +197,29 @@ public class GitHubBackendProperties {
 
   public void setCloneBaseUrl(String cloneBaseUrl) {
     this.cloneBaseUrl = cloneBaseUrl;
+  }
+
+  public Integer getWorkspaceGitStateMaxEntries() {
+    return workspaceGitStateMaxEntries;
+  }
+
+  public void setWorkspaceGitStateMaxEntries(Integer workspaceGitStateMaxEntries) {
+    this.workspaceGitStateMaxEntries = workspaceGitStateMaxEntries;
+  }
+
+  public Long getWorkspaceGitStateMaxBytes() {
+    return workspaceGitStateMaxBytes;
+  }
+
+  public void setWorkspaceGitStateMaxBytes(Long workspaceGitStateMaxBytes) {
+    this.workspaceGitStateMaxBytes = workspaceGitStateMaxBytes;
+  }
+
+  public Duration getWorkspaceGitStateTimeout() {
+    return workspaceGitStateTimeout;
+  }
+
+  public void setWorkspaceGitStateTimeout(Duration workspaceGitStateTimeout) {
+    this.workspaceGitStateTimeout = workspaceGitStateTimeout;
   }
 }
