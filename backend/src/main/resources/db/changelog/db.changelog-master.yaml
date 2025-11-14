@@ -3117,7 +3117,30 @@ databaseChangeLog:
                 ('github.approve_pull_request', 'GitHub · Approve pull request', 'Оставляет approve-review для pull request от имени сервисного аккаунта.', 'github', 'MANUAL', '["github","pull-request","review"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 60000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'github.approve_pull_request' AND version = 1)),
                 ('github.merge_pull_request', 'GitHub · Merge pull request', 'Выполняет merge pull request с выбранным методом.', 'github', 'MANUAL', '["github","pull-request","merge"]'::jsonb, '["github-write"]'::jsonb, 'GitHub REST API (Personal Access Token).', NULL, 90000,
-                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.merge_pull_request' AND version = 1));
+                (SELECT id FROM tool_schema_version WHERE tool_code = 'github.merge_pull_request' AND version = 1));
+
+  - changeSet:
+      id: 0207b-seed-github-workspace-git-state
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('github.workspace_git_state', 1,
+                 $${"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"includeFileStatus":{"type":"boolean"},"includeUntracked":{"type":"boolean"},"maxEntries":{"type":"integer","minimum":1},"includeSummaryOnly":{"type":"boolean"}},"required":["workspaceId"]}$$::jsonb,
+                 $${"type":"object","properties":{"workspaceId":{"type":"string"},"branch":{"type":"object","properties":{"name":{"type":"string"},"headSha":{"type":"string"},"resolvedRef":{"type":"string"},"upstream":{"type":"string"},"detached":{"type":"boolean"},"ahead":{"type":"integer"},"behind":{"type":"integer"}},"required":["detached"]},"status":{"type":"object","properties":{"clean":{"type":"boolean"},"staged":{"type":"integer","minimum":0},"unstaged":{"type":"integer","minimum":0},"untracked":{"type":"integer","minimum":0},"conflicts":{"type":"integer","minimum":0}},"required":["clean","staged","unstaged","untracked","conflicts"]},"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"previousPath":{"type":"string"},"changeType":{"type":"string"},"staged":{"type":"boolean"},"unstaged":{"type":"boolean"},"tracked":{"type":"boolean"}},"required":["path","changeType","staged","unstaged","tracked"]}},"truncated":{"type":"boolean"},"warnings":{"type":"array","items":{"type":"string"}},"inspectedAt":{"type":"string","format":"date-time"},"durationMs":{"type":"integer","minimum":0}},"required":["workspaceId","branch","status","files","truncated","warnings","inspectedAt","durationMs"]}$$::jsonb,
+                 'checksum-github.workspace_git_state-v1', '[]'::jsonb, 'github', 'github.workspace_git_state', 'http-stream', 'github')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('github.workspace_git_state', 'GitHub · Workspace git state', 'Отображает ветку, HEAD и состояние файлов в локальном workspace без ручного git status.', 'github', 'AUTO', '["github","workspace","git"]'::jsonb, '["github-read"]'::jsonb, 'Локальный workspace', NULL, 60000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'github.workspace_git_state' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
 
   - changeSet:
       id: 0208-add-repo-rag-tools

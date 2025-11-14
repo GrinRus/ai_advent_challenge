@@ -106,6 +106,7 @@ export GITHUB_MCP_HTTP_ENDPOINT=/mcp
   3. `github.commit_workspace_diff` — сохраняет diff в коммите, отклоняет пустые/грязные рабочие каталоги.  
   4. `github.push_branch` — публикует ветку без force.  
   5. `github.open_pull_request` — создаёт PR, после чего при необходимости выполняются `github.approve_pull_request` и `github.merge_pull_request`.
+- `github.workspace_git_state` — SAFE-инструмент без подтверждения. Используйте перед `coding.generate_patch`/`coding.apply_patch_preview` и перед публикацией: он читает `.git` в локальном workspace, возвращает ветку (`branch.name`), HEAD, upstream, флаги `ahead/behind`, а также сводку staged/unstaged/untracked файлов. Если `clean=false`, агент обязан задокументировать решение продолжить.
 - `github.create_branch` — валидация имени ветки, создание remote ref и локального checkout в workspace; отклоняет существующие ветки и несоответствие workspace/репозитория.
 - `github.commit_workspace_diff` — собирает staged diff, контролирует размер (по `github.backend.commit-diff-max-bytes`), формирует commit с автором и возвращает статистику.
 - `github.push_branch` — запрещает force-push, проверяет чистоту workspace, сообщает локальный и удалённый SHA, количество отправленных коммитов.
@@ -114,6 +115,16 @@ export GITHUB_MCP_HTTP_ENDPOINT=/mcp
 - Все операции логируют безопасность и аудит (`github_write_operation` category) и используют токен с правами `repo`, `read:org`, `read:checks`.
 - **Операторский чек-лист**: перед публикацией выполните `coding.apply_patch_preview`, задокументируйте результат dry-run, убедитесь что commit message соответствует политикам команды, и подтвердите, что ветка отсутствует в удалённом репозитории. После `github.open_pull_request` сохраните `pullRequestNumber`/`headSha` для журнала операции и финальной телеметрии.
 - **Sandbox-поток**: рекомендуемый репозиторий `sandbox/<project>-playground`. Минимальный сценарий: fetch → create_branch → commit_workspace_diff (обновление README) → push_branch → open_pull_request (draft) → approve → merge. Во время ручного теста убедитесь, что отказ от merge (например, незелёный CI) корректно генерирует ошибку 409.
+
+#### Git workspace state (SAFE)
+- Лимиты и таймауты управляются `github.backend.workspace-git-state-max-entries` (env `GITHUB_BACKEND_WORKSPACE_GIT_STATE_MAX_ENTRIES`, дефолт `200`), `github.backend.workspace-git-state-max-bytes` (`64KiB`) и `github.backend.workspace-git-state-timeout` (дефолт `PT20S`). Превышение лимитов помечается `truncated=true` и предупреждением.
+- Ответ `github.workspace_git_state`:
+  - `branch` — `name`, `headSha`, `resolvedRef`, `upstream`, `detached`, `ahead`, `behind`. Значения комбинируются из git status и метаданных, сохранённых при `github.repository_fetch`/`github.create_branch`.
+  - `status` — `clean`, `staged`, `unstaged`, `untracked`, `conflicts`.
+  - `files[]` (по желанию) — `path`, `previousPath`, `changeType`, `staged`, `unstaged`, `tracked`. Список обрезается после `maxEntries`.
+  - `warnings[]` — причину обрезки/ошибки.
+- Метрики: `github_workspace_git_state_success_total`, `github_workspace_git_state_failure_total`, `github_workspace_git_state_duration`. В логах фиксируется `workspaceId`, чистота и флаг `truncated`.
+- При отсутствии `.git` инструмент возвращает управляемую ошибку с рекомендацией: повторить fetch со стратегией clone и создать ветку (`github.create_branch`), чтобы workspace стал полноценным git-репозиторием.
 - **Примеры вызовов**: можно использовать HTTP MCP endpoint напрямую.
   ```bash
   curl -X POST "$GITHUB_MCP_HTTP_BASE_URL/mcp" \

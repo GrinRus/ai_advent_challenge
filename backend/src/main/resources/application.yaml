@@ -221,6 +221,9 @@ app:
         - code: coding.discard_patch
           schema-version: 1
           execution-mode: MANUAL
+        - code: github.workspace_git_state
+          schema-version: 1
+          execution-mode: SAFE
         - code: github.create_branch
           schema-version: 1
           execution-mode: MANUAL

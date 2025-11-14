@@ -1210,3 +1210,27 @@
 ### Documentation & Enablement
 - [ ] Обновить `docs/guides/mcp-operators.md`, `docs/infra.md`, `docs/processes.md`: структура UX, параметры ввода, ограничения GitHub MCP, порядок запуска/восстановления и метрики.
 - [ ] Добавить changelog/enablement-заметку: сценарии использования, подготовка PAT, лимиты, проверка результатов, рекомендации по откату и operator playbook.
+
+## Wave 40 — Workspace Git State Tool
+Цель: предоставить операторам и LLM полнофункциональный MCP-инструмент, который показывает актуальную ветку и состояние git в локальном workspace без ручных CLI-команд.
+
+### Git metadata capture
+- [x] Расширить `WorkspaceAccessService`/`TempWorkspaceService`: при `github.repository_fetch` и `github.create_branch` сохранять в метаданных workspace текущую ветку (`branchName`), `headSha`, `resolvedRef`, `upstream`. Для `commit_workspace_diff`/`push_branch` обновлять сохранённые SHA/ветку после успешной операции.
+- [x] Добавить вспомогательный сервис (например, `GitWorkspaceStateService`), который умеет определять состояние git через JGit/CLI (`git rev-parse --abbrev-ref HEAD`, `git status --porcelain=v2`, `git remote -v`) и объединяет результаты с сохранёнными метаданными. Ограничить количество файлов (≤200) и размер вывода (≤64 КБ), при превышении возвращать `truncated=true`.
+
+### Новый MCP-инструмент `github.workspace_git_state`
+- [x] В `GitHubWorkspaceTools` зарегистрировать инструмент `github.workspace_git_state` с аргументами: `workspaceId` (обяз.), опции `includeFileStatus` (bool, default true), `includeUntracked`, `maxEntries`, `includeSummaryOnly`. В ответе вернуть блоки `branch` (name, headSha, upstream, detached, divergence), `status` (clean, staged/unstaged counts) и список файлов `{path, changeType, staged}`.
+- [x] Обновить каталог MCP (`db.changelog-master.yaml`) и Spring AI bindings, чтобы инструмент был доступен в чатах/флоу. Пометить `execution-mode=SAFE`, добавить те же теги, что и у read-only GitHub инструментов.
+
+### Логирование и безопасность
+- [x] Логировать использование инструмента: `github_workspace_git_state_total`, длительность, количество файлов, индикатор `isClean`. Убедиться, что вывод не содержит секретов (фильтрация `.env`, `secrets.*`, бинарей >64 КБ).
+- [x] Добавить фичефлаг/лимиты (`GITHUB_WORKSPACE_GIT_STATE_MAX_ENTRIES`, `MAX_BYTES`, таймаут), чтобы избегать зависаний при большом количестве файлов. При ошибке git (например, отсутствует `.git`) возвращать структурированную ошибку и рекомендации (fetch → create_branch).
+
+### Тесты
+- [x] Unit: `GitWorkspaceStateServiceTest` (чистый workspace, грязный со staged/unstaged/ untracked файлами, detached HEAD, отсутствие `.git`).
+- [x] Integration: e2e сценарии `repository_fetch → workspace_git_state` и `fetch → create_branch → modify files → git_state`, проверка лимитов/truncated флагов и корректности ответа после `commit_workspace_diff`/`push_branch`.
+
+### Documentation & Enablement
+- [x] Обновить `docs/guides/mcp-operators.md`, `docs/infra.md`, `docs/architecture/coding-assistant-rfc.md`: описание нового инструмента, формат запроса/ответа, лимиты, рекомендуемый UX (когда вызывать, как интерпретировать `divergence/staged/unstaged`).
+- [x] Добавить раздел в operator playbook: как использовать `github.workspace_git_state` перед публикацией, как действовать при грязном workspace, примеры JSON и чек-листы.
+- [x] Обновить release notes (Wave 40) и changelog с акцентом на улучшение прозрачности assisted-coding и снижение ручных git-команд.

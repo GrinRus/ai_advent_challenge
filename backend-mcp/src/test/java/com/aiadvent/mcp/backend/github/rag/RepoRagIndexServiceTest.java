@@ -238,7 +238,10 @@ class RepoRagIndexServiceTest {
         "refs/heads/main",
         0L,
         null,
-        List.of());
+        List.of(),
+        "main",
+        "refs/heads/main",
+        "origin/main");
   }
 
   private RepoRagIndexService.IndexRequest request(String workspaceId) {

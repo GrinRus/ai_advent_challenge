@@ -200,19 +200,24 @@ Wave 31 дополнил этот этап:
 ## Интеграция с Assisted Coding Flow
 1. `github.repository_fetch` — подготовка workspace.
 2. `github.workspace_directory_inspector` — выбор `projectPath`.
-3. `coding.generate_patch` — получить diff и summary.
-4. `coding.review_patch` — (опц.) выявить риски.
-5. При необходимости оператор запускает `coding.apply_patch_preview` (dry-run выполняется только по запросу).
-6. Если dry-run успешно завершён или шаг был пропущен по решению оператора, разблокируем GitHub MCP write-инструменты:
+3. `github.workspace_git_state` — SAFE-инструмент, подтверждающий ветку, head SHA и чистоту workspace. Если `status.clean=false` или head расходится с ожиданиями, flow запрашивает оператора (либо выполняет `git clean/reset`) до продолжения.
+4. `coding.generate_patch` — получить diff и summary.
+5. `coding.review_patch` — (опц.) выявить риски.
+6. При необходимости оператор запускает `coding.apply_patch_preview` (dry-run выполняется только по запросу).
+7. Если dry-run успешно завершён или шаг был пропущен по решению оператора, разблокируем GitHub MCP write-инструменты:
    - `github.create_branch`
    - `github.commit_workspace_diff`
    - `github.push_branch`
    - `github.open_pull_request`
-7. Ревью и контроль качества → `github.set_pr_status` / `github.raise_veto`.
+8. Ревью и контроль качества → `github.set_pr_status` / `github.raise_veto`.
 
 ## GitHub MCP Write Operations
 - **Цель**: обеспечить полный цикл публикации изменений — от создания ветки до merge PR — из автоматизированного flow с ручными подтверждениями.
 - **Новые операции GitHub MCP** (реализуются в `GitHubRepositoryService`, экспортируются через `GitHubTools`/`GitHubWorkspaceTools`):
+  - `github.workspace_git_state` (SAFE)
+    - Request: `{ workspaceId, includeFileStatus?, includeUntracked?, maxEntries?, includeSummaryOnly? }`.
+    - Для каждого workspace хранится git-метаданные (`branchName`, `headSha`, `resolvedRef`, `upstream`). Инструмент объединяет их с результатом `git status --porcelain=v2 --branch`, возвращает блоки `branch`, `status`, `files` и предупреждения о тримминге.
+    - Используется перед генерацией и dry-run патчей, чтобы LLM могло автоматически проверить чистоту и ветку и подсветить риски оператору (например, незакоммиченные изменения).
   - `github.create_branch`
     - Request: `{ workspaceId, repository{owner,name,ref}, branchName, sourceSha }`.
     - Валидации: branchName против whitelist/pattern, отсутствие существующей ветки, проверка права записи.

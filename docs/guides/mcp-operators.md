@@ -164,6 +164,7 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 - `github.submit_pull_request_review` — завершает черновое ревью; требует `reviewId`, проверяет обязательность `body` для `COMMENT` и `REQUEST_CHANGES`.
 - `github.repository_fetch` — скачивает репозиторий в workspace (стратегия по умолчанию `ARCHIVE_WITH_FALLBACK_CLONE`), поддерживает `options` (`shallowClone`, `cloneTimeout`/`archiveTimeout`, `archiveSizeLimit`, `detectKeyFiles`). Возвращает `workspaceId`, путь, `resolvedRef`, `commitSha`, размеры скачивания и список ключевых файлов.
 - `github.workspace_directory_inspector` — анализирует ранее скачанный workspace: `includeGlobs`/`excludeGlobs`, `maxDepth` (по умолчанию 4), `maxResults` (по умолчанию 400, максимум 2000), `includeHidden`, `detectProjects`. Возвращает список элементов, признаки Gradle/Maven/NPM и рекомендации по `projectPath`.
+- `github.workspace_git_state` — **SAFE** инструмент. Принимает `workspaceId` и опции (`includeFileStatus`, `includeUntracked`, `maxEntries`, `includeSummaryOnly`). Отдаёт блок `branch{name,headSha,upstream,detached,ahead,behind}`, сводку `status{clean,staged,unstaged,untracked,conflicts}` и (опционально) список файлов (`path`, `previousPath`, `changeType`, staged/unstaged). Используйте перед `coding.generate_patch`/`coding.apply_patch_preview`, чтобы подтвердить ветку и чистоту workspace; при `clean=false` обязательно зафиксируйте решение в чате.
 - `github.create_branch` — `MANUAL`. Требует `repository`, `workspaceId`, `branchName`; опционален `sourceSha`. Валидирует имя ветки, убеждается, что ветка не существует удалённо, создаёт удалённый ref и локальный checkout.
 - `github.commit_workspace_diff` — `MANUAL`. Формирует commit из изменений workspace (`branchName`, `commitMessage`, `author{name,email}`), отклоняет пустой diff, возвращает SHA и список файлов со статистикой `additions/deletions`.
 - `github.push_branch` — `MANUAL`. Публикует локальные коммиты (`force=false`), проверяет чистоту workspace, сообщает локальный и удалённый SHA и число отправленных коммитов.
@@ -181,6 +182,7 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
 7. `github.open_pull_request` — создаёт PR; далее по необходимости `github.approve_pull_request` и `github.merge_pull_request`.
 
 #### Чек-лист безопасного выпуска
+- Запустите `github.workspace_git_state` сразу после `github.repository_fetch` или перед `coding.generate_patch`: если `status.clean=false` либо ветка не совпадает с ожиданиями, остановите поток и очистите workspace перед публикацией.
 - Убедитесь, что workspace получен через `github.repository_fetch`, а последний dry-run (`coding.apply_patch_preview`) завершился успехом и зафиксирован в UI/чат-логе.
 - Просмотрите diff (`git status`/`git diff`) в локальном workspace и подтвердите, что commit message отражает суть изменений и не содержит секретов.
 - Перед `github.push_branch` проверьте, что ветка отсутствует на удалённом репо либо действительно должна быть обновлена; при необходимости удалите устаревшие локальные изменения (`git clean -fd`).
@@ -211,6 +213,18 @@ Tool: github.list_pull_requests → github.get_pull_request → github.get_pull_
     "repository": {"owner": "sandbox-co", "name": "demo-service", "ref": "heads/main"},
     "workspaceId": "workspace-1234",
     "branchName": "feature/improve-logging"
+  }
+}
+```
+
+```json
+{
+  "tool": "github.workspace_git_state",
+  "arguments": {
+    "workspaceId": "workspace-12345",
+    "includeFileStatus": true,
+    "includeUntracked": true,
+    "maxEntries": 100
   }
 }
 ```
