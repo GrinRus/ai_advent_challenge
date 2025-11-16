@@ -46,6 +46,8 @@ public class RepoAnalysisProperties {
   private List<String> excludeDirectories =
       new ArrayList<>(
           List.of(".git", "node_modules", "build", "dist", "out", "target", ".idea", ".gradle"));
+  private Priorities priorities = new Priorities();
+  private boolean enableAdvancedMetrics = false;
 
   public String getStateRoot() {
     return stateRoot;
@@ -124,5 +126,88 @@ public class RepoAnalysisProperties {
   public void setExcludeDirectories(List<String> excludeDirectories) {
     this.excludeDirectories =
         excludeDirectories != null ? new ArrayList<>(excludeDirectories) : new ArrayList<>();
+  }
+
+  public Priorities getPriorities() {
+    return priorities;
+  }
+
+  public void setPriorities(Priorities priorities) {
+    this.priorities = priorities != null ? priorities : new Priorities();
+  }
+
+  public boolean isEnableAdvancedMetrics() {
+    return enableAdvancedMetrics;
+  }
+
+  public void setEnableAdvancedMetrics(boolean enableAdvancedMetrics) {
+    this.enableAdvancedMetrics = enableAdvancedMetrics;
+  }
+
+  public static class Priorities {
+    private FileTypePriority code = new FileTypePriority(1.0, 5000);
+    private FileTypePriority test = new FileTypePriority(0.8, 4000);
+    private FileTypePriority infra = new FileTypePriority(0.6, 2000);
+    private FileTypePriority doc = new FileTypePriority(0.4, 1500);
+
+    public FileTypePriority getCode() {
+      return code;
+    }
+
+    public void setCode(FileTypePriority code) {
+      this.code = code != null ? code : new FileTypePriority(1.0, 5000);
+    }
+
+    public FileTypePriority getTest() {
+      return test;
+    }
+
+    public void setTest(FileTypePriority test) {
+      this.test = test != null ? test : new FileTypePriority(0.8, 4000);
+    }
+
+    public FileTypePriority getInfra() {
+      return infra;
+    }
+
+    public void setInfra(FileTypePriority infra) {
+      this.infra = infra != null ? infra : new FileTypePriority(0.6, 2000);
+    }
+
+    public FileTypePriority getDoc() {
+      return doc;
+    }
+
+    public void setDoc(FileTypePriority doc) {
+      this.doc = doc != null ? doc : new FileTypePriority(0.4, 1500);
+    }
+  }
+
+  public static class FileTypePriority {
+    private double weight;
+    private int maxFiles;
+
+    public FileTypePriority() {}
+
+    public FileTypePriority(double weight, int maxFiles) {
+      this.weight = weight;
+      this.maxFiles = maxFiles;
+    }
+
+    public double getWeight() {
+      return weight;
+    }
+
+    public void setWeight(double weight) {
+      this.weight = weight;
+    }
+
+    public int getMaxFiles() {
+      return maxFiles;
+    }
+
+    public void setMaxFiles(int maxFiles) {
+      this.maxFiles = maxFiles;
+    }
   }
 }

@@ -16,6 +16,7 @@ import com.aiadvent.mcp.backend.github.workspace.GitWorkspaceStateService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InfrastructureFlags;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItem;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
 import java.time.Duration;
@@ -191,7 +192,9 @@ class GitHubWorkspaceTools {
               + " Поддерживает фильтры includeGlobs/excludeGlobs (glob-паттерны), maxDepth (по умолчанию 4),"
               + " maxResults (по умолчанию 400, верхний предел 2000), includeTypes ([FILE,DIRECTORY]),"
               + " флаг includeHidden и detectProjects. Возвращает список элементов с типом, размером,"
-              + " признаками проекта (Gradle/Maven/NPM), наличием gradlew, а также рекомендации по projectPath.")
+              + " признаками проекта (Gradle/Maven/NPM/Cargo/Go/Python), наличием gradlew, менеджерами пакетов"
+              + " (npm/yarn/pnpm/poetry) и инфраструктурными флагами (Terraform/Helm/Compose/DB migrations/feature flags),"
+              + " а также рекомендации по projectPath.")
   WorkspaceDirectoryInspectorResponse inspectWorkspace(
       WorkspaceDirectoryInspectorRequest request) {
     if (request == null || !StringUtils.hasText(request.workspaceId())) {
@@ -223,7 +226,10 @@ class GitHubWorkspaceTools {
         result.recommendedProjectPath(),
         result.totalMatches(),
         result.duration().toMillis(),
-        result.inspectedAt());
+        result.inspectedAt(),
+        toInfrastructureFlags(result.infrastructureFlags()),
+        result.packageManagers(),
+        result.projectTypes());
   }
 
   @Tool(
@@ -361,7 +367,21 @@ class GitHubWorkspaceTools {
         item.executable(),
         item.lastModified(),
         projectTypes,
-        item.hasGradleWrapper());
+        item.hasGradleWrapper(),
+        item.packageManagers(),
+        toInfrastructureFlags(item.infrastructureFlags()));
+  }
+
+  private WorkspaceInfrastructureFlags toInfrastructureFlags(InfrastructureFlags flags) {
+    if (flags == null) {
+      return new WorkspaceInfrastructureFlags(false, false, false, false, false);
+    }
+    return new WorkspaceInfrastructureFlags(
+        flags.hasTerraform(),
+        flags.hasHelm(),
+        flags.hasCompose(),
+        flags.hasDbMigrations(),
+        flags.hasFeatureFlags());
   }
 
   private void validateRequest(WorkspaceReadFileRequest request) {
@@ -438,7 +458,10 @@ class GitHubWorkspaceTools {
       String recommendedProjectPath,
       int totalMatches,
       long durationMs,
-      Instant inspectedAt) {}
+      Instant inspectedAt,
+      WorkspaceInfrastructureFlags infrastructure,
+      List<String> packageManagers,
+      List<String> projectTypes) {}
 
   record WorkspaceDirectoryEntry(
       String path,
@@ -449,7 +472,16 @@ class GitHubWorkspaceTools {
       boolean executable,
       Instant lastModified,
       List<String> projectTypes,
-      boolean hasGradleWrapper) {}
+      boolean hasGradleWrapper,
+      List<String> packageManagers,
+      WorkspaceInfrastructureFlags infrastructure) {}
+
+  record WorkspaceInfrastructureFlags(
+      boolean hasTerraform,
+      boolean hasHelm,
+      boolean hasCompose,
+      boolean hasDbMigrations,
+      boolean hasFeatureFlags) {}
 
   record GitHubCreateBranchRequest(
       GitHubTools.RepositoryInput repository,

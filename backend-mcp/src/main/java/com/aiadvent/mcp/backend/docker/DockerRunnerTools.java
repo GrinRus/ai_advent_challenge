@@ -1,7 +1,8 @@
 package com.aiadvent.mcp.backend.docker;
 
-import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunInput;
-import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerGradleRunResult;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerBuildRunInput;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.DockerBuildRunResult;
+import com.aiadvent.mcp.backend.docker.DockerRunnerService.RunnerProfile;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,31 +25,45 @@ public class DockerRunnerTools {
   }
 
   @Tool(
-      name = "docker.gradle_runner",
+      name = "docker.build_runner",
       description =
-          "Запускает Gradle-задачи внутри Docker-образа. Требует workspaceId (из github_repository_fetch). "
-              + "Параметр projectPath указывает относительный путь к проекту в workspace (необязательно). "
-              + "tasks — список целей Gradle, arguments — дополнительные аргументы (например, --info). "
-              + "env задаёт переменные окружения (карта имя → значение). timeoutSeconds ограничивает время выполнения. "
-              + "Ответ содержит exitCode, статус success/failed, dockerCommand, stdout/stderr (в чанках) и длительность.")
-  DockerGradleRunnerResponse runGradle(
+          "Запускает сборку/тесты внутри многоязычного Docker-образа. Требует workspaceId."
+              + " Определяет профиль автоматически (Gradle/Maven/npm/Python/Go) по файлам проекта или принимает profile="
+              + "gradle|maven|npm|python|go". tasks/arguments передаются runner'у как есть."
+              + " Поддерживает artifacts (analysisId) и fallback-последовательность для неизвестных проектов.")
+  DockerBuildRunnerResponse runBuild(
       @JsonProperty("workspaceId") String workspaceId,
       @JsonProperty("projectPath") String projectPath,
+      @JsonProperty("profile") String profile,
       @JsonProperty("tasks") List<String> tasks,
       @JsonProperty("arguments") List<String> arguments,
       @JsonProperty("env") Map<String, String> env,
-      @JsonProperty("timeoutSeconds") Integer timeoutSeconds) {
+      @JsonProperty("timeoutSeconds") Integer timeoutSeconds,
+      @JsonProperty("analysisId") String analysisId,
+      @JsonProperty("enableFallback") Boolean enableFallback) {
     if (!StringUtils.hasText(workspaceId)) {
       throw new IllegalArgumentException("workspaceId must not be blank");
     }
-    DockerGradleRunResult result =
-        dockerRunnerService.runGradle(
-            new DockerGradleRunInput(
-                workspaceId, projectPath, tasks, arguments, env, toDuration(timeoutSeconds)));
+    RunnerProfile runnerProfile = RunnerProfile.fromString(profile);
+    boolean fallbackEnabled =
+        enableFallback != null ? enableFallback : runnerProfile == RunnerProfile.AUTO;
+    DockerBuildRunResult result =
+        dockerRunnerService.runBuild(
+            new DockerBuildRunInput(
+                workspaceId,
+                projectPath,
+                runnerProfile,
+                tasks,
+                arguments,
+                env,
+                toDuration(timeoutSeconds),
+                analysisId,
+                fallbackEnabled));
 
-    return new DockerGradleRunnerResponse(
+    return new DockerBuildRunnerResponse(
         result.workspaceId(),
         result.projectPath(),
+        result.profile().id(),
         result.runnerExecutable(),
         result.dockerCommand(),
         result.exitCode(),
@@ -57,7 +72,9 @@ public class DockerRunnerTools {
         result.stderr(),
         result.duration().toMillis(),
         result.startedAt(),
-        result.finishedAt());
+        result.finishedAt(),
+        result.artifactPath(),
+        result.artifacts());
   }
 
   private Duration toDuration(Integer timeoutSeconds) {
@@ -67,9 +84,10 @@ public class DockerRunnerTools {
     return Duration.ofSeconds(timeoutSeconds.longValue());
   }
 
-  public record DockerGradleRunnerResponse(
+  public record DockerBuildRunnerResponse(
       String workspaceId,
       String projectPath,
+      String profile,
       String runnerExecutable,
       List<String> dockerCommand,
       int exitCode,
@@ -78,5 +96,7 @@ public class DockerRunnerTools {
       List<String> stderr,
       long durationMs,
       Instant startedAt,
-      Instant finishedAt) {}
+      Instant finishedAt,
+      String artifactPath,
+      List<String> artifacts) {}
 }

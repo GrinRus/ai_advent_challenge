@@ -1,6 +1,6 @@
 # Gradle MCP Pipeline
 
-Этот документ описывает внутреннюю архитектуру пайплайна Gradle MCP: как инструменты `github.repository_fetch`, `github.workspace_directory_inspector` и `docker.gradle_runner` соединяются в flow `github-gradle-test-flow`, какие статусы видит оператор и какие метрики снимаются.
+Этот документ описывает внутреннюю архитектуру пайплайна Gradle MCP: как инструменты `github.repository_fetch`, `github.workspace_directory_inspector` и `docker.build_runner` соединяются в flow `github-gradle-test-flow`, какие статусы видит оператор и какие метрики снимаются.
 
 ## Цели и ограничения
 - **Повторяемость:** все шаги (fetch → inspect → docker-run → отчёт) выполняются детерминированно и могут перезапускаться с тем же `requestId`.
@@ -26,7 +26,7 @@ github-gradle-test-flow (Flow orchestrator)
         │      • определяет Gradle-проекты и рекомендует projectPath
         │      • Flow статус → inspecting_workspace
         │
-        └─ Step run_gradle_tests → docker.gradle_runner
+        └─ Step run_gradle_tests → docker.build_runner
                • монтирует workspace + Gradle cache
                • запускает ./gradlew или gradle <tasks>
                • собирает stdout/stderr чанки, exitCode и длительность
@@ -39,7 +39,7 @@ github-gradle-test-flow (Flow orchestrator)
 |------------|------------------|---------------------|---------|
 | `github.repository_fetch` | `repository{owner,name,ref}` | `options.strategy`, `requestId`, `detectKeyFiles` | `fetching` |
 | `github.workspace_directory_inspector` | `workspaceId` | `includeGlobs`, `maxDepth`, `detectProjects` | `inspecting_workspace` |
-| `docker.gradle_runner` | `workspaceId`, `tasks[]` | `projectPath`, `arguments`, `env`, `timeoutSeconds` | `running_tests` / `failed` |
+| `docker.build_runner` | `workspaceId`, `tasks[]` | `projectPath`, `arguments`, `env`, `timeoutSeconds` | `running_tests` / `failed` |
 
 Flow публикует события `STEP_STARTED`, `STEP_COMPLETED`, `STEP_FAILED`. UI отображает прогресс-бар и текстовые статусы:
 
@@ -67,7 +67,7 @@ Flow публикует события `STEP_STARTED`, `STEP_COMPLETED`, `STEP_F
 | Сценарий | Поведение |
 |----------|-----------|
 | Ошибка fetch (HTTP/Git) | step → `failed`, Flow завершаетcя со статусом `FAILED`, UI показывает ссылку на лог GitHub MCP. |
-| Workspace не найден | `docker.gradle_runner` выбрасывает `IllegalArgumentException`, Step переводится в `FAILED`. |
+| Workspace не найден | `docker.build_runner` выбрасывает `IllegalArgumentException`, Step переводится в `FAILED`. |
 | Таймаут Docker | `docker runner` прерывает процесс, статус `failed`, stdout/stderr содержат заметку `timed out after N seconds`. |
 | Непустой exitCode | Flow фиксирует `FAILED`, в отчёт выводятся tail логов и рекомендации агента. Пользователь может скорректировать параметры и перезапустить Flow. |
 
@@ -86,14 +86,14 @@ Flow публикует события `STEP_STARTED`, `STEP_COMPLETED`, `STEP_F
 2. **Workspace root** смонтирован в backend и docker-runner (`/var/tmp/aiadvent/mcp-workspaces`), права 0775.
 3. **Gradle cache** общая (`/var/tmp/aiadvent/gradle-cache`), доступна контейнеру.
 4. **Monitoring**: дашборд строит графики `*_duration`, `*_success_total`, `*_failure_total`, alert — >3 fail подряд или timeout > 10 мин.
-5. **Runbook**: оператор знает, как перезапустить Flow с тем же repo/ref, как очистить workspace и как предоставить логи (stdout/stderr возвращаются чанками в ответе `docker.gradle_runner`).
+5. **Runbook**: оператор знает, как перезапустить Flow с тем же repo/ref, как очистить workspace и как предоставить логи (stdout/stderr возвращаются чанками в ответе `docker.build_runner`).
 6. **Security**: `DOCKER_RUNNER_ENABLE_NETWORK` оставлять `false` по умолчанию; если включаем, фиксируем причину в change log.
 
 ## Примеры вызовов
 
 ```json
 {
-  "tool": "docker.gradle_runner",
+  "tool": "docker.build_runner",
   "arguments": {
     "workspaceId": "workspace-12345",
     "projectPath": "service-app",

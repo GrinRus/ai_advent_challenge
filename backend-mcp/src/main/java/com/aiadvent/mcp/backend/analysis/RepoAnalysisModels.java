@@ -47,7 +47,11 @@ public final class RepoAnalysisModels {
       boolean truncated,
       String content,
       String summary,
-      Instant readAt) {}
+      Instant readAt,
+      String contentHash,
+      boolean duplicate,
+      List<String> tags,
+      SegmentMetadata metadata) {}
 
   public record AggregateFindingsRequest(
       String analysisId,
@@ -97,6 +101,20 @@ public final class RepoAnalysisModels {
       String severity,
       int findingCount,
       double score,
+      double priority,
+      String sourceCategory,
       List<String> highlights,
       List<String> tags) {}
+
+  public record SegmentMetadata(
+      List<String> projectTypes,
+      List<String> packageManagers,
+      InfrastructureFlags infrastructureFlags) {}
+
+  public record InfrastructureFlags(
+      boolean hasTerraform,
+      boolean hasHelm,
+      boolean hasCompose,
+      boolean hasDbMigrations,
+      boolean hasFeatureFlags) {}
 }

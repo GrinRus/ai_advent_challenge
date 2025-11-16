@@ -3,11 +3,13 @@ package com.aiadvent.mcp.backend.analysis;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -19,11 +21,15 @@ public class RepoAnalysisState {
   private Config config;
   private Instant createdAt;
   private Instant updatedAt;
-  private final Deque<FileCursor> pending = new ArrayDeque<>();
+  private final List<FileCursor> pending = new ArrayList<>();
   private final List<FileCursor> processed = new ArrayList<>();
   private final List<RepoFinding> findings = new ArrayList<>();
   private final List<String> warnings = new ArrayList<>();
   private final List<String> skippedFiles = new ArrayList<>();
+  private final List<String> recentSegmentHashes = new ArrayList<>();
+  private final Set<String> findingSignatures = new LinkedHashSet<>();
+  private final Map<String, List<String>> heuristicsByPath = new HashMap<>();
+  private WorkspaceMetadata workspaceMetadata;
   private int processedSegments;
 
   public RepoAnalysisState() {}
@@ -76,7 +82,7 @@ public class RepoAnalysisState {
     this.updatedAt = updatedAt;
   }
 
-  public Deque<FileCursor> getPending() {
+  public List<FileCursor> getPending() {
     return pending;
   }
 
@@ -94,6 +100,14 @@ public class RepoAnalysisState {
 
   public List<String> getSkippedFiles() {
     return skippedFiles;
+  }
+
+  public WorkspaceMetadata getWorkspaceMetadata() {
+    return workspaceMetadata;
+  }
+
+  public void setWorkspaceMetadata(WorkspaceMetadata workspaceMetadata) {
+    this.workspaceMetadata = workspaceMetadata;
   }
 
   public int getProcessedSegments() {
@@ -147,17 +161,70 @@ public class RepoAnalysisState {
     if (pending.isEmpty()) {
       return null;
     }
-    return pending.removeFirst();
+    int bestIndex = 0;
+    double bestWeight = Double.NEGATIVE_INFINITY;
+    String bestPath = null;
+    for (int i = 0; i < pending.size(); i++) {
+      FileCursor candidate = pending.get(i);
+      double weight = candidate != null ? candidate.getPriorityWeight() : 0.0d;
+      String path = candidate != null ? candidate.getPath() : null;
+      if (weight > bestWeight) {
+        bestWeight = weight;
+        bestIndex = i;
+        bestPath = path;
+      } else if (weight == bestWeight && path != null && bestPath != null && path.compareTo(bestPath) < 0) {
+        bestIndex = i;
+        bestPath = path;
+      }
+    }
+    return pending.remove(bestIndex);
   }
 
   public void addPendingFirst(FileCursor cursor) {
     if (cursor != null) {
-      pending.addFirst(cursor);
+      double boosted = Math.max(cursor.getPriorityWeight(), 0.0d) + 0.1d;
+      cursor.setPriorityWeight(boosted);
+      pending.add(cursor);
     }
   }
 
   public List<FileCursor> viewPending() {
     return Collections.unmodifiableList(new ArrayList<>(pending));
+  }
+
+  public boolean registerSegmentHash(String hash, int maxEntries) {
+    if (hash == null || hash.isBlank()) {
+      return false;
+    }
+    if (recentSegmentHashes.contains(hash)) {
+      return false;
+    }
+    recentSegmentHashes.add(hash);
+    while (recentSegmentHashes.size() > maxEntries) {
+      recentSegmentHashes.remove(0);
+    }
+    return true;
+  }
+
+  public boolean registerFindingSignature(String signature) {
+    if (signature == null || signature.isBlank()) {
+      return false;
+    }
+    return findingSignatures.add(signature);
+  }
+
+  public void recordHeuristics(String path, List<String> tags) {
+    if (path == null || path.isBlank() || tags == null || tags.isEmpty()) {
+      return;
+    }
+    heuristicsByPath.put(path, List.copyOf(tags));
+  }
+
+  public List<String> resolveHeuristics(String path) {
+    if (path == null) {
+      return List.of();
+    }
+    return heuristicsByPath.getOrDefault(path, List.of());
   }
 
   public static class Config {
@@ -169,6 +236,7 @@ public class RepoAnalysisState {
     private List<String> includeExtensions = new ArrayList<>();
     private List<String> excludeExtensions = new ArrayList<>();
     private List<String> excludeDirectories = new ArrayList<>();
+    private boolean advancedMetricsEnabled;
 
     public Config() {}
 
@@ -238,6 +306,14 @@ public class RepoAnalysisState {
       this.excludeDirectories =
           excludeDirectories != null ? new ArrayList<>(excludeDirectories) : new ArrayList<>();
     }
+
+    public boolean isAdvancedMetricsEnabled() {
+      return advancedMetricsEnabled;
+    }
+
+    public void setAdvancedMetricsEnabled(boolean advancedMetricsEnabled) {
+      this.advancedMetricsEnabled = advancedMetricsEnabled;
+    }
   }
 
   public static class FileCursor {
@@ -250,6 +326,8 @@ public class RepoAnalysisState {
     private int lineOffset;
     private Instant lastModified;
     private boolean completed;
+    private String fileType;
+    private double priorityWeight;
 
     public FileCursor() {}
 
@@ -324,6 +402,22 @@ public class RepoAnalysisState {
     public void setCompleted(boolean completed) {
       this.completed = completed;
     }
+
+    public String getFileType() {
+      return fileType;
+    }
+
+    public void setFileType(String fileType) {
+      this.fileType = fileType;
+    }
+
+    public double getPriorityWeight() {
+      return priorityWeight;
+    }
+
+    public void setPriorityWeight(double priorityWeight) {
+      this.priorityWeight = priorityWeight;
+    }
   }
 
   public static class RepoFinding {
@@ -338,6 +432,7 @@ public class RepoAnalysisState {
     private Double score;
     private String segmentKey;
     private Instant recordedAt;
+    private String category;
 
     public RepoFinding() {}
 
@@ -433,6 +528,112 @@ public class RepoAnalysisState {
 
     public void setRecordedAt(Instant recordedAt) {
       this.recordedAt = recordedAt;
+    }
+
+    public String getCategory() {
+      return category;
+    }
+
+    public void setCategory(String category) {
+      this.category = category;
+    }
+  }
+
+  public static class WorkspaceMetadata {
+    private List<String> projectTypes = new ArrayList<>();
+    private List<String> packageManagers = new ArrayList<>();
+    private InfrastructureFlags infrastructureFlags = new InfrastructureFlags();
+
+    public WorkspaceMetadata() {}
+
+    public List<String> getProjectTypes() {
+      return projectTypes;
+    }
+
+    public void setProjectTypes(List<String> projectTypes) {
+      this.projectTypes =
+          projectTypes != null ? new ArrayList<>(projectTypes) : new ArrayList<>();
+    }
+
+    public List<String> getPackageManagers() {
+      return packageManagers;
+    }
+
+    public void setPackageManagers(List<String> packageManagers) {
+      this.packageManagers =
+          packageManagers != null ? new ArrayList<>(packageManagers) : new ArrayList<>();
+    }
+
+    public InfrastructureFlags getInfrastructureFlags() {
+      return infrastructureFlags;
+    }
+
+    public void setInfrastructureFlags(InfrastructureFlags infrastructureFlags) {
+      this.infrastructureFlags =
+          infrastructureFlags != null ? infrastructureFlags : new InfrastructureFlags();
+    }
+  }
+
+  public static class InfrastructureFlags {
+    private boolean hasTerraform;
+    private boolean hasHelm;
+    private boolean hasCompose;
+    private boolean hasDbMigrations;
+    private boolean hasFeatureFlags;
+
+    public InfrastructureFlags() {}
+
+    public InfrastructureFlags(
+        boolean hasTerraform,
+        boolean hasHelm,
+        boolean hasCompose,
+        boolean hasDbMigrations,
+        boolean hasFeatureFlags) {
+      this.hasTerraform = hasTerraform;
+      this.hasHelm = hasHelm;
+      this.hasCompose = hasCompose;
+      this.hasDbMigrations = hasDbMigrations;
+      this.hasFeatureFlags = hasFeatureFlags;
+    }
+
+    public boolean isHasTerraform() {
+      return hasTerraform;
+    }
+
+    public void setHasTerraform(boolean hasTerraform) {
+      this.hasTerraform = hasTerraform;
+    }
+
+    public boolean isHasHelm() {
+      return hasHelm;
+    }
+
+    public void setHasHelm(boolean hasHelm) {
+      this.hasHelm = hasHelm;
+    }
+
+    public boolean isHasCompose() {
+      return hasCompose;
+    }
+
+    public void setHasCompose(boolean hasCompose) {
+      this.hasCompose = hasCompose;
+    }
+
+    public boolean isHasDbMigrations() {
+      return hasDbMigrations;
+    }
+
+    public void setHasDbMigrations(boolean hasDbMigrations) {
+      this.hasDbMigrations = hasDbMigrations;
+    }
+
+    public boolean isHasFeatureFlags() {
+      return hasFeatureFlags;
+    }
+
+    public void setHasFeatureFlags(boolean hasFeatureFlags) {
+      this.hasFeatureFlags = hasFeatureFlags;
     }
   }
 }

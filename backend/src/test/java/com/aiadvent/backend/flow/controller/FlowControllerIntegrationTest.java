@@ -455,7 +455,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     AgentVersion gradleAgent =
         persistAgent(
             "gradle-test-runner-test",
-            optionsWithToolBindings(List.of(toolBinding("docker.gradle_runner"))));
+            optionsWithToolBindings(List.of(toolBinding("docker.build_runner"))));
 
     FlowDefinition definition =
         persistGithubGradleTestFlow(
@@ -608,7 +608,7 @@ class FlowControllerIntegrationTest extends PostgresTestContainer {
     AgentVersion gradleAgent =
         persistAgent(
             "gradle-test-runner-test",
-            optionsWithToolBindings(List.of(toolBinding("docker.gradle_runner"))));
+            optionsWithToolBindings(List.of(toolBinding("docker.build_runner"))));
 
     return persistGithubGradleTestFlow(
         fetchAgent.getId(), navigatorAgent.getId(), gradleAgent.getId());

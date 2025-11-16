@@ -19,17 +19,21 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 public class WorkspaceInspectorService {
@@ -102,6 +106,9 @@ public class WorkspaceInspectorService {
     AtomicInteger processed = new AtomicInteger();
     List<String> warnings = new ArrayList<>();
     Map<ProjectType, List<String>> projectDirectories = new EnumMap<>(ProjectType.class);
+    Set<String> detectedPackageManagers = new LinkedHashSet<>();
+    Set<String> detectedProjectTypes = new LinkedHashSet<>();
+    InfrastructureAccumulator infrastructureAccumulator = new InfrastructureAccumulator();
 
     FileVisitor<Path> visitor =
         new SimpleFileVisitor<>() {
@@ -129,6 +136,9 @@ public class WorkspaceInspectorService {
             items.add(item);
             processed.incrementAndGet();
             registerProject(item, projectDirectories);
+            detectedPackageManagers.addAll(item.packageManagers());
+            detectedProjectTypes.addAll(item.projectTypes());
+            infrastructureAccumulator.merge(item.infrastructureFlags());
 
             if (items.size() >= maxResults) {
               truncated.set(true);
@@ -157,6 +167,8 @@ public class WorkspaceInspectorService {
             WorkspaceItem item = buildFileItem(file, attrs, relative);
             items.add(item);
             processed.incrementAndGet();
+            detectedPackageManagers.addAll(item.packageManagers());
+            infrastructureAccumulator.merge(item.infrastructureFlags());
 
             if (items.size() >= maxResults) {
               truncated.set(true);
@@ -216,7 +228,10 @@ public class WorkspaceInspectorService {
             recommended,
             processed.get(),
             duration,
-            inspectedAt);
+            inspectedAt,
+            infrastructureAccumulator.toFlags(),
+            List.copyOf(detectedPackageManagers),
+            List.copyOf(detectedProjectTypes));
     log.info(
         "gradle_mcp.inspect.completed requestId={} workspaceId={} durationMs={} items={} truncated={}",
         normalizeRequestId(requestId),
@@ -269,7 +284,22 @@ public class WorkspaceInspectorService {
       ProjectDetectionResult detection = detectProjectTypes(dir);
       projectTypes = detection.projectTypes();
       hasGradleWrapper = detection.hasGradleWrapper();
+      List<String> packageManagers = detection.packageManagers();
+      InfrastructureFlags infrastructure = detectInfrastructure(relative, true);
+      return new WorkspaceItem(
+          normalizePath(relative),
+          WorkspaceItemType.DIRECTORY,
+          0L,
+          isHidden(dir),
+          Files.isSymbolicLink(dir),
+          false,
+          attrs.lastModifiedTime().toInstant(),
+          projectTypes,
+          hasGradleWrapper,
+          packageManagers,
+          infrastructure);
     }
+    InfrastructureFlags infrastructure = detectInfrastructure(relative, true);
     return new WorkspaceItem(
         normalizePath(relative),
         WorkspaceItemType.DIRECTORY,
@@ -279,12 +309,17 @@ public class WorkspaceInspectorService {
         false,
         attrs.lastModifiedTime().toInstant(),
         projectTypes,
-        hasGradleWrapper);
+        hasGradleWrapper,
+        List.of(),
+        infrastructure);
   }
 
   private WorkspaceItem buildFileItem(Path file, BasicFileAttributes attrs, String relative) {
+    String normalized = normalizePath(relative);
+    InfrastructureFlags infrastructure = detectInfrastructure(normalized, false);
+    List<String> packageManagers = detectPackageManagersFromFile(normalized);
     return new WorkspaceItem(
-        normalizePath(relative),
+        normalized,
         WorkspaceItemType.FILE,
         attrs.size(),
         isHidden(file),
@@ -292,11 +327,69 @@ public class WorkspaceInspectorService {
         Files.isExecutable(file),
         attrs.lastModifiedTime().toInstant(),
         List.of(),
-        false);
+        false,
+        packageManagers,
+        infrastructure);
+  }
+
+  private InfrastructureFlags detectInfrastructure(String relativePath, boolean directory) {
+    if (!StringUtils.hasText(relativePath)) {
+      return InfrastructureFlags.EMPTY;
+    }
+    String normalized = relativePath.replace('\\', '/').toLowerCase(Locale.ROOT);
+    String name = normalized;
+    int lastSlash = normalized.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      name = normalized.substring(lastSlash + 1);
+    }
+    boolean terraform =
+        name.endsWith(".tf")
+            || name.endsWith(".tfvars")
+            || (directory && name.contains("terraform"))
+            || normalized.contains("/terraform/");
+    boolean helm =
+        name.equals("chart.yaml")
+            || normalized.contains("/helm/")
+            || normalized.startsWith("helm/")
+            || normalized.contains("/charts/")
+            || (directory && name.contains("helm"));
+    boolean compose =
+        name.equals("docker-compose.yml")
+            || name.equals("docker-compose.yaml")
+            || name.equals("compose.yml")
+            || name.equals("compose.yaml");
+    boolean dbMigrations =
+        normalized.contains("/migrations/")
+            || normalized.endsWith("/migrations")
+            || normalized.contains("db/migrations")
+            || normalized.contains("database/migrations");
+    boolean featureFlags = normalized.contains("feature-flags") || normalized.contains("feature_flags");
+    if (!terraform && !helm && !compose && !dbMigrations && !featureFlags) {
+      return InfrastructureFlags.EMPTY;
+    }
+    return new InfrastructureFlags(terraform, helm, compose, dbMigrations, featureFlags);
+  }
+
+  private List<String> detectPackageManagersFromFile(String relativePath) {
+    if (!StringUtils.hasText(relativePath)) {
+      return List.of();
+    }
+    String normalized = relativePath.replace('\\', '/');
+    int lastSlash = normalized.lastIndexOf('/');
+    String name = lastSlash >= 0 ? normalized.substring(lastSlash + 1) : normalized;
+    String lower = name.toLowerCase(Locale.ROOT);
+    return switch (lower) {
+      case "package-lock.json" -> List.of("npm");
+      case "yarn.lock" -> List.of("yarn");
+      case "pnpm-lock.yaml", "pnpm-lock.yml" -> List.of("pnpm");
+      case "poetry.lock" -> List.of("poetry");
+      default -> List.of();
+    };
   }
 
   private ProjectDetectionResult detectProjectTypes(Path directory) {
-    List<String> detected = new ArrayList<>();
+    Set<String> detected = new LinkedHashSet<>();
+    Set<String> packageManagers = new LinkedHashSet<>();
     boolean gradleWrapper = false;
     try {
       if (Files.exists(directory.resolve("gradlew"))
@@ -315,10 +408,36 @@ public class WorkspaceInspectorService {
       if (Files.exists(directory.resolve("package.json"))) {
         detected.add(ProjectType.NPM.name().toLowerCase(Locale.ROOT));
       }
+      if (Files.exists(directory.resolve("Cargo.toml"))) {
+        detected.add(ProjectType.RUST.name().toLowerCase(Locale.ROOT));
+      }
+      if (Files.exists(directory.resolve("go.mod"))) {
+        detected.add(ProjectType.GO.name().toLowerCase(Locale.ROOT));
+      }
+      if (Files.exists(directory.resolve("pyproject.toml"))
+          || Files.exists(directory.resolve("requirements.txt"))
+          || Files.exists(directory.resolve("Pipfile"))
+          || Files.exists(directory.resolve("poetry.lock"))) {
+        detected.add(ProjectType.PYTHON.name().toLowerCase(Locale.ROOT));
+      }
+      if (Files.exists(directory.resolve("package-lock.json"))) {
+        packageManagers.add("npm");
+      }
+      if (Files.exists(directory.resolve("yarn.lock"))) {
+        packageManagers.add("yarn");
+      }
+      if (Files.exists(directory.resolve("pnpm-lock.yaml"))
+          || Files.exists(directory.resolve("pnpm-lock.yml"))) {
+        packageManagers.add("pnpm");
+      }
+      if (Files.exists(directory.resolve("poetry.lock"))) {
+        packageManagers.add("poetry");
+      }
     } catch (Exception ex) {
       log.debug("Failed to detect project type for {}: {}", directory, ex.getMessage());
     }
-    return new ProjectDetectionResult(List.copyOf(detected), gradleWrapper);
+    return new ProjectDetectionResult(
+        List.copyOf(detected), gradleWrapper, List.copyOf(packageManagers));
   }
 
   private void registerProject(WorkspaceItem item, Map<ProjectType, List<String>> projectDirectories) {
@@ -356,6 +475,29 @@ public class WorkspaceInspectorService {
     return requestId != null && !requestId.isBlank() ? requestId : "n/a";
   }
 
+  private static class InfrastructureAccumulator {
+    private boolean terraform;
+    private boolean helm;
+    private boolean compose;
+    private boolean dbMigrations;
+    private boolean featureFlags;
+
+    void merge(InfrastructureFlags flags) {
+      if (flags == null) {
+        return;
+      }
+      terraform = terraform || flags.hasTerraform();
+      helm = helm || flags.hasHelm();
+      compose = compose || flags.hasCompose();
+      dbMigrations = dbMigrations || flags.hasDbMigrations();
+      featureFlags = featureFlags || flags.hasFeatureFlags();
+    }
+
+    InfrastructureFlags toFlags() {
+      return new InfrastructureFlags(terraform, helm, compose, dbMigrations, featureFlags);
+    }
+  }
+
   public record InspectWorkspaceRequest(
       String workspaceId,
       List<String> includeGlobs,
@@ -376,7 +518,10 @@ public class WorkspaceInspectorService {
       String recommendedProjectPath,
       int totalMatches,
       Duration duration,
-      Instant inspectedAt) {}
+      Instant inspectedAt,
+      InfrastructureFlags infrastructureFlags,
+      List<String> packageManagers,
+      List<String> projectTypes) {}
 
   public enum WorkspaceItemType {
     FILE,
@@ -387,6 +532,9 @@ public class WorkspaceInspectorService {
     GRADLE,
     MAVEN,
     NPM,
+    RUST,
+    GO,
+    PYTHON,
     UNKNOWN
   }
 
@@ -399,9 +547,21 @@ public class WorkspaceInspectorService {
       boolean executable,
       Instant lastModified,
       List<String> projectTypes,
-      boolean hasGradleWrapper) {}
+      boolean hasGradleWrapper,
+      List<String> packageManagers,
+      InfrastructureFlags infrastructureFlags) {}
 
-  private record ProjectDetectionResult(List<String> projectTypes, boolean hasGradleWrapper) {}
+  public record InfrastructureFlags(
+      boolean hasTerraform,
+      boolean hasHelm,
+      boolean hasCompose,
+      boolean hasDbMigrations,
+      boolean hasFeatureFlags) {
+    static final InfrastructureFlags EMPTY = new InfrastructureFlags(false, false, false, false, false);
+  }
+
+  private record ProjectDetectionResult(
+      List<String> projectTypes, boolean hasGradleWrapper, List<String> packageManagers) {}
 
   public static class WorkspaceInspectionException extends RuntimeException {
     public WorkspaceInspectionException(String message, Throwable cause) {

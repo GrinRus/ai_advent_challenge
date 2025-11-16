@@ -885,26 +885,30 @@
 
 ## Wave 26 — Комплексный аудит скачанных репозиториев
 ### Repo Analysis Service
-- [ ] **Приоритезация файлов.** Расширить `RepoAnalysisState.FileCursor` полями `fileType` (`CODE|TEST|INFRA|DOC`), `priorityWeight`, `lastModified`. В `discoverFiles` классифицировать путь по префиксам (`src/main`→CODE, `src/test`→TEST, `infra|deploy|docker`→INFRA и т. д.), вычислять вес формулой `weight * sizeFactor * recencyFactor` и вместо `List.sort` складывать курсоры в `PriorityQueue`, чтобы `pollPending` всегда отдавал самый рискованный файл.
-- [ ] **Эвристики сложности.** При чтении сегмента считать количество операторов (`if|for|while|case|catch`), глубину вложенности по скобкам и наличие SQL/коллекций (по ключевым словам `select`, `insert`, `ConcurrentHashMap`). Если пороги превышены — дополнять `Segment.summary` тегами `performance`/`maintainability` и сохранять эти теги в `RepoFinding`.
-- [ ] **Сигнатуры.** Для каждого сегмента сохранять SHA-1 содержимого в `RepoAnalysisState` (множество последних 500 ключей). Для находок рассчитывать `findingSignature = sha1(path|line|summary|severity)` и пропускать дубликаты между анализами.
-- [ ] **Конфигурация.** Расширить `RepoAnalysisProperties` блоком `priorities` (веса для CODE/TEST/INFRA/DOC, лимиты maxFilesPerType) и флагом `enableAdvancedMetrics`, чтобы можно было отключать тяжёлые подсчёты.
+- [x] **Приоритезация файлов.** Расширить `RepoAnalysisState.FileCursor` полями `fileType` (`CODE|TEST|INFRA|DOC`), `priorityWeight`, `lastModified`. В `discoverFiles` классифицировать путь по префиксам (`src/main`→CODE, `src/test`→TEST, `infra|deploy|docker`→INFRA и т. д.), вычислять вес формулой `weight * sizeFactor * recencyFactor` и вместо `List.sort` складывать курсоры в `PriorityQueue`, чтобы `pollPending` всегда отдавал самый рискованный файл.
+- [x] **Эвристики сложности.** При чтении сегмента считать количество операторов (`if|for|while|case|catch`), глубину вложенности по скобкам и наличие SQL/коллекций (по ключевым словам `select`, `insert`, `ConcurrentHashMap`). Если пороги превышены — дополнять `Segment.summary` тегами `performance`/`maintainability` и сохранять эти теги в `RepoFinding`.
+- [x] **Сигнатуры.** Для каждого сегмента сохранять SHA-1 содержимого в `RepoAnalysisState` (множество последних 500 ключей). Для находок рассчитывать `findingSignature = sha1(path|line|summary|severity)` и пропускать дубликаты между анализами.
+- [x] **Конфигурация.** Расширить `RepoAnalysisProperties` блоком `priorities` (веса для CODE/TEST/INFRA/DOC, лимиты maxFilesPerType) и флагом `enableAdvancedMetrics`, чтобы можно было отключать тяжёлые подсчёты.
 
 ### Инструменты статического анализа и CI
-- [ ] **RunnerProfile.** Добавить в `DockerRunnerService` enum профилей (`GRADLE`, `MAVEN`, `NPM`, `PYTHON`, `GO`). В инструменте `docker.gradle_runner` (переименовать в `docker.build_runner`) определять профиль по файлам (`build.gradle`, `pom.xml`, `package.json`, `pyproject.toml`, `go.mod`) и формировать команды по шаблону: `./gradlew test`, `mvn -B test`, `npm test`, `pytest`, `go test ./...`.
-- [ ] **Единый образ + env.** Использовать один многоязычный Docker-образ (OpenJDK + Node + Python + Go) и гибкую подстановку переменных (`RunnerProfile.defaultEnv`).
-- [ ] **Артефакты.** Сохранять stdout/stderr и любые XML/JSON отчёты в `workspace/.mcp-artifacts/{analysisId}/`. В ответ инструмента добавлять `artifactPath` (относительно workspace) и список файлов, чтобы оператор мог их скачать.
-- [ ] **Fallback-скрипты.** Если профиль не определён — запускать цепочку `./gradlew test` → `make test` → `npm test` с тайм-аутами и логированием результатов в метрики `docker_runner_fallback_total`.
+- [x] **RunnerProfile.** Добавить в `DockerRunnerService` enum профилей (`GRADLE`, `MAVEN`, `NPM`, `PYTHON`, `GO`). В инструменте `docker.build_runner` определять профиль по файлам (`build.gradle`, `pom.xml`, `package.json`, `pyproject.toml`, `go.mod`) и формировать команды по шаблону: `./gradlew test`, `mvn -B test`, `npm test`, `pytest`, `go test ./...`.
+- [x] **Единый образ + env.** Использовать один многоязычный Docker-образ (OpenJDK + Node + Python + Go) и гибкую подстановку переменных (`RunnerProfile.defaultEnv`).
+- [x] **Артефакты.** Сохранять stdout/stderr и любые XML/JSON отчёты в `workspace/.mcp-artifacts/{analysisId}/`. В ответ инструмента добавлять `artifactPath` (относительно workspace) и список файлов, чтобы оператор мог их скачать.
+- [x] **Fallback-скрипты.** Если профиль не определён — запускать цепочку `./gradlew test` → `make test` → `npm test` с тайм-аутами и логированием результатов в метрики `docker_runner_fallback_total`.
 
 ### Workspace Inspector & метаданные
-- [ ] **Расширенный детектор.** Добавить распознавание Cargo (`Cargo.toml`), Go (`go.mod`), Python (`pyproject.toml`, `requirements.txt`, `poetry.lock`), а также фиксацию менеджеров (`npm`, `yarn`, `pnpm`, `poetry`).
-- [ ] **Инфраструктура.** В `WorkspaceItem` и итоговый ответ включить флаги `hasTerraform`, `hasHelm`, `hasCompose`, `hasDbMigrations`, `hasFeatureFlags` (по наличию `terraform/`, `helm/`, `docker-compose.yml`, `migrations/`, `config/feature-flags.*`).
-- [ ] **Экспорт метаданных.** При инициализации `RepoAnalysisState` сохранять снимок инспектора и передавать укороченный объект в каждом ответе `scan_next_segment` (`Segment.metadata.projectType`, `metadata.infraFlags`).
+- [x] **Расширенный детектор.** Добавить распознавание Cargo (`Cargo.toml`), Go (`go.mod`), Python (`pyproject.toml`, `requirements.txt`, `poetry.lock`), а также фиксацию менеджеров (`npm`, `yarn`, `pnpm`, `poetry`).
+- [x] **Инфраструктура.** В `WorkspaceItem` и итоговый ответ включить флаги `hasTerraform`, `hasHelm`, `hasCompose`, `hasDbMigrations`, `hasFeatureFlags` (по наличию `terraform/`, `helm/`, `docker-compose.yml`, `migrations/`, `config/feature-flags.*`).
+- [x] **Экспорт метаданных.** При инициализации `RepoAnalysisState` сохранять снимок инспектора и передавать укороченный объект в каждом ответе `scan_next_segment` (`Segment.metadata.projectType`, `metadata.infraFlags`).
 
 ### Агрегация находок и отчётность
-- [ ] **Категоризация.** В `aggregateFindings` применять простую классификацию по ключевым словам (например, `sql`, `xss`, `auth` → `security`; `race`, `null`, `overflow` → `correctness`; `slow`, `latency`, `alloc` → `performance`; прочие → `maintainability`) и записывать категорию в `RepoFinding`. В `Hotspot` добавить поля `priority`, `sourceCategory`.
+- [x] **Категоризация.** В `aggregateFindings` применять простую классификацию по ключевым словам (например, `sql`, `xss`, `auth` → `security`; `race`, `null`, `overflow` → `correctness`; `slow`, `latency`, `alloc` → `performance`; прочие → `maintainability`) и записывать категорию в `RepoFinding`. В `Hotspot` добавить поля `priority`, `sourceCategory`.
 - [ ] **Финальный отчёт.** Когда очередь сегментов пустая, автоматически вызывать `list_hotspots`, собирать `analysis-report.json` и `analysis-report.md` (описание результатов + ссылки на `.mcp-artifacts`) и сохранять путь в `RepoAnalysisState`.
 - [ ] **Метрики/логи.** При завершении писать событие `repo_analysis.completed` (criticalCount, totalFindings, runnersExecuted) и обновлять счётчики `repo_analysis_total`, `repo_analysis_critical_total`, а также включать краткую сводку в ответ `scan_next_segment` при `completed=true`.
+
+### Unit и E2E тесты
+- [ ] Unit: покрыть `RepoAnalysisService` (приоритезация файлов, эвристики сложности, категоризация, отчёт Generation) и `DockerRunnerService` (RunnerProfile, fallback-планы, сохранение артефактов) через тесты на temp workspace с mock-инжектами `WorkspaceInspectorService` и `TempWorkspaceService`.
+- [ ] E2E: добавить сценарий, который прогоняет `repo_analysis.scan_next_segment → aggregate_findings → list_hotspots` на фиктивном репозитории и проверяет генерацию финального отчёта/метрик, а также тест `docker.build_runner` (автодетект профиля, fallback, артефакт `.mcp-artifacts/{analysisId}`) в docker-профиле.
 
 ## Wave 27 — Telegram чат-бот с функционалом FE
 ### Принятые решения

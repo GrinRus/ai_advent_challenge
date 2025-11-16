@@ -13,6 +13,11 @@ import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.ScanNextSegmentRespo
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.Segment;
 import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InfrastructureFlags;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,11 +31,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -42,6 +53,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -50,7 +62,27 @@ import org.springframework.util.StringUtils;
 @Service
 public class RepoAnalysisService {
 
-  private static final Logger log = LoggerFactory.getLogger(RepoAnalysisService.class);
+private static final Logger log = LoggerFactory.getLogger(RepoAnalysisService.class);
+
+private static final int SEGMENT_HASH_HISTORY = 500;
+
+  private static final Pattern COMPLEXITY_KEYWORDS =
+      Pattern.compile("\\b(if|for|while|case|catch|switch|when|except)\\b", Pattern.CASE_INSENSITIVE);
+  private static final Pattern SQL_KEYWORDS =
+      Pattern.compile(
+          "\\b(select|insert|update|delete|join|where|having|group by|order by)\\b",
+          Pattern.CASE_INSENSITIVE);
+  private static final Pattern COLLECTION_KEYWORDS =
+      Pattern.compile(
+          "ConcurrentHashMap|CopyOnWriteArrayList|computeIfAbsent|synchronized|Atomic",
+          Pattern.CASE_INSENSITIVE);
+
+  private static final String[] SECURITY_KEYWORDS =
+      new String[] {"sql", "injection", "xss", "auth", "csrf", "crypto", "secrets"};
+  private static final String[] PERFORMANCE_KEYWORDS =
+      new String[] {"slow", "latency", "allocate", "allocation", "throughput", "perf"};
+  private static final String[] CORRECTNESS_KEYWORDS =
+      new String[] {"null", "race", "overflow", "deadlock", "incorrect", "bug"};
 
   private static final Map<String, Integer> SEVERITY_WEIGHTS =
       Map.ofEntries(
@@ -70,15 +102,19 @@ public class RepoAnalysisService {
   private final RepoAnalysisProperties properties;
   private final RepoAnalysisStateStore stateStore;
   private final TempWorkspaceService workspaceService;
+  private final WorkspaceInspectorService workspaceInspectorService;
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
   RepoAnalysisService(
       RepoAnalysisProperties properties,
       RepoAnalysisStateStore stateStore,
-      TempWorkspaceService workspaceService) {
+      TempWorkspaceService workspaceService,
+      WorkspaceInspectorService workspaceInspectorService) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.stateStore = Objects.requireNonNull(stateStore, "stateStore");
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
+    this.workspaceInspectorService =
+        Objects.requireNonNull(workspaceInspectorService, "workspaceInspectorService");
   }
 
   ScanNextSegmentResponse scanNextSegment(ScanNextSegmentRequest request) {
@@ -120,7 +156,12 @@ public class RepoAnalysisService {
       }
 
       SegmentResult segmentResult =
-          readSegment(cursor, workspaceRoot, segmentLimit, state.getConfig().getSegmentMaxBytes());
+          readSegment(
+              cursor,
+              workspaceRoot,
+              segmentLimit,
+              state.getConfig().getSegmentMaxBytes(),
+              state);
 
       state.incrementProcessedSegments();
 
@@ -134,6 +175,9 @@ public class RepoAnalysisService {
       state.touch();
       stateStore.save(state);
 
+      RepoAnalysisModels.SegmentMetadata segmentMetadata =
+          toSegmentMetadata(state.getWorkspaceMetadata());
+
       Segment segment =
           new Segment(
               segmentResult.key(),
@@ -146,7 +190,11 @@ public class RepoAnalysisService {
               segmentResult.truncated(),
               segmentResult.content(),
               segmentResult.summary(),
-              segmentResult.readAt());
+              segmentResult.readAt(),
+              segmentResult.hash(),
+              segmentResult.duplicate(),
+              segmentResult.tags(),
+              segmentMetadata);
 
       return new ScanNextSegmentResponse(
           analysisId,
@@ -325,6 +373,7 @@ public class RepoAnalysisService {
     Instant now = Instant.now();
     state.setCreatedAt(now);
     state.setUpdatedAt(now);
+    state.setWorkspaceMetadata(captureWorkspaceMetadata(request.workspaceId()));
 
     RepoAnalysisIgnoreMatcher ignoreMatcher = RepoAnalysisIgnoreMatcher.load(workspaceRoot, projectRoot);
     List<RepoAnalysisState.FileCursor> cursors =
@@ -377,7 +426,90 @@ public class RepoAnalysisService {
         overrides != null && overrides.excludeDirectories() != null
             ? overrides.excludeDirectories()
             : properties.getExcludeDirectories());
+    config.setAdvancedMetricsEnabled(properties.isEnableAdvancedMetrics());
     return config;
+  }
+
+  private RepoAnalysisState.WorkspaceMetadata toWorkspaceMetadata(InspectWorkspaceResult result) {
+    if (result == null) {
+      return null;
+    }
+    RepoAnalysisState.WorkspaceMetadata metadata = new RepoAnalysisState.WorkspaceMetadata();
+    metadata.setProjectTypes(distinctList(result.projectTypes()));
+    metadata.setPackageManagers(distinctList(result.packageManagers()));
+    metadata.setInfrastructureFlags(mapInfrastructureFlags(result.infrastructureFlags()));
+    return metadata;
+  }
+
+  private RepoAnalysisModels.SegmentMetadata toSegmentMetadata(
+      RepoAnalysisState.WorkspaceMetadata metadata) {
+    if (metadata == null) {
+      return null;
+    }
+    return new RepoAnalysisModels.SegmentMetadata(
+        List.copyOf(metadata.getProjectTypes()),
+        List.copyOf(metadata.getPackageManagers()),
+        toModelInfrastructureFlags(metadata.getInfrastructureFlags()));
+  }
+
+  private RepoAnalysisState.InfrastructureFlags mapInfrastructureFlags(
+      InfrastructureFlags flags) {
+    if (flags == null) {
+      return new RepoAnalysisState.InfrastructureFlags();
+    }
+    return new RepoAnalysisState.InfrastructureFlags(
+        flags.hasTerraform(),
+        flags.hasHelm(),
+        flags.hasCompose(),
+        flags.hasDbMigrations(),
+        flags.hasFeatureFlags());
+  }
+
+  private RepoAnalysisModels.InfrastructureFlags toModelInfrastructureFlags(
+      RepoAnalysisState.InfrastructureFlags flags) {
+    if (flags == null) {
+      return null;
+    }
+    return new RepoAnalysisModels.InfrastructureFlags(
+        flags.isHasTerraform(),
+        flags.isHasHelm(),
+        flags.isHasCompose(),
+        flags.isHasDbMigrations(),
+        flags.isHasFeatureFlags());
+  }
+
+  private List<String> distinctList(List<String> source) {
+    if (source == null || source.isEmpty()) {
+      return List.of();
+    }
+    return source.stream()
+        .filter(StringUtils::hasText)
+        .map(value -> value.trim().toLowerCase(Locale.ROOT))
+        .distinct()
+        .toList();
+  }
+
+  private RepoAnalysisState.WorkspaceMetadata captureWorkspaceMetadata(String workspaceId) {
+    if (!StringUtils.hasText(workspaceId)) {
+      return null;
+    }
+    try {
+      InspectWorkspaceResult result =
+          workspaceInspectorService.inspectWorkspace(
+              new InspectWorkspaceRequest(
+                  workspaceId,
+                  null,
+                  null,
+                  3,
+                  400,
+                  EnumSet.of(WorkspaceItemType.FILE, WorkspaceItemType.DIRECTORY),
+                  false,
+                  true));
+      return toWorkspaceMetadata(result);
+    } catch (Exception ex) {
+      log.debug("Failed to capture workspace metadata for {}: {}", workspaceId, ex.getMessage());
+      return null;
+    }
   }
 
   private int clamp(Integer override, int defaultValue, int min, int max) {
@@ -423,6 +555,7 @@ public class RepoAnalysisService {
       options.add(FileVisitOption.FOLLOW_LINKS);
     }
     Set<Path> visited = new HashSet<>();
+    EnumMap<RepoFileType, Integer> perTypeCounters = new EnumMap<>(RepoFileType.class);
     Files.walkFileTree(
         projectRoot,
         options,
@@ -506,7 +639,8 @@ public class RepoAnalysisService {
             cursor.setOffset(0);
             cursor.setSegmentIndex(0);
             cursor.setLineOffset(0);
-            cursor.setLastModified(Files.getLastModifiedTime(file).toInstant());
+            Instant lastModified = Files.getLastModifiedTime(file).toInstant();
+            cursor.setLastModified(lastModified);
             int totalSegments =
                 (int)
                     Math.max(
@@ -515,6 +649,20 @@ public class RepoAnalysisService {
                             (double) size
                                 / Math.max(1024, config.getSegmentMaxBytes())));
             cursor.setTotalSegments(totalSegments);
+            RepoFileType fileType = classifyFile(relToProject, extension);
+            if (isTypeLimitReached(fileType, perTypeCounters)) {
+              state.addWarning(
+                  "Skipped "
+                      + relPath(workspaceRoot, file)
+                      + " due to per-type limit "
+                      + fileType);
+              state.addSkippedFile(relPath(workspaceRoot, file));
+              return FileVisitResult.CONTINUE;
+            }
+            cursor.setFileType(fileType.name());
+            cursor.setPriorityWeight(
+                computePriorityWeight(
+                    fileType, size, lastModified, config.getMaxFileBytes()));
             cursors.add(cursor);
             return FileVisitResult.CONTINUE;
           }
@@ -529,7 +677,6 @@ public class RepoAnalysisService {
             return FileVisitResult.CONTINUE;
           }
         });
-    cursors.sort(Comparator.comparing(RepoAnalysisState.FileCursor::getPath));
     return cursors;
   }
 
@@ -567,7 +714,8 @@ public class RepoAnalysisService {
       RepoAnalysisState.FileCursor cursor,
       Path workspaceRoot,
       long limit,
-      long configuredLimit)
+      long configuredLimit,
+      RepoAnalysisState state)
       throws IOException {
     Path file = workspaceRoot.resolve(cursor.getPath()).normalize();
     if (!file.startsWith(workspaceRoot)) {
@@ -614,6 +762,23 @@ public class RepoAnalysisService {
     if (completed) {
       cursor.setCompleted(true);
     }
+    List<String> heuristicsTags = List.of();
+    if (state.getConfig().isAdvancedMetricsEnabled()) {
+      heuristicsTags = analyzeComplexity(content).tags();
+      if (!heuristicsTags.isEmpty()) {
+        state.recordHeuristics(cursor.getPath(), heuristicsTags);
+      }
+    }
+    String summary = summarize(content);
+    if (!heuristicsTags.isEmpty()) {
+      summary = appendTags(summary, heuristicsTags);
+    }
+    String contentHash = hashSegment(cursor.getPath(), content);
+    boolean duplicate = false;
+    if (contentHash != null) {
+      boolean registered = state.registerSegmentHash(contentHash, SEGMENT_HASH_HISTORY);
+      duplicate = !registered;
+    }
     return new SegmentResult(
         "%s:%s#%d"
             .formatted(
@@ -624,11 +789,14 @@ public class RepoAnalysisService {
         bytesRead,
         lineStart,
         lineEnd,
-        summarize(content),
+        summary,
         content,
         !completed,
         completed,
-        Instant.now());
+        Instant.now(),
+        contentHash,
+        duplicate,
+        heuristicsTags);
   }
 
   private String decodeToUtf8(byte[] data) {
@@ -674,6 +842,134 @@ public class RepoAnalysisService {
     return summary.substring(0, 240);
   }
 
+  private String appendTags(String summary, List<String> tags) {
+    if (tags == null || tags.isEmpty()) {
+      return summary;
+    }
+    String base = StringUtils.hasText(summary) ? summary : "";
+    return base + " [" + String.join(",", tags) + "]";
+  }
+
+  private ComplexityHints analyzeComplexity(String content) {
+    if (!StringUtils.hasText(content)) {
+      return ComplexityHints.EMPTY;
+    }
+    String normalized = content;
+    int complexity = 0;
+    var keywordMatcher = COMPLEXITY_KEYWORDS.matcher(normalized);
+    while (keywordMatcher.find()) {
+      complexity++;
+    }
+    int maxDepth = 0;
+    int depth = 0;
+    for (int i = 0; i < normalized.length(); i++) {
+      char ch = normalized.charAt(i);
+      if (ch == '{' || ch == '(') {
+        depth++;
+        if (depth > maxDepth) {
+          maxDepth = depth;
+        }
+      } else if (ch == '}' || ch == ')') {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+    boolean hasSql = SQL_KEYWORDS.matcher(normalized).find();
+    boolean hasCollections = COLLECTION_KEYWORDS.matcher(normalized).find();
+    Set<String> tags = new LinkedHashSet<>();
+    if (complexity >= 25 || maxDepth >= 6) {
+      tags.add("maintainability");
+    }
+    if (hasSql || hasCollections || complexity >= 35) {
+      tags.add("performance");
+    }
+    return new ComplexityHints(List.copyOf(tags));
+  }
+
+  private String hashSegment(String path, String content) {
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-1");
+      if (path != null) {
+        digest.update(path.getBytes(StandardCharsets.UTF_8));
+      }
+      digest.update((byte) 0x00);
+      if (content != null) {
+        digest.update(content.getBytes(StandardCharsets.UTF_8));
+      }
+      return Base64.getEncoder().encodeToString(digest.digest());
+    } catch (NoSuchAlgorithmException ex) {
+      log.debug("Unable to compute segment hash: {}", ex.getMessage());
+      return null;
+    }
+  }
+
+  private List<String> mergeTags(List<String> original, List<String> heuristics) {
+    LinkedHashSet<String> tags = new LinkedHashSet<>();
+    if (original != null) {
+      for (String tag : original) {
+        if (StringUtils.hasText(tag)) {
+          tags.add(tag.trim().toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    if (heuristics != null) {
+      for (String tag : heuristics) {
+        if (StringUtils.hasText(tag)) {
+          tags.add(tag.trim().toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    if (tags.isEmpty()) {
+      return List.of();
+    }
+    return List.copyOf(tags);
+  }
+
+  private String buildFindingSignature(
+      String path, Integer line, String summary, String severity) {
+    return "%s|%s|%s|%s"
+        .formatted(
+            path != null ? path : "n/a",
+            line != null ? line : "n/a",
+            severity != null ? severity : "n/a",
+            summary != null ? summary.trim() : "");
+  }
+
+  private String classifyCategory(String summary, List<String> tags) {
+    StringBuilder builder = new StringBuilder();
+    if (StringUtils.hasText(summary)) {
+      builder.append(summary.toLowerCase(Locale.ROOT)).append(' ');
+    }
+    if (tags != null) {
+      tags.stream()
+          .filter(StringUtils::hasText)
+          .forEach(tag -> builder.append(tag.toLowerCase(Locale.ROOT)).append(' '));
+    }
+    String haystack = builder.toString();
+    if (containsAny(haystack, SECURITY_KEYWORDS)) {
+      return "security";
+    }
+    if (containsAny(haystack, PERFORMANCE_KEYWORDS)) {
+      return "performance";
+    }
+    if (containsAny(haystack, CORRECTNESS_KEYWORDS)) {
+      return "correctness";
+    }
+    return "maintainability";
+  }
+
+  private boolean containsAny(String content, String[] keywords) {
+    if (!StringUtils.hasText(content) || keywords == null) {
+      return false;
+    }
+    String normalized = content.toLowerCase(Locale.ROOT);
+    for (String keyword : keywords) {
+      if (normalized.contains(keyword)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private int appendFindings(
       RepoAnalysisState state, List<FindingInput> inputs) {
     if (inputs == null || inputs.isEmpty()) {
@@ -695,12 +991,12 @@ public class RepoAnalysisService {
       finding.setLine(input.line());
       finding.setEndLine(input.endLine());
       finding.setTitle(trimToNull(input.title()));
-      finding.setSummary(trimToNull(input.summary()));
+      String normalizedSummary = trimToNull(input.summary());
+      finding.setSummary(normalizedSummary);
       finding.setSeverity(severity);
-      finding.setTags(
-          input.tags() != null
-              ? input.tags()
-              : List.of());
+      List<String> mergedTags = mergeTags(input.tags(), state.resolveHeuristics(normalizedPath));
+      finding.setTags(mergedTags);
+      finding.setCategory(classifyCategory(normalizedSummary, mergedTags));
       finding.setScore(input.score());
       finding.setSegmentKey(null);
       finding.setRecordedAt(Instant.now());
@@ -716,13 +1012,20 @@ public class RepoAnalysisService {
       Integer line,
       String summary,
       String severity) {
-    return state.getFindings().stream()
+    String normalizedSummary = trimToNull(summary);
+    boolean exists =
+        state.getFindings().stream()
         .anyMatch(
             finding ->
                 Objects.equals(finding.getPath(), path)
                     && Objects.equals(finding.getLine(), line)
-                    && Objects.equals(finding.getSummary(), trimToNull(summary))
+                    && Objects.equals(finding.getSummary(), normalizedSummary)
                     && Objects.equals(finding.getSeverity(), severity));
+    if (exists) {
+      return true;
+    }
+    String signature = buildFindingSignature(path, line, normalizedSummary, severity);
+    return !state.registerFindingSignature(signature);
   }
 
   private String trimToNull(String value) {
@@ -835,6 +1138,17 @@ public class RepoAnalysisService {
                                   : severityWeight(item.getSeverity()))
                       .max()
                       .orElse(0.0);
+              String category =
+                  items.stream()
+                      .map(RepoAnalysisState.RepoFinding::getCategory)
+                      .filter(StringUtils::hasText)
+                      .collect(Collectors.groupingBy(cat -> cat, Collectors.counting()))
+                      .entrySet()
+                      .stream()
+                      .max(Map.Entry.comparingByValue())
+                      .map(Map.Entry::getKey)
+                      .orElse("maintainability");
+              double priority = severityWeight(severity) * Math.max(1, count) + score;
               List<String> tags =
                   items.stream()
                       .flatMap(item -> item.getTags().stream())
@@ -853,10 +1167,11 @@ public class RepoAnalysisService {
                           .limit(5)
                           .toList()
                       : List.of();
-              return new Hotspot(entry.getKey(), severity, count, score, highlights, tags);
+              return new Hotspot(
+                  entry.getKey(), severity, count, score, priority, category, highlights, tags);
             })
         .sorted(
-            Comparator.comparingDouble(Hotspot::score)
+            Comparator.comparingDouble(Hotspot::priority)
                 .reversed()
                 .thenComparing(Hotspot::findingCount, Comparator.reverseOrder()))
         .limit(limit)
@@ -866,6 +1181,97 @@ public class RepoAnalysisService {
   private int severityWeight(String severity) {
     return SEVERITY_WEIGHTS.getOrDefault(
         severity != null ? severity.toUpperCase(Locale.ROOT) : "INFO", 0);
+  }
+
+  private RepoFileType classifyFile(Path relative, String extension) {
+    String normalized = relative.toString().toLowerCase(Locale.ROOT);
+    String ext = extension != null ? extension.toLowerCase(Locale.ROOT) : "";
+    if (normalized.startsWith("src/test")
+        || normalized.contains("/test/")
+        || normalized.endsWith("test")
+        || normalized.contains("/spec")) {
+      return RepoFileType.TEST;
+    }
+    if (normalized.contains("infra")
+        || normalized.contains("deploy")
+        || normalized.contains("docker")
+        || normalized.contains("helm")
+        || normalized.contains("k8s")
+        || ext.equals("tf")
+        || ext.equals("helm")
+        || ext.equals("yaml") && normalized.contains("helm")
+        || ext.equals("yml") && normalized.contains("helm")) {
+      return RepoFileType.INFRA;
+    }
+    if (normalized.contains("doc") || ext.equals("md") || ext.equals("rst") || ext.equals("adoc")) {
+      return RepoFileType.DOC;
+    }
+    return RepoFileType.CODE;
+  }
+
+  private boolean isTypeLimitReached(
+      RepoFileType type, EnumMap<RepoFileType, Integer> counters) {
+    RepoAnalysisProperties.FileTypePriority priority = priorityConfig(type);
+    int limit = priority != null ? priority.getMaxFiles() : 0;
+    int current = counters.getOrDefault(type, 0);
+    if (limit > 0 && current >= limit) {
+      return true;
+    }
+    counters.put(type, current + 1);
+    return false;
+  }
+
+  private RepoAnalysisProperties.FileTypePriority priorityConfig(RepoFileType type) {
+    RepoAnalysisProperties.Priorities priorities = properties.getPriorities();
+    if (priorities == null) {
+      return defaultPriority();
+    }
+    return switch (type) {
+      case TEST -> priorities.getTest();
+      case INFRA -> priorities.getInfra();
+      case DOC -> priorities.getDoc();
+      case CODE -> priorities.getCode();
+    };
+  }
+
+  private RepoAnalysisProperties.FileTypePriority defaultPriority() {
+    RepoAnalysisProperties.FileTypePriority fallback = new RepoAnalysisProperties.FileTypePriority();
+    fallback.setWeight(1.0);
+    fallback.setMaxFiles(0);
+    return fallback;
+  }
+
+  private double computePriorityWeight(
+      RepoFileType fileType, long sizeBytes, Instant lastModified, long maxFileBytes) {
+    RepoAnalysisProperties.FileTypePriority priority = priorityConfig(fileType);
+    double base = priority != null && priority.getWeight() > 0 ? priority.getWeight() : 1.0d;
+    double sizeFactor = 1.0d;
+    if (maxFileBytes > 0L) {
+      sizeFactor = 1.0d + Math.min(1.0d, (double) sizeBytes / (double) maxFileBytes);
+    }
+    double recencyFactor = computeRecencyFactor(lastModified);
+    double weight = base * sizeFactor * recencyFactor;
+    return Math.max(0.1d, weight);
+  }
+
+  private double computeRecencyFactor(Instant lastModified) {
+    if (lastModified == null) {
+      return 1.0d;
+    }
+    long ageDays = Math.max(0, Duration.between(lastModified, Instant.now()).toDays());
+    if (ageDays <= 3) {
+      return 1.6d;
+    }
+    if (ageDays <= 14) {
+      return 1.3d;
+    }
+    if (ageDays <= 60) {
+      return 1.1d;
+    }
+    if (ageDays >= 365) {
+      return 0.8d;
+    }
+    return 1.0d;
   }
 
   private String extractExtension(String filename) {
@@ -886,5 +1292,19 @@ public class RepoAnalysisService {
       String content,
       boolean truncated,
       boolean completed,
-      Instant readAt) {}
+      Instant readAt,
+      String hash,
+      boolean duplicate,
+      List<String> tags) {}
+
+  private record ComplexityHints(List<String> tags) {
+    private static final ComplexityHints EMPTY = new ComplexityHints(List.of());
+  }
+
+  private enum RepoFileType {
+    CODE,
+    TEST,
+    INFRA,
+    DOC
+  }
 }

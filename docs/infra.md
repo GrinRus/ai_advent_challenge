@@ -15,7 +15,7 @@
   - `flow-ops-mcp` — порт `7092` (HTTP MCP, профиль `flowops`).
   - `insight-mcp` — порт `7093` (HTTP MCP, профиль `insight`).
   - `github-mcp` — порт `7094` (HTTP MCP, профиль `github`).
-  - `docker-runner-mcp` — порт `7095` (HTTP MCP, профиль `docker`, инструмент `docker.gradle_runner`).
+  - `docker-runner-mcp` — порт `7095` (HTTP MCP, профиль `docker`, инструмент `docker.build_runner`).
   - `notes-mcp` — порт `7097` (HTTP MCP, профиль `notes`, хранит заметки и эмбеддинги PgVector).
   - `coding-mcp` — порт `7098` (HTTP MCP, профиль `coding`, assisted coding flow).
 
@@ -62,7 +62,7 @@ docker compose up --build github-mcp
 | `GITHUB_RAG_*` | настройки chunking, ретраев и rerank | см. `.env.example` |
 
 ### Запуск Docker runner MCP отдельно
-Docker runner использует профиль `docker` и отвечает за инструмент `docker.gradle_runner`. По умолчанию он запускается в Compose вместе с остальными MCP, но его можно поднять отдельно:
+Docker runner использует профиль `docker` и отвечает за инструмент `docker.build_runner`. По умолчанию он запускается в Compose вместе с остальными MCP, но его можно поднять отдельно:
 
 ```bash
 docker compose up --build docker-runner-mcp
@@ -80,7 +80,7 @@ docker compose up --build docker-runner-mcp
 
 Требования:
 
-1. Backend, GitHub MCP и docker-runner должны указывать одинаковый `workspaceRoot`, иначе `docker.gradle_runner` не найдёт файлы.
+1. Backend, GitHub MCP и docker-runner должны указывать одинаковый `workspaceRoot`, иначе `docker.build_runner` не найдёт файлы.
 2. Хостовой пользователь должен иметь права на каталоги `workspace-root` и `gradle-cache`.
 3. Контейнеру нужен доступ к `/var/run/docker.sock`; убедитесь, что сокет смонтирован и пользователь имеет право выполнять `docker run`. Если нужно запретить интернет-доступ, выставьте `DOCKER_RUNNER_ENABLE_NETWORK=false` (по умолчанию сеть включена, чтобы Gradle мог скачивать зависимости).
 

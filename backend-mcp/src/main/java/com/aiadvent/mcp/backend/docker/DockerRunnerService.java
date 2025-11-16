@@ -17,6 +17,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +39,8 @@ import org.springframework.util.StringUtils;
 public class DockerRunnerService {
 
   private static final Logger log = LoggerFactory.getLogger(DockerRunnerService.class);
+  private static final DateTimeFormatter ARTIFACT_ID_FORMATTER =
+      DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
 
   private final DockerRunnerProperties properties;
   private final TempWorkspaceService workspaceService;
@@ -45,6 +49,7 @@ public class DockerRunnerService {
   private final Counter runSuccessCounter;
   private final Counter runFailureCounter;
   private final DistributionSummary runDurationSummary;
+  private final Counter fallbackCounter;
 
   public DockerRunnerService(
       DockerRunnerProperties properties,
@@ -62,9 +67,38 @@ public class DockerRunnerService {
     this.runFailureCounter = this.meterRegistry.counter("docker_gradle_runner_failure_total");
     this.runDurationSummary =
         this.meterRegistry.summary("docker_gradle_runner_duration_ms");
+    this.fallbackCounter = this.meterRegistry.counter("docker_runner_fallback_total");
   }
 
   public DockerGradleRunResult runGradle(DockerGradleRunInput input) {
+    DockerBuildRunResult result =
+        runBuild(
+            new DockerBuildRunInput(
+                input.workspaceId(),
+                input.projectPath(),
+                RunnerProfile.GRADLE,
+                input.tasks(),
+                input.arguments(),
+                input.env(),
+                input.timeout(),
+                null,
+                false));
+
+    return new DockerGradleRunResult(
+        result.workspaceId(),
+        result.projectPath(),
+        result.runnerExecutable(),
+        result.dockerCommand(),
+        result.exitCode(),
+        result.status(),
+        result.stdout(),
+        result.stderr(),
+        result.duration(),
+        result.startedAt(),
+        result.finishedAt());
+  }
+
+  public DockerBuildRunResult runBuild(DockerBuildRunInput input) {
     Objects.requireNonNull(input, "input");
     String workspaceId =
         Optional.ofNullable(input.workspaceId()).map(String::trim).orElse("");
@@ -75,19 +109,14 @@ public class DockerRunnerService {
     TempWorkspaceService.Workspace workspace =
         workspaceService.findWorkspace(workspaceId).orElseThrow(
             () -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
-    String normalizedRequestId = normalizeRequestId(workspace.requestId());
-
     Path workspacePath = workspace.path();
     validateWorkspacePath(workspacePath);
 
     String projectPath =
         Optional.ofNullable(input.projectPath()).map(String::trim).filter(s -> !s.isEmpty()).orElse(null);
     Path projectAbsolute = resolveProjectPath(workspacePath, projectPath);
-    List<String> tasks = sanitizeList(input.tasks(), List.of("test"));
-    List<String> gradleArgs = sanitizeList(input.arguments(), List.of());
-
-    boolean hasProjectWrapper = ensureGradleWrapperExecutable(projectAbsolute.resolve("gradlew"));
-    boolean hasRootWrapper = ensureGradleWrapperExecutable(workspacePath.resolve("gradlew"));
+    RunnerProfile requestedProfile =
+        input.profile() != null ? input.profile() : RunnerProfile.AUTO;
 
     MountConfiguration mountConfig = prepareMountConfiguration(workspace);
     Path containerWorkspaceRoot = mountConfig.containerWorkspaceRoot();
@@ -95,63 +124,256 @@ public class DockerRunnerService {
         StringUtils.hasText(projectPath)
             ? containerWorkspaceRoot.resolve(projectPath)
             : containerWorkspaceRoot;
+
+    RunnerProfile detectedProfile =
+        requestedProfile == RunnerProfile.AUTO
+            ? Optional.ofNullable(detectProfile(projectAbsolute)).orElse(RunnerProfile.AUTO)
+            : requestedProfile;
+
+    List<BuildExecutionPlan> plans = new ArrayList<>();
+    BuildExecutionPlan primary =
+        createExecutionPlan(
+            detectedProfile,
+            workspacePath,
+            projectAbsolute,
+            containerWorkspaceRoot,
+            containerProjectPath,
+            projectPath,
+            input.tasks(),
+            input.arguments());
+    if (primary != null) {
+      plans.add(primary);
+    }
+    if ((primary == null || detectedProfile == RunnerProfile.AUTO)
+        && Boolean.TRUE.equals(input.enableFallback())) {
+      plans.addAll(buildFallbackPlans(containerProjectPath));
+    }
+    if (plans.isEmpty()) {
+      throw new IllegalArgumentException("Unable to determine build profile or fallback commands");
+    }
+
+    DockerBuildRunResult lastResult = null;
+    for (BuildExecutionPlan plan : plans) {
+      DockerBuildRunResult attempt =
+          executePlan(
+              plan,
+              mountConfig,
+              workspace,
+              normalizeRequestId(workspace.requestId()),
+              projectPath,
+              input.env(),
+              input.timeout(),
+              input.artifactId());
+      lastResult = attempt;
+      if (attempt.exitCode() == 0) {
+        return attempt;
+      }
+      if (Boolean.TRUE.equals(input.enableFallback())) {
+        fallbackCounter.increment();
+      }
+    }
+    return lastResult;
+  }
+
+  private RunnerProfile detectProfile(Path projectAbsolute) {
+    if (projectAbsolute == null) {
+      return null;
+    }
+    try {
+      if (Files.exists(projectAbsolute.resolve("settings.gradle"))
+          || Files.exists(projectAbsolute.resolve("settings.gradle.kts"))
+          || Files.exists(projectAbsolute.resolve("build.gradle"))
+          || Files.exists(projectAbsolute.resolve("build.gradle.kts"))) {
+        return RunnerProfile.GRADLE;
+      }
+      if (Files.exists(projectAbsolute.resolve("pom.xml"))) {
+        return RunnerProfile.MAVEN;
+      }
+      if (Files.exists(projectAbsolute.resolve("package.json"))) {
+        return RunnerProfile.NPM;
+      }
+      if (Files.exists(projectAbsolute.resolve("pyproject.toml"))
+          || Files.exists(projectAbsolute.resolve("requirements.txt"))
+          || Files.exists(projectAbsolute.resolve("Pipfile"))) {
+        return RunnerProfile.PYTHON;
+      }
+      if (Files.exists(projectAbsolute.resolve("go.mod"))) {
+        return RunnerProfile.GO;
+      }
+    } catch (Exception ex) {
+      log.debug("Unable to detect project profile: {}", ex.getMessage());
+    }
+    return null;
+  }
+
+  private BuildExecutionPlan createExecutionPlan(
+      RunnerProfile profile,
+      Path workspacePath,
+      Path projectAbsolute,
+      Path containerWorkspaceRoot,
+      Path containerProjectPath,
+      String projectPath,
+      List<String> taskInput,
+      List<String> argumentInput) {
+    if (profile == RunnerProfile.AUTO) {
+      return null;
+    }
+    List<String> tasks = sanitizeList(taskInput, profile.defaultTasks());
+    List<String> arguments = sanitizeList(argumentInput, List.of());
     String workDir = containerProjectPath.toString();
     List<String> command = new ArrayList<>();
     String runnerExecutable;
-    if (hasProjectWrapper) {
-      runnerExecutable = "./gradlew";
-      command.add(runnerExecutable);
-      if (!gradleArgs.isEmpty()) {
-        command.addAll(gradleArgs);
+    switch (profile) {
+      case GRADLE -> {
+        boolean hasProjectWrapper = ensureGradleWrapperExecutable(projectAbsolute.resolve("gradlew"));
+        boolean hasRootWrapper = ensureGradleWrapperExecutable(workspacePath.resolve("gradlew"));
+        if (hasProjectWrapper) {
+          runnerExecutable = "./gradlew";
+          command.add(runnerExecutable);
+          if (!arguments.isEmpty()) {
+            command.addAll(arguments);
+          }
+          command.addAll(tasks);
+        } else if (hasRootWrapper) {
+          runnerExecutable = "./gradlew";
+          workDir = containerWorkspaceRoot.toString();
+          command.add(runnerExecutable);
+          if (StringUtils.hasText(projectPath)) {
+            command.add("-p");
+            command.add(projectPath);
+          }
+          if (!arguments.isEmpty()) {
+            command.addAll(arguments);
+          }
+          command.addAll(tasks);
+        } else {
+          runnerExecutable = "gradle";
+          command.add(runnerExecutable);
+          if (StringUtils.hasText(projectPath)) {
+            command.add("-p");
+            command.add(projectPath);
+          }
+          if (!arguments.isEmpty()) {
+            command.addAll(arguments);
+          }
+          command.addAll(tasks);
+        }
+        return new BuildExecutionPlan(profile, workDir, command, runnerExecutable, profile.defaultEnv());
       }
-      command.addAll(tasks);
-    } else if (hasRootWrapper) {
-      runnerExecutable = "./gradlew";
-      workDir = containerWorkspaceRoot.toString();
-      command.add(runnerExecutable);
-      if (StringUtils.hasText(projectPath)) {
-        command.add("-p");
-        command.add(projectPath);
+      case MAVEN -> {
+        runnerExecutable = "mvn";
+        command.add(runnerExecutable);
+        command.add("-B");
+        if (!arguments.isEmpty()) {
+          command.addAll(arguments);
+        }
+        if (tasks.isEmpty()) {
+          command.add("test");
+        } else {
+          command.addAll(tasks);
+        }
+        return new BuildExecutionPlan(profile, workDir, command, runnerExecutable, profile.defaultEnv());
       }
-      if (!gradleArgs.isEmpty()) {
-        command.addAll(gradleArgs);
+      case NPM -> {
+        runnerExecutable = "npm";
+        command.add(runnerExecutable);
+        List<String> effectiveTasks = tasks.isEmpty() ? List.of("test") : tasks;
+        command.addAll(effectiveTasks);
+        if (!arguments.isEmpty()) {
+          command.addAll(arguments);
+        }
+        return new BuildExecutionPlan(profile, workDir, command, runnerExecutable, profile.defaultEnv());
       }
-      command.addAll(tasks);
-    } else {
-      runnerExecutable = "gradle";
-      command.add(runnerExecutable);
-      if (StringUtils.hasText(projectPath)) {
-        command.add("-p");
-        command.add(projectPath);
+      case PYTHON -> {
+        runnerExecutable = tasks.isEmpty() ? "pytest" : tasks.get(0);
+        command.add(runnerExecutable);
+        if (tasks.size() > 1) {
+          command.addAll(tasks.subList(1, tasks.size()));
+        }
+        if (!arguments.isEmpty()) {
+          command.addAll(arguments);
+        }
+        return new BuildExecutionPlan(profile, workDir, command, runnerExecutable, profile.defaultEnv());
       }
-      if (!gradleArgs.isEmpty()) {
-        command.addAll(gradleArgs);
+      case GO -> {
+        runnerExecutable = "go";
+        command.add(runnerExecutable);
+        List<String> effectiveTasks = tasks.isEmpty() ? List.of("test", "./...") : tasks;
+        command.addAll(effectiveTasks);
+        if (!arguments.isEmpty()) {
+          command.addAll(arguments);
+        }
+        return new BuildExecutionPlan(profile, workDir, command, runnerExecutable, profile.defaultEnv());
       }
-      command.addAll(tasks);
+      default -> {
+        return null;
+      }
     }
+  }
 
-    Map<String, String> env = mergeEnvs(input.env(), mountConfig.gradleUserHome());
-    List<String> dockerCommand = buildDockerCommand(mountConfig, workDir, command, input, env);
+  private List<BuildExecutionPlan> buildFallbackPlans(Path containerProjectPath) {
+    List<BuildExecutionPlan> plans = new ArrayList<>();
+    plans.add(
+        new BuildExecutionPlan(
+            RunnerProfile.GRADLE,
+            containerProjectPath.toString(),
+            List.of("./gradlew", "test"),
+            "./gradlew",
+            Map.of()));
+    plans.add(
+        new BuildExecutionPlan(
+            RunnerProfile.AUTO,
+            containerProjectPath.toString(),
+            List.of("make", "test"),
+            "make",
+            Map.of()));
+    plans.add(
+        new BuildExecutionPlan(
+            RunnerProfile.NPM,
+            containerProjectPath.toString(),
+            List.of("npm", "test"),
+            "npm",
+            RunnerProfile.NPM.defaultEnv()));
+    return plans;
+  }
+
+  private DockerBuildRunResult executePlan(
+      BuildExecutionPlan plan,
+      MountConfiguration mountConfig,
+      TempWorkspaceService.Workspace workspace,
+      String requestId,
+      String projectPath,
+      Map<String, String> requestEnv,
+      Duration timeout,
+      String artifactId) {
+    Map<String, String> env =
+        mergeEnvs(
+            requestEnv,
+            plan.profile() == RunnerProfile.GRADLE ? mountConfig.gradleUserHome() : null,
+            plan.envOverrides());
+    List<String> dockerCommand =
+        buildDockerCommand(mountConfig, plan.workDir(), plan.command(), env);
     if (log.isDebugEnabled()) {
       log.debug(
-          "docker.gradle_runner invoking docker command: workspaceId={}, projectPath={}, command={}",
-          workspaceId,
+          "docker.build_runner invoking docker command: workspaceId={} projectPath={} profile={} command={}",
+          workspace.workspaceId(),
           projectPath,
+          plan.profile().id(),
           String.join(" ", dockerCommand));
     }
     Instant startedAt = Instant.now();
     Timer.Sample sample = Timer.start(meterRegistry);
     ProcessResult result;
     try {
-      result = runProcess(dockerCommand, env, effectiveTimeout(input.timeout()));
+      result = runProcess(dockerCommand, env, effectiveTimeout(timeout));
     } catch (RuntimeException ex) {
       runFailureCounter.increment();
       sample.stop(runTimer);
       log.warn(
-          "gradle_mcp.docker.run.failed requestId={} workspaceId={} projectPath={} message={}",
-          normalizedRequestId,
-          workspaceId,
-          projectPath,
+          "docker_build_runner.failed requestId={} workspaceId={} profile={} message={}",
+          requestId,
+          workspace.workspaceId(),
+          plan.profile().id(),
           ex.getMessage());
       throw ex;
     }
@@ -166,36 +388,83 @@ public class DockerRunnerService {
       runFailureCounter.increment();
     }
 
-    DockerGradleRunResult runResult =
-        new DockerGradleRunResult(
-            workspaceId,
-            projectPath,
-            runnerExecutable,
-            dockerCommand,
-            result.exitCode(),
-            success ? "success" : "failed",
-            result.stdoutChunks(),
-            result.stderrChunks(),
-            duration,
-            startedAt,
-            Instant.now());
+    ArtifactInfo artifactInfo =
+        persistArtifacts(workspace.path(), artifactId, result.stdoutChunks(), result.stderrChunks());
+
     log.info(
-      "gradle_mcp.docker.run.completed requestId={} workspaceId={} projectPath={} exitCode={} status={} durationMs={} tasks={}",
-      normalizedRequestId,
-      workspaceId,
-      projectPath,
-      runResult.exitCode(),
-      runResult.status(),
-      duration.toMillis(),
-      String.join(",", tasks));
-    return runResult;
+        "docker_build_runner.completed requestId={} workspaceId={} profile={} exitCode={} status={} durationMs={}",
+        requestId,
+        workspace.workspaceId(),
+        plan.profile().id(),
+        result.exitCode(),
+        success ? "success" : "failed",
+        duration.toMillis());
+
+    return new DockerBuildRunResult(
+        workspace.workspaceId(),
+        projectPath,
+        plan.profile(),
+        plan.runnerExecutable(),
+        dockerCommand,
+        result.exitCode(),
+        success ? "success" : "failed",
+        result.stdoutChunks(),
+        result.stderrChunks(),
+        duration,
+        startedAt,
+        Instant.now(),
+        artifactInfo.artifactPath(),
+        artifactInfo.files());
+  }
+
+  private ArtifactInfo persistArtifacts(
+      Path workspacePath, String artifactId, List<String> stdout, List<String> stderr) {
+    if (workspacePath == null) {
+      return new ArtifactInfo(null, List.of());
+    }
+    try {
+      Path artifactsRoot = workspacePath.resolve(".mcp-artifacts");
+      Files.createDirectories(artifactsRoot);
+      String sanitized = sanitizeArtifactId(artifactId);
+      Path targetDir = artifactsRoot.resolve(sanitized);
+      Files.createDirectories(targetDir);
+      Files.writeString(targetDir.resolve("stdout.txt"), joinChunks(stdout));
+      Files.writeString(targetDir.resolve("stderr.txt"), joinChunks(stderr));
+      List<String> files;
+      try (var stream = Files.list(targetDir)) {
+        files = stream.map(path -> targetDir.relativize(path).toString()).sorted().toList();
+      }
+      return new ArtifactInfo(
+          workspacePath.relativize(targetDir).toString().replace('\\', '/'), files);
+    } catch (IOException ex) {
+      log.warn("Failed to persist artifacts: {}", ex.getMessage());
+      return new ArtifactInfo(null, List.of());
+    }
+  }
+
+  private String joinChunks(List<String> chunks) {
+    if (chunks == null || chunks.isEmpty()) {
+      return "";
+    }
+    StringBuilder builder = new StringBuilder();
+    for (String chunk : chunks) {
+      builder.append(chunk);
+    }
+    return builder.toString();
+  }
+
+  private String sanitizeArtifactId(String artifactId) {
+    String base =
+        StringUtils.hasText(artifactId)
+            ? artifactId.trim().replaceAll("[^a-zA-Z0-9-_]", "_")
+            : "run-" + ARTIFACT_ID_FORMATTER.format(Instant.now());
+    return base.isEmpty() ? "run-" + ARTIFACT_ID_FORMATTER.format(Instant.now()) : base;
   }
 
   private List<String> buildDockerCommand(
       MountConfiguration mountConfig,
       String workDir,
-      List<String> gradleCommand,
-      DockerGradleRunInput input,
+      List<String> command,
       Map<String, String> env) {
     List<String> dockerCommand = new ArrayList<>();
     dockerCommand.add(properties.getDockerBinary());
@@ -233,7 +502,7 @@ public class DockerRunnerService {
 
     properties.getDefaultArgs().forEach(dockerCommand::add);
     dockerCommand.add(properties.getImage());
-    dockerCommand.addAll(gradleCommand);
+    dockerCommand.addAll(command);
     return dockerCommand;
   }
 
@@ -319,8 +588,19 @@ public class DockerRunnerService {
     }
   }
 
-  private Map<String, String> mergeEnvs(@Nullable Map<String, String> requestEnv, String gradleUserHome) {
+  private Map<String, String> mergeEnvs(
+      @Nullable Map<String, String> requestEnv,
+      @Nullable String gradleUserHome,
+      @Nullable Map<String, String> profileEnv) {
     Map<String, String> merged = new LinkedHashMap<>(properties.getDefaultEnv());
+    if (profileEnv != null) {
+      profileEnv.forEach(
+          (key, value) -> {
+            if (StringUtils.hasText(key) && value != null) {
+              merged.put(key, value);
+            }
+          });
+    }
     if (requestEnv != null) {
       requestEnv.forEach(
           (key, value) -> {
@@ -470,6 +750,86 @@ public class DockerRunnerService {
       Duration duration,
       Instant startedAt,
       Instant finishedAt) {}
+
+  public enum RunnerProfile {
+    GRADLE("gradle", List.of("test"), Map.of()),
+    MAVEN("maven", List.of("test"), Map.of()),
+    NPM("npm", List.of("test"), Map.of("CI", "true")),
+    PYTHON("python", List.of("pytest"), Map.of("PYTHONDONTWRITEBYTECODE", "1")),
+    GO("go", List.of("test", "./..."), Map.of("GO111MODULE", "on")),
+    AUTO("auto", List.of(), Map.of());
+
+    private final String id;
+    private final List<String> defaultTasks;
+    private final Map<String, String> defaultEnv;
+
+    RunnerProfile(String id, List<String> defaultTasks, Map<String, String> defaultEnv) {
+      this.id = id;
+      this.defaultTasks = List.copyOf(defaultTasks);
+      this.defaultEnv = Map.copyOf(defaultEnv);
+    }
+
+    public String id() {
+      return id;
+    }
+
+    public List<String> defaultTasks() {
+      return defaultTasks;
+    }
+
+    public Map<String, String> defaultEnv() {
+      return defaultEnv;
+    }
+
+    public static RunnerProfile fromString(String value) {
+      if (!StringUtils.hasText(value)) {
+        return RunnerProfile.AUTO;
+      }
+      String normalized = value.trim().toUpperCase(Locale.ROOT);
+      for (RunnerProfile profile : values()) {
+        if (profile.name().equalsIgnoreCase(normalized) || profile.id.equalsIgnoreCase(value)) {
+          return profile;
+        }
+      }
+      return RunnerProfile.AUTO;
+    }
+  }
+
+  public record DockerBuildRunInput(
+      String workspaceId,
+      String projectPath,
+      RunnerProfile profile,
+      List<String> tasks,
+      List<String> arguments,
+      Map<String, String> env,
+      Duration timeout,
+      String artifactId,
+      Boolean enableFallback) {}
+
+  public record DockerBuildRunResult(
+      String workspaceId,
+      String projectPath,
+      RunnerProfile profile,
+      String runnerExecutable,
+      List<String> dockerCommand,
+      int exitCode,
+      String status,
+      List<String> stdout,
+      List<String> stderr,
+      Duration duration,
+      Instant startedAt,
+      Instant finishedAt,
+      String artifactPath,
+      List<String> artifacts) {}
+
+  private record BuildExecutionPlan(
+      RunnerProfile profile,
+      String workDir,
+      List<String> command,
+      String runnerExecutable,
+      Map<String, String> envOverrides) {}
+
+  private record ArtifactInfo(String artifactPath, List<String> files) {}
 
   private record ProcessResult(int exitCode, List<String> stdoutChunks, List<String> stderrChunks) {}
 
