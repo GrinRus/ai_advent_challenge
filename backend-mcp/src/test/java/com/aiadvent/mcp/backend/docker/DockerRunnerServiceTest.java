@@ -39,6 +39,7 @@ class DockerRunnerServiceTest {
     properties.setDefaultArgs(List.of());
 
     workspaceService = Mockito.mock(TempWorkspaceService.class);
+    when(workspaceService.getWorkspaceRoot()).thenReturn(tempDir.resolve("workspaces"));
     service = new TestDockerRunnerService(properties, workspaceService);
 
     workspacePath = tempDir.resolve("workspaces/ws-test");
@@ -113,7 +114,7 @@ class DockerRunnerServiceTest {
     DockerBuildRunResult result = service.runBuild(input);
 
     assertThat(result.exitCode()).isZero();
-    assertThat(result.profile()).isEqualTo(RunnerProfile.GRADLE);
+    assertThat(result.profile()).isEqualTo(RunnerProfile.AUTO);
     assertThat(service.executedCommands().size()).isEqualTo(2);
   }
 

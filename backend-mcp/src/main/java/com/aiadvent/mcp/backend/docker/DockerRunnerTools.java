@@ -29,7 +29,7 @@ public class DockerRunnerTools {
       description =
           "Запускает сборку/тесты внутри многоязычного Docker-образа. Требует workspaceId."
               + " Определяет профиль автоматически (Gradle/Maven/npm/Python/Go) по файлам проекта или принимает profile="
-              + "gradle|maven|npm|python|go". tasks/arguments передаются runner'у как есть."
+              + "gradle|maven|npm|python|go; tasks/arguments передаются runner'у как есть."
               + " Поддерживает artifacts (analysisId) и fallback-последовательность для неизвестных проектов.")
   DockerBuildRunnerResponse runBuild(
       @JsonProperty("workspaceId") String workspaceId,

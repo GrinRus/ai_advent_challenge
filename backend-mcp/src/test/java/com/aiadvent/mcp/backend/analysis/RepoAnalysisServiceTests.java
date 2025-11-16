@@ -12,6 +12,8 @@ import com.aiadvent.mcp.backend.config.GitHubBackendProperties;
 import com.aiadvent.mcp.backend.config.RepoAnalysisProperties;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService.CreateWorkspaceRequest;
+import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +30,7 @@ class RepoAnalysisServiceTests {
   private Path stateRoot;
   private TempWorkspaceService workspaceService;
   private RepoAnalysisService service;
+  private WorkspaceInspectorService inspectorService;
 
   @BeforeEach
   void setUp() throws Exception {
@@ -41,13 +44,20 @@ class RepoAnalysisServiceTests {
 
     workspaceService = new TempWorkspaceService(gitProperties, null);
     workspaceService.afterPropertiesSet();
+    inspectorService = new WorkspaceInspectorService(workspaceService, null);
 
     RepoAnalysisProperties repoProperties = new RepoAnalysisProperties();
     repoProperties.setStateRoot(stateRoot.toString());
     repoProperties.setSegmentMaxBytes(2048);
 
     RepoAnalysisStateStore stateStore = new RepoAnalysisStateStore(repoProperties);
-    service = new RepoAnalysisService(repoProperties, stateStore, workspaceService);
+    service =
+        new RepoAnalysisService(
+            repoProperties,
+            stateStore,
+            workspaceService,
+            inspectorService,
+            new SimpleMeterRegistry());
   }
 
   @AfterEach

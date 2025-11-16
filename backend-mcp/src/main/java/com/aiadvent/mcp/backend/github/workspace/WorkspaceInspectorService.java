@@ -557,7 +557,8 @@ public class WorkspaceInspectorService {
       boolean hasCompose,
       boolean hasDbMigrations,
       boolean hasFeatureFlags) {
-    static final InfrastructureFlags EMPTY = new InfrastructureFlags(false, false, false, false, false);
+    public static final InfrastructureFlags EMPTY =
+        new InfrastructureFlags(false, false, false, false, false);
   }
 
   private record ProjectDetectionResult(
