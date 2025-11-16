@@ -365,7 +365,7 @@ public class DockerRunnerService {
     Timer.Sample sample = Timer.start(meterRegistry);
     ProcessResult result;
     try {
-      result = runProcess(dockerCommand, env, effectiveTimeout(timeout));
+      result = executeDockerCommand(dockerCommand, env, effectiveTimeout(timeout));
     } catch (RuntimeException ex) {
       runFailureCounter.increment();
       sample.stop(runTimer);
@@ -676,6 +676,10 @@ public class DockerRunnerService {
     return timeout;
   }
 
+  ProcessResult executeDockerCommand(List<String> command, Map<String, String> env, Duration timeout) {
+    return runProcess(command, env, timeout);
+  }
+
   private ProcessResult runProcess(List<String> command, Map<String, String> env, Duration timeout) {
     ProcessBuilder builder = new ProcessBuilder(command);
     builder.directory(properties.workspaceRootPath().toFile());
@@ -831,7 +835,29 @@ public class DockerRunnerService {
 
   private record ArtifactInfo(String artifactPath, List<String> files) {}
 
-  private record ProcessResult(int exitCode, List<String> stdoutChunks, List<String> stderrChunks) {}
+  static final class ProcessResult {
+    private final int exitCode;
+    private final List<String> stdoutChunks;
+    private final List<String> stderrChunks;
+
+    ProcessResult(int exitCode, List<String> stdoutChunks, List<String> stderrChunks) {
+      this.exitCode = exitCode;
+      this.stdoutChunks = stdoutChunks;
+      this.stderrChunks = stderrChunks;
+    }
+
+    int exitCode() {
+      return exitCode;
+    }
+
+    List<String> stdoutChunks() {
+      return stdoutChunks;
+    }
+
+    List<String> stderrChunks() {
+      return stderrChunks;
+    }
+  }
 
   private static class LogCollector {
     private final long maxBytes;

@@ -2,6 +2,7 @@ package com.aiadvent.mcp.backend.analysis;
 
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.AggregateFindingsRequest;
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.AggregateFindingsResponse;
+import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.AnalysisSummary;
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.FileFindings;
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.FindingInput;
 import com.aiadvent.mcp.backend.analysis.RepoAnalysisModels.Hotspot;
@@ -18,6 +19,12 @@ import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.Infra
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceRequest;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.InspectWorkspaceResult;
 import com.aiadvent.mcp.backend.github.workspace.WorkspaceInspectorService.WorkspaceItemType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,6 +63,7 @@ import java.util.stream.Stream;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -103,18 +111,29 @@ private static final int SEGMENT_HASH_HISTORY = 500;
   private final RepoAnalysisStateStore stateStore;
   private final TempWorkspaceService workspaceService;
   private final WorkspaceInspectorService workspaceInspectorService;
+  private final MeterRegistry meterRegistry;
+  private final Counter analysisCompletedCounter;
+  private final ObjectMapper reportObjectMapper;
   private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
   RepoAnalysisService(
       RepoAnalysisProperties properties,
       RepoAnalysisStateStore stateStore,
       TempWorkspaceService workspaceService,
-      WorkspaceInspectorService workspaceInspectorService) {
+      WorkspaceInspectorService workspaceInspectorService,
+      @Nullable MeterRegistry meterRegistry) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.stateStore = Objects.requireNonNull(stateStore, "stateStore");
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.workspaceInspectorService =
         Objects.requireNonNull(workspaceInspectorService, "workspaceInspectorService");
+    MeterRegistry registry = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
+    this.meterRegistry = registry;
+    this.analysisCompletedCounter = registry.counter("repo_analysis_completed_total");
+    this.reportObjectMapper =
+        new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   }
 
   ScanNextSegmentResponse scanNextSegment(ScanNextSegmentRequest request) {
@@ -141,6 +160,7 @@ private static final int SEGMENT_HASH_HISTORY = 500;
 
       RepoAnalysisState.FileCursor cursor = state.pollPending();
       if (cursor == null) {
+        AnalysisSummary summary = finalizeAnalysis(state);
         stateStore.save(state);
         return new ScanNextSegmentResponse(
             analysisId,
@@ -152,7 +172,8 @@ private static final int SEGMENT_HASH_HISTORY = 500;
             state.getProcessedSegments(),
             List.copyOf(state.getWarnings()),
             List.copyOf(state.getSkippedFiles()),
-            Instant.now());
+            Instant.now(),
+            summary);
       }
 
       SegmentResult segmentResult =
@@ -206,7 +227,8 @@ private static final int SEGMENT_HASH_HISTORY = 500;
           state.getProcessedSegments(),
           List.copyOf(state.getWarnings()),
           List.copyOf(state.getSkippedFiles()),
-          Instant.now());
+          Instant.now(),
+          null);
     } catch (IOException ex) {
       throw new IllegalStateException("Failed to read next segment: " + ex.getMessage(), ex);
     } finally {
@@ -439,6 +461,126 @@ private static final int SEGMENT_HASH_HISTORY = 500;
     metadata.setPackageManagers(distinctList(result.packageManagers()));
     metadata.setInfrastructureFlags(mapInfrastructureFlags(result.infrastructureFlags()));
     return metadata;
+  }
+
+  private AnalysisSummary finalizeAnalysis(RepoAnalysisState state) {
+    if (state.getReportGeneratedAt() == null) {
+      try {
+        generateFinalReport(state);
+      } catch (IOException ex) {
+        log.warn(
+            "Failed to generate analysis report {}: {}",
+            state.getAnalysisId(),
+            ex.getMessage());
+      }
+    }
+    return buildSummary(state);
+  }
+
+  private void generateFinalReport(RepoAnalysisState state) throws IOException {
+    List<RepoAnalysisModels.Hotspot> hotspots =
+        buildHotspots(state.getFindings(), 25, true);
+    Instant generatedAt = Instant.now();
+    Path reportsDir = properties.stateRootPath().resolve("reports");
+    Files.createDirectories(reportsDir);
+    String baseName = "%s-%d".formatted(state.getAnalysisId(), generatedAt.toEpochMilli());
+    Path jsonPath = reportsDir.resolve(baseName + ".json");
+    Path markdownPath = reportsDir.resolve(baseName + ".md");
+
+    FinalReportPayload payload =
+        new FinalReportPayload(
+            state.getAnalysisId(),
+            state.getWorkspaceId(),
+            state.getProjectPath(),
+            state.getProcessedSegments(),
+            state.getFindings().size(),
+            countCriticalFindings(state.getFindings()),
+            hotspots,
+            List.copyOf(state.getWarnings()),
+            state.getWorkspaceMetadata(),
+            generatedAt,
+            artifactsHint(state));
+
+    reportObjectMapper.writerWithDefaultPrettyPrinter().writeValue(jsonPath.toFile(), payload);
+    Files.writeString(markdownPath, buildMarkdownReport(payload, hotspots), StandardCharsets.UTF_8);
+
+    state.setReportJsonPath(jsonPath.toString());
+    state.setReportMarkdownPath(markdownPath.toString());
+    state.setReportGeneratedAt(generatedAt);
+    analysisCompletedCounter.increment();
+    log.info(
+        "repo_analysis.completed analysisId={} workspaceId={} findings={} critical={} report={}",
+        state.getAnalysisId(),
+        state.getWorkspaceId(),
+        payload.totalFindings(),
+        payload.criticalFindings(),
+        jsonPath);
+  }
+
+  private String artifactsHint(RepoAnalysisState state) {
+    if (!StringUtils.hasText(state.getWorkspaceId())) {
+      return null;
+    }
+    return state.getWorkspaceId() + "/.mcp-artifacts";
+  }
+
+  private String buildMarkdownReport(
+      FinalReportPayload payload, List<RepoAnalysisModels.Hotspot> hotspots) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("# Repo Analysis Report\n\n");
+    sb.append("- Analysis ID: ").append(payload.analysisId()).append("\\n");
+    sb.append("- Workspace ID: ").append(payload.workspaceId()).append("\\n");
+    if (StringUtils.hasText(payload.projectPath())) {
+      sb.append("- Project Path: ").append(payload.projectPath()).append("\\n");
+    }
+    sb.append("- Findings: ").append(payload.totalFindings()).append("\\n");
+    sb.append("- Critical Findings: ").append(payload.criticalFindings()).append("\\n");
+    sb.append("- Generated At: ").append(payload.generatedAt()).append("\\n\n");
+    if (StringUtils.hasText(payload.artifactsHint())) {
+      sb.append("Artifacts: `").append(payload.artifactsHint()).append("`\\n\n");
+    }
+    if (!hotspots.isEmpty()) {
+      sb.append("## Top Hotspots\n\n");
+      sb.append("| File | Severity | Findings | Category | Highlights |\\n");
+      sb.append("| --- | --- | --- | --- | --- |\\n");
+      for (RepoAnalysisModels.Hotspot hotspot : hotspots) {
+        sb.append("|")
+            .append(hotspot.path())
+            .append("|")
+            .append(hotspot.severity())
+            .append("|")
+            .append(hotspot.findingCount())
+            .append("|")
+            .append(hotspot.sourceCategory())
+            .append("|")
+            .append(String.join("<br>", hotspot.highlights()))
+            .append("|\n");
+      }
+      sb.append("\n");
+    }
+    if (!payload.warnings().isEmpty()) {
+      sb.append("## Warnings\n\n");
+      payload.warnings().forEach(warning -> sb.append("- ").append(warning).append("\n"));
+      sb.append("\n");
+    }
+    return sb.toString();
+  }
+
+  private AnalysisSummary buildSummary(RepoAnalysisState state) {
+    return new AnalysisSummary(
+        state.getFindings().size(),
+        countCriticalFindings(state.getFindings()),
+        state.getWarnings().size(),
+        state.getReportJsonPath(),
+        state.getReportMarkdownPath(),
+        state.getReportGeneratedAt());
+  }
+
+  private int countCriticalFindings(List<RepoAnalysisState.RepoFinding> findings) {
+    return (int)
+        findings.stream()
+            .filter(finding -> severityWeight(finding.getSeverity()) >= 4)
+            .count();
   }
 
   private RepoAnalysisModels.SegmentMetadata toSegmentMetadata(
@@ -1307,4 +1449,17 @@ private static final int SEGMENT_HASH_HISTORY = 500;
     INFRA,
     DOC
   }
+
+  private record FinalReportPayload(
+      String analysisId,
+      String workspaceId,
+      String projectPath,
+      int processedSegments,
+      int totalFindings,
+      int criticalFindings,
+      List<RepoAnalysisModels.Hotspot> hotspots,
+      List<String> warnings,
+      RepoAnalysisState.WorkspaceMetadata workspaceMetadata,
+      Instant generatedAt,
+      String artifactsHint) {}
 }

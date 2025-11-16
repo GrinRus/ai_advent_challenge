@@ -29,6 +29,9 @@ public class RepoAnalysisState {
   private final List<String> recentSegmentHashes = new ArrayList<>();
   private final Set<String> findingSignatures = new LinkedHashSet<>();
   private final Map<String, List<String>> heuristicsByPath = new HashMap<>();
+  private Instant reportGeneratedAt;
+  private String reportJsonPath;
+  private String reportMarkdownPath;
   private WorkspaceMetadata workspaceMetadata;
   private int processedSegments;
 
@@ -100,6 +103,30 @@ public class RepoAnalysisState {
 
   public List<String> getSkippedFiles() {
     return skippedFiles;
+  }
+
+  public Instant getReportGeneratedAt() {
+    return reportGeneratedAt;
+  }
+
+  public void setReportGeneratedAt(Instant reportGeneratedAt) {
+    this.reportGeneratedAt = reportGeneratedAt;
+  }
+
+  public String getReportJsonPath() {
+    return reportJsonPath;
+  }
+
+  public void setReportJsonPath(String reportJsonPath) {
+    this.reportJsonPath = reportJsonPath;
+  }
+
+  public String getReportMarkdownPath() {
+    return reportMarkdownPath;
+  }
+
+  public void setReportMarkdownPath(String reportMarkdownPath) {
+    this.reportMarkdownPath = reportMarkdownPath;
   }
 
   public WorkspaceMetadata getWorkspaceMetadata() {

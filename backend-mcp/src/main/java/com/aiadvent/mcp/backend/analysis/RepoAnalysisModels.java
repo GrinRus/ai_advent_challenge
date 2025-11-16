@@ -34,6 +34,15 @@ public final class RepoAnalysisModels {
       int processedSegments,
       List<String> warnings,
       List<String> skippedFiles,
+      Instant generatedAt,
+      AnalysisSummary summary) {}
+
+  public record AnalysisSummary(
+      int totalFindings,
+      int criticalFindings,
+      int warnings,
+      String reportJsonPath,
+      String reportMarkdownPath,
       Instant generatedAt) {}
 
   public record Segment(

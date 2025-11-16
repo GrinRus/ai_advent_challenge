@@ -903,12 +903,12 @@
 
 ### Агрегация находок и отчётность
 - [x] **Категоризация.** В `aggregateFindings` применять простую классификацию по ключевым словам (например, `sql`, `xss`, `auth` → `security`; `race`, `null`, `overflow` → `correctness`; `slow`, `latency`, `alloc` → `performance`; прочие → `maintainability`) и записывать категорию в `RepoFinding`. В `Hotspot` добавить поля `priority`, `sourceCategory`.
-- [ ] **Финальный отчёт.** Когда очередь сегментов пустая, автоматически вызывать `list_hotspots`, собирать `analysis-report.json` и `analysis-report.md` (описание результатов + ссылки на `.mcp-artifacts`) и сохранять путь в `RepoAnalysisState`.
-- [ ] **Метрики/логи.** При завершении писать событие `repo_analysis.completed` (criticalCount, totalFindings, runnersExecuted) и обновлять счётчики `repo_analysis_total`, `repo_analysis_critical_total`, а также включать краткую сводку в ответ `scan_next_segment` при `completed=true`.
+ - [x] **Финальный отчёт.** Когда очередь сегментов пустая, автоматически вызывать `list_hotspots`, собирать `analysis-report.json` и `analysis-report.md` (описание результатов + ссылки на `.mcp-artifacts`) и сохранять путь в `RepoAnalysisState`.
+ - [x] **Метрики/логи.** При завершении писать событие `repo_analysis.completed` (criticalCount, totalFindings, runnersExecuted) и обновлять счётчики `repo_analysis_total`, `repo_analysis_critical_total`, а также включать краткую сводку в ответ `scan_next_segment` при `completed=true`.
 
 ### Unit и E2E тесты
-- [ ] Unit: покрыть `RepoAnalysisService` (приоритезация файлов, эвристики сложности, категоризация, отчёт Generation) и `DockerRunnerService` (RunnerProfile, fallback-планы, сохранение артефактов) через тесты на temp workspace с mock-инжектами `WorkspaceInspectorService` и `TempWorkspaceService`.
-- [ ] E2E: добавить сценарий, который прогоняет `repo_analysis.scan_next_segment → aggregate_findings → list_hotspots` на фиктивном репозитории и проверяет генерацию финального отчёта/метрик, а также тест `docker.build_runner` (автодетект профиля, fallback, артефакт `.mcp-artifacts/{analysisId}`) в docker-профиле.
+- [x] Unit: покрыть `RepoAnalysisService` (приоритезация файлов, эвристики сложности, категоризация, отчёт Generation) и `DockerRunnerService` (RunnerProfile, fallback-планы, сохранение артефактов) через тесты на temp workspace с mock-инжектами `WorkspaceInspectorService` и `TempWorkspaceService`.
+- [x] E2E: добавить сценарий, который прогоняет `repo_analysis.scan_next_segment → aggregate_findings → list_hotspots` на фиктивном репозитории и проверяет генерацию финального отчёта/метрик, а также тест `docker.build_runner` (автодетект профиля, fallback, артефакт `.mcp-artifacts/{analysisId}`) в docker-профиле.
 
 ## Wave 27 — Telegram чат-бот с функционалом FE
 ### Принятые решения
