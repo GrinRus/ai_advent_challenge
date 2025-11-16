@@ -2191,6 +2191,9 @@ databaseChangeLog:
   - changeSet:
       id: 0101-seed-github-gradle-test-flow
       author: codex
+      validCheckSum:
+        - 9:61a4ff77b994e88f9f91f49896930ce0
+        - 9:17bd58233035009ab17d621f9c0dd66a
       context: local,prod
       changes:
         - sql:
@@ -2303,7 +2306,7 @@ databaseChangeLog:
 
               INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
               VALUES
-                ('docker.gradle_runner', 1,
+                ('docker.build_runner', 1,
                  $${
                    "type": "object",
                    "properties": {
@@ -2333,7 +2336,7 @@ databaseChangeLog:
                    },
                    "required": ["workspaceId","runnerExecutable","exitCode","status"]
                  }$$::jsonb,
-                 'checksum-docker.gradle_runner-v1', '[]'::jsonb, 'docker', 'docker.gradle_runner', 'http-stream', 'docker')
+                 'checksum-docker.build_runner-v1', '[]'::jsonb, 'docker', 'docker.build_runner', 'http-stream', 'docker')
               ON CONFLICT (tool_code, version) DO NOTHING;
 
               INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
@@ -2350,8 +2353,8 @@ databaseChangeLog:
 
               INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
               VALUES
-                ('docker.gradle_runner', 'Docker · Gradle runner', 'Запускает Gradle в изолированном Docker-окружении с кэшем и лимитами ресурсов.', 'docker', 'MANUAL', '["gradle","tests"]'::jsonb, '["ci-run"]'::jsonb, 'Контейнер aiadvent/mcp-gradle-runner.', NULL, 900000,
-                 (SELECT id FROM tool_schema_version WHERE tool_code = 'docker.gradle_runner' AND version = 1))
+                ('docker.build_runner', 'Docker · Gradle runner', 'Запускает Gradle в изолированном Docker-окружении с кэшем и лимитами ресурсов.', 'docker', 'MANUAL', '["gradle","tests"]'::jsonb, '["ci-run"]'::jsonb, 'Контейнер aiadvent/mcp-gradle-runner.', NULL, 900000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'docker.build_runner' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
 
               WITH repo_def AS (
@@ -2508,7 +2511,7 @@ databaseChangeLog:
                   gen_random_uuid(),
                   'gradle-test-runner',
                   'Gradle Test Runner Agent',
-                  'LLM-агент, который оркестрирует запуск docker.gradle_runner и интерпретирует результаты.',
+                  'LLM-агент, который оркестрирует запуск docker.build_runner и интерпретирует результаты.',
                   true,
                   'seed',
                   'seed',
@@ -2547,14 +2550,14 @@ databaseChangeLog:
                   'OPENAI',
                   'openai',
                   'gpt-4o-mini',
-                  'You execute Gradle tasks inside Docker. Consume workspaceId, projectPath, tasks, and env hints. Call docker.gradle_runner exactly once, retry only on transient errors, and summarise the outcome as {"status":"PASSED"|"FAILED","exitCode":..,"summary":..}. Include failing tasks and tail of logs when useful.',
+                  'You execute Gradle tasks inside Docker. Consume workspaceId, projectPath, tasks, and env hints. Call docker.build_runner exactly once, retry only on transient errors, and summarise the outcome as {"status":"PASSED"|"FAILED","exitCode":..,"summary":..}. Include failing tasks and tail of logs when useful.',
                   $${
                     "provider":{"type":"OPENAI","id":"openai","modelId":"gpt-4o-mini","mode":"SYNC"},
                     "prompt":{"templateId":null,"system":null,"variables":[],"generation":{"temperature":0.05,"topP":0.8,"maxOutputTokens":900}},
                     "memoryPolicy":{"channels":["shared","conversation"],"retentionDays":7,"maxEntries":120,"summarizationStrategy":"TAIL_WITH_SUMMARY","overflowAction":"TRIM_OLDEST"},
                     "retryPolicy":{"maxAttempts":2,"initialDelayMs":500,"multiplier":2.0,"retryableStatuses":[429,500,502,503,504],"timeoutMs":90000,"overallDeadlineMs":240000,"jitterMs":200},
                     "advisorSettings":{"telemetry":{"enabled":true},"audit":{"enabled":true,"redactPii":true},"routing":{"enabled":false}},
-                    "tooling":{"bindings":[{"toolCode":"docker.gradle_runner","schemaVersion":1,"executionMode":"AUTO"}]},
+                    "tooling":{"bindings":[{"toolCode":"docker.build_runner","schemaVersion":1,"executionMode":"AUTO"}]},
                     "costProfile":{"inputPer1KTokens":0.008,"outputPer1KTokens":0.028,"currency":"USD"}
                   }$$::jsonb,
                   true,
@@ -2647,7 +2650,7 @@ databaseChangeLog:
                       'name','Run Gradle tests',
                       'agentVersionId', (SELECT id::text FROM gradle_version_id LIMIT 1),
                       'prompt',
-                        $$Launch docker.gradle_runner with the confirmed workspaceId, projectPath, and Gradle tasks. Default to the first recommended task list when none provided. Summarize exit code, failing tasks, and link to any artefacts. Provide actionable advice when execution fails.$$,
+                        $$Launch docker.build_runner with the confirmed workspaceId, projectPath, and Gradle tasks. Default to the first recommended task list when none provided. Summarize exit code, failing tasks, and link to any artefacts. Provide actionable advice when execution fails.$$,
                       'overrides', jsonb_build_object('temperature', 0.05, 'maxTokens', 900),
                       'memoryReads', jsonb_build_array(
                         jsonb_build_object('channel','shared','limit',15),
@@ -3383,9 +3386,10 @@ databaseChangeLog:
                WHERE tool_code = 'github.workspace_directory_inspector'
                  AND version = 1;
         - sql:
+            splitStatements: false
             comment: Introduce docker.build_runner tool schema and migrate existing definitions
             sql: |
-              DO $$
+              DO $migration$
               DECLARE
                 schema_id UUID;
               BEGIN
@@ -3436,6 +3440,56 @@ databaseChangeLog:
                  WHERE tool_code = 'docker.gradle_runner'
                    AND version = 1
                  RETURNING id INTO schema_id;
+
+                IF schema_id IS NULL THEN
+                  UPDATE tool_schema_version
+                     SET tool_code = 'docker.build_runner',
+                         request_schema = $$
+                           {
+                             "type": "object",
+                             "properties": {
+                               "workspaceId": {"type":"string"},
+                               "projectPath": {"type":"string"},
+                               "profile": {"type":"string","enum":["AUTO","GRADLE","MAVEN","NPM","PYTHON","GO"]},
+                               "tasks": {"type":"array","items":{"type":"string"}},
+                               "arguments": {"type":"array","items":{"type":"string"}},
+                               "env": {"type":"object","additionalProperties":{"type":"string"}},
+                               "timeoutSeconds": {"type":"integer","minimum":1},
+                               "analysisId": {"type":"string"},
+                               "enableFallback": {"type":"boolean"}
+                             },
+                             "required": ["workspaceId"]
+                           }
+                         $$::jsonb,
+                         response_schema = $$
+                           {
+                             "type": "object",
+                             "properties": {
+                               "workspaceId": {"type":"string"},
+                               "projectPath": {"type":"string"},
+                               "profile": {"type":"string"},
+                               "runnerExecutable": {"type":"string"},
+                               "dockerCommand": {"type":"array","items":{"type":"string"}},
+                               "exitCode": {"type":"integer"},
+                               "status": {"type":"string"},
+                               "stdout": {"type":"array","items":{"type":"string"}},
+                               "stderr": {"type":"array","items":{"type":"string"}},
+                               "durationMs": {"type":"integer","minimum":0},
+                               "startedAt": {"type":"string","format":"date-time"},
+                               "finishedAt": {"type":"string","format":"date-time"},
+                               "artifactPath": {"type":"string"},
+                               "artifacts": {"type":"array","items":{"type":"string"}}
+                             },
+                             "required": ["workspaceId","runnerExecutable","exitCode","status"]
+                           }
+                         $$::jsonb,
+                         schema_checksum = 'checksum-docker.build_runner-v2',
+                         mcp_server = 'docker',
+                         mcp_tool_name = 'docker.build_runner'
+                   WHERE tool_code = 'docker.build_runner'
+                     AND version = 1
+                   RETURNING id INTO schema_id;
+                END IF;
 
                 IF schema_id IS NULL THEN
                   INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
@@ -3501,7 +3555,7 @@ databaseChangeLog:
                        display_name = 'Docker · Build runner',
                        description = 'Запускает сборки и тесты внутри Docker с поддержкой Gradle/Maven/npm/Python/Go и fallback-сценариев.',
                        schema_version_id = schema_id
-                 WHERE code = 'docker.gradle_runner';
+                 WHERE code IN ('docker.gradle_runner','docker.build_runner');
 
                 UPDATE agent_definition
                    SET description = REPLACE(description, 'docker.gradle_runner', 'docker.build_runner')
@@ -3512,4 +3566,9 @@ databaseChangeLog:
                        agent_invocation_options = jsonb_set(agent_invocation_options, '{tooling,bindings,0,toolCode}', '"docker.build_runner"'::jsonb, true)
                  WHERE agent_definition_id IN (
                          SELECT id FROM agent_definition WHERE identifier = 'gradle-test-runner');
-              END $$;
+
+                UPDATE flow_definition
+                   SET definition = replace(definition::text, 'docker.gradle_runner', 'docker.build_runner')::jsonb
+                 WHERE name = 'github-gradle-test-flow'
+                   AND definition::text LIKE '%docker.gradle_runner%';
+              END $migration$;
