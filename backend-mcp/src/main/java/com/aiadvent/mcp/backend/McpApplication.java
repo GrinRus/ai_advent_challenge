@@ -89,7 +89,8 @@ public class McpApplication {
     @Profile("analysis")
     @ComponentScan(basePackages = {
             "com.aiadvent.mcp.backend.analysis",
-            "com.aiadvent.mcp.backend.config"
+            "com.aiadvent.mcp.backend.config",
+            "com.aiadvent.mcp.backend.github.workspace"
     })
     @EnableConfigurationProperties({RepoAnalysisProperties.class, GitHubBackendProperties.class})
     @Import(TempWorkspaceService.class)
