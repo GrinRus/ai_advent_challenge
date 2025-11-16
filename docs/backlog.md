@@ -885,26 +885,26 @@
 
 ## Wave 26 — Комплексный аудит скачанных репозиториев
 ### Repo Analysis Service
-- [ ] Реализовать предсканирование файлов: сохранять в `RepoAnalysisState.FileCursor` размеры, время модификации, принадлежность к типу (код/тест/инфра) и вычислять приоритет очереди по весам риска вместо лексикографической сортировки.
-- [ ] Добавить поддержку эвристик сложности: подсчитывать цикломатику, уровень вложенности, подозрительные SQL/коллекции и помечать сегменты тегами `performance`, `maintainability`.
-- [ ] Вести хэши/сигнатуры сегментов и найденных проблем, чтобы отслеживать повторяющиеся находки между анализами и пропускать дубликаты.
-- [ ] Расширить `RepoAnalysisProperties` конфигурацией весов приоритизации, лимитов на анализ per-тип файла и опцией включения расширенных метрик.
+- [ ] **Приоритезация файлов.** Расширить `RepoAnalysisState.FileCursor` полями `fileType` (`CODE|TEST|INFRA|DOC`), `priorityWeight`, `lastModified`. В `discoverFiles` классифицировать путь по префиксам (`src/main`→CODE, `src/test`→TEST, `infra|deploy|docker`→INFRA и т. д.), вычислять вес формулой `weight * sizeFactor * recencyFactor` и вместо `List.sort` складывать курсоры в `PriorityQueue`, чтобы `pollPending` всегда отдавал самый рискованный файл.
+- [ ] **Эвристики сложности.** При чтении сегмента считать количество операторов (`if|for|while|case|catch`), глубину вложенности по скобкам и наличие SQL/коллекций (по ключевым словам `select`, `insert`, `ConcurrentHashMap`). Если пороги превышены — дополнять `Segment.summary` тегами `performance`/`maintainability` и сохранять эти теги в `RepoFinding`.
+- [ ] **Сигнатуры.** Для каждого сегмента сохранять SHA-1 содержимого в `RepoAnalysisState` (множество последних 500 ключей). Для находок рассчитывать `findingSignature = sha1(path|line|summary|severity)` и пропускать дубликаты между анализами.
+- [ ] **Конфигурация.** Расширить `RepoAnalysisProperties` блоком `priorities` (веса для CODE/TEST/INFRA/DOC, лимиты maxFilesPerType) и флагом `enableAdvancedMetrics`, чтобы можно было отключать тяжёлые подсчёты.
 
 ### Инструменты статического анализа и CI
-- [ ] Интегрировать профили запуска lint/тест-команд: Gradle (`test`, `check`, `spotbugs`), Maven (`test`, `verify`), npm/yarn (`test`, `lint`), Go (`go test`, `go vet`), Python (`pytest`, `ruff`).
-- [ ] Расширить `DockerRunnerService` поддержкой выбора образа/скрипта по типу проекта и возможностью параллельно возвращать логи/артефакты статических анализаторов.
-- [ ] Добавить хранение артефактов проверки (JUnit XML, отчёты lint) рядом с workspace и публикацию ссылки в ответе инструмента.
-- [ ] Настроить fallback-скрипты для проектов без известных билд-систем (например, `make test`, `./gradlew` autodetect) с тайм-аутами и метриками.
+- [ ] **RunnerProfile.** Добавить в `DockerRunnerService` enum профилей (`GRADLE`, `MAVEN`, `NPM`, `PYTHON`, `GO`). В инструменте `docker.gradle_runner` (переименовать в `docker.build_runner`) определять профиль по файлам (`build.gradle`, `pom.xml`, `package.json`, `pyproject.toml`, `go.mod`) и формировать команды по шаблону: `./gradlew test`, `mvn -B test`, `npm test`, `pytest`, `go test ./...`.
+- [ ] **Единый образ + env.** Использовать один многоязычный Docker-образ (OpenJDK + Node + Python + Go) и гибкую подстановку переменных (`RunnerProfile.defaultEnv`).
+- [ ] **Артефакты.** Сохранять stdout/stderr и любые XML/JSON отчёты в `workspace/.mcp-artifacts/{analysisId}/`. В ответ инструмента добавлять `artifactPath` (относительно workspace) и список файлов, чтобы оператор мог их скачать.
+- [ ] **Fallback-скрипты.** Если профиль не определён — запускать цепочку `./gradlew test` → `make test` → `npm test` с тайм-аутами и логированием результатов в метрики `docker_runner_fallback_total`.
 
 ### Workspace Inspector & метаданные
-- [ ] Расширить `WorkspaceInspectorService` распознаванием дополнительных типов проектов (Rust/Cargo, Python/Poetry, Go modules), сбором версии рантайма, списка ключевых зависимостей и наличия CI/CD конфигов.
-- [ ] Дополнить ответ инспектора признаками инфраструктуры (Terraform, Helm, Docker Compose), миграций БД и feature flags для составления чек-листов корректности.
-- [ ] Экспортировать собранные метаданные в `repo_analysis.scan_next_segment` для формирования таргетированных подсказок агенту.
+- [ ] **Расширенный детектор.** Добавить распознавание Cargo (`Cargo.toml`), Go (`go.mod`), Python (`pyproject.toml`, `requirements.txt`, `poetry.lock`), а также фиксацию менеджеров (`npm`, `yarn`, `pnpm`, `poetry`).
+- [ ] **Инфраструктура.** В `WorkspaceItem` и итоговый ответ включить флаги `hasTerraform`, `hasHelm`, `hasCompose`, `hasDbMigrations`, `hasFeatureFlags` (по наличию `terraform/`, `helm/`, `docker-compose.yml`, `migrations/`, `config/feature-flags.*`).
+- [ ] **Экспорт метаданных.** При инициализации `RepoAnalysisState` сохранять снимок инспектора и передавать укороченный объект в каждом ответе `scan_next_segment` (`Segment.metadata.projectType`, `metadata.infraFlags`).
 
 ### Агрегация находок и отчётность
-- [ ] Обновить `RepoAnalysisService.aggregateFindings` для автоклассификации проблем в категории `security`, `correctness`, `performance`, `maintainability` и расширить `Hotspot` новыми метриками (приоритет, источник).
-- [ ] При завершении анализа автоматически вызывать `repo_analysis.list_hotspots`, формировать итоговый отчёт (JSON + Markdown) и сохранять его в state с ссылкой на артефакты проверок.
-- [ ] Добавить публикацию краткого статуса анализа (кол-во критических/высоких проблем, покрытие проверок) в метрики/логи MCP.
+- [ ] **Категоризация.** В `aggregateFindings` применять простую классификацию по ключевым словам (например, `sql`, `xss`, `auth` → `security`; `race`, `null`, `overflow` → `correctness`; `slow`, `latency`, `alloc` → `performance`; прочие → `maintainability`) и записывать категорию в `RepoFinding`. В `Hotspot` добавить поля `priority`, `sourceCategory`.
+- [ ] **Финальный отчёт.** Когда очередь сегментов пустая, автоматически вызывать `list_hotspots`, собирать `analysis-report.json` и `analysis-report.md` (описание результатов + ссылки на `.mcp-artifacts`) и сохранять путь в `RepoAnalysisState`.
+- [ ] **Метрики/логи.** При завершении писать событие `repo_analysis.completed` (criticalCount, totalFindings, runnersExecuted) и обновлять счётчики `repo_analysis_total`, `repo_analysis_critical_total`, а также включать краткую сводку в ответ `scan_next_segment` при `completed=true`.
 
 ## Wave 27 — Telegram чат-бот с функционалом FE
 ### Принятые решения
