@@ -1,0 +1,22 @@
+# Version catalog extended with Tree-sitter grammar references.
+# Generated for Wave 34 to keep commit hashes and archive checksums pinned.
+[versions]
+treeSitterJava = "e10607b45ff745f5f876bfa3e94fbcc6b44bdc11"
+treeSitterKotlin = "57fb4560ba8641865bc0baa6b3f413b236112c4c"
+treeSitterTypescript = "75b3874edb2dc714fb1fd77a32013d0f8699989f"
+treeSitterJavascript = "58404d8cf191d69f2674a8fd507bd5776f46cb11"
+treeSitterPython = "26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64"
+treeSitterGo = "2346a3ab1bb3857b48b29d779a1ef9799a248cd7"
+
+[metadata."treesitter.java"]
+checksum = "261f7341de183847ebb04720990c8f55d094a28557b4aef0340dfe86148f9df2"
+[metadata."treesitter.kotlin"]
+checksum = "bbd7625838596105edd5f236d86c0e362f8d4623d7e744d6cdccb51e7637289e"
+[metadata."treesitter.typescript"]
+checksum = "d237a4a7972374a46ac677c7974cd1b71a96ffa286c93c040c91303441fe7d88"
+[metadata."treesitter.javascript"]
+checksum = "291c9b0efda9cdb0a92b491898ba06b914d8d2978a2799f95e66d0f6147405ff"
+[metadata."treesitter.python"]
+checksum = "c54b7a5fc55b530887a7e8939575da79a8a6490c124727f836cea7ebeba4ac00"
+[metadata."treesitter.go"]
+checksum = "940f56cf414c593d1407681865b24c45b6db27183dcbd749a0b5b22c9f8cf926"

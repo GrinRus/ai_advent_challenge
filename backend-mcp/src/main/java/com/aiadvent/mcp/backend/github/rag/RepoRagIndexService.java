@@ -1,6 +1,8 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
+import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
 import com.aiadvent.mcp.backend.github.rag.chunking.Chunk;
 import com.aiadvent.mcp.backend.github.rag.chunking.ChunkableFile;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
@@ -33,6 +35,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -46,6 +49,8 @@ public class RepoRagIndexService {
 
   private static final Logger log = LoggerFactory.getLogger(RepoRagIndexService.class);
   private static final int MAX_WARNINGS = 20;
+  public static final int METADATA_SCHEMA_VERSION = 2;
+  public static final int AST_VERSION = 1;
   private static final Set<String> BINARY_EXTENSIONS =
       Set.of(
           "png",
@@ -64,10 +69,13 @@ public class RepoRagIndexService {
           "gz",
           "pdf");
 
+
   private final TempWorkspaceService workspaceService;
   private final RepoRagVectorStoreAdapter vectorStoreAdapter;
   private final RepoRagFileStateRepository fileStateRepository;
   private final RepoRagChunker chunker;
+  private final AstFileContextFactory astFileContextFactory;
+  private final SymbolGraphWriter symbolGraphWriter;
   private final GitHubRagProperties properties;
 
   public RepoRagIndexService(
@@ -75,12 +83,16 @@ public class RepoRagIndexService {
       RepoRagVectorStoreAdapter vectorStoreAdapter,
       RepoRagFileStateRepository fileStateRepository,
       RepoRagChunker chunker,
-      GitHubRagProperties properties) {
+      GitHubRagProperties properties,
+      AstFileContextFactory astFileContextFactory,
+      SymbolGraphWriter symbolGraphWriter) {
     this.workspaceService = workspaceService;
     this.vectorStoreAdapter = vectorStoreAdapter;
     this.fileStateRepository = fileStateRepository;
     this.chunker = chunker;
     this.properties = properties;
+    this.astFileContextFactory = astFileContextFactory;
+    this.symbolGraphWriter = symbolGraphWriter;
   }
 
   public IndexResult indexWorkspace(IndexRequest request) {
@@ -99,6 +111,7 @@ public class RepoRagIndexService {
     AtomicLong chunks = new AtomicLong();
     AtomicLong filesSkipped = new AtomicLong();
     AtomicLong filesDeleted = new AtomicLong();
+    AtomicBoolean astReady = new AtomicBoolean(false);
     List<String> warnings = new ArrayList<>();
     Map<String, RepoRagFileStateEntity> stateByPath =
         fileStateRepository.findByNamespace(request.namespace()).stream()
@@ -165,12 +178,14 @@ public class RepoRagIndexService {
                 return FileVisitResult.CONTINUE;
               }
 
+              String language = detectLanguage(file);
               ChunkableFile chunkableFile =
                   ChunkableFile.from(
                       file,
                       relativePath,
-                      detectLanguage(file),
-                      content);
+                      language,
+                      content,
+                      astFileContextFactory.supplier(file, relativePath, language, content));
 
               List<Chunk> fileChunks;
               try {
@@ -181,6 +196,11 @@ public class RepoRagIndexService {
                     "Skipped file (chunking failed) " + relativePath + ": " + ex.getMessage());
                 log.warn("Failed to chunk {}: {}", relativePath, ex.getMessage());
                 return FileVisitResult.CONTINUE;
+              }
+
+              if (!astReady.get()
+                  && fileChunks.stream().anyMatch(chunk -> chunk.astMetadata() != null)) {
+                astReady.set(true);
               }
 
               List<Document> fileDocuments =
@@ -197,11 +217,20 @@ public class RepoRagIndexService {
                       fileHash,
                       fileDocuments.size(),
                       stateByPath);
+                  try {
+                    symbolGraphWriter.syncFile(request.namespace(), relativePath, fileChunks);
+                  } catch (RuntimeException writerEx) {
+                    log.warn(
+                        "Failed to update symbol graph for {}: {}",
+                        relativePath,
+                        writerEx.getMessage());
+                  }
                   files.incrementAndGet();
                   chunks.addAndGet(fileDocuments.size());
                 } else {
                   vectorStoreAdapter.deleteFile(request.namespace(), relativePath);
                   deleteFileState(request.namespace(), relativePath, stateByPath);
+                  symbolGraphWriter.deleteFile(request.namespace(), relativePath);
                   filesDeleted.incrementAndGet();
                 }
                 stalePaths.remove(relativePath);
@@ -217,6 +246,7 @@ public class RepoRagIndexService {
       for (String stalePath : stalePaths) {
         vectorStoreAdapter.deleteFile(request.namespace(), stalePath);
         deleteFileState(request.namespace(), stalePath, stateByPath);
+        symbolGraphWriter.deleteFile(request.namespace(), stalePath);
         filesDeleted.incrementAndGet();
       }
       log.info(
@@ -230,7 +260,12 @@ public class RepoRagIndexService {
     }
 
     return new IndexResult(
-        files.get(), chunks.get(), filesSkipped.get(), filesDeleted.get(), List.copyOf(warnings));
+        files.get(),
+        chunks.get(),
+        filesSkipped.get(),
+        filesDeleted.get(),
+        List.copyOf(warnings),
+        astReady.get());
   }
 
   private List<Document> buildDocuments(
@@ -254,6 +289,37 @@ public class RepoRagIndexService {
       metadata.put("summary", chunk.summary());
       metadata.put("overlap_lines", chunk.overlapLines());
       metadata.put("span_hash", hashSpan(relativePath, chunk));
+      metadata.put("metadata_schema_version", METADATA_SCHEMA_VERSION);
+      metadata.put("ast_version", chunk.astMetadata() != null ? AST_VERSION : 0);
+      metadata.put("ast_available", chunk.astMetadata() != null);
+      if (chunk.astMetadata() != null) {
+        AstSymbolMetadata ast = chunk.astMetadata();
+        if (StringUtils.hasText(ast.symbolFqn())) {
+          metadata.put("symbol_fqn", ast.symbolFqn());
+        }
+        if (StringUtils.hasText(ast.symbolKind())) {
+          metadata.put("symbol_kind", ast.symbolKind());
+        }
+        if (StringUtils.hasText(ast.symbolVisibility())) {
+          metadata.put("symbol_visibility", ast.symbolVisibility());
+        }
+        if (StringUtils.hasText(ast.symbolSignature())) {
+          metadata.put("symbol_signature", ast.symbolSignature());
+        }
+        if (StringUtils.hasText(ast.docstring())) {
+          metadata.put("docstring", ast.docstring());
+        }
+        metadata.put("is_test", ast.test());
+        if (ast.imports() != null && !ast.imports().isEmpty()) {
+          metadata.put("imports", ast.imports());
+        }
+        if (ast.callsOut() != null && !ast.callsOut().isEmpty()) {
+          metadata.put("calls_out", ast.callsOut());
+        }
+        if (ast.callsIn() != null && !ast.callsIn().isEmpty()) {
+          metadata.put("calls_in", ast.callsIn());
+        }
+      }
       if (StringUtils.hasText(chunk.parentSymbol())) {
         metadata.put("parent_symbol", chunk.parentSymbol());
       }
@@ -443,5 +509,6 @@ public class RepoRagIndexService {
       long chunksProcessed,
       long filesSkipped,
       long filesDeleted,
-      List<String> warnings) {}
+      List<String> warnings,
+      boolean astReady) {}
 }

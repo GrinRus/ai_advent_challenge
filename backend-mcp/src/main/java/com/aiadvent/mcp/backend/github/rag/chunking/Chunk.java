@@ -14,7 +14,8 @@ public record Chunk(
     String summary,
     String hash,
     String parentSymbol,
-    int overlapLines) {
+    int overlapLines,
+    AstSymbolMetadata astMetadata) {
 
   public static Chunk from(
       String rawText,
@@ -22,7 +23,8 @@ public record Chunk(
       int lineEnd,
       String language,
       ParentSymbolResolver parentSymbolResolver,
-      int overlapLines) {
+      int overlapLines,
+      AstSymbolMetadata astMetadata) {
     String normalized = normalize(rawText);
     if (!StringUtils.hasText(normalized)) {
       return null;
@@ -38,7 +40,8 @@ public record Chunk(
         summary,
         hash,
         parentSymbol,
-        Math.max(0, overlapLines));
+        Math.max(0, overlapLines),
+        astMetadata);
   }
 
   private static String normalize(String value) {

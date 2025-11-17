@@ -80,14 +80,18 @@ public class LineChunkingStrategy implements ChunkingStrategy {
       return overlapFromPrevious;
     }
     String text = String.join("\n", buffer);
+    int chunkEnd = chunkStartLine + buffer.size() - 1;
+    AstSymbolMetadata astMetadata =
+        context.file().astContext().flatMap(ctx -> ctx.symbolForRange(chunkStartLine, chunkEnd)).orElse(null);
     Chunk chunk =
         Chunk.from(
             text,
             chunkStartLine,
-            chunkStartLine + buffer.size() - 1,
+            chunkEnd,
             context.file().language(),
             context.file().parentSymbolResolver(),
-            overlapFromPrevious);
+            overlapFromPrevious,
+            astMetadata);
     if (chunk != null) {
       target.add(chunk);
     }

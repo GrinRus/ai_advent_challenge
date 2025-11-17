@@ -41,6 +41,8 @@ public class RepoRagNamespaceStateService {
     entity.setWorkspaceId(workspaceId);
     entity.setFetchedAt(fetchedAt);
     entity.setReady(false);
+    entity.setAstSchemaVersion(0);
+    entity.setAstReadyAt(null);
     entity.setLastJob(job);
     entity.setWorkspaceSizeBytes(workspaceSizeBytes);
     repository.save(entity);
@@ -59,7 +61,9 @@ public class RepoRagNamespaceStateService {
       long filesTotal,
       long chunksTotal,
       long filesSkipped,
-      long workspaceSizeBytes) {
+      long workspaceSizeBytes,
+      boolean astReady,
+      int astSchemaVersion) {
     RepoRagNamespaceStateEntity entity =
         repository.findByNamespace(namespace).orElseGet(RepoRagNamespaceStateEntity::new);
     entity.setNamespace(namespace);
@@ -76,6 +80,13 @@ public class RepoRagNamespaceStateService {
     entity.setReady(true);
     entity.setLastJob(job);
     entity.setWorkspaceSizeBytes(workspaceSizeBytes);
+    if (astReady && astSchemaVersion > 0) {
+      entity.setAstSchemaVersion(astSchemaVersion);
+      entity.setAstReadyAt(Instant.now());
+    } else {
+      entity.setAstSchemaVersion(0);
+      entity.setAstReadyAt(null);
+    }
     repository.save(entity);
   }
 
@@ -84,11 +95,13 @@ public class RepoRagNamespaceStateService {
     repository
         .findByNamespace(namespace)
         .ifPresent(
-            entity -> {
-              entity.setReady(false);
-              entity.setLastJob(job);
-              repository.save(entity);
-            });
+          entity -> {
+            entity.setReady(false);
+            entity.setLastJob(job);
+            entity.setAstSchemaVersion(0);
+            entity.setAstReadyAt(null);
+            repository.save(entity);
+          });
   }
 
   public Optional<RepoRagNamespaceStateEntity> findByNamespace(String namespace) {

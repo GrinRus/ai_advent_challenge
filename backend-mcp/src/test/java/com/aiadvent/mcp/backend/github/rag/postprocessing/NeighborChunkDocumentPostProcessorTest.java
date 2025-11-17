@@ -95,7 +95,12 @@ class NeighborChunkDocumentPostProcessorTest {
         .thenReturn(
             List.of(
                 new SymbolNeighbor(
-                    "src/Service.java", 2, "hash-6", "CALLS", "com.demo.Service#doWork")));
+                    "src/Service.java",
+                    2,
+                    "hash-6",
+                    "CALLS",
+                    "com.demo.Service#doWork",
+                    "com.demo.Helper#doWork")));
     when(documentRepository.findByNamespaceAndFilePathAndChunkIndexIn(
             "repo:demo", "src/Service.java", List.of(2)))
         .thenReturn(List.of(referenced));

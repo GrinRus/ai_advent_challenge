@@ -179,7 +179,9 @@ public class RepoRagIndexScheduler {
           filesTotal,
           result.chunksProcessed(),
           result.filesSkipped(),
-          request.workspaceSizeBytes());
+          request.workspaceSizeBytes(),
+          result.astReady(),
+          result.astReady() ? RepoRagIndexService.AST_VERSION : 0);
 
       embeddingsTotal.increment(result.chunksProcessed());
       indexDuration.record(duration);

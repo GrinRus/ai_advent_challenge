@@ -5,6 +5,7 @@
 ## Перед началом работы
 - [ ] Определите, какие разделы будут затронуты изменениями (код, инфраструктура, процессы).
 - [ ] Проверьте, есть ли описания в `docs/overview.md`, `docs/architecture/*`, `docs/processes.md` и `docs/infra.md`.
+- [ ] Если изменяются части backend MCP (Wave 34+), инициализируйте Tree-sitter submodule’ы: `git submodule update --init --recursive backend-mcp/treesitter`.
 
 ## В процессе
 - [ ] Фиксируйте ключевые решения и допущения прямо в соответствующих файлах.

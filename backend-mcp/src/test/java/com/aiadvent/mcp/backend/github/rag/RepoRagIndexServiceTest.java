@@ -3,6 +3,8 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -10,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.chunking.ChunkableFile;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
@@ -43,6 +46,8 @@ class RepoRagIndexServiceTest {
   @Mock private TempWorkspaceService workspaceService;
   @Mock private RepoRagVectorStoreAdapter vectorStoreAdapter;
   @Mock private RepoRagFileStateRepository fileStateRepository;
+  @Mock private AstFileContextFactory astFileContextFactory;
+  @Mock private SymbolGraphWriter symbolGraphWriter;
 
   @TempDir Path tempDir;
 
@@ -57,9 +62,18 @@ class RepoRagIndexServiceTest {
     properties.getChunking().getLine().setMaxLines(50);
     properties.getChunking().setOverlapLines(0);
     chunker = new RepoRagChunker(properties);
+    lenient()
+        .when(astFileContextFactory.supplier(any(), any(), any(), any()))
+        .thenAnswer(invocation -> (java.util.function.Supplier<com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext>) () -> null);
     service =
         new RepoRagIndexService(
-            workspaceService, vectorStoreAdapter, fileStateRepository, chunker, properties);
+            workspaceService,
+            vectorStoreAdapter,
+            fileStateRepository,
+            chunker,
+            properties,
+            astFileContextFactory,
+            symbolGraphWriter);
   }
 
   @Test
@@ -84,7 +98,10 @@ class RepoRagIndexServiceTest {
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
     verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("src/Main.java"), captor.capture());
+    verify(symbolGraphWriter)
+        .syncFile(eq(NAMESPACE), eq("src/Main.java"), anyList());
     verify(vectorStoreAdapter).deleteFile(NAMESPACE, "ghost.js");
+    verify(symbolGraphWriter).deleteFile(NAMESPACE, "ghost.js");
     verify(fileStateRepository).save(any(RepoRagFileStateEntity.class));
     verify(fileStateRepository).deleteByNamespaceAndFilePath(NAMESPACE, "ghost.js");
     List<Document> documents = captor.getValue();
@@ -94,6 +111,8 @@ class RepoRagIndexServiceTest {
     assertThat(doc.getMetadata().get("repo_owner")).isEqualTo("owner");
     assertThat(doc.getMetadata().get("repo_name")).isEqualTo("repo");
     assertThat(doc.getMetadata().get("chunk_index")).isEqualTo(0);
+    assertThat(doc.getMetadata().get("metadata_schema_version")).isEqualTo(2);
+    assertThat(doc.getMetadata().get("ast_available")).isEqualTo(false);
   }
 
   @Test
@@ -115,6 +134,8 @@ class RepoRagIndexServiceTest {
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
     verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("Large.java"), captor.capture());
+    verify(symbolGraphWriter)
+        .syncFile(eq(NAMESPACE), eq("Large.java"), anyList());
     List<Document> documents = captor.getValue();
     assertThat(documents).hasSize(2);
     assertThat(documents.get(0).getMetadata().get("line_end")).isEqualTo(3);
@@ -142,6 +163,8 @@ class RepoRagIndexServiceTest {
 
     ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
     verify(vectorStoreAdapter).replaceFile(eq(NAMESPACE), eq("src/kept.ts"), captor.capture());
+    verify(symbolGraphWriter).syncFile(eq(NAMESPACE), eq("src/kept.ts"), anyList());
+    verify(symbolGraphWriter).syncFile(eq(NAMESPACE), eq("src/kept.ts"), anyList());
     List<Document> documents = captor.getValue();
     assertThat(documents)
         .singleElement()
@@ -162,7 +185,13 @@ class RepoRagIndexServiceTest {
     when(failingChunker.chunk(any(ChunkableFile.class))).thenThrow(new RuntimeException("boom"));
     RepoRagIndexService flakyService =
         new RepoRagIndexService(
-            workspaceService, vectorStoreAdapter, fileStateRepository, failingChunker, properties);
+            workspaceService,
+            vectorStoreAdapter,
+            fileStateRepository,
+            failingChunker,
+            properties,
+            astFileContextFactory,
+            symbolGraphWriter);
 
     RepoRagIndexService.IndexResult result =
         flakyService.indexWorkspace(request("ws-4"));
@@ -173,6 +202,8 @@ class RepoRagIndexServiceTest {
     verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("broken.txt"), any());
     verify(vectorStoreAdapter, never()).deleteFile(NAMESPACE, "broken.txt");
     verify(fileStateRepository, never()).deleteByNamespaceAndFilePath(NAMESPACE, "broken.txt");
+    verify(symbolGraphWriter, never()).syncFile(eq(NAMESPACE), eq("broken.txt"), anyList());
+    verify(symbolGraphWriter, never()).deleteFile(NAMESPACE, "broken.txt");
   }
 
   @Test
@@ -197,6 +228,7 @@ class RepoRagIndexServiceTest {
 
     verify(vectorStoreAdapter, never()).replaceFile(eq(NAMESPACE), eq("Same.java"), any());
     verify(fileStateRepository, never()).save(any());
+    verify(symbolGraphWriter, never()).syncFile(eq(NAMESPACE), eq("Same.java"), anyList());
   }
 
   @Test
@@ -218,9 +250,11 @@ class RepoRagIndexServiceTest {
     List<Document> documents = captor.getValue();
     assertThat(documents).hasSizeGreaterThan(1);
     Document last = documents.get(documents.size() - 1);
-    assertThat(last.getMetadata()).containsKeys("span_hash", "overlap_lines");
+    assertThat(last.getMetadata())
+        .containsKeys("span_hash", "overlap_lines", "metadata_schema_version", "ast_version");
     assertThat(last.getMetadata().get("overlap_lines")).isEqualTo(1);
     assertThat(last.getMetadata().get("span_hash")).isInstanceOf(String.class);
+    assertThat(last.getMetadata().get("metadata_schema_version")).isEqualTo(2);
   }
 
   private HashSet<String> mutableSet(String... values) {

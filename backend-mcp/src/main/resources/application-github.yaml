@@ -84,6 +84,18 @@ github:
         enabled: ${GITHUB_RAG_CHUNKING_SEMANTIC_ENABLED:false}
         splitter-class: ${GITHUB_RAG_CHUNKING_SEMANTIC_SPLITTER:org.springframework.ai.transformer.splitter.SemanticTextSplitter}
         chunk-size-tokens: ${GITHUB_RAG_CHUNKING_SEMANTIC_CHUNK_SIZE:1024}
+    ast:
+      enabled: ${GITHUB_RAG_AST_ENABLED:false}
+      languages:
+        - java
+        - kotlin
+        - typescript
+        - javascript
+        - python
+        - go
+      library-path: ${GITHUB_RAG_AST_LIBRARY_PATH:classpath:treesitter}
+      health:
+        failure-threshold: ${GITHUB_RAG_AST_FAILURE_THRESHOLD:3}
     retry:
       max-attempts: ${GITHUB_RAG_MAX_ATTEMPTS:5}
       initial-backoff: ${GITHUB_RAG_INITIAL_BACKOFF:PT15S}

@@ -1,3 +1,5 @@
+import java.util.Locale
+
 plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.6'
@@ -36,6 +38,7 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-validation"
     implementation "org.springframework.boot:spring-boot-starter-data-jpa"
     implementation "org.springframework.boot:spring-boot-starter-jdbc"
+    implementation "com.github.ben-manes.caffeine:caffeine"
 
     implementation "org.liquibase:liquibase-core"
 
@@ -47,6 +50,7 @@ dependencies {
     testImplementation "org.springframework.boot:spring-boot-starter-test"
     testImplementation "org.testcontainers:junit-jupiter"
     testImplementation "org.testcontainers:postgresql"
+    testImplementation gradleTestKit()
 }
 
 tasks.named('test') {
@@ -55,4 +59,85 @@ tasks.named('test') {
 
 bootJar {
     mainClass = 'com.aiadvent.mcp.backend.McpApplication'
+}
+
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def archName = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+def treeSitterOs = (osName.contains('mac')) ? 'macos' : (osName.contains('win') ? 'windows' : 'linux')
+def treeSitterArch = (archName.contains('aarch64') || archName.contains('arm64')) ? 'arm64' : (archName.contains('x86') && !archName.contains('64')) ? 'x86' : 'x86_64'
+def treeSitterLibPrefix = osName.contains('win') ? '' : 'lib'
+def treeSitterLibExt = osName.contains('mac') ? '.dylib' : (osName.contains('win') ? '.dll' : '.so')
+
+def treeSitterLanguages = [
+        [name: 'java', repo: 'tree-sitter-java', sources: ['src/parser.c']],
+        [name: 'kotlin', repo: 'tree-sitter-kotlin', sources: ['src/parser.c', 'src/scanner.c']],
+        [name: 'typescript', repo: 'tree-sitter-typescript/typescript', sources: ['src/parser.c', 'src/scanner.c'], includes: ['../common']],
+        [name: 'javascript', repo: 'tree-sitter-javascript', sources: ['src/parser.c', 'src/scanner.c']],
+        [name: 'python', repo: 'tree-sitter-python', sources: ['src/parser.c', 'src/scanner.c']],
+        [name: 'go', repo: 'tree-sitter-go', sources: ['src/parser.c']]
+]
+
+def treeSitterOutputDir = layout.buildDirectory.dir("treesitter/${treeSitterOs}/${treeSitterArch}")
+
+treeSitterLanguages.each { language ->
+    def capitalized = language.name.capitalize()
+    tasks.register("treeSitterCompile${capitalized}") {
+        group = 'tree-sitter'
+        description = "Build Tree-sitter library for ${language.name}"
+        def repoDir = project.layout.projectDirectory.dir("treesitter/${language.repo}").asFile
+        def includes = (language.includes ?: [])
+        inputs.files(language.sources.collect { new File(repoDir, it) })
+        outputs.file(treeSitterOutputDir.map { it.file("${treeSitterLibPrefix}tree-sitter-${language.name}${treeSitterLibExt}") })
+        doLast {
+            treeSitterOutputDir.get().asFile.mkdirs()
+            def includeFlags = [new File(repoDir, 'src'), new File(repoDir, 'src/tree_sitter')]
+                    .plus(includes.collect { new File(repoDir, it) })
+                    .collectMany { ['-I', it.absolutePath] }
+            def compilerArgs = []
+            compilerArgs += ['cc', '-shared', '-fPIC', '-O3', '-std=c99']
+            if (osName.contains('mac')) {
+                compilerArgs += ['-undefined', 'dynamic_lookup']
+            }
+            compilerArgs += includeFlags
+            compilerArgs += language.sources.collect { new File(repoDir, it).absolutePath }
+            def outputFile = treeSitterOutputDir.get().file("${treeSitterLibPrefix}tree-sitter-${language.name}${treeSitterLibExt}").asFile
+            compilerArgs += ['-o', outputFile.absolutePath]
+            exec {
+                commandLine compilerArgs
+            }
+        }
+    }
+}
+
+tasks.register('treeSitterBuild') {
+    group = 'tree-sitter'
+    description = 'Builds all configured Tree-sitter grammars'
+    dependsOn treeSitterLanguages.collect { language -> tasks.named("treeSitterCompile${language.name.capitalize()}") }
+}
+
+tasks.register('treeSitterVerify') {
+    group = 'verification'
+    description = 'Verifies Tree-sitter libraries exist for the current platform'
+    dependsOn 'treeSitterBuild'
+    doLast {
+        def dir = treeSitterOutputDir.get().asFile
+        if (!dir.exists() || dir.listFiles()?.length == 0) {
+            throw new GradleException("Tree-sitter libraries were not built")
+        }
+        println "Tree-sitter libraries available in ${dir}:"
+        dir.listFiles().sort().each { println " - ${it.name} (${it.length()} bytes)" }
+    }
+}
+
+def syncTreeSitterResources = tasks.register('syncTreeSitterResources', Sync) {
+    dependsOn 'treeSitterBuild'
+    from treeSitterOutputDir
+    into layout.buildDirectory.dir("generated/treesitter/${treeSitterOs}/${treeSitterArch}")
+}
+
+tasks.named('processResources') {
+    dependsOn syncTreeSitterResources
+    from(syncTreeSitterResources.map { it.destinationDir }) {
+        into "treesitter/${treeSitterOs}/${treeSitterArch}"
+    }
 }

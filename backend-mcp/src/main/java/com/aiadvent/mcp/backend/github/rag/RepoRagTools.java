@@ -75,7 +75,10 @@ public class RepoRagTools {
         status.sourceRef(),
         status.commitSha(),
         status.workspaceId(),
-        status.ready());
+        status.ready(),
+        status.astReady(),
+        status.astSchemaVersion(),
+        status.astReadyAt());
   }
 
   @Tool(
@@ -354,7 +357,10 @@ public class RepoRagTools {
       String sourceRef,
       String commitSha,
       String workspaceId,
-      boolean ready) {}
+      boolean ready,
+      boolean astReady,
+      int astSchemaVersion,
+      java.time.Instant astReadyAt) {}
 
   @JsonIgnoreProperties(ignoreUnknown = false)
   public record RepoRagSearchInput(

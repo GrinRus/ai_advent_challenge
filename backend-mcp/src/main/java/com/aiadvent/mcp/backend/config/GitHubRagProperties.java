@@ -34,6 +34,7 @@ public class GitHubRagProperties implements InitializingBean {
   private String namespacePrefix = "repo";
   private int maxConcurrency = 2;
   private final Chunking chunking = new Chunking();
+  private final Ast ast = new Ast();
   private final Retry retry = new Retry();
   private final Ignore ignore = new Ignore();
   private final Embedding embedding = new Embedding();
@@ -70,6 +71,10 @@ public class GitHubRagProperties implements InitializingBean {
 
   public Chunking getChunking() {
     return chunking;
+  }
+
+  public Ast getAst() {
+    return ast;
   }
 
   public Retry getRetry() {
@@ -613,6 +618,54 @@ public class GitHubRagProperties implements InitializingBean {
 
     public Semantic getSemantic() {
       return semantic;
+    }
+  }
+
+  public static class Ast {
+    private boolean enabled = false;
+    private List<String> languages =
+        new ArrayList<>(List.of("java", "kotlin", "typescript", "javascript", "python", "go"));
+    private String libraryPath = "classpath:treesitter";
+    private final Health health = new Health();
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public List<String> getLanguages() {
+      return languages;
+    }
+
+    public void setLanguages(List<String> languages) {
+      this.languages = languages != null ? new ArrayList<>(languages) : new ArrayList<>();
+    }
+
+    public String getLibraryPath() {
+      return libraryPath;
+    }
+
+    public void setLibraryPath(String libraryPath) {
+      this.libraryPath = libraryPath;
+    }
+
+    public Health getHealth() {
+      return health;
+    }
+
+    public static class Health {
+      private int failureThreshold = 3;
+
+      public int getFailureThreshold() {
+        return failureThreshold;
+      }
+
+      public void setFailureThreshold(int failureThreshold) {
+        this.failureThreshold = Math.max(1, failureThreshold);
+      }
     }
   }
 

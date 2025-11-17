@@ -11,4 +11,6 @@ public interface RepoRagSymbolGraphRepository
 
   List<RepoRagSymbolGraphEntity> findByNamespaceAndReferencedSymbolFqn(
       String namespace, String referencedSymbolFqn);
+
+  void deleteByNamespaceAndFilePath(String namespace, String filePath);
 }

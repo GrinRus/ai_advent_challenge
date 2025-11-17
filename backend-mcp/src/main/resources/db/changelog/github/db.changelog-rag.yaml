@@ -468,3 +468,52 @@ databaseChangeLog:
                   name: namespace
               - column:
                   name: referenced_symbol_fqn
+  - changeSet:
+      id: github-rag-0006
+      author: ai-advent
+      context: github-rag
+      changes:
+        - createTable:
+            tableName: repo_rag_metadata_schema
+            columns:
+              - column:
+                  name: version
+                  type: INTEGER
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - insert:
+            tableName: repo_rag_metadata_schema
+            columns:
+              - column:
+                  name: version
+                  valueNumeric: 2
+              - column:
+                  name: description
+                  value: 'AST-aware chunk metadata schema'
+  - changeSet:
+      id: github-rag-0007
+      author: ai-advent
+      context: github-rag
+      changes:
+        - addColumn:
+            tableName: repo_rag_namespace_state
+            columns:
+              - column:
+                  name: ast_schema_version
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ast_ready_at
+                  type: TIMESTAMP WITH TIME ZONE

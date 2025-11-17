@@ -60,7 +60,10 @@ public class RepoRagStatusService {
           state != null ? state.getSourceRef() : null,
           state != null ? state.getCommitSha() : null,
           state != null ? state.getWorkspaceId() : null,
-          state != null && state.isReady());
+          state != null && state.isReady(),
+          state != null && state.getAstSchemaVersion() > 0,
+          state != null ? state.getAstSchemaVersion() : 0,
+          state != null ? state.getAstReadyAt() : null);
     }
 
     if (namespaceState.isPresent()) {
@@ -84,7 +87,10 @@ public class RepoRagStatusService {
           state.getSourceRef(),
           state.getCommitSha(),
           state.getWorkspaceId(),
-          state.isReady());
+          state.isReady(),
+          state.getAstSchemaVersion() > 0,
+          state.getAstSchemaVersion(),
+          state.getAstReadyAt());
     }
 
     return StatusView.notFound(normalize(repoOwner), normalize(repoName));
@@ -134,7 +140,10 @@ public class RepoRagStatusService {
       String sourceRef,
       String commitSha,
       String workspaceId,
-      boolean ready) {
+      boolean ready,
+      boolean astReady,
+      int astSchemaVersion,
+      Instant astReadyAt) {
 
     static StatusView notFound(String owner, String name) {
       return new StatusView(
@@ -155,7 +164,10 @@ public class RepoRagStatusService {
           null,
           null,
           null,
-          false);
+          false,
+          false,
+          0,
+          null);
     }
   }
 }

@@ -46,6 +46,8 @@ public class TokenChunkingStrategy implements ChunkingStrategy {
         int charEnd = Math.min(content.length(), charStart + chunkText.length());
         LineIndex.LineRange range = context.file().lineIndex().rangeForSpan(charStart, charEnd);
         int overlapLines = previousEndLine > 0 ? Math.max(0, previousEndLine - range.start() + 1) : 0;
+        AstSymbolMetadata astMetadata =
+            context.file().astContext().flatMap(ctx -> ctx.symbolForRange(range.start(), range.end())).orElse(null);
         Chunk chunk =
             Chunk.from(
                 chunkText,
@@ -53,7 +55,8 @@ public class TokenChunkingStrategy implements ChunkingStrategy {
                 range.end(),
                 context.file().language(),
                 context.file().parentSymbolResolver(),
-                overlapLines);
+                overlapLines,
+                astMetadata);
         if (chunk != null) {
           chunks.add(chunk);
           produced++;

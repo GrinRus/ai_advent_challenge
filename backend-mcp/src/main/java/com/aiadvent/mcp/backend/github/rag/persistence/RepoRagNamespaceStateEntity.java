@@ -61,6 +61,12 @@ public class RepoRagNamespaceStateEntity {
   @Column(name = "is_ready", nullable = false)
   private boolean ready = false;
 
+  @Column(name = "ast_schema_version", nullable = false)
+  private int astSchemaVersion = 0;
+
+  @Column(name = "ast_ready_at")
+  private Instant astReadyAt;
+
   @OneToOne
   @JoinColumn(name = "last_job_id")
   private RepoRagIndexJobEntity lastJob;
@@ -177,6 +183,22 @@ public class RepoRagNamespaceStateEntity {
 
   public void setReady(boolean ready) {
     this.ready = ready;
+  }
+
+  public int getAstSchemaVersion() {
+    return astSchemaVersion;
+  }
+
+  public void setAstSchemaVersion(int astSchemaVersion) {
+    this.astSchemaVersion = Math.max(0, astSchemaVersion);
+  }
+
+  public Instant getAstReadyAt() {
+    return astReadyAt;
+  }
+
+  public void setAstReadyAt(Instant astReadyAt) {
+    this.astReadyAt = astReadyAt;
   }
 
   public RepoRagIndexJobEntity getLastJob() {

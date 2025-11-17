@@ -24,9 +24,13 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(classes = RepoRagToolsIT.TestConfig.class)
+@SpringBootTest(classes = RepoRagToolsIT.TestConfig.class, properties = "logging.system=none")
 @ActiveProfiles("test")
 class RepoRagToolsIT {
+
+  static {
+    System.setProperty("org.springframework.boot.logging.LoggingSystem", "org.springframework.boot.logging.java.JavaLoggingSystem");
+  }
 
   @Autowired private RepoRagTools tools;
   @Autowired private RepoRagSearchService searchService;
@@ -143,6 +147,8 @@ class RepoRagToolsIT {
     entity.setRepoOwner(owner);
     entity.setRepoName(repo);
     entity.setReady(true);
+    entity.setAstSchemaVersion(RepoRagIndexService.AST_VERSION);
+    entity.setAstReadyAt(java.time.Instant.now());
     return entity;
   }
 

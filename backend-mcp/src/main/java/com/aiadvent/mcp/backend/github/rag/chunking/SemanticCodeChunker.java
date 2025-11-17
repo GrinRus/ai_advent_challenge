@@ -94,14 +94,18 @@ public final class SemanticCodeChunker implements ChunkingStrategy {
       return overlapFromPrevious;
     }
     String text = String.join("\n", buffer);
+    int chunkEndLine = chunkStartLine + buffer.size() - 1;
+    AstSymbolMetadata astMetadata =
+        context.file().astContext().flatMap(ctx -> ctx.symbolForRange(chunkStartLine, chunkEndLine)).orElse(null);
     Chunk chunk =
         Chunk.from(
             text,
             chunkStartLine,
-            chunkStartLine + buffer.size() - 1,
+            chunkEndLine,
             context.file().language(),
             context.file().parentSymbolResolver(),
-            overlapFromPrevious);
+            overlapFromPrevious,
+            astMetadata);
     if (chunk != null) {
       target.add(chunk);
     }
