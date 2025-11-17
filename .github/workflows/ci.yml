@@ -132,6 +132,7 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             git fetch --all --prune
             git pull --ff-only
+            git submodule update --init --recursive
             docker compose --profile builder build --pull mcp-gradle-runner-builder
             docker compose down --remove-orphans || true
             docker compose build --pull

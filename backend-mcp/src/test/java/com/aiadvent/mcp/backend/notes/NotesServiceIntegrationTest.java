@@ -37,6 +37,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("notes")
 class NotesServiceIntegrationTest {
 
+  static {
+    PostgresTestContainer.assumeDockerAvailable();
+  }
+
   @DynamicPropertySource
   static void registerDatasourceProperties(DynamicPropertyRegistry registry) {
     PostgresTestContainer.register(registry);

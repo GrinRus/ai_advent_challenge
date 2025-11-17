@@ -15,6 +15,10 @@ import org.springframework.test.context.DynamicPropertySource;
 @ActiveProfiles("notes")
 class NotesMcpApplicationTests {
 
+    static {
+        PostgresTestContainer.assumeDockerAvailable();
+    }
+
     @DynamicPropertySource
     static void registerDatasourceProperties(DynamicPropertyRegistry registry) {
         PostgresTestContainer.register(registry);

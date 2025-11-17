@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.context.DynamicPropertyRegistry;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.DockerClientFactory;
+import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * Shared PostgreSQL Testcontainers instance used by integration tests that require pgvector.
@@ -21,10 +21,15 @@ public final class PostgresTestContainer {
 
   private PostgresTestContainer() {}
 
-  public static void register(DynamicPropertyRegistry registry) {
+  public static void assumeDockerAvailable() {
     Assumptions.assumeTrue(
         DOCKER_AVAILABLE, "Docker is required to run Postgres-backed integration tests");
+  }
 
+  public static void register(DynamicPropertyRegistry registry) {
+    if (!DOCKER_AVAILABLE || POSTGRES == null) {
+      throw new IllegalStateException("Docker is required to configure Postgres test container");
+    }
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", POSTGRES::getUsername);
     registry.add("spring.datasource.password", POSTGRES::getPassword);
@@ -40,8 +45,9 @@ public final class PostgresTestContainer {
   }
 
   static PostgreSQLContainer<?> container() {
-    Assumptions.assumeTrue(
-        DOCKER_AVAILABLE, "Docker is required to access the shared Postgres container");
+    if (!DOCKER_AVAILABLE || POSTGRES == null) {
+      throw new IllegalStateException("Docker is required to access the shared Postgres container");
+    }
     return POSTGRES;
   }
 

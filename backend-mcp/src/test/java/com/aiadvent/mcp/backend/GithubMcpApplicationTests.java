@@ -8,6 +8,10 @@ import org.springframework.test.context.DynamicPropertySource;
 @SpringBootTest(classes = McpApplication.class, properties = "spring.profiles.active=github")
 class GithubMcpApplicationTests {
 
+  static {
+    PostgresTestContainer.assumeDockerAvailable();
+  }
+
   @DynamicPropertySource
   static void overrideProperties(DynamicPropertyRegistry registry) {
     PostgresTestContainer.register(registry);
