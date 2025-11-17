@@ -1240,3 +1240,20 @@
 - [x] Обновить `docs/guides/mcp-operators.md`, `docs/infra.md`, `docs/architecture/coding-assistant-rfc.md`: описание нового инструмента, формат запроса/ответа, лимиты, рекомендуемый UX (когда вызывать, как интерпретировать `divergence/staged/unstaged`).
 - [x] Добавить раздел в operator playbook: как использовать `github.workspace_git_state` перед публикацией, как действовать при грязном workspace, примеры JSON и чек-листы.
 - [x] Обновить release notes (Wave 40) и changelog с акцентом на улучшение прозрачности assisted-coding и снижение ручных git-команд.
+
+## Wave 41 — GitLab parity for workspace tooling
+Цель: обеспечить возможность запускать ключевые assisted-coding сценарии не только против GitHub, но и GitLab, с единым UX, безопасным хранением токенов и идентичным MCP-функционалом.
+
+### Архитектура и конфигурация
+- [ ] Зафиксировать архитектуру многопровайдерного MCP: выделенные профили `github`/`gitlab`, общая схематизация workspace metadata и ограничений инструментов. Обновить `.env.example`, `docs/infra.md`, `docs/architecture/coding-assistant-rfc.md` и `docs/guides/mcp-operators.md` с описанием переменных (`GITLAB_APP_ID`, `GITLAB_PAT`, базовые URL, лимиты запросов) и обновить `docker-compose.yml`, добавив сервис/профиль GitLab. → `.env.example`, `docker-compose.yml`, `docs/infra.md`, `docs/architecture/coding-assistant-rfc.md`, `docs/guides/mcp-operators.md`
+
+### Backend MCP (GitLab профиль)
+- [ ] Добавить в `backend-mcp` полноценный GitLab стек: `GitLabRepositoryService`, `GitLabResolverService`, `GitLabWorkspaceTools`, имплементации инструментов `gitlab.repository_fetch/create_branch/push_branch/workspace_git_state`. Расширить `WorkspaceAccessService`/`TempWorkspaceService`, чтобы сохранять провайдера, ref и состояния git для GitLab, а также переиспользовать лимиты `GitWorkspaceStateService`. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/gitlab/*`, `backend-mcp/src/main/java/com/aiadvent/mcp/backend/workspace/*`, `backend-mcp/src/main/resources/application-gitlab.yaml`
+- [ ] Унифицировать DTO и registry: `GitRepositoryFetchRegistry`, `AgentInvocationService`, ПК `FlowInteractionService` должны принимать `provider=github|gitlab`, прокидывать идентификаторы проекта/branch/merge request и маршрутизировать вызовы MCP. Расширить OpenAPI/REST контракты флагом провайдера и fallback-логикой. → `backend/src/main/java/com/aiadvent/backend/*`, `backend/src/main/resources/openapi.yaml`
+
+### Flows, UI и UX
+- [ ] Обновить orchestrator и flows (`AgentOrchestratorService`, `github-analysis-flow` и другие assisted-coding сценарии), чтобы они могли запускаться с GitLab URLs: парсинг `https://gitlab.com/<group>/<repo>`, работа с merge requests, получение diff/changelog через GitLab MCP. Продублировать метрики/логи и гарантировать, что GitLab сценарии не используют GitHub-специфику (типы ссылок, названия веток). → `backend/src/main/java/com/aiadvent/backend/flow/*`, `backend/src/main/java/com/aiadvent/backend/mcp/*`
+- [ ] На фронтенде и в CLI добавить выбор провайдера: UI поля для GitLab token/pat, переключатель repo-источника, отображение `gitlab.workspace_git_state` и merge request ссылок. Обновить состояние клиента, чтобы кэш `displayRepo*` хранил provider-aware записи. → `frontend/src/*`, `docs/ux/fluid-chat.md`
+
+### Тестирование и включение
+- [ ] Покрыть GitLab профиль unit/integration тестами: fetch → workspace_git_state, создание ветки, коммит, push и merge request анализ. Добавить e2e сценарии CLI/UI, которые переключаются между GitHub и GitLab, и smoke-тесты операторских runbook'ов. Обновить release notes и enablement-гайды с новыми чек-листами (проверка прав GitLab PAT, лимиты API, типичные ошибки). → `backend-mcp/src/test/java/...`, `backend/src/test/java/...`, `frontend/tests/*`, `docs/releases/wave41.md`
