@@ -19,11 +19,40 @@ AI Advent Challenge — инициативный проект по развит�
 - В runtime AST-пайплайн управляется конфигом `github.rag.ast.*` (см. `application-github.yaml`). Основные переменные окружения: `GITHUB_RAG_AST_ENABLED`, `GITHUB_RAG_AST_LANGUAGES`, `GITHUB_RAG_AST_LIBRARY_PATH`, `GITHUB_RAG_AST_FAILURE_THRESHOLD`.
 
 ## AST-aware indexing & call graph (Wave 34)
+
+### Настройка окружения
+
+| Переменная | Назначение |
+| --- | --- |
+| `GITHUB_RAG_AST_ENABLED` | Включает AST-проход (`true`/`false`). |
+| `GITHUB_RAG_AST_LANGUAGES` | Список поддерживаемых языков (через запятую, дефолт: `java,kotlin,typescript,javascript,python,go`). |
+| `GITHUB_RAG_AST_LIBRARY_PATH` | Путь до собранных либ (`classpath:treesitter` локально, `/app/treesitter` в Docker). |
+| `GITHUB_RAG_AST_FAILURE_THRESHOLD` | Сколько подряд ошибок загрузки допускается до деградации. |
+
+Перед сборкой backend выполните:
+
+```bash
+git submodule update --init --recursive backend-mcp/treesitter
+cd backend-mcp
+./gradlew treeSitterBuild treeSitterVerify bootJar
+```
+
+В Dockerfile мы вызываем `treeSitterBuild` перед `bootJar`, копируем артефакты `build/treesitter/linux/**` в `/app/treesitter` и задаём `GITHUB_RAG_AST_LIBRARY_PATH=/app/treesitter`.
+
+### Проверка работоспособности
+
+- `repo.rag_index_status` возвращает `astReady`, `astSchemaVersion`, `astReadyAt`. Если `astReady=false`, call graph автоматически отключается (`neighbor.call-graph-disabled` в warnings).
+- `repo.rag_search` должен возвращать `matches[].metadata.ast_available=true`, `symbol_fqn`, `symbol_kind`, `docstring`, `is_test`, `imports[]`, `calls_out[]`, `neighborOfSpanHash`.
+- `appliedModules` содержит `post.neighbor-expand` и `neighborStrategy=CALL_GRAPH`, когда namespace AST-ready.
+- Регрессии ловим тестом `./gradlew test --tests "*RepoRagIndexServiceMultiLanguageTest"` (использует мини-репозитории Java/TS/Python/Go из `backend-mcp/src/test/resources/mini-repos/**`).
+
+### Диагностика и пример ответа
 - При включённом AST-пайплайне `RepoRagIndexService` обогащает каждый chunk полями `symbol_fqn`, `symbol_kind`, `symbol_visibility`, `docstring`, `imports`, `calls_out`, `calls_in`, `is_test`, фиксирует версию схемы (`metadata_schema_version`) и выставляет `ast_available=true`. Эти данные используются `CodeAwareDocumentPostProcessor` и соседними стратегиями.
 - Дополнительно строится call graph (`repo_rag_symbol_graph`), в котором сохраняются вызовы между символами (`relation=CALLS|CALLED_BY`). `NeighborChunkDocumentPostProcessor` может подтягивать соседей по `neighborStrategy=CALL_GRAPH`.
 - Сервис `RepoRagSymbolService` отдаёт как «входящие» (`findCallGraphNeighbors`) так и «исходящие» (`findOutgoingEdges`) рёбра, кешируя результаты в Caffeine и ограничивая параллелизм (семафор + Micrometer метрики `github_rag_symbol_requests_total{type=...}` и `github_rag_symbol_writer_invocations_total`).
 - Инструмент `repo.rag_index_status` теперь возвращает флаги `astReady`, `astSchemaVersion` и `astReadyAt`. Перед выдачей новых AST/neighbor-фичи оператор должен убедиться, что namespace переиндексирован и `astReady=true`; если флаг сброшен — выполните `github.repository_fetch` + дождитесь READY.
 - Backfill отсутствует: существующие namespace получают AST/metadata/graph только после повторного `github.repository_fetch`. Для обновления любого репозитория потребуется заново скачать workspace и дождаться `astReady=true`.
+- Для регрессии AST/graph-пайплайна заведены мини-репозитории в `backend-mcp/src/test/resources/mini-repos/{java,typescript,python,go}` и интеграционный тест `RepoRagIndexServiceMultiLanguageTest`. Он прогоняет `RepoRagIndexService` end-to-end для каждого языка и проверяет, что `symbol_fqn`, `ast_available`, `calls_out` и call graph появляются в метаданных/`repo_rag_symbol_graph`. Перед изменениями AST обязательно запускайте `./gradlew test --tests \"*RepoRagIndexServiceMultiLanguageTest\"`.
 - Включение call graph можно автоматизировать через `GITHUB_RAG_POST_NEIGHBOR_AUTO_CALL_GRAPH_ENABLED` (см. `github.rag.post-processing.neighbor.auto-call-graph-enabled`). Лимит дополнительных соседей задаётся `GITHUB_RAG_POST_NEIGHBOR_CALL_GRAPH_LIMIT`, чтобы CALL_GRAPH расширение не «съедало» контекст.
 - На стейдже/проде используйте только линуксовые библиотеки. Dockerfile собирает артефакты командой `./gradlew treeSitterBuild bootJar`, копирует `build/treesitter/linux/**` в `/app/treesitter` и задаёт `GITHUB_RAG_AST_LIBRARY_PATH=/app/treesitter`, чтобы рантайм грузил именно linux-вариант. После изменения грамматик пересоберите контейнеры.
 - `github.rag.ast.*` управляет загрузкой грамматик, `github.rag.rerank.code-aware.*` описывает веса docstring/visibility/test метаданных, а `github.rag.post-processing.neighbor.*` включает авто-переключение `CALL_GRAPH`. На практике достаточно выставить только переменные окружения — Spring Boot подтянет YAML дефолты.

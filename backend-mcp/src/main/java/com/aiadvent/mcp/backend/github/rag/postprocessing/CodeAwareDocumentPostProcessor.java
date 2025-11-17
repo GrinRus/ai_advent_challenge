@@ -4,6 +4,7 @@ import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties.Diversity;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties.PathPenalty;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties.Score;
+import com.aiadvent.mcp.backend.github.rag.RepoRagSymbolService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -12,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
@@ -28,12 +30,27 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
   private final int rerankTopN;
   private final double headMultiplier;
   private final String requestedLanguage;
+  private final RepoRagSymbolService symbolService;
+  private final String namespace;
+  private final boolean namespaceAstReady;
+  private final Map<String, Optional<String>> symbolKindCache = new ConcurrentHashMap<>();
 
   public CodeAwareDocumentPostProcessor(
       GitHubRagProperties.CodeAware properties,
       int rerankTopN,
       double headMultiplier,
       String requestedLanguage) {
+    this(properties, rerankTopN, headMultiplier, requestedLanguage, null, null, false);
+  }
+
+  public CodeAwareDocumentPostProcessor(
+      GitHubRagProperties.CodeAware properties,
+      int rerankTopN,
+      double headMultiplier,
+      String requestedLanguage,
+      RepoRagSymbolService symbolService,
+      String namespace,
+      boolean namespaceAstReady) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.rerankTopN = Math.max(1, rerankTopN);
     this.headMultiplier = Math.max(1.0d, headMultiplier);
@@ -41,6 +58,9 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
         StringUtils.hasText(requestedLanguage)
             ? requestedLanguage.trim().toLowerCase(Locale.ROOT)
             : null;
+    this.symbolService = symbolService;
+    this.namespace = StringUtils.hasText(namespace) ? namespace : null;
+    this.namespaceAstReady = namespaceAstReady;
   }
 
   @Override
@@ -134,11 +154,8 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
       return 1.0;
     }
     Map<String, Object> metadata = document.getMetadata();
-    String kind = asLowerCase(metadata != null ? metadata.get("symbol_kind") : null);
+    String kind = resolveSymbolKind(metadata);
     String visibility = asLowerCase(metadata != null ? metadata.get("symbol_visibility") : null);
-    if (!StringUtils.hasText(kind)) {
-      kind = deriveKindFromParent(metadata);
-    }
     if (StringUtils.hasText(kind) && StringUtils.hasText(visibility)) {
       Double combined = priorities.get(kind + "_" + visibility);
       if (combined != null) {
@@ -230,6 +247,49 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
       return null;
     }
     return parts[0].toLowerCase(Locale.ROOT);
+  }
+
+  private String resolveSymbolKind(Map<String, Object> metadata) {
+    if (metadata == null || metadata.isEmpty()) {
+      return null;
+    }
+    String kind = asLowerCase(metadata.get("symbol_kind"));
+    if (StringUtils.hasText(kind)) {
+      return kind;
+    }
+    kind = deriveKindFromParent(metadata);
+    if (StringUtils.hasText(kind)) {
+      return kind;
+    }
+    return lookupSymbolKind(metadata);
+  }
+
+  private String lookupSymbolKind(Map<String, Object> metadata) {
+    if (!symbolLookupEnabled()) {
+      return null;
+    }
+    String symbol =
+        Optional.ofNullable(asString(metadata.get("symbol_fqn")))
+            .filter(StringUtils::hasText)
+            .orElse(null);
+    if (!StringUtils.hasText(symbol)) {
+      return null;
+    }
+    Optional<String> cached = symbolKindCache.computeIfAbsent(symbol, this::fetchSymbolKind);
+    return cached.orElse(null);
+  }
+
+  private Optional<String> fetchSymbolKind(String symbol) {
+    if (!symbolLookupEnabled()) {
+      return Optional.empty();
+    }
+    return symbolService
+        .findSymbolDefinition(namespace, symbol)
+        .map(definition -> asLowerCase(definition.symbolKind()));
+  }
+
+  private boolean symbolLookupEnabled() {
+    return symbolService != null && namespaceAstReady && StringUtils.hasText(namespace);
   }
 
   private double pathPenalty(Document document) {

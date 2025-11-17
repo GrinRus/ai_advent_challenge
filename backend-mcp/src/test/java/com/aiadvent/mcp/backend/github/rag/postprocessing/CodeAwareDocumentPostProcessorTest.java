@@ -1,10 +1,14 @@
 package com.aiadvent.mcp.backend.github.rag.postprocessing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import com.aiadvent.mcp.backend.github.rag.RepoRagSymbolService;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
@@ -121,6 +125,48 @@ class CodeAwareDocumentPostProcessorTest {
     assertThat(reordered.indexOf(productionMethod)).isLessThan(reordered.indexOf(testMethod));
   }
 
+  @Test
+  void resolvesMissingSymbolKindViaSymbolService() {
+    RepoRagSymbolService symbolService = mock(RepoRagSymbolService.class);
+    when(symbolService.findSymbolDefinition("repo:demo", "com.demo.Service#doWork"))
+        .thenReturn(
+            Optional.of(new RepoRagSymbolService.SymbolDefinition(
+                "src/main/java/Service.java", 0, "hash-1", "class")));
+
+    CodeAwareDocumentPostProcessor processor =
+        new CodeAwareDocumentPostProcessor(
+            codeAware, 1, 2.0, "java", symbolService, "repo:demo", true);
+
+    Document missingKind =
+        documentWithoutSymbolKind(
+            "src/main/java/Service.java",
+            "java",
+            "com.demo.Service#doWork",
+            "public",
+            0.72,
+            8,
+            48,
+            false,
+            false);
+    Document fallback =
+        document(
+            "scripts/helper.py",
+            "python",
+            "def helper",
+            "function",
+            "internal",
+            0.8,
+            3,
+            32,
+            false,
+            false);
+
+    List<Document> reordered =
+        processor.process(Query.builder().text("explain service").build(), List.of(fallback, missingKind));
+
+    assertThat(reordered.get(0)).isEqualTo(missingKind);
+  }
+
   private Document document(
       String path,
       String language,
@@ -132,18 +178,43 @@ class CodeAwareDocumentPostProcessorTest {
       int lineEnd,
       boolean documented,
       boolean test) {
-    Map<String, Object> metadata =
-        Map.of(
-            "file_path", path,
-            "language", language,
-            "parent_symbol", symbol,
-            "symbol_kind", symbolKind,
-            "symbol_visibility", visibility,
-            "line_start", lineStart,
-            "line_end", lineEnd,
-            "chunk_hash", path + ":" + lineStart + ":" + lineEnd,
-            "docstring", documented ? "Sample documentation" : "",
-            "is_test", test);
+    Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+    metadata.put("file_path", path);
+    metadata.put("language", language);
+    metadata.put("parent_symbol", symbol);
+    if (symbolKind != null) {
+      metadata.put("symbol_kind", symbolKind);
+    }
+    metadata.put("symbol_visibility", visibility);
+    metadata.put("line_start", lineStart);
+    metadata.put("line_end", lineEnd);
+    metadata.put("chunk_hash", path + ":" + lineStart + ":" + lineEnd);
+    metadata.put("docstring", documented ? "Sample documentation" : "");
+    metadata.put("is_test", test);
+    return Document.builder().id(path + ":" + lineStart).text("// snippet").metadata(metadata).score(score).build();
+  }
+
+  private Document documentWithoutSymbolKind(
+      String path,
+      String language,
+      String symbolFqn,
+      String visibility,
+      double score,
+      int lineStart,
+      int lineEnd,
+      boolean documented,
+      boolean test) {
+    Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+    metadata.put("file_path", path);
+    metadata.put("language", language);
+    metadata.put("parent_symbol", "");
+    metadata.put("symbol_fqn", symbolFqn);
+    metadata.put("symbol_visibility", visibility);
+    metadata.put("line_start", lineStart);
+    metadata.put("line_end", lineEnd);
+    metadata.put("chunk_hash", path + ":" + lineStart + ":" + lineEnd);
+    metadata.put("docstring", documented ? "Sample documentation" : "");
+    metadata.put("is_test", test);
     return Document.builder().id(path + ":" + lineStart).text("// snippet").metadata(metadata).score(score).build();
   }
 }

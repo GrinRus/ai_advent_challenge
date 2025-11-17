@@ -71,7 +71,10 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
                   properties.getRerank().getCodeAware(),
                   request.rerankTopN(),
                   request.codeAwareHeadMultiplier(),
-                  request.requestedLanguage())));
+                  request.requestedLanguage(),
+                  symbolService,
+                  request.namespace(),
+                  request.namespaceAstReady())));
     }
     processors.add(
         new NamedProcessor(

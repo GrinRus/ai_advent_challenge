@@ -58,6 +58,15 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 - **Автовключение call graph.** Параметр `GITHUB_RAG_POST_NEIGHBOR_AUTO_CALL_GRAPH_ENABLED` (см. `github.rag.post-processing.neighbor.auto-call-graph-enabled`) позволяет backend-у автоматически переключать LINEAR/PARENT стратегии на `CALL_GRAPH`, когда namespace отмечен как AST-ready. Лимит для соседей задаётся `GITHUB_RAG_POST_NEIGHBOR_CALL_GRAPH_LIMIT`. На namespace без AST фича сама отключится и в `warnings[]` появится `neighbor.call-graph-disabled`.
 - **Диагностика:** если `astReady=false`, но fetch уже завершён, проверьте логи `RepoRagIndexService` — там фиксируются ошибки загрузки Tree-sitter, пропуски файлов или превышение лимитов. Для принудительного переиндекса стоит повторить fetch (даже если `ready=true`) — scheduler пересоздаст индекс и call graph.
 - **Чтение метаданных.** В ответе `repo.rag_search` появятся новые ключи `symbol_fqn`, `symbol_kind`, `symbol_visibility`, `symbol_signature`, `docstring`, `is_test`, `imports[]`, `calls_out[]`, `calls_in[]`, `ast_available`. Соседние чанки получают `neighborOfSpanHash`, `neighbor_relation`, `neighbor_symbol`. Ориентируйтесь на эти поля, чтобы объяснять пользователю, почему тот или иной фрагмент попал в контекст.
+  | Поле | Что означает |
+  | --- | --- |
+  | `symbol_fqn` | Полное имя символа: `file_path` → `.` + `::` + имя контейнера/метода. |
+  | `symbol_kind` / `symbol_visibility` | Тип (`class`, `method`, `function`, `def`, `func`) и модификатор (`public`, `private`, `internal`). |
+  | `docstring` | Объединённые комментарии перед символом. Используйте их для поиска устаревшей документации. |
+  | `is_test` | Признак, что сниппет относится к тестовому коду (используется Code-aware rerank). |
+  | `calls_out[]` / `calls_in[]` | Ссылки на вызываемые/вызывающие символы — по ним строится `repo_rag_symbol_graph` и стратегия `neighborStrategy=CALL_GRAPH`. |
+  | `ast_available` / `ast_version` | Флаг и версия AST-прохода; если `false`, namespace ещё не переиндексирован и call graph отключён. |
+  | `neighborOfSpanHash` / `neighbor_relation` | Какой чанк был источником и каким типом соседства он расширен (`CALLS`, `CALLED_BY`, `LINEAR`). |
 - **Пример `matches[].metadata`:**
   ```json
   {
@@ -72,6 +81,25 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
   }
   ```
   Если набор ключей пустой — значит namespace ещё не переиндексирован в AST-режиме.
+
+#### Operator playbook: AST-aware этап
+
+1. **Как понять, что всё сработало**
+   - `repo.rag_index_status`: `ready=true`, `astReady=true`, `astSchemaVersion>=1`, `astReadyAt` свежее последнего fetch.
+   - `repo.rag_search`: `matches[].metadata.ast_available=true`, заполнены `symbol_fqn`/`symbol_kind`, а в `appliedModules` появляются `post.neighbor-expand` и (для call graph) `neighborStrategy=CALL_GRAPH`.
+   - `warnings[]` пусты или содержат только информативные записи (`profile:balanced`, `retrieval.overview-seed`) без `neighbor.call-graph-disabled`.
+2. **Типичные ошибки**
+   - `neighbor.call-graph-disabled` → namespace ещё проходит индексирование или AST не загрузился.
+   - `Tree-sitter load failure` / `ast.degraded` в логах `github-mcp` → проблемы с нативными либами (`/app/treesitter/**`) или превышен `failureThreshold`.
+   - `RepoRagSymbolService` логирует `Symbol graph lookup throttled` → service ограничил параллельные запросы, call graph вернёт неполные данные.
+3. **Как чинить**
+   - Выполнить `github.repository_fetch` → дождаться `ready=true`, `astReady=true`, затем повторить `repo.rag_search`.
+   - Убедиться, что грамматики доступны: `git submodule update --init --recursive backend-mcp/treesitter && ./gradlew treeSitterBuild treeSitterVerify bootJar`, пересобрать Docker-образ (нужны только linux `.so`).
+   - Временно переключить профиль/DTO на `neighborStrategy=LINEAR` или `PARENT_SYMBOL`, чтобы пользователи продолжали работу без call graph.
+4. **Checklist перед релизом**
+   - `./gradlew test --tests "*RepoRagIndexServiceMultiLanguageTest"` — фиксирует регрессии AST/call graph на фикстурах Java/TS/Python/Go.
+   - UI/CLI e2e: fetch → rag_search (`neighborStrategy=CALL_GRAPH`), убедиться, что UI отображает `neighborOfSpanHash` и `appliedModules+=post.neighbor-expand`.
+   - Сообщить операторам, какие namespace уже AST-ready, какие профили используют call graph и какие лимиты (`neighborLimit`, `maxContextTokens`) актуальны.
 
 5. **Расширенный поиск (`repo.rag_search` v4):**
    - Вход: `rawQuery`, `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, `history[]`, `previousAssistantReply`, `allowEmptyContext`, `useCompression`, `translateTo`, `multiQuery.enabled/queries/maxQueries`, `maxContextTokens`, `generationLocale`, `instructionsTemplate`, `filters.languages[]/pathGlobs[]`, `filterExpression`.

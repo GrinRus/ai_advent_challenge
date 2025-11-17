@@ -1111,20 +1111,20 @@
   - [x] Добавить флаг `namespace_state.astSchemaVersion` (или `ast_ready_at`), выставлять его только при полном переиндексе.
   - [x] В `repo.rag_index_status` возвращать поле «AST schema»/`astReady`, чтобы UI/операторы видели состояние.
   - [x] Задокументировать процедуру апгрейда: «запусти github.repository_fetch + дождись READY», описать, что смешанные namespace допустимы.
-- [ ] Обновить pipeline пост-обработки: `NeighborChunkDocumentPostProcessor` и code-aware шаги умеют запрашивать call graph/символы через `RepoRagSymbolService`. Добавить стратегию `neighborChunkStrategy=CALL_GRAPH`, которая по сведению о вызове подтягивает реализацию вызываемого метода и помечает выдачу `metadata.neighborOfSpanHash`. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/postprocessing/*`, `application-github.yaml`
+- [x] Обновить pipeline пост-обработки: `NeighborChunkDocumentPostProcessor` и code-aware шаги умеют запрашивать call graph/символы через `RepoRagSymbolService`. Добавить стратегию `neighborChunkStrategy=CALL_GRAPH`, которая по сведению о вызове подтягивает реализацию вызываемого метода и помечает выдачу `metadata.neighborOfSpanHash`. → `backend-mcp/src/main/java/com/aiadvent/mcp/backend/github/rag/postprocessing/*`, `application-github.yaml`
   - [x] Расширить `RepoRagPostProcessingRequest`/DTO, валидировать `CALL_GRAPH` только если namespace AST-ready.
   - [x] В `NeighborChunkDocumentPostProcessor` загружать соседи по `chunk_hash` (а не только по index), помечать relation (`CALLS`/`CALLED_BY`) и добавлять их в `metadata`.
   - [x] Переписать `CodeAwareDocumentPostProcessor` так, чтобы новые поля (`symbol_kind`, `symbol_visibility`, `docstring`, `is_test`) участвовали в score и diversity.
   - [x] В конфиг `github.rag.post-processing.neighbor.*` добавить флаги для автоматического включения CALL_GRAPH, когда call graph доступен, и лимиты на дополнительные чанки.
-- [ ] Тесты и enablement: интеграционные тесты индексации (мини-проекты Java/TS/Python) с проверкой `symbol_fqn`/call graph, smoke-тест загрузки Tree-sitter либ в CI, документация о новых полях (`symbol_fqn`, `calls_out`, `neighborOfSpanHash`) и конфиге `github.rag.ast.*`. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/*`, `docs/guides/mcp-operators.md`, `docs/architecture/github-rag-modular.md`, `README.md`
-- [ ] Добавить фикстуры «mini-repo» для Java/TS/Python/Go, прогонять `RepoRagIndexService` end-to-end, проверять AST метаданные и call graph.
+- [x] Тесты и enablement: интеграционные тесты индексации (мини-проекты Java/TS/Python) с проверкой `symbol_fqn`/call graph, smoke-тест загрузки Tree-sitter либ в CI, документация о новых полях (`symbol_fqn`, `calls_out`, `neighborOfSpanHash`) и конфиге `github.rag.ast.*`. → `backend-mcp/src/test/java/com/aiadvent/mcp/backend/github/rag/*`, `docs/guides/mcp-operators.md`, `docs/architecture/github-rag-modular.md`, `README.md`
+- [x] Добавить фикстуры «mini-repo» для Java/TS/Python/Go, прогонять `RepoRagIndexService` end-to-end, проверять AST метаданные и call graph.
   - [x] Unit-тесты `TreeSitterAnalyzer` (mock grammar loader), `NeighborChunkDocumentPostProcessor` (CALL_GRAPH), `CodeAwareDocumentPostProcessor` (новые веса).
   - [x] CI: job `./gradlew treeSitterVerify test` на Linux + macOS, smoke run `TreeSitterAnalyzer.load()` чтобы предотвратить регрессии загрузки.
-  - [ ] Обновить e2e-suites (CLI/Playwright) — сценарий: fetch → index → rag_search с `neighborStrategy=CALL_GRAPH`, проверяем `appliedModules` и `neighborOfSpanHash` (обязательный prereq перед релизом).
+  - [x] Обновить e2e-suites (CLI/Playwright) — сценарий: fetch → index → rag_search с `neighborStrategy=CALL_GRAPH`, проверяем `appliedModules` и `neighborOfSpanHash` (обязательный prereq перед релизом).
 - [x] Обновить документацию (`docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `README.md`): описать новый AST-пайплайн, call graph, параметры `codeAware*`, `neighbor*`, конфиг `github.rag.ast.*`, пример ответа с `neighborOfSpanHash` и новыми метаданными. Добавить раздел по operator-playbook (как понять, что step работал). → `docs/architecture/github-rag-modular.md`, `docs/guides/mcp-operators.md`, `README.md`
   - [x] Диаграмма AST-aware пайплайна (fetch → tree-sitter → chunking → vector store → call graph) + таблица поддерживаемых языков/ограничений.
-  - [ ] Operator playbook: признаки успешного AST шага (флаг `ast_available`, `appliedModules`), типичные ошибки загрузки либ и как их чинить.
-  - [ ] README: новая секция «AST-aware indexing», примеры env-конфига `github.rag.ast.*`, команды для пересборки грамматик, обновление примеров `repo.rag_search` с `neighborOfSpanHash`.
+  - [x] Operator playbook: признаки успешного AST шага (флаг `ast_available`, `appliedModules`), типичные ошибки загрузки либ и как их чинить.
+  - [x] README: новая секция «AST-aware indexing», примеры env-конфига `github.rag.ast.*`, команды для пересборки грамматик, обновление примеров `repo.rag_search` с `neighborOfSpanHash`.
 
 ## Wave 35 — RAG input normalization layer
 Цель: научить MCP самоисправлять «свободные» запросы от LLM/агентов, чтобы инструменты RAG всегда получали валидный DTO и не падали от некорректных плейсхолдеров или параметров.
