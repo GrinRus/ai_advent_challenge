@@ -5,6 +5,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.junit.jupiter.EnabledIf;
 
 @SpringBootTest(
     classes = McpApplication.class,
@@ -13,11 +14,11 @@ import org.springframework.test.context.DynamicPropertySource;
         "spring.autoconfigure.exclude="
     })
 @ActiveProfiles("notes")
+@EnabledIf(
+    expression = "#{T(com.aiadvent.mcp.backend.PostgresTestContainer).dockerAvailable()}",
+    reason = "Docker is required for Postgres-backed tests",
+    loadContext = false)
 class NotesMcpApplicationTests {
-
-    static {
-        PostgresTestContainer.assumeDockerAvailable();
-    }
 
     @DynamicPropertySource
     static void registerDatasourceProperties(DynamicPropertyRegistry registry) {

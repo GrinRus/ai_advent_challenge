@@ -27,6 +27,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.junit.jupiter.EnabledIf;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,11 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
     properties = "spring.autoconfigure.exclude=")
 @ActiveProfiles("notes")
+@EnabledIf(
+    expression = "#{T(com.aiadvent.mcp.backend.PostgresTestContainer).dockerAvailable()}",
+    reason = "Docker is required for Postgres-backed tests",
+    loadContext = false)
 class NotesServiceIntegrationTest {
-
-  static {
-    PostgresTestContainer.assumeDockerAvailable();
-  }
 
   @DynamicPropertySource
   static void registerDatasourceProperties(DynamicPropertyRegistry registry) {

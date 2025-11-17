@@ -1,6 +1,5 @@
 package com.aiadvent.mcp.backend;
 
-import org.junit.jupiter.api.Assumptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -20,11 +19,6 @@ public final class PostgresTestContainer {
   private static final PostgreSQLContainer<?> POSTGRES = startContainer();
 
   private PostgresTestContainer() {}
-
-  public static void assumeDockerAvailable() {
-    Assumptions.assumeTrue(
-        DOCKER_AVAILABLE, "Docker is required to run Postgres-backed integration tests");
-  }
 
   public static void register(DynamicPropertyRegistry registry) {
     if (!DOCKER_AVAILABLE || POSTGRES == null) {
@@ -49,6 +43,10 @@ public final class PostgresTestContainer {
       throw new IllegalStateException("Docker is required to access the shared Postgres container");
     }
     return POSTGRES;
+  }
+
+  public static boolean dockerAvailable() {
+    return DOCKER_AVAILABLE;
   }
 
   private static PostgreSQLContainer<?> startContainer() {
