@@ -1,28 +1,30 @@
 package com.aiadvent.mcp.backend;
 
+import org.junit.jupiter.api.Assumptions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.DockerClientFactory;
 
 /**
  * Shared PostgreSQL Testcontainers instance used by integration tests that require pgvector.
- * Starts once per test JVM and registers datasource/env properties for profiles that expect
- * {@code GITHUB_MCP_*} and {@code NOTES_MCP_*} overrides.
+ * Starts once per test JVM (when Docker is available) and registers datasource/env properties for
+ * profiles that expect {@code GITHUB_MCP_*} and {@code NOTES_MCP_*} overrides.
  */
 public final class PostgresTestContainer {
 
-  private static final PostgreSQLContainer<?> POSTGRES =
-      new PostgreSQLContainer<>("pgvector/pgvector:pg15")
-          .withDatabaseName("ai_advent_test")
-          .withUsername("ai_advent")
-          .withPassword("ai_advent");
+  private static final Logger log = LoggerFactory.getLogger(PostgresTestContainer.class);
 
-  static {
-    POSTGRES.start();
-  }
+  private static final boolean DOCKER_AVAILABLE = isDockerAvailable();
+  private static final PostgreSQLContainer<?> POSTGRES = startContainer();
 
   private PostgresTestContainer() {}
 
   public static void register(DynamicPropertyRegistry registry) {
+    Assumptions.assumeTrue(
+        DOCKER_AVAILABLE, "Docker is required to run Postgres-backed integration tests");
+
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", POSTGRES::getUsername);
     registry.add("spring.datasource.password", POSTGRES::getPassword);
@@ -38,6 +40,31 @@ public final class PostgresTestContainer {
   }
 
   static PostgreSQLContainer<?> container() {
+    Assumptions.assumeTrue(
+        DOCKER_AVAILABLE, "Docker is required to access the shared Postgres container");
     return POSTGRES;
+  }
+
+  private static PostgreSQLContainer<?> startContainer() {
+    if (!DOCKER_AVAILABLE) {
+      return null;
+    }
+    PostgreSQLContainer<?> container =
+        new PostgreSQLContainer<>("pgvector/pgvector:pg15")
+            .withDatabaseName("ai_advent_test")
+            .withUsername("ai_advent")
+            .withPassword("ai_advent");
+    container.start();
+    return container;
+  }
+
+  private static boolean isDockerAvailable() {
+    try {
+      DockerClientFactory.instance().client();
+      return true;
+    } catch (Throwable ex) {
+      log.warn("Docker is not available for Testcontainers: {}", ex.getMessage());
+      return false;
+    }
   }
 }
