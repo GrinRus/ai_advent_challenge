@@ -12,7 +12,9 @@ public record RepoRagPostProcessingRequest(
     boolean neighborEnabled,
     int neighborRadius,
     int neighborLimit,
-    NeighborStrategy neighborStrategy) {
+    NeighborStrategy neighborStrategy,
+    String namespace,
+    boolean namespaceAstReady) {
 
   public enum NeighborStrategy {
     OFF,

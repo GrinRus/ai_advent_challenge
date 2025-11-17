@@ -1134,6 +1134,8 @@ public class GitHubRagProperties implements InitializingBean {
     private int maxRadius = 5;
     private int maxLimit = 12;
     private String strategy = "LINEAR";
+    private boolean autoCallGraphEnabled = false;
+    private int callGraphLimit = 8;
 
     public boolean isEnabled() {
       return enabled;
@@ -1181,6 +1183,22 @@ public class GitHubRagProperties implements InitializingBean {
 
     public void setStrategy(String strategy) {
       this.strategy = strategy;
+    }
+
+    public boolean isAutoCallGraphEnabled() {
+      return autoCallGraphEnabled;
+    }
+
+    public void setAutoCallGraphEnabled(boolean autoCallGraphEnabled) {
+      this.autoCallGraphEnabled = autoCallGraphEnabled;
+    }
+
+    public int getCallGraphLimit() {
+      return callGraphLimit;
+    }
+
+    public void setCallGraphLimit(int callGraphLimit) {
+      this.callGraphLimit = callGraphLimit;
     }
   }
 

@@ -148,6 +148,8 @@ github:
         max-radius: ${GITHUB_RAG_POST_NEIGHBOR_MAX_RADIUS:5}
         max-limit: ${GITHUB_RAG_POST_NEIGHBOR_MAX_LIMIT:12}
         strategy: ${GITHUB_RAG_POST_NEIGHBOR_STRATEGY:LINEAR}
+        auto-call-graph-enabled: ${GITHUB_RAG_POST_NEIGHBOR_AUTO_CALL_GRAPH_ENABLED:false}
+        call-graph-limit: ${GITHUB_RAG_POST_NEIGHBOR_CALL_GRAPH_LIMIT:8}
     generation:
       allow-empty-context: ${GITHUB_RAG_GENERATION_ALLOW_EMPTY_CONTEXT:true}
       prompt-template: classpath:prompts/github-rag-context.st

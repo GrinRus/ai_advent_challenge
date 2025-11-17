@@ -83,3 +83,49 @@
 ## Наблюдаемость
 - Лог `appliedModules` + `rerankApplied` дают быстрый ответ на вопрос «сработал ли конкретный этап».
 - Для incident-review достаточно свериться с `github.rag.*` конфигами и `appliedModules`: если не пришёл `query.translation`, значит модель решила, что язык уже подходящий.
+
+## Wave 34 — AST-aware indexing & call graph
+- **Отложенное включение.** Новые поля (`symbol_fqn`, `docstring`, `calls_out`, `is_test`, `ast_available`, `ast_version`) появляются только после повторного `github.repository_fetch`. Бэкенд не запускает backfill для старых namespace, поэтому операторы должны вручную инициировать fetch для каждого репозитория, где нужны AST-метаданные.
+- **Гейты `astReady`.** `RepoRagNamespaceState` хранит `ast_schema_version` и `ast_ready_at`; `repo.rag_index_status` транслирует эти значения в API. Пока `astReady=false`, pipeline автоматически держит `neighborStrategy` в режимах `LINEAR/PARENT_SYMBOL`, `NeighborChunkDocumentPostProcessor` не делает call graph lookup, а в `warnings[]` появляется `neighbor.call-graph-disabled`.
+- **Call graph & auto-switch.** После переиндексации `SymbolGraphWriter` строит `repo_rag_symbol_graph`, а `RepoRagSymbolService` дешево отдаёт CALLS/CALLED_BY связи через Caffeine. Флаг `github.rag.post-processing.neighbor.auto-call-graph-enabled` включает авто-переключение `RepoRagSearchService` на `CALL_GRAPH`, как только namespace AST-ready. Лимит дополнительных чанков задаётся `github.rag.post-processing.neighbor.call-graph-limit`, что не даёт CALL_GRAPH стратегии вытеснить основное контекстное окно.
+- **Процедура апгрейда.** (1) Выполняем `github.repository_fetch`; (2) ждём `ready=true`; (3) убеждаемся, что `astReady=true` и `astReadyAt` свежее времени fetch; (4) только после этого включаем профили с CALL_GRAPH или экспериментальные шаги, которые читают `docstring/symbol_kind`. Если что-то пошло не так (Tree-sitter не собрался, язык не поддержан) — `RepoRagIndexService` пишет предупреждения в job log, а namespace остаётся без AST до следующего fetch.
+
+### Диаграмма AST-aware пайплайна
+
+```mermaid
+flowchart LR
+    fetch[github.repository_fetch] --> workspace[Temp workspace]
+    workspace --> chunker[ChunkableFile + TreeSitterAnalyzer]
+    chunker --> vectorStore[repo_rag_vector_store]
+    chunker --> symbolGraph[SymbolGraphWriter → repo_rag_symbol_graph]
+    vectorStore --> search[repo.rag_search]
+    symbolGraph --> search
+```
+
+1. **Fetch** создаёт workspace и ставит job индексатора.
+2. **ChunkableFile/SemanticCodeChunker** вызывают `TreeSitterAnalyzer`, формируют `AstFileContext` и обогащают каждый chunk AST-метаданными.
+3. **Vector store** получает документы (`RepoRagVectorStoreAdapter`), `RepoRagNamespaceState` обновляет `astReady`/`astSchemaVersion`.
+4. **SymbolGraphWriter** пересобирает `repo_rag_symbol_graph` по каждому файлу.
+5. **Search** (`RepoRagSearchService`/`NeighborChunkDocumentPostProcessor`) использует и vector store, и call graph.
+
+### Поддерживаемые языки
+
+| Язык      | Tree-sitter repo                     | Примечание |
+|-----------|--------------------------------------|------------|
+| Java      | `tree-sitter/tree-sitter-java`       | AST + call graph готовы |
+| Kotlin    | `fwcd/tree-sitter-kotlin`            | Требует `scanner.c` из upstream |
+| TypeScript| `tree-sitter/tree-sitter-typescript` | Используем типизированную грамматику |
+| JavaScript| `tree-sitter/tree-sitter-javascript` | Общая инфраструктура |
+| Python    | `tree-sitter/tree-sitter-python`     | Поддерживаются `def/class` символы |
+| Go        | `tree-sitter/tree-sitter-go`         | Поддерживаются функции/методы |
+
+Новые языки нужно добавлять в `backend-mcp/treesitter`, прописывать пин в `gradle/libs.versions.toml`, включать в `github.rag.ast.languages` и пересобирать контейнеры (`./gradlew treeSitterBuild bootJar`).
+
+### Code-aware rerank и метаданные
+- `CodeAwareDocumentPostProcessor` работает поверх AST-полей: `symbol_kind`, `symbol_visibility`, `docstring`, `is_test`, `imports`, `calls_out`. Конфигурация задаётся через `github.rag.rerank.code-aware.*`:
+  - `score.weight`/`score.span-weight` — вклад похожести и длины.
+  - `language-bonus.{lang}` — бонус, если язык чанка совпадает с `requestedLanguage`.
+  - `symbol-priority.{class,method_private,...}` — вес для сочетаний `kind`+`visibility`.
+  - `diversity.max-per-file`/`max-per-symbol` — сколько чанков позволено из одного файла/символа, включая новые «корзины» (docstring presence, test chunk).
+  - `path-penalty` — штрафы за `generated/`, `testdata/`, `node_modules/`.
+- Порядок: сначала вычисляется комбинированный score → затем применяется сортировка главы списка → в конце `NeighborChunkDocumentPostProcessor` добавляет CALL_GRAPH соседи и выставляет `neighborOfSpanHash`, `neighbor_relation`, `neighbor_symbol`. Клиентский UI должен использовать эти метаданные, чтобы объяснять, почему рядом с исходным чанком появились связанные методы.

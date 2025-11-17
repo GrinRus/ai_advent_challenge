@@ -5,12 +5,13 @@ WORKDIR /workspace
 
 COPY gradlew settings.gradle build.gradle ./
 COPY gradle gradle
+COPY treesitter treesitter
 
 RUN ./gradlew --no-daemon clean
 
 COPY src src
 
-RUN ./gradlew --no-daemon bootJar
+RUN ./gradlew --no-daemon treeSitterBuild bootJar
 
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
@@ -30,7 +31,9 @@ ENV SPRING_MAIN_BANNER_MODE=off \
     INSIGHT_BACKEND_BASE_URL=http://backend:8080
 
 COPY --from=build /workspace/build/libs/backend-mcp-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /workspace/build/treesitter /app/treesitter
 
 EXPOSE 8080
+ENV GITHUB_RAG_AST_LIBRARY_PATH=/app/treesitter
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

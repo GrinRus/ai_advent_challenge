@@ -33,9 +33,9 @@ class CodeAwareDocumentPostProcessorTest {
     CodeAwareDocumentPostProcessor processor =
         new CodeAwareDocumentPostProcessor(codeAware, 1, 2.0, "java");
     Document preferred =
-        document("src/main/java/App.java", "java", "class App", 0.62, 10, 40);
+        document("src/main/java/App.java", "java", "class App", "class", "public", 0.62, 10, 40, true, false);
     Document fallback =
-        document("scripts/tool.py", "python", "def handle", 0.9, 5, 18);
+        document("scripts/tool.py", "python", "def handle", "function", "public", 0.9, 5, 18, false, false);
 
     List<Document> reordered =
         processor.process(Query.builder().text("refactor controllers").build(), List.of(fallback, preferred));
@@ -49,9 +49,9 @@ class CodeAwareDocumentPostProcessorTest {
     CodeAwareDocumentPostProcessor processor =
         new CodeAwareDocumentPostProcessor(codeAware, 1, 2.0, "java");
     Document generated =
-        document("generated/Main.java", "java", "class Auto", 0.95, 1, 30);
+        document("generated/Main.java", "java", "class Auto", "class", "public", 0.95, 1, 30, false, false);
     Document handcrafted =
-        document("src/main/java/App.java", "java", "class App", 0.8, 3, 28);
+        document("src/main/java/App.java", "java", "class App", "class", "public", 0.8, 3, 28, true, false);
 
     List<Document> reordered =
         processor.process(Query.builder().text("explain models").build(), List.of(generated, handcrafted));
@@ -66,11 +66,11 @@ class CodeAwareDocumentPostProcessorTest {
         new CodeAwareDocumentPostProcessor(codeAware, 2, 2.0, null);
 
     Document first =
-        document("src/main/java/App.java", "java", "class App", 0.95, 1, 25);
+        document("src/main/java/App.java", "java", "class App", "class", "public", 0.95, 1, 25, true, false);
     Document secondSameFile =
-        document("src/main/java/App.java", "java", "method run", 0.92, 30, 60);
+        document("src/main/java/App.java", "java", "method run", "method", "public", 0.92, 30, 60, true, false);
     Document differentFile =
-        document("src/main/java/Service.java", "java", "class Service", 0.85, 5, 40);
+        document("src/main/java/Service.java", "java", "class Service", "class", "internal", 0.85, 5, 40, false, false);
 
     List<Document> reordered =
         processor.process(
@@ -81,16 +81,69 @@ class CodeAwareDocumentPostProcessorTest {
     assertThat(reordered.get(1)).isEqualTo(differentFile);
   }
 
+  @Test
+  void boostsDocumentedSymbolsAndPenalizesUndocumented() {
+    CodeAwareDocumentPostProcessor processor =
+        new CodeAwareDocumentPostProcessor(codeAware, 2, 2.0, "java");
+
+    Document documented =
+        document("src/main/java/App.java", "java", "class App", "class", "public", 0.70, 4, 42, true, false);
+    Document undocumented =
+        document("src/main/java/Service.java", "java", "class Service", "class", "public", 0.78, 10, 60, false, false);
+
+    List<Document> reordered =
+        processor.process(
+            Query.builder().text("describe app").build(), List.of(undocumented, documented));
+
+    assertThat(reordered.get(0)).isEqualTo(documented);
+  }
+
+  @Test
+  void demotesTestsAndEnforcesSymbolKindDiversity() {
+    codeAware.getDiversity().setMaxPerSymbol(1);
+    CodeAwareDocumentPostProcessor processor =
+        new CodeAwareDocumentPostProcessor(codeAware, 3, 2.0, "java");
+
+    Document productionMethod =
+        document("src/main/java/App.java", "java", "method run", "method", "public", 0.77, 5, 28, true, false);
+    Document testMethod =
+        document("src/test/java/AppTest.java", "java", "method shouldRun", "method", "public", 0.8, 5, 40, true, true);
+    Document helperClass =
+        document("src/main/java/Helper.java", "java", "class Helper", "class", "internal", 0.75, 2, 20, true, false);
+
+    List<Document> reordered =
+        processor.process(
+            Query.builder().text("explain behavior").build(),
+            List.of(testMethod, productionMethod, helperClass));
+
+    assertThat(reordered).containsExactlyInAnyOrder(productionMethod, helperClass, testMethod);
+    assertThat(reordered.indexOf(testMethod)).isEqualTo(2);
+    assertThat(reordered.indexOf(productionMethod)).isLessThan(reordered.indexOf(testMethod));
+  }
+
   private Document document(
-      String path, String language, String symbol, double score, int lineStart, int lineEnd) {
+      String path,
+      String language,
+      String symbol,
+      String symbolKind,
+      String visibility,
+      double score,
+      int lineStart,
+      int lineEnd,
+      boolean documented,
+      boolean test) {
     Map<String, Object> metadata =
         Map.of(
             "file_path", path,
             "language", language,
             "parent_symbol", symbol,
+            "symbol_kind", symbolKind,
+            "symbol_visibility", visibility,
             "line_start", lineStart,
             "line_end", lineEnd,
-            "chunk_hash", path + ":" + lineStart + ":" + lineEnd);
+            "chunk_hash", path + ":" + lineStart + ":" + lineEnd,
+            "docstring", documented ? "Sample documentation" : "",
+            "is_test", test);
     return Document.builder().id(path + ":" + lineStart).text("// snippet").metadata(metadata).score(score).build();
   }
 }

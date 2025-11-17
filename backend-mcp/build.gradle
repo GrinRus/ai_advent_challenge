@@ -55,6 +55,7 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    systemProperty 'org.springframework.boot.logging.LoggingSystem', 'none'
 }
 
 bootJar {
@@ -140,4 +141,8 @@ tasks.named('processResources') {
     from(syncTreeSitterResources.map { it.destinationDir }) {
         into "treesitter/${treeSitterOs}/${treeSitterArch}"
     }
+}
+
+tasks.named('bootJar') {
+    dependsOn syncTreeSitterResources
 }

@@ -6,12 +6,14 @@ import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -25,10 +27,12 @@ public class SymbolGraphWriter {
   private final Counter edgesWrittenCounter;
   private final Counter writerInvocations;
 
-  public SymbolGraphWriter(RepoRagSymbolGraphRepository repository, MeterRegistry meterRegistry) {
+  public SymbolGraphWriter(
+      RepoRagSymbolGraphRepository repository, @Nullable MeterRegistry meterRegistry) {
     this.repository = repository;
-    this.edgesWrittenCounter = meterRegistry.counter("github_rag_symbol_edges_written_total");
-    this.writerInvocations = meterRegistry.counter("github_rag_symbol_writer_invocations_total");
+    MeterRegistry registry = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
+    this.edgesWrittenCounter = registry.counter("github_rag_symbol_edges_written_total");
+    this.writerInvocations = registry.counter("github_rag_symbol_writer_invocations_total");
   }
 
   public void syncFile(String namespace, String filePath, List<Chunk> chunks) {

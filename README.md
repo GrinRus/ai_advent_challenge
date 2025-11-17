@@ -23,7 +23,27 @@ AI Advent Challenge — инициативный проект по развит�
 - Дополнительно строится call graph (`repo_rag_symbol_graph`), в котором сохраняются вызовы между символами (`relation=CALLS|CALLED_BY`). `NeighborChunkDocumentPostProcessor` может подтягивать соседей по `neighborStrategy=CALL_GRAPH`.
 - Сервис `RepoRagSymbolService` отдаёт как «входящие» (`findCallGraphNeighbors`) так и «исходящие» (`findOutgoingEdges`) рёбра, кешируя результаты в Caffeine и ограничивая параллелизм (семафор + Micrometer метрики `github_rag_symbol_requests_total{type=...}` и `github_rag_symbol_writer_invocations_total`).
 - Инструмент `repo.rag_index_status` теперь возвращает флаги `astReady`, `astSchemaVersion` и `astReadyAt`. Перед выдачей новых AST/neighbor-фичи оператор должен убедиться, что namespace переиндексирован и `astReady=true`; если флаг сброшен — выполните `github.repository_fetch` + дождитесь READY.
-- На стейдже/проде используйте только линуксовые библиотеки. Dockerfile должен вызывать `treeSitterBuild` перед `bootJar`; после изменения Грамматик пересоберите контейнеры.
+- Backfill отсутствует: существующие namespace получают AST/metadata/graph только после повторного `github.repository_fetch`. Для обновления любого репозитория потребуется заново скачать workspace и дождаться `astReady=true`.
+- Включение call graph можно автоматизировать через `GITHUB_RAG_POST_NEIGHBOR_AUTO_CALL_GRAPH_ENABLED` (см. `github.rag.post-processing.neighbor.auto-call-graph-enabled`). Лимит дополнительных соседей задаётся `GITHUB_RAG_POST_NEIGHBOR_CALL_GRAPH_LIMIT`, чтобы CALL_GRAPH расширение не «съедало» контекст.
+- На стейдже/проде используйте только линуксовые библиотеки. Dockerfile собирает артефакты командой `./gradlew treeSitterBuild bootJar`, копирует `build/treesitter/linux/**` в `/app/treesitter` и задаёт `GITHUB_RAG_AST_LIBRARY_PATH=/app/treesitter`, чтобы рантайм грузил именно linux-вариант. После изменения грамматик пересоберите контейнеры.
+- `github.rag.ast.*` управляет загрузкой грамматик, `github.rag.rerank.code-aware.*` описывает веса docstring/visibility/test метаданных, а `github.rag.post-processing.neighbor.*` включает авто-переключение `CALL_GRAPH`. На практике достаточно выставить только переменные окружения — Spring Boot подтянет YAML дефолты.
+- Пример `matches[].metadata` с AST/neighbor полями:
+```json
+{
+  "file_path": "src/main/java/com/example/DemoService.java",
+  "chunk_hash": "f24c3b9f...",
+  "symbol_fqn": "src.main.java.com.example.DemoService::method process",
+  "symbol_kind": "method",
+  "symbol_visibility": "public",
+  "docstring": "Process incoming events",
+  "is_test": false,
+  "imports": ["import java.util.List;"],
+  "calls_out": ["helper"],
+  "neighborOfSpanHash": "f82e7d8a",
+  "neighbor_relation": "CALLS"
+}
+```
+`neighborOfSpanHash` указывает, что сниппет был расширен call-graph соседом для исходного `span_hash`. Если AST недоступен, поля просто отсутствуют.
 
 ## Repo RAG индексатор (Wave 31)
 - После успешного `github.repository_fetch` backend запускает асинхронный job (`RepoRagIndexScheduler`), который обходит workspace, режет файлы на чанки (≈2 КиБ/160 строк) и сохраняет их в PgVector (`repo_rag_vector_store`). Параметры задаются через `GITHUB_RAG_*` (см. `.env.example`, `docs/infra.md`).

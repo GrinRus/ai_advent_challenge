@@ -34,4 +34,9 @@ public interface RepoRagDocumentRepository
       @Param("chunkIndexes") Collection<Integer> chunkIndexes);
 
   List<RepoRagDocumentEntity> findByNamespaceAndFilePath(String namespace, String filePath);
+
+  @Query(
+      "select d from RepoRagDocumentEntity d where d.namespace = :namespace and d.chunkHash in :hashes")
+  List<RepoRagDocumentEntity> findByNamespaceAndChunkHashIn(
+      @Param("namespace") String namespace, @Param("hashes") Collection<String> hashes);
 }

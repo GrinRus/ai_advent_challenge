@@ -68,6 +68,7 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
         (left, right) ->
             Double.compare(
                 scoreByDocument.getOrDefault(right, 0d), scoreByDocument.getOrDefault(left, 0d)));
+    promoteNonTests(head);
     List<Document> reordered = new ArrayList<>(documents);
     for (int i = 0; i < head.size(); i++) {
       reordered.set(i, head.get(i));
@@ -90,7 +91,9 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
     }
     double similarity = document.getScore() != null ? document.getScore() : 0.0;
     double spanScore = 1.0 / Math.max(1.0, extractLineSpan(document));
-    return (scoreWeight * similarity) + (spanWeight * spanScore);
+    return ((scoreWeight * similarity) + (spanWeight * spanScore))
+        * documentationBoost(document)
+        * testPenalty(document);
   }
 
   private double extractLineSpan(Document document) {
@@ -151,6 +154,66 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
     return priorities.getOrDefault("default", 1.0);
   }
 
+  private double documentationBoost(Document document) {
+    if (hasDocstring(document)) {
+      return 1.12d;
+    }
+    return 0.94d;
+  }
+
+  private static boolean hasDocstring(Document document) {
+    Map<String, Object> metadata = document.getMetadata();
+    if (metadata == null) {
+      return false;
+    }
+    String docstring = asString(metadata.get("docstring"));
+    return StringUtils.hasText(docstring);
+  }
+
+  private double testPenalty(Document document) {
+    if (!isTestDocument(document)) {
+      return 1.0;
+    }
+    return 0.35d;
+  }
+
+  private static void promoteNonTests(List<Document> head) {
+    if (CollectionUtils.isEmpty(head)) {
+      return;
+    }
+    List<Document> nonTests = new ArrayList<>(head.size());
+    List<Document> tests = new ArrayList<>();
+    for (Document document : head) {
+      if (isTestDocument(document)) {
+        tests.add(document);
+      } else {
+        nonTests.add(document);
+      }
+    }
+    nonTests.addAll(tests);
+    for (int i = 0; i < head.size(); i++) {
+      head.set(i, nonTests.get(i));
+    }
+  }
+
+  private static boolean isTestDocument(Document document) {
+    Map<String, Object> metadata = document.getMetadata();
+    if (metadata == null) {
+      return false;
+    }
+    Object value = metadata.get("is_test");
+    if (value instanceof Boolean bool) {
+      return bool;
+    }
+    if (value instanceof String string) {
+      return string.equalsIgnoreCase("true") || string.equalsIgnoreCase("yes");
+    }
+    if (value instanceof Number number) {
+      return number.intValue() != 0;
+    }
+    return false;
+  }
+
   private String deriveKindFromParent(Map<String, Object> metadata) {
     if (metadata == null) {
       return null;
@@ -203,11 +266,11 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
     return false;
   }
 
-  private String asString(Object value) {
+  private static String asString(Object value) {
     return value instanceof String str ? str : null;
   }
 
-  private String asLowerCase(Object value) {
+  private static String asLowerCase(Object value) {
     String string = asString(value);
     return StringUtils.hasText(string) ? string.trim().toLowerCase(Locale.ROOT) : null;
   }
@@ -235,6 +298,10 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
     private final int maxPerSymbol;
     private final Map<String, Integer> fileCounts = new HashMap<>();
     private final Map<String, Integer> symbolCounts = new HashMap<>();
+    private final Map<String, Integer> symbolKindCounts = new HashMap<>();
+    private final Map<String, Integer> visibilityCounts = new HashMap<>();
+    private final Map<String, Integer> docstringCounts = new HashMap<>();
+    private final Map<String, Integer> testCounts = new HashMap<>();
 
     DiversityTracker(Diversity diversity) {
       this.maxPerFile = diversity != null ? Math.max(0, diversity.getMaxPerFile()) : 0;
@@ -244,7 +311,17 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
     double weight(Document document) {
       double fileWeight = computeWeight(fileCounts, extractFileKey(document), maxPerFile);
       double symbolWeight = computeWeight(symbolCounts, extractSymbolKey(document), maxPerSymbol);
-      return fileWeight * symbolWeight;
+      double kindWeight = computeWeight(symbolKindCounts, extractSymbolKind(document), normalizedLimit());
+      double visibilityWeight =
+          computeWeight(visibilityCounts, extractVisibility(document), normalizedLimit());
+      double docstringWeight =
+          computeWeight(docstringCounts, extractDocstringBucket(document), normalizedLimit());
+      double testWeight = computeWeight(testCounts, extractTestBucket(document), normalizedLimit());
+      return fileWeight * symbolWeight * kindWeight * visibilityWeight * docstringWeight * testWeight;
+    }
+
+    private int normalizedLimit() {
+      return Math.max(1, maxPerSymbol);
     }
 
     private double computeWeight(
@@ -285,6 +362,36 @@ public class CodeAwareDocumentPostProcessor implements DocumentPostProcessor {
         return null;
       }
       return symbol.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String extractSymbolKind(Document document) {
+      Map<String, Object> metadata = document.getMetadata();
+      if (metadata == null) {
+        return null;
+      }
+      return Optional.ofNullable((String) metadata.get("symbol_kind"))
+          .map(value -> value.trim().toLowerCase(Locale.ROOT))
+          .filter(StringUtils::hasText)
+          .orElse(null);
+    }
+
+    private String extractVisibility(Document document) {
+      Map<String, Object> metadata = document.getMetadata();
+      if (metadata == null) {
+        return null;
+      }
+      return Optional.ofNullable((String) metadata.get("symbol_visibility"))
+          .map(value -> value.trim().toLowerCase(Locale.ROOT))
+          .filter(StringUtils::hasText)
+          .orElse(null);
+    }
+
+    private String extractDocstringBucket(Document document) {
+      return hasDocstring(document) ? "docstring:present" : "docstring:absent";
+    }
+
+    private String extractTestBucket(Document document) {
+      return isTestDocument(document) ? "tests" : "prod";
     }
   }
 }

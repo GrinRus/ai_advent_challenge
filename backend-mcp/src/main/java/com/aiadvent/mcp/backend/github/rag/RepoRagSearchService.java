@@ -61,6 +61,7 @@ public class RepoRagSearchService {
               .formatted(command.repoOwner(), command.repoName()));
     }
     String namespace = state.getNamespace();
+    boolean namespaceAstReady = isNamespaceAstReady(state);
     List<String> serviceWarnings = new ArrayList<>();
 
     RetrievalAttemptResult primaryAttempt =
@@ -70,7 +71,9 @@ public class RepoRagSearchService {
             namespace,
             command.history(),
             command.previousAssistantReply(),
-            false);
+            false,
+            namespaceAstReady,
+            serviceWarnings);
 
     RetrievalAttemptResult finalAttempt = primaryAttempt;
     boolean lowThresholdApplied = false;
@@ -96,7 +99,9 @@ public class RepoRagSearchService {
               namespace,
               command.history(),
               command.previousAssistantReply(),
-              overviewRetry);
+              overviewRetry,
+              namespaceAstReady,
+              serviceWarnings);
       if (overviewRetry) {
         overviewSeedApplied = true;
         serviceWarnings.add(
@@ -169,7 +174,8 @@ public class RepoRagSearchService {
 
     String locale = defaultLocale();
     RepoRagPostProcessingRequest postProcessingRequest =
-        buildPostProcessingRequest(locale, plan, resolveMaxContextTokens(null));
+        buildPostProcessingRequest(
+            locale, plan, resolveMaxContextTokens(null), null, false, null);
     RepoRagSearchReranker.PostProcessingResult postProcessingResult =
         reranker.process(finalQuery, documents, postProcessingRequest);
 
@@ -210,7 +216,9 @@ public class RepoRagSearchService {
       String namespace,
       List<RepoRagSearchConversationTurn> history,
       String previousAssistantReply,
-      boolean preferOverviewDocs) {
+      boolean preferOverviewDocs,
+      boolean namespaceAstReady,
+      List<String> serviceWarnings) {
     Query query =
         retrievalPipeline.buildQuery(
             rawQuery,
@@ -242,7 +250,13 @@ public class RepoRagSearchService {
 
     String locale = defaultLocale();
     RepoRagPostProcessingRequest postProcessingRequest =
-        buildPostProcessingRequest(locale, plan, resolveMaxContextTokens(null));
+        buildPostProcessingRequest(
+            locale,
+            plan,
+            resolveMaxContextTokens(null),
+            namespace,
+            namespaceAstReady,
+            serviceWarnings);
     RepoRagSearchReranker.PostProcessingResult postProcessingResult =
         reranker.process(finalQuery, documents, postProcessingRequest);
 
@@ -579,11 +593,20 @@ public class RepoRagSearchService {
   }
 
   private RepoRagPostProcessingRequest buildPostProcessingRequest(
-      String locale, RagParameterGuard.ResolvedSearchPlan plan, int maxContextTokens) {
+      String locale,
+      RagParameterGuard.ResolvedSearchPlan plan,
+      int maxContextTokens,
+      String namespace,
+      boolean namespaceAstReady,
+      List<String> warnings) {
     RepoRagPostProcessingRequest.NeighborStrategy neighborStrategy =
-        resolveNeighborStrategy(plan.neighbor().strategy());
+        adjustNeighborStrategy(
+            resolveNeighborStrategy(plan.neighbor().strategy()),
+            namespaceAstReady,
+            namespace,
+            warnings);
     int neighborRadius = plan.neighbor().radius();
-    int neighborLimit = plan.neighbor().limit();
+    int neighborLimit = resolveNeighborLimit(plan.neighbor().limit(), neighborStrategy);
     boolean neighborEnabled = resolveNeighborEnabled(neighborStrategy);
     return new RepoRagPostProcessingRequest(
         maxContextTokens,
@@ -597,7 +620,56 @@ public class RepoRagSearchService {
         neighborEnabled,
         neighborRadius,
         neighborLimit,
-        neighborStrategy);
+        neighborStrategy,
+        namespace,
+        namespaceAstReady);
+  }
+
+  private RepoRagPostProcessingRequest.NeighborStrategy adjustNeighborStrategy(
+      RepoRagPostProcessingRequest.NeighborStrategy requested,
+      boolean namespaceAstReady,
+      String namespace,
+      List<String> warnings) {
+    GitHubRagProperties.Neighbor neighbor = properties.getPostProcessing().getNeighbor();
+    if (requested == RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH) {
+      if (namespaceAstReady) {
+        return requested;
+      }
+      appendCallGraphWarning(warnings, namespace);
+      return RepoRagPostProcessingRequest.NeighborStrategy.PARENT_SYMBOL;
+    }
+    if (!namespaceAstReady) {
+      return requested;
+    }
+    if (!neighbor.isAutoCallGraphEnabled()
+        || requested == RepoRagPostProcessingRequest.NeighborStrategy.OFF) {
+      return requested;
+    }
+    return RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH;
+  }
+
+  private int resolveNeighborLimit(
+      int requestedLimit, RepoRagPostProcessingRequest.NeighborStrategy strategy) {
+    int limit = requestedLimit;
+    if (strategy == RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH) {
+      int callGraphLimit = properties.getPostProcessing().getNeighbor().getCallGraphLimit();
+      if (callGraphLimit > 0) {
+        limit = limit > 0 ? Math.min(limit, callGraphLimit) : callGraphLimit;
+      }
+    }
+    return Math.max(0, limit);
+  }
+
+  private void appendCallGraphWarning(List<String> warnings, String namespace) {
+    if (warnings == null) {
+      return;
+    }
+    String normalized =
+        "neighbor.call-graph-disabled: namespace %s lacks AST metadata".formatted(
+            StringUtils.hasText(namespace) ? namespace : "unknown");
+    if (!warnings.contains(normalized)) {
+      warnings.add(normalized);
+    }
   }
 
   private RepoRagPostProcessingRequest.NeighborStrategy resolveNeighborStrategy(String candidate) {
@@ -619,6 +691,14 @@ public class RepoRagSearchService {
       return false;
     }
     return strategy != RepoRagPostProcessingRequest.NeighborStrategy.OFF;
+  }
+
+  private boolean isNamespaceAstReady(RepoRagNamespaceStateEntity state) {
+    if (state == null) {
+      return false;
+    }
+    return state.getAstSchemaVersion() >= RepoRagIndexService.AST_VERSION
+        && state.getAstReadyAt() != null;
   }
 
   private RerankStrategy resolveRerankStrategy(String strategy) {

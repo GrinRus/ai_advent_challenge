@@ -1,8 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag.postprocessing;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 import com.aiadvent.mcp.backend.github.rag.RepoRagSymbolService;
 import com.aiadvent.mcp.backend.github.rag.RepoRagSymbolService.SymbolNeighbor;
@@ -48,7 +47,8 @@ class NeighborChunkDocumentPostProcessorTest {
             symbolService,
             RepoRagPostProcessingRequest.NeighborStrategy.LINEAR,
             1,
-            2);
+            2,
+            true);
 
     List<Document> expanded = processor.process(null, List.of(anchor));
 
@@ -74,7 +74,8 @@ class NeighborChunkDocumentPostProcessorTest {
             symbolService,
             RepoRagPostProcessingRequest.NeighborStrategy.LINEAR,
             1,
-            2);
+            2,
+            true);
 
     List<Document> expanded = processor.process(null, List.of(anchor));
     assertThat(expanded).containsExactly(anchor);
@@ -101,8 +102,7 @@ class NeighborChunkDocumentPostProcessorTest {
                     "CALLS",
                     "com.demo.Service#doWork",
                     "com.demo.Helper#doWork")));
-    when(documentRepository.findByNamespaceAndFilePathAndChunkIndexIn(
-            "repo:demo", "src/Service.java", List.of(2)))
+    when(documentRepository.findByNamespaceAndChunkHashIn("repo:demo", List.of("hash-6")))
         .thenReturn(List.of(referenced));
 
     NeighborChunkDocumentPostProcessor processor =
@@ -112,11 +112,44 @@ class NeighborChunkDocumentPostProcessorTest {
             symbolService,
             RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH,
             0,
-            2);
+            2,
+            true);
 
     List<Document> expanded = processor.process(null, List.of(anchor));
     assertThat(expanded).hasSize(2);
     assertThat(expanded.get(1).getMetadata().get("neighborOfSpanHash")).isEqualTo("span-5");
+    assertThat(expanded.get(1).getMetadata().get("neighbor_relation")).isEqualTo("CALLS");
+    assertThat(expanded.get(1).getMetadata().get("neighbor_symbol"))
+        .isEqualTo("com.demo.Service#doWork");
+    assertThat(expanded.get(1).getMetadata().get("neighbor_referenced_symbol"))
+        .isEqualTo("com.demo.Helper#doWork");
+  }
+
+  @Test
+  void callGraphNeighborsDisabledWhenAstNotReady() {
+    Document anchor =
+        buildDocumentWithExtra(
+            "repo:demo",
+            "src/App.java",
+            5,
+            "hash-5",
+            "span-5",
+            0.8,
+            Map.of("symbol_fqn", "class Demo"));
+
+    NeighborChunkDocumentPostProcessor processor =
+        new NeighborChunkDocumentPostProcessor(
+            documentRepository,
+            documentMapper,
+            symbolService,
+            RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH,
+            0,
+            2,
+            false);
+
+    List<Document> expanded = processor.process(null, List.of(anchor));
+    assertThat(expanded).containsExactly(anchor);
+    verifyNoInteractions(symbolService);
   }
 
   private Document buildDocument(

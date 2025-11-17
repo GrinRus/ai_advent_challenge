@@ -52,6 +52,27 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
 4. **AST readiness:** `repo.rag_index_status` возвращает поля `astReady`, `astSchemaVersion`, `astReadyAt`. Пока `astReady=false`, MCP автоматически переключает профили на линейных/parent соседей и добавляет в `warnings[]` запись `neighbor.call-graph-disabled`. Если нужно задействовать `neighborStrategy=CALL_GRAPH`, выполните `github.repository_fetch`, дождитесь `ready=true` и `astReady=true`. Для диагностик проверяйте, что `astSchemaVersion>=1` и время `astReadyAt` свежее последнего fetch.
 > После применения миграций `github-rag-0005` (таблица `repo_rag_symbol_graph`) существующие namespace переходят на новый формат только после следующего `github.repository_fetch` и полного индексирования. Фонового backfill-а нет — обязательно повторите fetch для критичных репозиториев.
 
+#### Апгрейд AST-шейпинга
+- **Нет backfill-а.** Любая миграция AST/metadata применяется лишь на следующем полном `github.repository_fetch`. Если репозиторий важен для операторов — запланируйте повторный fetch сразу после выката backend-а.
+- **Порядок действий:** (1) `github.repository_fetch` → дождитесь READY; (2) перепроверьте `repo.rag_index_status` — значения `astReady=true`, `astSchemaVersion>=1`, `astReadyAt` свежее времени fetch; (3) только после этого включайте профили с `neighborStrategy=CALL_GRAPH` либо операторские сценарии, которые зависят от `symbol_fqn/docstring/calls_*`.
+- **Автовключение call graph.** Параметр `GITHUB_RAG_POST_NEIGHBOR_AUTO_CALL_GRAPH_ENABLED` (см. `github.rag.post-processing.neighbor.auto-call-graph-enabled`) позволяет backend-у автоматически переключать LINEAR/PARENT стратегии на `CALL_GRAPH`, когда namespace отмечен как AST-ready. Лимит для соседей задаётся `GITHUB_RAG_POST_NEIGHBOR_CALL_GRAPH_LIMIT`. На namespace без AST фича сама отключится и в `warnings[]` появится `neighbor.call-graph-disabled`.
+- **Диагностика:** если `astReady=false`, но fetch уже завершён, проверьте логи `RepoRagIndexService` — там фиксируются ошибки загрузки Tree-sitter, пропуски файлов или превышение лимитов. Для принудительного переиндекса стоит повторить fetch (даже если `ready=true`) — scheduler пересоздаст индекс и call graph.
+- **Чтение метаданных.** В ответе `repo.rag_search` появятся новые ключи `symbol_fqn`, `symbol_kind`, `symbol_visibility`, `symbol_signature`, `docstring`, `is_test`, `imports[]`, `calls_out[]`, `calls_in[]`, `ast_available`. Соседние чанки получают `neighborOfSpanHash`, `neighbor_relation`, `neighbor_symbol`. Ориентируйтесь на эти поля, чтобы объяснять пользователю, почему тот или иной фрагмент попал в контекст.
+- **Пример `matches[].metadata`:**
+  ```json
+  {
+    "file_path": "src/main/java/com/example/DemoService.java",
+    "chunk_hash": "f24c3b9f...",
+    "symbol_fqn": "src.main.java.com.example.DemoService::method process",
+    "docstring": "Process incoming events",
+    "is_test": false,
+    "calls_out": ["helper"],
+    "neighborOfSpanHash": "f82e7d8a",
+    "neighbor_relation": "CALLS"
+  }
+  ```
+  Если набор ключей пустой — значит namespace ещё не переиндексирован в AST-режиме.
+
 5. **Расширенный поиск (`repo.rag_search` v4):**
    - Вход: `rawQuery`, `topK`, `topKPerQuery`, `minScore`, `minScoreByLanguage`, `history[]`, `previousAssistantReply`, `allowEmptyContext`, `useCompression`, `translateTo`, `multiQuery.enabled/queries/maxQueries`, `maxContextTokens`, `generationLocale`, `instructionsTemplate`, `filters.languages[]/pathGlobs[]`, `filterExpression`.
    - Настройки пост-обработки:

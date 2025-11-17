@@ -37,6 +37,7 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
   private final RepoRagPostProcessingRequest.NeighborStrategy strategy;
   private final int neighborRadius;
   private final int neighborLimit;
+  private final boolean callGraphAllowed;
 
   public NeighborChunkDocumentPostProcessor(
       RepoRagDocumentRepository documentRepository,
@@ -44,7 +45,8 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
       RepoRagSymbolService symbolService,
       RepoRagPostProcessingRequest.NeighborStrategy strategy,
       int neighborRadius,
-      int neighborLimit) {
+      int neighborLimit,
+      boolean callGraphAllowed) {
     this.documentRepository = documentRepository;
     this.documentMapper = documentMapper;
     this.symbolService = symbolService;
@@ -52,6 +54,7 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
         strategy != null ? strategy : RepoRagPostProcessingRequest.NeighborStrategy.OFF;
     this.neighborRadius = Math.max(0, neighborRadius);
     this.neighborLimit = Math.max(0, neighborLimit);
+    this.callGraphAllowed = callGraphAllowed;
   }
 
   @Override
@@ -94,7 +97,8 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
     return switch (strategy) {
       case LINEAR -> expandLinear(anchor, seenHashes, remainingBudget);
       case PARENT_SYMBOL -> expandParentSymbol(anchor, seenHashes, remainingBudget);
-      case CALL_GRAPH -> expandCallGraph(anchor, seenHashes, remainingBudget);
+      case CALL_GRAPH ->
+          callGraphAllowed ? expandCallGraph(anchor, seenHashes, remainingBudget) : List.of();
       case OFF -> List.of();
     };
   }
@@ -183,6 +187,12 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
     if (!StringUtils.hasText(namespace) || !StringUtils.hasText(symbol)) {
       return List.of();
     }
+    if (!callGraphAllowed) {
+      log.debug(
+          "Call graph neighbors disabled for namespace={} (strategy requested but AST not ready)",
+          namespace);
+      return List.of();
+    }
     List<SymbolNeighbor> references =
         symbolService.findCallGraphNeighbors(namespace, symbol);
     if (CollectionUtils.isEmpty(references)) {
@@ -192,30 +202,72 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
           symbol);
       return List.of();
     }
-    Map<String, List<Integer>> byFile =
-        references.stream()
-            .collect(Collectors.groupingBy(
-                SymbolNeighbor::filePath,
-                Collectors.mapping(SymbolNeighbor::chunkIndex, Collectors.toList())));
-    List<Document> collected = new ArrayList<>();
-    int remaining = remainingBudget;
-    for (Map.Entry<String, List<Integer>> entry : byFile.entrySet()) {
-      List<Document> neighbors =
-          loadChunkIndexNeighbors(
-              namespace,
-              entry.getKey(),
-              entry.getValue(),
-              seenHashes,
-              remaining,
-              extractSpanHash(anchor),
-              anchor.getScore());
-      collected.addAll(neighbors);
-      remaining -= neighbors.size();
-      if (remaining <= 0) {
+    return loadChunkHashNeighbors(
+        namespace,
+        references,
+        seenHashes,
+        remainingBudget,
+        extractSpanHash(anchor),
+        anchor.getScore());
+  }
+
+  private List<Document> loadChunkHashNeighbors(
+      String namespace,
+      List<SymbolNeighbor> orderedNeighbors,
+      Set<String> seenHashes,
+      int remainingBudget,
+      String anchorSpanHash,
+      Double anchorScore) {
+    if (CollectionUtils.isEmpty(orderedNeighbors)) {
+      return List.of();
+    }
+    List<SymbolNeighbor> filtered =
+        orderedNeighbors.stream()
+            .filter(neighbor -> StringUtils.hasText(neighbor.chunkHash()))
+            .toList();
+    if (filtered.isEmpty()) {
+      return List.of();
+    }
+    List<String> orderedHashes =
+        filtered.stream().map(SymbolNeighbor::chunkHash).distinct().toList();
+    List<RepoRagDocumentEntity> entities =
+        documentRepository.findByNamespaceAndChunkHashIn(namespace, orderedHashes);
+    if (CollectionUtils.isEmpty(entities)) {
+      log.debug(
+          "No call-graph neighbors fetched for namespace={}, hashes={}", namespace, orderedHashes);
+      return List.of();
+    }
+    Map<String, RepoRagDocumentEntity> byHash =
+        entities.stream()
+            .collect(Collectors.toMap(RepoRagDocumentEntity::getChunkHash, entity -> entity));
+    Map<String, SymbolNeighbor> neighborByHash =
+        filtered.stream()
+            .collect(Collectors.toMap(SymbolNeighbor::chunkHash, n -> n, (a, b) -> a));
+    List<Document> ordered = new ArrayList<>();
+    for (String hash : orderedHashes) {
+      RepoRagDocumentEntity entity = byHash.get(hash);
+      if (entity == null) {
+        continue;
+      }
+      Document mapped = documentMapper.toDocument(entity);
+      Document enriched =
+          enrichNeighborDocument(
+              mapped,
+              anchorSpanHash,
+              anchorScore,
+              neighborByHash.get(hash).relation(),
+              neighborByHash.get(hash).symbolFqn(),
+              neighborByHash.get(hash).referencedSymbolFqn());
+      String chunkHash = extractChunkHash(enriched);
+      if (!StringUtils.hasText(chunkHash) || seenHashes.contains(chunkHash)) {
+        continue;
+      }
+      ordered.add(enriched);
+      if (ordered.size() >= remainingBudget) {
         break;
       }
     }
-    return collected;
+    return ordered;
   }
 
   private List<Document> loadChunkIndexNeighbors(
@@ -254,7 +306,7 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
       }
       Document mapped = documentMapper.toDocument(entity);
       Document enriched =
-          enrichNeighborDocument(mapped, anchorSpanHash, anchorScore);
+          enrichNeighborDocument(mapped, anchorSpanHash, anchorScore, null, null, null);
       String chunkHash = extractChunkHash(enriched);
       if (!StringUtils.hasText(chunkHash) || seenHashes.contains(chunkHash)) {
         continue;
@@ -280,7 +332,8 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
       if (!StringUtils.hasText(chunkHash) || seenHashes.contains(chunkHash)) {
         continue;
       }
-      Document enriched = enrichNeighborDocument(mapped, anchorSpanHash, anchorScore);
+      Document enriched =
+          enrichNeighborDocument(mapped, anchorSpanHash, anchorScore, null, null, null);
       result.add(enriched);
       if (result.size() >= remainingBudget) {
         break;
@@ -290,11 +343,25 @@ public class NeighborChunkDocumentPostProcessor implements DocumentPostProcessor
   }
 
   private Document enrichNeighborDocument(
-      Document neighbor, String anchorSpanHash, Double anchorScore) {
+      Document neighbor,
+      String anchorSpanHash,
+      Double anchorScore,
+      String relation,
+      String neighborSymbol,
+      String referencedSymbol) {
     Map<String, Object> metadata =
         neighbor.getMetadata() != null ? new LinkedHashMap<>(neighbor.getMetadata()) : new LinkedHashMap<>();
     if (StringUtils.hasText(anchorSpanHash)) {
       metadata.put("neighborOfSpanHash", anchorSpanHash);
+    }
+    if (StringUtils.hasText(relation)) {
+      metadata.put("neighbor_relation", relation);
+    }
+    if (StringUtils.hasText(neighborSymbol)) {
+      metadata.put("neighbor_symbol", neighborSymbol);
+    }
+    if (StringUtils.hasText(referencedSymbol)) {
+      metadata.put("neighbor_referenced_symbol", referencedSymbol);
     }
     return Document.builder()
         .id(neighbor.getId())

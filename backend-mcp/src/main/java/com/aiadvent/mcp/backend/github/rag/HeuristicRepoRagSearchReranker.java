@@ -87,7 +87,8 @@ public class HeuristicRepoRagSearchReranker implements RepoRagSearchReranker {
                   symbolService,
                   request.neighborStrategy(),
                   request.neighborRadius(),
-                  request.neighborLimit())));
+                  request.neighborLimit(),
+                  request.namespaceAstReady())));
     }
     if (request.maxContextTokens() > 0) {
       processors.add(

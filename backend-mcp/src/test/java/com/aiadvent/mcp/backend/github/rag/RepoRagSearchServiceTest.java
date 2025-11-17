@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
+import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 
 class RepoRagSearchServiceTest {
 
@@ -154,6 +156,47 @@ class RepoRagSearchServiceTest {
     assertThat(response.warnings())
         .anyMatch(message -> message.contains("идентификатор"));
     verify(pipeline, times(2)).execute(any());
+  }
+
+  @Test
+  void autoEnablesCallGraphWhenNamespaceAstReady() {
+    properties.getPostProcessing().getNeighbor().setAutoCallGraphEnabled(true);
+    properties.getPostProcessing().getNeighbor().setCallGraphLimit(3);
+
+    RepoRagNamespaceStateEntity state = readyState();
+    state.setAstSchemaVersion(RepoRagIndexService.AST_VERSION);
+    state.setAstReadyAt(Instant.now());
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(state));
+
+    Query query = Query.builder().text("raw").history(List.of()).build();
+    Document doc =
+        Document.builder().id("1").text("snippet").metadata(Map.of("language", "java")).score(0.8).build();
+    when(pipeline.execute(any()))
+        .thenReturn(
+            new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult postResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(postResult);
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw",
+            plan("balanced"),
+            List.of(),
+            null,
+            RepoRagResponseChannel.BOTH);
+
+    service.search(command);
+
+    ArgumentCaptor<RepoRagPostProcessingRequest> requestCaptor =
+        ArgumentCaptor.forClass(RepoRagPostProcessingRequest.class);
+    verify(reranker).process(any(), any(), requestCaptor.capture());
+    RepoRagPostProcessingRequest request = requestCaptor.getValue();
+    assertThat(request.neighborStrategy()).isEqualTo(RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH);
+    assertThat(request.neighborLimit()).isEqualTo(3);
   }
 
   private RepoRagNamespaceStateEntity readyState() {

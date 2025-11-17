@@ -6,6 +6,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -34,16 +36,18 @@ public class RepoRagSymbolService {
   private final Counter definitionRequests;
   private final Counter throttledRequests;
 
-  public RepoRagSymbolService(RepoRagSymbolGraphRepository repository, MeterRegistry meterRegistry) {
+  public RepoRagSymbolService(
+      RepoRagSymbolGraphRepository repository, @Nullable MeterRegistry meterRegistry) {
     this.repository = repository;
     this.incomingCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(5)).build();
     this.outgoingCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(5)).build();
     this.definitionCache = Caffeine.newBuilder().maximumSize(2000).expireAfterWrite(Duration.ofMinutes(10)).build();
     this.throttle = new Semaphore(8);
-    this.incomingRequests = meterRegistry.counter("github_rag_symbol_requests_total", "type", "incoming");
-    this.outgoingRequests = meterRegistry.counter("github_rag_symbol_requests_total", "type", "outgoing");
-    this.definitionRequests = meterRegistry.counter("github_rag_symbol_requests_total", "type", "definition");
-    this.throttledRequests = meterRegistry.counter("github_rag_symbol_requests_total", "type", "throttled");
+    MeterRegistry registry = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
+    this.incomingRequests = registry.counter("github_rag_symbol_requests_total", "type", "incoming");
+    this.outgoingRequests = registry.counter("github_rag_symbol_requests_total", "type", "outgoing");
+    this.definitionRequests = registry.counter("github_rag_symbol_requests_total", "type", "definition");
+    this.throttledRequests = registry.counter("github_rag_symbol_requests_total", "type", "throttled");
   }
 
   public List<SymbolNeighbor> findCallGraphNeighbors(String namespace, String symbolFqn) {
