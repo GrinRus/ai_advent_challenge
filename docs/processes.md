@@ -102,6 +102,30 @@
   - Метрики Micrometer: `chat.usage.native.count`/`chat.usage.fallback.count` (теги `provider`, `model`), `chat.usage.fallback.delta.tokens` (тег `segment = total|prompt|completion`) и `chat.token.cache.requests`/`chat.token.cache.latency` (тег `result = hit|miss|error|write|write_error`). Настройте алерты на рост доли `result=error` и абсолютное значение `fallback.delta`.
 - Для флоу используйте структурированные JSON-логи и OTel спаны на события `flow.started`, `step.started`, `step.completed`, `flow.paused/resumed/stopped`. Отслеживайте дашборды по метрикам `flow_sessions_active`, `flow_step_duration`, `flow_retry_count`, `flow_cost_usd` и по доле `usageSource=fallback`. При сбоях фиксируйте `flow_session_id`, `step_id` и `job_uid` для восстановления.
 
+## RBAC / предупреждение операторов
+
+Промоушен операторов до роли `admin` выполняется change-set`ом `0218-rbac-admin-upgrade`. Перед выкатыванием:
+
+1. Соберите список текущих операторов:
+   ```sql
+   SELECT pr.profile_id, up.namespace, up.reference
+   FROM profile_role pr
+   JOIN user_profile up ON up.id = pr.profile_id
+   JOIN role r ON r.id = pr.role_id AND r.code = 'operator';
+   ```
+   Список используем для персональных уведомлений в Telegram/почте.
+2. Отправьте предупреждение минимум за 24 часа с описанием грядущего расширения прав и ссылкой на runbook отката.
+3. Перед релизом убедитесь, что change-set прошёл на стейджинге и нет неожиданных записей (выполните `SELECT * FROM profile_role WHERE role_id = (SELECT id FROM role WHERE code = 'admin');`).
+4. После деплоя проверьте, что миграция выдала роль всем операторам. При необходимости отката удаляем выдачи:
+   ```sql
+   DELETE FROM profile_role
+   WHERE role_id = (SELECT id FROM role WHERE code = 'admin')
+     AND profile_id IN (SELECT pr.profile_id FROM profile_role pr JOIN role r ON r.id = pr.role_id AND r.code = 'operator');
+   ```
+   Затем пересоздайте уведомление для затронутых пользователей.
+
+Алгоритм фиксируем в релизных заметках, чтобы поддержка знала: вместе с флагом `app.features.profiles` нужно проверять двойную выдачу ролей и журнал `profile_updated`.
+
 ## Управление задачами
 - Волны (Wave) фиксируются в `docs/backlog.md`.
 - По завершении задачи отмечайте статус и указывайте дату/версию, если критично.

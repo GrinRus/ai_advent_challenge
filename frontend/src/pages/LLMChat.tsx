@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import { NavLink } from 'react-router-dom';
+import ActiveProfileBanner from '../components/ActiveProfileBanner';
 import {
   API_BASE_URL,
   CHAT_STREAM_URL,
@@ -22,6 +23,7 @@ import {
   type StructuredSyncUsageStats,
   type UsageCostDetails,
 } from '../lib/apiClient';
+import { buildActiveProfileHeaders } from '../lib/profileStore';
 import {
   SAMPLING_RANGE,
   buildChatPayload,
@@ -2296,10 +2298,10 @@ export default function LLMChat() {
     try {
       const response = await fetch(CHAT_STREAM_URL, {
         method: 'POST',
-        headers: {
+        headers: buildActiveProfileHeaders({
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
-        },
+        }),
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -2357,6 +2359,7 @@ export default function LLMChat() {
 
   return (
     <div className="llm-chat">
+      <ActiveProfileBanner />
       <div className="llm-chat-panel">
         <div className="llm-chat-header">
           <div className="llm-chat-header-main">

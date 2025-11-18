@@ -3575,3 +3575,5 @@ databaseChangeLog:
 
   - include:
       file: db/changelog/0217-user-profiles.yaml
+  - include:
+      file: db/changelog/0218-rbac-admin-upgrade.yaml

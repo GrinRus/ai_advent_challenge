@@ -43,6 +43,12 @@ import type {
   FlowInteractionResponseSummary,
 } from './types/flowInteraction';
 import type { JsonValue } from './types/json';
+import { buildActiveProfileHeaders } from './profileStore';
+import {
+  ProfileDocumentSchema,
+  type ProfileUpdatePayload,
+  type UserProfileDocument,
+} from './profileTypes';
 
 export type {
   FlowEvent,
@@ -81,6 +87,7 @@ export type {
   FlowSuggestedActions,
 } from './types/flowInteraction';
 export type { JsonValue } from './types/json';
+export type { UserProfileDocument, ProfileUpdatePayload } from './profileTypes';
 
 export type McpToolSummary = {
   code: string;
@@ -120,40 +127,6 @@ export const CHAT_STREAM_URL = `${API_BASE_URL}/llm/chat/stream`;
 export const CHAT_SYNC_URL = `${API_BASE_URL}/llm/chat/sync`;
 export const CHAT_STRUCTURED_SYNC_URL = `${API_BASE_URL}/llm/chat/sync/structured`;
 
-const JsonLikeSchema = z.any();
-
-export const ProfileDocumentSchema = z.object({
-  profileId: z.string(),
-  namespace: z.string(),
-  reference: z.string(),
-  displayName: z.string(),
-  locale: z.string(),
-  timezone: z.string(),
-  communicationMode: z.string(),
-  habits: z.array(z.string()),
-  antiPatterns: z.array(z.string()),
-  workHours: JsonLikeSchema.optional(),
-  metadata: JsonLikeSchema.optional(),
-  identities: z.array(
-    z.object({
-      provider: z.string(),
-      externalId: z.string(),
-      attributes: JsonLikeSchema.optional(),
-      scopes: z.array(z.string()).optional(),
-    }),
-  ),
-  channels: z.array(
-    z.object({
-      channel: z.string(),
-      settings: JsonLikeSchema.optional(),
-    }),
-  ),
-  roles: z.array(z.string()),
-  updatedAt: z.string(),
-  version: z.number(),
-});
-
-export type UserProfileDocument = z.infer<typeof ProfileDocumentSchema>;
 
 export type HelpResponse = {
   message: string;
@@ -269,18 +242,6 @@ export async function fetchProfileDocument(
   const etag = response.headers.get('ETag') ?? undefined;
   return { profile, etag };
 }
-
-export type ProfileUpdatePayload = {
-  displayName: string;
-  locale: string;
-  timezone: string;
-  communicationMode: string;
-  habits: string[];
-  antiPatterns: string[];
-  workHours?: unknown;
-  metadata?: unknown;
-  channelOverrides?: Array<{ channel: string; settings?: unknown }>;
-};
 
 export async function updateProfileDocument(
   namespace: string,
@@ -730,9 +691,9 @@ export async function fetchHelp(): Promise<HelpResponse> {
 
 export async function fetchChatProviders(): Promise<ChatProvidersResponse> {
   const response = await fetch(`${API_BASE_URL}/llm/providers`, {
-    headers: {
+    headers: buildActiveProfileHeaders({
       Accept: 'application/json',
-    },
+    }),
   });
 
   if (!response.ok) {
@@ -1011,10 +972,10 @@ export async function requestSync(
 ): Promise<SyncCallResult> {
   const response = await fetch(CHAT_SYNC_URL, {
     method: 'POST',
-    headers: {
+    headers: buildActiveProfileHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    },
+    }),
     body: JSON.stringify(payload),
   });
 
@@ -1061,10 +1022,10 @@ export async function requestStructuredSync(
 ): Promise<StructuredSyncCallResult> {
   const response = await fetch(CHAT_STRUCTURED_SYNC_URL, {
     method: 'POST',
-    headers: {
+    headers: buildActiveProfileHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    },
+    }),
     body: JSON.stringify(payload),
   });
 
@@ -1121,10 +1082,10 @@ export async function startFlow(
     `${API_BASE_URL}/flows/${flowDefinitionId}/start`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
-      },
+      }),
       body: JSON.stringify(normalizedPayload),
     },
   );
@@ -1146,7 +1107,7 @@ export async function fetchFlowSnapshot(
   sessionId: string,
 ): Promise<FlowStatusResponse> {
   const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/snapshot`, {
-    headers: { Accept: 'application/json' },
+    headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
   });
 
   if (!response.ok) {
@@ -1185,7 +1146,9 @@ export async function pollFlowStatus(
     query.toString() ? `?${query.toString()}` : ''
   }`;
 
-  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  const response = await fetch(url, {
+    headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
+  });
 
   if (response.status === 204) {
     return null;
@@ -1208,7 +1171,7 @@ export async function fetchFlowInteractions(
   sessionId: string,
 ): Promise<FlowInteractionListResponse> {
   const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/interactions`, {
-    headers: { Accept: 'application/json' },
+    headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
   });
 
   return parseJsonResponse(
@@ -1227,11 +1190,11 @@ export async function respondToFlowInteraction(
     `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/respond`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Chat-Session-Id': payload.chatSessionId,
-      },
+      }),
       body: JSON.stringify(payload),
     },
   );
@@ -1252,11 +1215,11 @@ export async function skipFlowInteraction(
     `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/skip`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Chat-Session-Id': payload.chatSessionId,
-      },
+      }),
       body: JSON.stringify(payload),
     },
   );
@@ -1278,11 +1241,11 @@ export async function autoResolveFlowInteraction(
     `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/auto`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Chat-Session-Id': chatSessionId,
-      },
+      }),
       body: JSON.stringify(payload),
     },
   );
@@ -1304,11 +1267,11 @@ export async function expireFlowInteraction(
     `${API_BASE_URL}/flows/${sessionId}/interactions/${requestId}/expire`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Chat-Session-Id': chatSessionId,
-      },
+      }),
       body: JSON.stringify(payload),
     },
   );
@@ -1364,10 +1327,10 @@ export async function sendFlowControlCommand(
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/flows/${sessionId}/control`, {
     method: 'POST',
-    headers: {
+    headers: buildActiveProfileHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    },
+    }),
     body: JSON.stringify({
       command,
       stepExecutionId: payload?.stepExecutionId,
@@ -1386,7 +1349,7 @@ export async function sendFlowControlCommand(
 
 export async function fetchFlowDefinitions(): Promise<FlowDefinitionSummary[]> {
   const response = await fetch(`${API_BASE_URL}/flows/definitions`, {
-    headers: { Accept: 'application/json' },
+    headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
   });
   return parseJsonResponse(
     response,
@@ -1401,7 +1364,7 @@ export async function fetchFlowDefinition(
   const response = await fetch(
     `${API_BASE_URL}/flows/definitions/${definitionId}`,
     {
-      headers: { Accept: 'application/json' },
+      headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
     },
   );
   return parseJsonResponse(
@@ -1417,7 +1380,7 @@ export async function fetchFlowDefinitionHistory(
   const response = await fetch(
     `${API_BASE_URL}/flows/definitions/${definitionId}/history`,
     {
-      headers: { Accept: 'application/json' },
+      headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
     },
   );
   return parseJsonResponse(
@@ -1437,10 +1400,10 @@ export async function createFlowDefinition(payload: {
 }): Promise<FlowDefinitionDetails> {
   const response = await fetch(`${API_BASE_URL}/flows/definitions`, {
     method: 'POST',
-    headers: {
+    headers: buildActiveProfileHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    },
+    }),
     body: JSON.stringify(payload),
   });
   return parseJsonResponse(
@@ -1461,10 +1424,10 @@ export async function updateFlowDefinition(
 ): Promise<FlowDefinitionDetails> {
   const response = await fetch(`${API_BASE_URL}/flows/definitions/${definitionId}`, {
     method: 'PUT',
-    headers: {
+    headers: buildActiveProfileHeaders({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-    },
+    }),
     body: JSON.stringify(payload),
   });
   return parseJsonResponse(
@@ -1482,10 +1445,10 @@ export async function publishFlowDefinition(
     `${API_BASE_URL}/flows/definitions/${definitionId}/publish`,
     {
       method: 'POST',
-      headers: {
+      headers: buildActiveProfileHeaders({
         'Content-Type': 'application/json',
         Accept: 'application/json',
-      },
+      }),
       body: JSON.stringify(payload),
     },
   );
@@ -1502,7 +1465,7 @@ export async function fetchFlowLaunchPreview(
   const response = await fetch(
     `${API_BASE_URL}/flows/definitions/${definitionId}/launch-preview`,
     {
-      headers: { Accept: 'application/json' },
+      headers: buildActiveProfileHeaders({ Accept: 'application/json' }),
     },
   );
 
@@ -1517,9 +1480,9 @@ export async function fetchSessionUsage(
   sessionId: string,
 ): Promise<SessionUsageResponse> {
   const response = await fetch(`${API_BASE_URL}/llm/sessions/${sessionId}/usage`, {
-    headers: {
+    headers: buildActiveProfileHeaders({
       Accept: 'application/json',
-    },
+    }),
   });
 
   if (!response.ok) {

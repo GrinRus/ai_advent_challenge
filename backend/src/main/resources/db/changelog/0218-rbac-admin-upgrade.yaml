@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0218-rbac-admin-upgrade
+      author: codex
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              DO $$
+              DECLARE
+                admin_role_id UUID;
+                operator_role_id UUID;
+              BEGIN
+                INSERT INTO role (id, code, display_name, description)
+                VALUES (gen_random_uuid(), 'admin', 'Administrator', 'Полный доступ к административным действиям и настройкам RBAC')
+                ON CONFLICT (code) DO UPDATE
+                  SET display_name = EXCLUDED.display_name,
+                      description = EXCLUDED.description,
+                      updated_at = now();
+
+                INSERT INTO role (id, code, display_name, description)
+                VALUES (gen_random_uuid(), 'operator', 'Operator', 'Доступ к flow/LLM операциям без административных действий')
+                ON CONFLICT (code) DO UPDATE
+                  SET display_name = EXCLUDED.display_name,
+                      description = EXCLUDED.description,
+                      updated_at = now();
+
+                INSERT INTO role (id, code, display_name, description)
+                VALUES (gen_random_uuid(), 'user', 'User', 'Базовый доступ к персонализации и чатам')
+                ON CONFLICT (code) DO UPDATE
+                  SET display_name = EXCLUDED.display_name,
+                      description = EXCLUDED.description,
+                      updated_at = now();
+
+                SELECT id INTO admin_role_id FROM role WHERE code = 'admin';
+                SELECT id INTO operator_role_id FROM role WHERE code = 'operator';
+
+                IF admin_role_id IS NULL OR operator_role_id IS NULL THEN
+                  RAISE NOTICE 'Skipping admin backfill — required roles are missing';
+                  RETURN;
+                END IF;
+
+                INSERT INTO profile_role (profile_id, role_id, granted_at)
+                SELECT profile_id, admin_role_id, now()
+                FROM profile_role
+                WHERE role_id = operator_role_id
+                ON CONFLICT (profile_id, role_id) DO NOTHING;
+              END $$;

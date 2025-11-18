@@ -1,22 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
-import {
-  fetchProfileDocument,
-  type UserProfileDocument,
-  updateProfileDocument,
-} from '../lib/apiClient';
+import { updateProfileDocument } from '../lib/apiClient';
+import { loadActiveProfile } from '../lib/profileActions';
+import { buildProfileKey, useProfileStore } from '../lib/profileStore';
 import './ProfileSettings.css';
 
 const communicationModes = ['TEXT', 'VOICE', 'HYBRID'];
 
 const ProfileSettings = () => {
-  const [namespace, setNamespace] = useState('web');
-  const [reference, setReference] = useState('demo');
-  const [channel, setChannel] = useState('web');
-  const profileKey = useMemo(() => `${namespace}:${reference}`, [namespace, reference]);
-
-  const [profile, setProfile] = useState<UserProfileDocument | null>(null);
-  const [etag, setEtag] = useState<string | undefined>();
+  const namespace = useProfileStore((state) => state.namespace);
+  const reference = useProfileStore((state) => state.reference);
+  const channel = useProfileStore((state) => state.channel);
+  const setNamespace = useProfileStore((state) => state.setNamespace);
+  const setReference = useProfileStore((state) => state.setReference);
+  const setChannel = useProfileStore((state) => state.setChannel);
+  const profile = useProfileStore((state) => state.profile);
+  const etag = useProfileStore((state) => state.etag);
+  const isLoading = useProfileStore((state) => state.isLoading);
+  const applyProfileSnapshot = useProfileStore((state) => state.applyProfileSnapshot);
+  const profileKey = buildProfileKey(namespace, reference);
   const [form, setForm] = useState({
     displayName: '',
     locale: 'en',
@@ -28,20 +30,11 @@ const ProfileSettings = () => {
     metadata: '{\n  "notes": ""\n}',
   });
   const [status, setStatus] = useState<string>('');
-  const [isLoading, setLoading] = useState(false);
 
-  const loadProfile = async () => {
-    setLoading(true);
+  const handleLoadProfile = async () => {
     setStatus('Загрузка профиля…');
     try {
-      const { profile: data, etag: nextEtag } = await fetchProfileDocument(
-        namespace,
-        reference,
-        profileKey,
-        channel,
-      );
-      setProfile(data);
-      setEtag(nextEtag);
+      const data = await loadActiveProfile();
       setForm({
         displayName: data.displayName ?? '',
         locale: data.locale ?? 'en',
@@ -55,8 +48,6 @@ const ProfileSettings = () => {
       setStatus('Профиль загружен');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Не удалось загрузить профиль');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -66,7 +57,6 @@ const ProfileSettings = () => {
       setStatus('Сначала загрузите профиль');
       return;
     }
-    setLoading(true);
     setStatus('Сохранение…');
     try {
       const payload = {
@@ -93,8 +83,7 @@ const ProfileSettings = () => {
         payload,
         { channel, ifMatch: etag },
       );
-      setProfile(updated);
-      setEtag(nextEtag);
+      applyProfileSnapshot(updated, { etag: nextEtag, source: 'profile:manual-update', channel });
       setStatus('Профиль сохранён');
     } catch (error) {
       if (error instanceof SyntaxError) {
@@ -102,8 +91,6 @@ const ProfileSettings = () => {
       } else {
         setStatus(error instanceof Error ? error.message : 'Не удалось сохранить');
       }
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -124,7 +111,7 @@ const ProfileSettings = () => {
             Channel
             <input value={channel} onChange={(e) => setChannel(e.target.value)} />
           </label>
-          <button type="button" onClick={loadProfile} disabled={isLoading}>
+          <button type="button" onClick={handleLoadProfile} disabled={isLoading}>
             Загрузить
           </button>
         </div>
