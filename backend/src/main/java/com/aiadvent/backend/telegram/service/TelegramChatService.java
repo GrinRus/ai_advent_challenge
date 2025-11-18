@@ -15,6 +15,9 @@ import com.aiadvent.backend.chat.service.ChatResearchToolBindingService;
 import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
+import com.aiadvent.backend.profile.service.ProfileContextHolder;
+import com.aiadvent.backend.profile.service.ProfileLookupKey;
+import com.aiadvent.backend.profile.service.UserProfileService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -107,6 +110,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
   private final ChatResearchToolBindingService researchToolBindingService;
   private final TelegramChatStateStore stateStore;
   private final TelegramBotProperties properties;
+  private final UserProfileService userProfileService;
   private final OpenAiAudioTranscriptionModel transcriptionModel;
   private final WebClient telegramFileClient;
   private final ObjectMapper objectMapper;
@@ -123,7 +127,8 @@ public class TelegramChatService implements TelegramUpdateHandler {
       TelegramBotProperties properties,
       ObjectProvider<OpenAiAudioTranscriptionModel> transcriptionModelProvider,
       WebClient.Builder webClientBuilder,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      UserProfileService userProfileService) {
     this.webhookBot = webhookBot;
     this.syncChatService = syncChatService;
     this.chatProviderService = chatProviderService;
@@ -133,6 +138,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
     this.transcriptionModel = transcriptionModelProvider.getIfAvailable();
     this.telegramFileClient = webClientBuilder.build();
     this.objectMapper = objectMapper;
+    this.userProfileService = userProfileService;
   }
 
   @Override
@@ -233,10 +239,15 @@ public class TelegramChatService implements TelegramUpdateHandler {
     activeRequests.put(chatId, pending);
     sendProcessingNotice(chatId, state);
 
+    ProfileLookupKey profileKey =
+        new ProfileLookupKey("telegram", Long.toString(userReference), "telegram");
+    userProfileService.resolveProfile(profileKey);
+
     CompletableFuture<Void> future =
         CompletableFuture.runAsync(
             () -> {
               try {
+                ProfileContextHolder.set(profileKey);
                 SyncChatService.SyncChatResult result = syncChatService.sync(request);
                 if (pending.cancelled.get()) {
                   log.debug("Skipping response for chat {} because request was cancelled", chatId);
@@ -272,6 +283,7 @@ public class TelegramChatService implements TelegramUpdateHandler {
                   sendText(chatId, "Произошла ошибка при обработке запроса. Попробуйте позже.");
                 }
               } finally {
+                ProfileContextHolder.clear();
                 activeRequests.remove(chatId, pending);
               }
             },

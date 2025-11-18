@@ -15,6 +15,7 @@ import com.aiadvent.backend.chat.provider.model.ChatProviderSelection;
 import com.aiadvent.backend.chat.provider.model.ChatRequestOverrides;
 import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.time.Instant;
@@ -46,17 +47,20 @@ public class SyncChatService extends AbstractSyncService {
   private final ChatSummarizationPreflightManager preflightManager;
   private final ChatResearchToolBindingService researchToolBindingService;
   private final BeanOutputConverter<StructuredSyncResponse> structuredOutputConverter;
+  private final ProfilePromptService profilePromptService;
 
   public SyncChatService(
       ChatProviderService chatProviderService,
       ChatService chatService,
       ChatSummarizationPreflightManager preflightManager,
       ChatResearchToolBindingService researchToolBindingService,
-      BeanOutputConverter<StructuredSyncResponse> structuredOutputConverter) {
+      BeanOutputConverter<StructuredSyncResponse> structuredOutputConverter,
+      ProfilePromptService profilePromptService) {
     super(chatProviderService, chatService);
     this.preflightManager = preflightManager;
     this.researchToolBindingService = researchToolBindingService;
     this.structuredOutputConverter = structuredOutputConverter;
+    this.profilePromptService = profilePromptService;
   }
 
   public SyncChatResult sync(ChatSyncRequest request) {
@@ -130,10 +134,13 @@ public class SyncChatService extends AbstractSyncService {
     preflightManager.run(conversation.sessionId(), selection, userPrompt, "sync-chat");
 
     try {
-      var promptSpec = chatProviderService.chatClient(selection.providerId()).prompt();
-      if (researchContext.hasSystemPrompt()) {
-        promptSpec = promptSpec.system(researchContext.systemPrompt());
-      }
+    var promptSpec = chatProviderService.chatClient(selection.providerId()).prompt();
+    String personaSnippet = profilePromptService.personaSnippet().orElse(null);
+    String mergedSystemPrompt =
+        mergeSystemPrompts(personaSnippet, researchContext.hasSystemPrompt() ? researchContext.systemPrompt() : null);
+    if (StringUtils.hasText(mergedSystemPrompt)) {
+      promptSpec = promptSpec.system(mergedSystemPrompt);
+    }
 
       promptSpec =
           promptSpec
@@ -261,6 +268,16 @@ public class SyncChatService extends AbstractSyncService {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Message must not be empty");
     }
     return trimmed;
+  }
+
+  private String mergeSystemPrompts(String persona, String existing) {
+    if (!StringUtils.hasText(persona)) {
+      return existing;
+    }
+    if (!StringUtils.hasText(existing)) {
+      return persona;
+    }
+    return persona + "\n\n" + existing;
   }
 
   @Override

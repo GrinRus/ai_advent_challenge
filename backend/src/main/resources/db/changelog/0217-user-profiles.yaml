@@ -1,0 +1,401 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0217-create-profile-tables
+      author: codex
+      context: local,prod
+      changes:
+        - createTable:
+            tableName: user_profile
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_profile
+              - column:
+                  name: namespace
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reference
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: locale
+                  type: VARCHAR(16)
+                  defaultValue: en
+                  constraints:
+                    nullable: false
+              - column:
+                  name: timezone
+                  type: VARCHAR(64)
+                  defaultValue: UTC
+                  constraints:
+                    nullable: false
+              - column:
+                  name: communication_mode
+                  type: VARCHAR(32)
+                  defaultValue: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: habits
+                  type: JSONB
+                  defaultValueComputed: "'[]'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: anti_patterns
+                  type: JSONB
+                  defaultValueComputed: "'[]'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: work_hours
+                  type: JSONB
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metadata
+                  type: JSONB
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: user_profile
+            columnNames: namespace, reference
+            constraintName: uq_user_profile_handle
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              ALTER TABLE user_profile
+              ADD CONSTRAINT chk_user_profile_metadata_json CHECK (jsonb_typeof(metadata) = 'object'),
+              ADD CONSTRAINT chk_user_profile_habits_json CHECK (jsonb_typeof(habits) = 'array'),
+              ADD CONSTRAINT chk_user_profile_antipatterns_json CHECK (jsonb_typeof(anti_patterns) = 'array'),
+              ADD CONSTRAINT chk_user_profile_work_hours_json CHECK (jsonb_typeof(work_hours) = 'object'),
+              ADD CONSTRAINT chk_user_profile_display_name CHECK (char_length(display_name) BETWEEN 1 AND 255),
+              ADD CONSTRAINT chk_user_profile_namespace CHECK (char_length(namespace) BETWEEN 1 AND 64),
+              ADD CONSTRAINT chk_user_profile_reference CHECK (char_length(reference) BETWEEN 1 AND 128);
+        - createTable:
+            tableName: user_identity
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_identity
+              - column:
+                  name: profile_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: external_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attributes
+                  type: JSONB
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scopes
+                  type: JSONB
+                  defaultValueComputed: "'[]'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: user_identity
+            columnNames: provider, external_id
+            constraintName: uq_user_identity_provider_external
+        - addForeignKeyConstraint:
+            baseTableName: user_identity
+            baseColumnNames: profile_id
+            referencedTableName: user_profile
+            referencedColumnNames: id
+            constraintName: fk_user_identity_profile
+            onDelete: CASCADE
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: |
+              ALTER TABLE user_identity
+              ADD CONSTRAINT chk_user_identity_attributes CHECK (jsonb_typeof(attributes) = 'object'),
+              ADD CONSTRAINT chk_user_identity_scopes CHECK (jsonb_typeof(scopes) = 'array');
+        - createTable:
+            tableName: profile_lookup
+            columns:
+              - column:
+                  name: namespace
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reference
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: profile_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: profile_lookup
+            columnNames: namespace, reference
+            constraintName: pk_profile_lookup
+        - addUniqueConstraint:
+            tableName: profile_lookup
+            columnNames: profile_id
+            constraintName: uq_profile_lookup_profile
+        - addForeignKeyConstraint:
+            baseTableName: profile_lookup
+            baseColumnNames: profile_id
+            referencedTableName: user_profile
+            referencedColumnNames: id
+            constraintName: fk_profile_lookup_profile
+            onDelete: CASCADE
+        - createTable:
+            tableName: user_profile_channel
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_profile_channel
+              - column:
+                  name: profile_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: channel
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: settings
+                  type: JSONB
+                  defaultValueComputed: "'{}'::jsonb"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: user_profile_channel
+            columnNames: profile_id, channel
+            constraintName: uq_user_profile_channel
+        - addForeignKeyConstraint:
+            baseTableName: user_profile_channel
+            baseColumnNames: profile_id
+            referencedTableName: user_profile
+            referencedColumnNames: id
+            constraintName: fk_user_profile_channel_profile
+            onDelete: CASCADE
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: ALTER TABLE user_profile_channel ADD CONSTRAINT chk_user_profile_channel_settings CHECK (jsonb_typeof(settings) = 'object');
+        - createTable:
+            tableName: role
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_role
+              - column:
+                  name: code
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: role
+            columnNames: code
+            constraintName: uq_role_code
+        - createTable:
+            tableName: permission
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_permission
+              - column:
+                  name: code
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: permission
+            columnNames: code
+            constraintName: uq_permission_code
+        - createTable:
+            tableName: role_permission
+            columns:
+              - column:
+                  name: role_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permission_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: role_permission
+            columnNames: role_id, permission_id
+            constraintName: pk_role_permission
+        - addForeignKeyConstraint:
+            baseTableName: role_permission
+            baseColumnNames: role_id
+            referencedTableName: role
+            referencedColumnNames: id
+            constraintName: fk_role_permission_role
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: role_permission
+            baseColumnNames: permission_id
+            referencedTableName: permission
+            referencedColumnNames: id
+            constraintName: fk_role_permission_permission
+            onDelete: CASCADE
+        - createTable:
+            tableName: profile_role
+            columns:
+              - column:
+                  name: profile_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: granted_at
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: profile_role
+            columnNames: profile_id, role_id
+            constraintName: pk_profile_role
+        - addForeignKeyConstraint:
+            baseTableName: profile_role
+            baseColumnNames: profile_id
+            referencedTableName: user_profile
+            referencedColumnNames: id
+            constraintName: fk_profile_role_profile
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: profile_role
+            baseColumnNames: role_id
+            referencedTableName: role
+            referencedColumnNames: id
+            constraintName: fk_profile_role_role
+            onDelete: CASCADE

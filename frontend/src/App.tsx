@@ -8,6 +8,7 @@ import FlowSessions from './pages/FlowSessions';
 import FlowsLayout from './pages/FlowsLayout';
 import FlowsOverview from './pages/FlowsOverview';
 import FlowAgents from './pages/FlowAgents';
+import ProfileSettings from './pages/ProfileSettings';
 import './App.css';
 
 const App = () => (
@@ -27,6 +28,9 @@ const App = () => (
         <NavLink to="/flows" className="nav-link">
           Flows
         </NavLink>
+        <NavLink to="/profile" className="nav-link">
+          Personalization
+        </NavLink>
       </nav>
     </header>
     <main className="app-content">
@@ -34,6 +38,7 @@ const App = () => (
         <Route path="/" element={<Home />} />
         <Route path="/help" element={<Help />} />
         <Route path="/llm-chat" element={<LLMChat />} />
+        <Route path="/profile" element={<ProfileSettings />} />
         <Route path="/flows" element={<FlowsLayout />}>
           <Route index element={<FlowsOverview />} />
           <Route path="launch" element={<FlowLaunch />} />

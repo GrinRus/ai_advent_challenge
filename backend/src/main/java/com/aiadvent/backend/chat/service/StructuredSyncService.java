@@ -21,6 +21,7 @@ import com.aiadvent.backend.chat.provider.model.UsageCostEstimate;
 import com.aiadvent.backend.chat.service.ChatResearchToolBindingService.ResearchContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -59,6 +60,7 @@ public class StructuredSyncService extends AbstractSyncService {
   private final ObjectMapper objectMapper;
   private final ChatSummarizationPreflightManager preflightManager;
   private final ChatResearchToolBindingService researchToolBindingService;
+  private final ProfilePromptService profilePromptService;
 
   public StructuredSyncService(
       ChatProviderService chatProviderService,
@@ -66,12 +68,14 @@ public class StructuredSyncService extends AbstractSyncService {
       BeanOutputConverter<StructuredSyncResponse> outputConverter,
       ObjectMapper objectMapper,
       ChatSummarizationPreflightManager preflightManager,
-      ChatResearchToolBindingService researchToolBindingService) {
+      ChatResearchToolBindingService researchToolBindingService,
+      ProfilePromptService profilePromptService) {
     super(chatProviderService, chatService);
     this.outputConverter = outputConverter;
     this.objectMapper = objectMapper;
     this.preflightManager = preflightManager;
     this.researchToolBindingService = researchToolBindingService;
+    this.profilePromptService = profilePromptService;
   }
 
   public StructuredSyncResult sync(ChatSyncRequest request) {
@@ -137,11 +141,13 @@ public class StructuredSyncService extends AbstractSyncService {
         researchToolBindingService.resolve(
             mode, sanitizedPrompt, request.requestedToolCodes(), overridesByTool);
 
+    String personaSnippet = profilePromptService.personaSnippet().orElse(null);
     String systemInstruction =
         JSON_INSTRUCTION_TEMPLATE.formatted(outputConverter.getFormat().trim());
     if (mode.isResearch() && researchContext.hasSystemPrompt()) {
       systemInstruction = researchContext.systemPrompt() + "\n\n" + systemInstruction;
     }
+    systemInstruction = mergeSystemPrompts(personaSnippet, systemInstruction);
 
     String userPrompt =
         enrichUserPrompt(sanitizedPrompt, provider.getType(), mode, researchContext);
@@ -150,10 +156,12 @@ public class StructuredSyncService extends AbstractSyncService {
 
     try {
       var prompt =
-          chatProviderService
-              .chatClient(selection.providerId())
-              .prompt()
-              .system(systemInstruction)
+          chatProviderService.chatClient(selection.providerId()).prompt();
+      if (StringUtils.hasText(systemInstruction)) {
+        prompt = prompt.system(systemInstruction);
+      }
+      prompt =
+          prompt
               .user(userPrompt)
               .advisors(
                   advisors ->
@@ -302,6 +310,16 @@ public class StructuredSyncService extends AbstractSyncService {
     } catch (Exception ex) {
       throw new SchemaValidationException("Model response does not conform to JSON schema", ex);
     }
+  }
+
+  private String mergeSystemPrompts(String persona, String existing) {
+    if (!StringUtils.hasText(persona)) {
+      return existing;
+    }
+    if (!StringUtils.hasText(existing)) {
+      return persona;
+    }
+    return persona + "\n\n" + existing;
   }
 
   private JsonNode serializePayload(StructuredSyncResponse response) {

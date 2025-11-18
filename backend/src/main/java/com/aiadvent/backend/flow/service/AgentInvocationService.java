@@ -16,6 +16,8 @@ import com.aiadvent.backend.flow.memory.FlowMemorySourceType;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
 import com.aiadvent.backend.flow.persistence.FlowSessionRepository;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +63,7 @@ public class AgentInvocationService {
   private final McpToolBindingService mcpToolBindingService;
   private final ObjectMapper objectMapper;
   private final ConcurrentMap<String, RetryTemplate> retryTemplates = new ConcurrentHashMap<>();
+  private final ProfilePromptService profilePromptService;
 
   public AgentInvocationService(
       ChatProviderService chatProviderService,
@@ -68,13 +71,15 @@ public class AgentInvocationService {
       FlowMemoryService flowMemoryService,
       FlowMemorySummarizerService flowMemorySummarizerService,
       McpToolBindingService mcpToolBindingService,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ProfilePromptService profilePromptService) {
     this.chatProviderService = chatProviderService;
     this.flowSessionRepository = flowSessionRepository;
     this.flowMemoryService = flowMemoryService;
     this.flowMemorySummarizerService = flowMemorySummarizerService;
     this.mcpToolBindingService = mcpToolBindingService;
     this.objectMapper = objectMapper;
+    this.profilePromptService = profilePromptService;
   }
 
   public AgentInvocationResult invoke(AgentInvocationRequest request) {
@@ -122,6 +127,7 @@ public class AgentInvocationService {
     String userMessage =
         buildUserMessageFromSanitized(
             sanitizedUserPrompt, request.launchParameters(), request.inputContext());
+    userMessage = prependPersona(userMessage);
 
     ToolSelection toolSelection = resolveToolSelection(request.inputContext());
     List<McpToolBindingService.ResolvedTool> resolvedTools =
@@ -290,6 +296,14 @@ public class AgentInvocationService {
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Failed to serialize input context", exception);
     }
+  }
+
+  private String prependPersona(String message) {
+    return profilePromptService
+        .personaSnippet()
+        .filter(StringUtils::hasText)
+        .map(snippet -> snippet + "\n\n" + message)
+        .orElse(message);
   }
 
   private ToolSelection resolveToolSelection(JsonNode inputContext) {

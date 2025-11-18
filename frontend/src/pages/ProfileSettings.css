@@ -1,0 +1,48 @@
+.profile-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.profile-key-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.profile-key-row input {
+  width: 8rem;
+}
+
+.profile-edit-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.profile-edit-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.profile-edit-form textarea {
+  width: 100%;
+  font-family: monospace;
+}
+
+.profile-edit-form button[type='submit'] {
+  grid-column: 1 / -1;
+  width: fit-content;
+}
+
+.profile-status {
+  grid-column: 1 / -1;
+  color: #555;
+}
+
+.profile-meta {
+  border: 1px solid #ddd;
+  padding: 1rem;
+  border-radius: 8px;
+}

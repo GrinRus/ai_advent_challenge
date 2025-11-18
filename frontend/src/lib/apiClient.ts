@@ -120,6 +120,41 @@ export const CHAT_STREAM_URL = `${API_BASE_URL}/llm/chat/stream`;
 export const CHAT_SYNC_URL = `${API_BASE_URL}/llm/chat/sync`;
 export const CHAT_STRUCTURED_SYNC_URL = `${API_BASE_URL}/llm/chat/sync/structured`;
 
+const JsonLikeSchema = z.any();
+
+export const ProfileDocumentSchema = z.object({
+  profileId: z.string(),
+  namespace: z.string(),
+  reference: z.string(),
+  displayName: z.string(),
+  locale: z.string(),
+  timezone: z.string(),
+  communicationMode: z.string(),
+  habits: z.array(z.string()),
+  antiPatterns: z.array(z.string()),
+  workHours: JsonLikeSchema.optional(),
+  metadata: JsonLikeSchema.optional(),
+  identities: z.array(
+    z.object({
+      provider: z.string(),
+      externalId: z.string(),
+      attributes: JsonLikeSchema.optional(),
+      scopes: z.array(z.string()).optional(),
+    }),
+  ),
+  channels: z.array(
+    z.object({
+      channel: z.string(),
+      settings: JsonLikeSchema.optional(),
+    }),
+  ),
+  roles: z.array(z.string()),
+  updatedAt: z.string(),
+  version: z.number(),
+});
+
+export type UserProfileDocument = z.infer<typeof ProfileDocumentSchema>;
+
 export type HelpResponse = {
   message: string;
 };
@@ -197,6 +232,77 @@ function tryParseJson(raw: string): unknown | undefined {
   } catch {
     return undefined;
   }
+}
+
+function buildProfileHeaders(
+  profileKey: string,
+  channel?: string,
+  ifMatch?: string,
+): HeadersInit {
+  const headers: HeadersInit = {
+    'X-Profile-Key': profileKey,
+  };
+  if (channel) {
+    headers['X-Profile-Channel'] = channel;
+  }
+  if (ifMatch) {
+    headers['If-Match'] = ifMatch;
+  }
+  return headers;
+}
+
+export async function fetchProfileDocument(
+  namespace: string,
+  reference: string,
+  profileKey: string,
+  channel?: string,
+): Promise<{ profile: UserProfileDocument; etag?: string }> {
+  const response = await fetch(`${API_BASE_URL}/profile/${namespace}/${reference}`, {
+    headers: buildProfileHeaders(profileKey, channel),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(raw || `Не удалось загрузить профиль (status ${response.status})`);
+  }
+  const payload = raw ? JSON.parse(raw) : {};
+  const profile = ProfileDocumentSchema.parse(payload);
+  const etag = response.headers.get('ETag') ?? undefined;
+  return { profile, etag };
+}
+
+export type ProfileUpdatePayload = {
+  displayName: string;
+  locale: string;
+  timezone: string;
+  communicationMode: string;
+  habits: string[];
+  antiPatterns: string[];
+  workHours?: unknown;
+  metadata?: unknown;
+  channelOverrides?: Array<{ channel: string; settings?: unknown }>;
+};
+
+export async function updateProfileDocument(
+  namespace: string,
+  reference: string,
+  profileKey: string,
+  payload: ProfileUpdatePayload,
+  options?: { channel?: string; ifMatch?: string },
+): Promise<{ profile: UserProfileDocument; etag?: string }> {
+  const response = await fetch(`${API_BASE_URL}/profile/${namespace}/${reference}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...buildProfileHeaders(profileKey, options?.channel, options?.ifMatch),
+    },
+    body: JSON.stringify(payload),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(raw || `Не удалось обновить профиль (status ${response.status})`);
+  }
+  const data = ProfileDocumentSchema.parse(JSON.parse(raw));
+  return { profile: data, etag: response.headers.get('ETag') ?? undefined };
 }
 
 function parseJsonBodyOrThrow(raw: string, context: string): unknown {

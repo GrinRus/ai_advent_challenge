@@ -140,6 +140,18 @@ logging:
     com.aiadvent.backend.chat.logging: DEBUG
 
 app:
+  profile:
+    cache:
+      local-ttl: PT5M
+      redis-ttl: PT10M
+      maximum-size: 5000
+      redis-prefix: profile:cache:
+      event-channel: profile:cache:events
+    dev:
+      enabled: ${PROFILE_DEV_ENABLED:false}
+      token: ${PROFILE_BASIC_TOKEN:}
+    prompts:
+      enabled: ${ENABLE_PROFILE_PROMPTS:true}
   chat:
     research:
       system-prompt: |

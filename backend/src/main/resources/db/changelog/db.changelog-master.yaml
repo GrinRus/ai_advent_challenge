@@ -3572,3 +3572,6 @@ databaseChangeLog:
                  WHERE name = 'github-gradle-test-flow'
                    AND definition::text LIKE '%docker.gradle_runner%';
               END $migration$;
+
+  - include:
+      file: db/changelog/0217-user-profiles.yaml

@@ -32,6 +32,26 @@ docker compose up --build
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
 
+## Dev-only режим профилей
+Для локальной отладки профилей предусмотрен упрощённый режим аутентификации. Он отключает проверку внешних провайдеров и ролей и позволяет вызывать профильные API напрямую.
+
+1. В `.env` или переменных окружения задайте:
+   ```bash
+   PROFILE_DEV_ENABLED=true
+   PROFILE_BASIC_TOKEN=dev-profile-token
+   ```
+2. Перезапустите backend. Пока флаг включен, все запросы к `/api/profile/*`, `/api/llm/*` и `/api/flows/*` могут передавать заголовок `X-Profile-Auth: dev-profile-token` и будут приняты без OAuth.
+3. Клиент должен по-прежнему передавать `X-Profile-Key`/`X-Profile-Channel`; единственное отличие — токен заменяет настоящую сессию.
+4. Обязательно выключайте режим (`PROFILE_DEV_ENABLED=false`) перед публикацией или совместной разработкой: backend начнёт возвращать `403` для заголовка `X-Profile-Auth`, а все профили снова станут доступны только по реальной аутентификации.
+
+Для smoke-проверки можно выполнить:
+```bash
+curl -H 'X-Profile-Key: web:demo' \
+     -H 'X-Profile-Auth: dev-profile-token' \
+     http://localhost:8080/api/profile/web/demo
+```
+В ответе будет новый профиль-заглушка; PUT/POST с тем же заголовком доступны до тех пор, пока dev-режим активен.
+
 ## Telegram бот
 - Управление включением: `TELEGRAM_BOT_ENABLED` (`true`/`false`, по умолчанию выключен).
 - Креды бота: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.
