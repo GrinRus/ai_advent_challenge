@@ -1260,11 +1260,14 @@
 
 ## Wave 42 — Персональные профили и расширенный онбординг
 
-Цель: перенести персональные настройки пользователя из статичных конфигов в управляемые профили, которые лежат в БД, доступны через REST API и кешируются для быстрого чтения. Профиль должен поддерживать разные каналы (Telegram, веб) и быть готовым к расширению для регистрации через OAuth-провайдеров (VK, GitHub, Google и т.д.).
+Цель: перенести персональные настройки пользователя из статичных конфигов в управляемые профили, которые лежат в БД, доступны через REST API и кешируются для быстрого чтения. Профиль должен поддерживать разные каналы (Telegram, веб) и быть готовым к расширению для регистрации через OAuth-провайдеров (GitHub, Google и т.д.). Уже на этой волне нужно предусмотреть, что профиль связан с ролевой моделью и админкой, а фактическая реализация VK OAuth будет вынесена в Wave 43.
 
 ### Архитектура и данные
-- [ ] Спроектировать схему `user_profile` (uuid, namespace, reference, display_name, locale, habits, anti_patterns, work_hours, metadata JSONB, timestamps) и `user_identity` (profile_id, provider, external_id, attributes JSONB, scopes) с внешними ключами и ограничениями уникальности `(provider, external_id)`. Добавить миграцию Liquibase + индексы по namespace/reference и provider.
-- [ ] Рассмотреть таблицу `user_profile_channel` или расширенный `metadata`, чтобы хранить отдельные настройки для Telegram/web (например, preferred reply length, включён ли синтез речи). Задокументировать, как добавлять новые поля, не ломая API.
+- [ ] Спроектировать схему `user_profile` (uuid, namespace, reference, display_name, locale, habits, anti_patterns, work_hours, metadata JSONB, timestamps) и `user_identity` (profile_id, provider, external_id, attributes JSONB, scopes) с внешними ключами и ограничениями уникальности `(provider, external_id)`. Профиль должен быть единым для пользователя (веб UI, Telegram, CLI и т.д.), а каналы лишь выбирают соответствующий `namespace/reference`. Добавить миграцию Liquibase + индексы по namespace/reference и provider.
+- [ ] Ввести canonical `profile_handle`: `user_profile` хранит только `profile_id` + пользовательские поля, а отдельная таблица `profile_lookup(namespace, reference, profile_id)` обслуживает сопоставление для любых каналов. Добавить уникальные индексы по `(namespace, reference)` и `profile_id`, описать стратегии миграции для будущих namespace (Slack, mobile) и гарантировать, что lookup — единственный источник правды.
+- [ ] Рассмотреть таблицу `user_profile_channel` или расширенный `metadata`, чтобы хранить отдельные настройки для Telegram/web (например, preferred reply length, включён ли синтез речи). Задокументировать, как добавлять новые поля, не ломая API и не создавая расхождений с основной записью.
+- [ ] Определить набор обязательных полей (locale, timezone, communication_mode) и валидаторы (макс. длина текстов, допустимые ключи в JSONB). Зафиксировать default значения, чтобы все клиенты видели одинаковое содержимое при пустом профиле.
+- [ ] Проработать модель ролей: таблицы `role`, `profile_role`, возможные `permissions` (admin, operator, user). Зафиксировать минимальные роли и связь с профилем, чтобы любой канал видел одинаковый access level.
 
 ### Backend API и кеш
 - [ ] Реализовать `UserProfileService` с Caffeine (TTL + maximumSize) и pub/sub-инвалидацией: методы `resolveProfile(ProfileLookupKey)`, `updateProfile`, `attachIdentity`, `detachIdentity`, `evict`. Продумать `ProfileLookupKey` (namespace, reference, channel) и fallback к авто-созданию пустого профиля.
@@ -1273,20 +1276,69 @@
   - `PUT /api/profile/{namespace}/{reference}` — обновляет поля профиля и channel overrides; валидирует размер текстов, ограничивает количество привычек/анти-паттернов.
   - `POST /api/profile/{namespace}/{reference}/identities` и `DELETE .../identities/{provider}/{externalId}` — регистрирует/удаляет внешний аккаунт, проверяет лимит (≤5) и уникальность пары provider/externalId.
   Добавить аудиторные события, метрики кеш-хитов/промахов и защиту от выдачи чужих профилей (`X-Profile-Context` или session binding).
+- [ ] Все REST-запросы, которые потребляют профиль, должны нести единый заголовок `X-Profile-Key` (формат `namespace:reference`). Добавить фильтр, который валидирует заголовок, строит `ProfileLookupKey` и прокидывает его во все сервисы (web/TG/CLI). Для обратной совместимости — заголовок обязателен во всех новых API.
+- [ ] Предусмотреть режим “без аутентификации”: backend принимает dev-only токен из `.env` (`PROFILE_BASIC_TOKEN`), передаваемый в заголовке `X-Profile-Auth`, и разрешает работу с профилями без OAuth/рольной модели (read/write в рамках одного токена). Задокументировать ограничения, предусмотреть флаг для отключения в проде и минимальные логи.
+- [ ] Версионировать профиль (`version`/`updated_at`) и поддержать ETag/If-Match, чтобы одно и то же значение синхронно доходило до фронтенда, Telegram и CLI. Продумать реакции на конфликт (HTTP 409) и бэк-офисный merge.
 - [ ] Встроить `UserProfileService` в `SyncChatService`, `StructuredSyncService`, `AgentInvocationService`: перед сборкой промпта подмешивать тон, язык, рабочие часы и анти-паттерны из профиля. Добавить тесты и фичефлаг `ENABLE_PROFILE_PROMPTS`, чтобы можно было откатить.
 - [ ] Для `TelegramChatService`, CLI и веб-сокетов гарантировать генерацию `ProfileLookupKey` (`namespace=telegram`, `reference=telegramUserId` и т.д.), автосоздание профиля при первом сообщении и логирование событий (`profile_created`, `profile_updated`, `identity_attached`).
+- [ ] Реализовать событийную шину (`ProfileChangedEvent`) поверх Redis pub/sub: при обновлении профиля сервис публикует событие, все другие инстансы сбрасывают локальный кеш (Caffeine) и подтягивают свежие данные. Описать fallback (in-memory events) для dev-окружения.
+- [ ] Подготовить `ProfileAdminController`/`RoleAssignmentService`: CRUD ролей, выдача/отзыв полномочий, аудит изменений. API должно работать поверх той же модели профиля, без дублирования сущностей.
 
 ### Frontend и UX
-- [ ] Добавить страницу “Personalization” в веб-UI (React/Vite): форма с display name, языком, привычками, анти-паттернами, рабочими часами, превью системного сообщения и кнопка “привязать Telegram/VK”. Поддержать optimistic updates, спиннер кеширования и информирование о лимитах.
+- [ ] Добавить страницу “Personalization” в веб-UI (React/Vite): форма с display name, языком, привычками, анти-паттернами, рабочими часами, превью системного сообщения и кнопка “привязать Telegram/внешний провайдер (stub)”. Поддержать optimistic updates, спиннер кеширования и информирование о лимитах.
 - [ ] Показать активный профиль в основном чате (баннер или боковая панель). Дать возможность переключать канал (web/telegram) и видеть расхождения настроек.
+- [ ] Хранить полученный `profile` в состоянии клиента (zustand/query cache) как единую сущность, а channel overrides отображать только при выборе конкретного канала. Добавить индикаторы “единый профиль” и подсказку, что изменения применятся ко всем платформам.
+- [ ] Отрисовывать историю изменений (когда и откуда обновили профиль) для быстрых проверок — например, “обновлено через Telegram 10 минут назад”.
 - [ ] До полноценного OAuth внедрить dev-only сессию (e.g. токен из `.env`) и документацию по связке Telegram ↔ веб через одноразовый код/QR.
+- [ ] Спроектировать базовую админ-панель (можно отдельным route) для управления ролями: таблица профилей, фильтры по namespace, действия “назначить роль”, “убрать роль”, просмотр истории. Зафиксировать, что доступ к панели ограничен ролью `admin`.
 
-### OAuth и провайдеры
-- [ ] Обновить `docs/architecture/personalization.md` и `docs/infra.md` с целевыми flow: redirect → code → token → `user_identity`, хранение `state` и `codeVerifier`, требования по шифрованию refresh/ access токенов и TTL. Добавить диаграммы для веб-регистрации и Telegram deep-link.
-- [ ] Реализовать `OAuthProviderRegistry` и `VkOAuthClient`: настройки `app.oauth.providers.vk.*`, методы построения auth URL, обмена кода на токен, получения профиля пользователя и сохранения `externalId`, `screenName`, `avatar`.
-- [ ] Добавить CLI/Telegram команду “Привязать VK”: создаёт одноразовый state, отдаёт ссылку, принимает callback, валидирует токен и вызывает `attachIdentity`. Продумать защиту от повторного связывания и отзыв привязки.
+### OAuth и провайдеры (подготовка)
+- [ ] Обновить `docs/architecture/personalization.md` и `docs/infra.md` с целевыми flow: redirect → code → token → `user_identity`, хранение `state` и `codeVerifier`, требования по шифрованию refresh/access токенов и TTL. Добавить диаграммы для веб-регистрации и Telegram deep-link, отметив, что VK OAuth реализуется в Wave 43.
+- [ ] Спроектировать интерфейсы `OAuthProviderRegistry`/`OAuthProviderClient`, описать конфигурацию и механизмы хранения токенов, но оставить фактические адаптеры (VK, GitHub, Google) на Wave 43.
+- [ ] Подготовить UX-спеки для подключения внешнего провайдера: кнопка/команда, одноразовый state, подтверждение и отображение результата. Реализация команд “привязать VK” переносится в Wave 43, но контракт API должен быть зафиксирован.
+- [ ] Зафиксировать требования к мониторингу/cron-джобам для проверки истечения OAuth-токенов, чтобы в Wave 43 достаточно было реализовать конкретные провайдеры без изменений архитектуры.
 
 ### Наблюдаемость, документация и тесты
 - [ ] Добавить метрики (`user_profile_cache_hit`, `profile_resolve_seconds`, `profile_identity_total`), структурные логи и алерты на деградацию кеша/БД. Запротоколировать вручную вызываемый `ProfileAdminController`/CLI для ручного инвалидационного flush.
-- [ ] Дополнить `docs/architecture/personalization.md` и `docs/guides/flows.md` диаграммами: чат → lookup → кеш → БД, ветвление по каналу, шаги OAuth.
-- [ ] Написать unit и integration тесты: создание/обновление профиля, ограничение по полям, привязка Telegram/VK, инвалидация кеша, загрузка в `SyncChatService` (assert, что системное сообщение содержит пользовательские привычки), e2e фронтенд тесты страницы Personalization.
+- [ ] Дополнить `docs/architecture/personalization.md` и `docs/guides/flows.md` диаграммами: чат → lookup → кеш → БД, ветвление по каналу, шаги OAuth. Добавить sequence “web изменил профиль → Telegram чат получил обновлённые настройки”.
+- [ ] Написать unit и integration тесты: создание/обновление профиля, ограничение по полям, привязка Telegram/внешнего идентификатора (stub), инвалидация кеша, загрузка в `SyncChatService` (assert, что системное сообщение содержит пользовательские привычки), e2e фронтенд тесты страницы Personalization.
+- [ ] Подготовить канонический набор контрактных тестов (REST + Telegram webhook), гарантирующих, что одна и та же `profileId` возвращается для разных каналов при одинаковой связке (namespace/reference). Добавить regression-тесты на конфликт версий и консистентность кеша.
+- [ ] Запланировать отдельные сценарии для ролей: unit тесты `RoleAssignmentService`, e2e админ-панели, smoke для разграничения доступа (user не может вызвать admin API). При формировании релизного плана указать, что эти тесты могут быть выполнены в Wave 43, если функционал вынесен.
+- [ ] Сформировать полноценные e2e сценарии “web ↔ backend ↔ Telegram”: создание профиля в вебе, проверка отображения в Telegram, обновление привычек через чат с последующей проверкой в UI, смена канала и валидация кеш-инвалидации на всех сервисах.
+- [ ] Документировать и проверить dev-only режим: тесты подтверждают, что при включённом `PROFILE_BASIC_TOKEN` запросы без аутентификации принимаются, но роли/OAuth отключены; при отключенном флаге доступ запрещён. Добавить описание в `docs/infra.md`.
+
+## Wave 43 — Управление ролями, VK OAuth и Telegram auth
+Цель: завершить работу над RBAC и внешними провайдерами, вынеся тяжёлые куски (админка, управление ролями, полноценный VK OAuth и production-ready Telegram Login Widget) из Wave 42. Для реализации ориентируемся на официальные руководства [VK ID Authorization Code Flow](https://dev.vk.com/ru/api/access-token/authcode-flow-user) / [auth-without-sdk](https://id.vk.com/about/business/go/docs/ru/vkid/latest/vk-id/connection/web/auth-without-sdk) и [Telegram Login Widget](https://core.telegram.org/widgets/login).
+
+### Backend / Security
+- [ ] Имплементировать `RoleAssignmentService` и `RoleHierarchy`, добавить таблицы `role`, `permission`, `role_permission`, `profile_role`, загрузить дефолтные роли (user/operator/admin).
+- [ ] Добавить REST API `/api/admin/roles`: листинг профилей/ролей, назначение, отзыв, аудит (кто и когда сделал изменение). Endpoint доступен только при роли `admin`, авторизация — по сессии/токену.
+- [ ] Реализовать enforcement в backend сервисах (чтение профиля, обновление, запуск flows): проверять роли, логировать нарушения, возвращать 403. Под защиту попадают существующие API (LLM chat, flows, Telegram webhook callback), поэтому нужно внедрить фильтр/интерсептор, который вытягивает роли из профиля и проверяет доступ до попадания в контроллер.
+- [ ] Добавить миграции/скрипты для выдачи роли admin существующим операторам, описать процесс предупреждения.
+
+### Frontend / Admin UI
+- [ ] Создать отдельный раздел “Admin / Roles” в веб-UI: таблица профилей, фильтрация по namespace, действия “выдать роль”, “снять роль”, просмотр истории изменений (audit log).
+- [ ] Добавить уведомления (toast/баннер) при изменении ролей, переподключение клиента, чтобы он увидел обновлённые права без перезапуска.
+- [ ] Настроить ролевой guard на фронтенде: скрывать секции, если нет соответствующих прав, и корректно обрабатывать 403 ответы. Добавить client-side хранение ролей в `ProfileContext`, чтобы чат/flows реагировали на изменения (например, скрывали кнопки запуска).
+
+### VK OAuth (VK ID)
+- [ ] Подготовить `VkOAuthController`: `GET /auth/vk` редиректит на `https://id.vk.ru/authorize` по схеме из [auth-without-sdk](https://id.vk.com/about/business/go/docs/ru/vkid/latest/vk-id/connection/web/auth-without-sdk) с параметрами `response_type=code`, `client_id`, `scope=email,phone` (можно конфигурировать), `redirect_uri`, `state`, `code_challenge`, `code_challenge_method=S256`. Для безопасности реализовать PKCE (S256) и генерацию `state`/`device_id`, как описано в шаге 2 документа.
+- [ ] Реализовать `POST /auth/vk/callback`: проверка `state`, обмен кода на токен через `https://id.vk.ru/oauth2/token` (шаг 4), сохранение `access_token`, `refresh_token`, `expires_in`, `user_id` в `user_identity`. Использовать шифрование/secret storage для токенов, как требует VK ID.
+- [ ] Добавить сервис обновления токена: cron/queue вызывает `https://id.vk.ru/oauth2/token` с `grant_type=refresh_token` (шаг 6), логирует ошибки, инвалидирует токены по `oauth2/logout` (шаг 7) и дергает `user_info` для обогащения профиля (шаг 8). Все вызовы должны поддерживать retries и метрики (успех/ошибка, latency).
+- [ ] Настроить дизайн кнопки входа в соответствии с гайдлайнами VK ID (шаг ПККЕ guidlines), прописать требования в UI. В REST API и frontend хранить `device_id`/`state` до завершения флоу.
+- [ ] В Telegram/CLI реализовать команду “/link_vk”: отправляет пользователю auth-link, генерирует одноразовый `state`, после callback показывает статус привязки. После сохранения identity обновлять профиль и заносить событие аудита.
+- [ ] Подготовить задел для других провайдеров (GitHub, Google): интерфейсы `OAuthProviderClient`, общая таблица токенов, конфиги в `.env`.
+
+### Telegram Login Widget / Auth
+- [ ] Настроить bot (через @BotFather `/setdomain`) и домен, который будет использоваться в Telegram Login Widget, как описано в [официальной документации](https://core.telegram.org/widgets/login#linking-your-domain-to-the-bot). Бот и веб-UI работают на одном домене `https://ai.riabov.tech/`, поэтому этот URL должен задаваться через конфиг (`app.web.base-url`) и попадать в `/setdomain`, а также использоваться при генерации callback'ов.
+- [ ] Реализовать фронтенд-виджет: добавить на страницу профиля код `<script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-login="botname" data-size="large" data-auth-url="/auth/telegram/callback" data-request-access="write"></script>` (значения из конфига). Поддержать альтернативный режим `data-onauth`, если хотим обработку в JS.
+- [ ] На backend создать `TelegramAuthController`: принимает payload (`id`, `first_name`, `last_name`, `username`, `photo_url`, `auth_date`, `hash`), строит `data_check_string` (ключи по алфавиту, `key=value` c `\n`) и сравнивает `hash` = `hex(HMAC_SHA256(data_check_string, SHA256(bot_token)))`. При успехе маппит Telegram `id` к профилю, выдает одноразовый код для привязки.
+- [ ] Добавить защиту от replays: проверять `auth_date` (например, не старше 1 минуты), хранить использованные `hash`/`auth_date` в Redis, логировать попытки. Прописать обработку ошибки в UI.
+- [ ] Обновить `TelegramChatService`: если пользователь прошёл login-widget, подтягивать расширенные поля (avatar, username) и записывать в `user_identity`. При каждом апдейте чат-сервис должен проверять роли из профиля (admin/operator) и скрывать команды, которые недоступны.
+
+### Документация, тесты и rollout
+- [ ] Обновить `docs/architecture/personalization.md`, `docs/infra.md`, `docs/processes.md` разделами про RBAC, админку и VK OAuth.
+- [ ] Написать тесты: unit для RBAC, интеграционные для `/api/admin/roles`, e2e для админ-панели и Telegram команды “Привязать VK”, smoke для истечения токенов.
+- [ ] Добавить end-to-end сценарий “VK OAuth + выдача роли”: пользователь проходит VK авторизацию, получает запись в `user_identity`, оператор через админку назначает роль, система проверяет доступ в чате/вебе и наличие токена в фоне. Обновлять документацию по результатам прогона.
+- [ ] Подготовить e2e сценарий Telegram Login Widget: пользователь авторизуется через виджет, backend валидирует `hash`, профиль обновляется, затем пользователь отправляет сообщение в Telegram и видит, что связка активна. Сценарий должен проверять домен, повторный вход и отказ.
+- [ ] Подготовить rollout-план: как включать админку/roles флагами, как откатывать, как уведомлять пользователей о новой авторизации.
