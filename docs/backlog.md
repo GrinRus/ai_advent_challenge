@@ -1257,3 +1257,32 @@
 
 ### Тестирование и включение
 - [ ] Покрыть GitLab профиль unit/integration тестами: fetch → workspace_git_state, создание ветки, коммит, push и merge request анализ. Добавить e2e сценарии CLI/UI, которые переключаются между GitHub и GitLab, и smoke-тесты операторских runbook'ов. Обновить release notes и enablement-гайды с новыми чек-листами (проверка прав GitLab PAT, лимиты API, типичные ошибки). → `backend-mcp/src/test/java/...`, `backend/src/test/java/...`, `frontend/tests/*`, `docs/releases/wave41.md`
+
+## Wave 42 — Персональные профили и расширенный онбординг
+
+Цель: вынести персонализацию агента в редактируемый профиль пользователя, связать его с чатами (веб, Telegram) и подготовить плацдарм для будущей регистрации/авторизации через OAuth-провайдеров (VK, GitHub, Google и т.д.). Нужен API для CRUD профиля, кэширование для быстрого чтения и расширяемая модель идентичностей.
+
+### Backend
+- [ ] Спроектировать схему `user_profile` (UUID, display_name, locale, habits, anti_patterns, availability, metadata JSONB, timestamps) и таблицу `user_identity` (profile_id, provider, external_id, attributes) для маппинга Telegram userId, OAuth-провайдеров и веб-аккаунтов. Добавить Liquibase-миграцию и JPA-entity/репозитории.
+- [ ] Реализовать `UserProfileService` с кэшированием (Caffeine или Spring Cache): методы `findOrCreate(profileKey)`, `updateProfile`, `attachIdentity`, события инвалидации. Поддержать загрузку профиля по (namespace, reference), чтобы Telegram/CLI могли работать до запуска OAuth.
+- [ ] Добавить REST API `/api/profile`:
+  - `GET /api/profile/{namespace}/{reference}` — возвращает публичную часть профиля + список привязанных identity (только для owner).
+  - `PUT /api/profile/{namespace}/{reference}` — обновляет displayName, locale, habits и т.д., валидирует размер текстов.
+  - `POST /api/profile/{namespace}/{reference}/identities` — регистрирует внешнего провайдера (VK, GitHub и т.п.), хранит `provider`, `externalId`, `accessScope`.
+  Продумать аудита и ограничения (max 5 identities, запрещён дубликат пары provider/externalId).
+- [ ] Внедрить интеграцию в `SyncChatService`, `StructuredSyncService`, `AgentInvocationService`: перед построением промпта подтягивать профиль, собирать из него блок системных сообщений (тон, preferred languages, рабочие часы). Закрыть фолбэк на статический конфиг, если профиль отсутствует.
+- [ ] Настроить `TelegramChatService` и веб-клиент так, чтобы при получении сообщения формировался `ProfileLookupKey` (`namespace=telegram`, `reference=userId`) и гарантировалось создание пустого профиля при первом контакте.
+
+### Frontend / UX
+- [ ] Добавить страницу "Personalization" в веб-UI (React/Vite): форма с display name, языками, привычками и анти-паттернами, предпросмотр того, что получит агент. Интегрировать с новым REST API, предусмотреть optimistic update и подсказки.
+- [ ] До появления полноценной регистрации подготовить заглушку авторизации (e.g. dev-only токен или existing session). Задокументировать flow подключения Telegram профиля к веб-аккаунту через одноразовый код.
+
+### OAuth / Identity провайдеры
+- [ ] Обновить архитектурный документ с целевым flow OAuth: редирект на провайдера (VK), получение кода, обмен на токен, маппинг на `user_identity`. Зафиксировать требования по хранению токенов (шифрование, TTL, refresh), список обязательных полей профиля.
+- [ ] Реализовать базовый `OAuthProviderRegistry` + `VkOAuthClient` (конфиг `app.oauth.providers.vk.*`). Пока можно ограничиться server-side exchange и сохранением `externalId`, `screenName`, `avatar`.
+- [ ] Добавить CLI/Telegram-команду “Привязать VK”, которая инициирует выдачу oauth-link + одноразовый state, валидирует ответ и связывает identity c текущим пользователем.
+
+### Документация и тесты
+- [ ] Описать Wave 42 в `docs/architecture/personalization.md`: модель профиля, последовательности запросов (чат → профиль → кеш → БД), интеграция с OAuth.
+- [ ] Покрыть сервис интеграционными тестами: создание профиля, обновление, привязка Telegram/VK, инвалидация кеша, использование в `SyncChatService` (assert, что системный промпт содержит данные из профиля).
+Цель: обеспечить возможность запускать ключевые assisted-coding сценарии не только против GitHub, но и GitLab, с единым UX, безопасным хранением токенов и идентичным MCP-функционалом.
