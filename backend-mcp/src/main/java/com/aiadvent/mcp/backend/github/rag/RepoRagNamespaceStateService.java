@@ -41,8 +41,6 @@ public class RepoRagNamespaceStateService {
     entity.setWorkspaceId(workspaceId);
     entity.setFetchedAt(fetchedAt);
     entity.setReady(false);
-    entity.setAstSchemaVersion(0);
-    entity.setAstReadyAt(null);
     entity.setLastJob(job);
     entity.setWorkspaceSizeBytes(workspaceSizeBytes);
     repository.save(entity);
@@ -80,10 +78,12 @@ public class RepoRagNamespaceStateService {
     entity.setReady(true);
     entity.setLastJob(job);
     entity.setWorkspaceSizeBytes(workspaceSizeBytes);
+    boolean previouslyAstReady =
+        entity.getAstReadyAt() != null && entity.getAstSchemaVersion() > 0;
     if (astReady && astSchemaVersion > 0) {
       entity.setAstSchemaVersion(astSchemaVersion);
       entity.setAstReadyAt(Instant.now());
-    } else {
+    } else if (!previouslyAstReady) {
       entity.setAstSchemaVersion(0);
       entity.setAstReadyAt(null);
     }
