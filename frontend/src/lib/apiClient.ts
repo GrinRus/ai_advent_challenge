@@ -45,7 +45,13 @@ import type {
 import type { JsonValue } from './types/json';
 import { buildActiveProfileHeaders } from './profileStore';
 import {
+  DevLinkResponseSchema,
+  ProfileAdminPageSchema,
+  ProfileAuditEntrySchema,
   ProfileDocumentSchema,
+  type DevProfileLinkResponse,
+  type ProfileAdminPage,
+  type ProfileAuditEntry,
   type ProfileUpdatePayload,
   type UserProfileDocument,
 } from './profileTypes';
@@ -87,7 +93,15 @@ export type {
   FlowSuggestedActions,
 } from './types/flowInteraction';
 export type { JsonValue } from './types/json';
-export type { UserProfileDocument, ProfileUpdatePayload } from './profileTypes';
+export type {
+  UserProfileDocument,
+  ProfileUpdatePayload,
+  ProfileAuditEntry,
+  DevProfileLinkResponse,
+  ProfileAdminPage,
+} from './profileTypes';
+
+export type AdminRole = z.infer<typeof AdminRoleSchema>;
 
 export type McpToolSummary = {
   code: string;
@@ -161,6 +175,14 @@ export type ChatProvidersResponse = {
 const AgentDefinitionSummaryListSchema = z.array(AgentDefinitionSummarySchema);
 const FlowDefinitionSummaryListSchema = z.array(FlowDefinitionSummarySchema);
 const FlowDefinitionHistoryListSchema = z.array(FlowDefinitionHistoryEntrySchema);
+const AdminRoleSchema = z.object({
+  id: z.string().uuid(),
+  code: z.string(),
+  displayName: z.string(),
+  description: z.string().optional().nullable(),
+});
+const AdminRoleListSchema = z.array(AdminRoleSchema);
+const ProfileAuditEntryListSchema = z.array(ProfileAuditEntrySchema);
 
 function validateWithSchema<T>(payload: unknown, schema: ZodSchema<T>, context: string): T {
   const parsed = schema.safeParse(payload);
@@ -211,6 +233,7 @@ function buildProfileHeaders(
   profileKey: string,
   channel?: string,
   ifMatch?: string,
+  devToken?: string,
 ): HeadersInit {
   const headers: HeadersInit = {
     'X-Profile-Key': profileKey,
@@ -221,6 +244,9 @@ function buildProfileHeaders(
   if (ifMatch) {
     headers['If-Match'] = ifMatch;
   }
+  if (devToken) {
+    headers['X-Profile-Auth'] = devToken;
+  }
   return headers;
 }
 
@@ -229,9 +255,10 @@ export async function fetchProfileDocument(
   reference: string,
   profileKey: string,
   channel?: string,
+  devToken?: string,
 ): Promise<{ profile: UserProfileDocument; etag?: string }> {
   const response = await fetch(`${API_BASE_URL}/profile/${namespace}/${reference}`, {
-    headers: buildProfileHeaders(profileKey, channel),
+    headers: buildProfileHeaders(profileKey, channel, undefined, devToken),
   });
   const raw = await response.text();
   if (!response.ok) {
@@ -243,18 +270,126 @@ export async function fetchProfileDocument(
   return { profile, etag };
 }
 
+export async function fetchProfileAudit(
+  namespace: string,
+  reference: string,
+  profileKey: string,
+  channel?: string,
+  devToken?: string,
+): Promise<ProfileAuditEntry[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/profile/${namespace}/${reference}/audit`,
+    {
+      headers: buildProfileHeaders(profileKey, channel, undefined, devToken),
+    },
+  );
+  return parseJsonResponse(
+    response,
+    ProfileAuditEntryListSchema,
+    'Не удалось загрузить историю профиля',
+  );
+}
+
+export async function createDevProfileLink(
+  namespace: string,
+  reference: string,
+  profileKey: string,
+  channel?: string,
+  devToken?: string,
+): Promise<DevProfileLinkResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/profile/${namespace}/${reference}/dev-link`,
+    {
+      method: 'POST',
+      headers: buildProfileHeaders(profileKey, channel, undefined, devToken),
+    },
+  );
+  return parseJsonResponse(
+    response,
+    DevLinkResponseSchema,
+    'Не удалось создать dev-link для профиля',
+  );
+}
+
+export async function fetchAdminProfiles(params: {
+  namespace?: string;
+  reference?: string;
+  page?: number;
+  size?: number;
+}): Promise<ProfileAdminPage> {
+  const { namespace, reference, page = 0, size = 20 } = params;
+  const query = new URLSearchParams();
+  if (namespace) {
+    query.set('namespace', namespace);
+  }
+  if (reference) {
+    query.set('reference', reference);
+  }
+  query.set('page', String(page));
+  query.set('size', String(size));
+  const response = await fetch(
+    `${API_BASE_URL}/admin/roles/profiles?${query.toString()}`,
+    {
+      headers: buildActiveProfileHeaders(),
+    },
+  );
+  return parseJsonResponse(
+    response,
+    ProfileAdminPageSchema,
+    'Не удалось загрузить список профилей',
+  );
+}
+
+export async function fetchAdminRoles(): Promise<AdminRole[]> {
+  const response = await fetch(`${API_BASE_URL}/admin/roles`, {
+    headers: buildActiveProfileHeaders(),
+  });
+  return parseJsonResponse(response, AdminRoleListSchema, 'Не удалось загрузить роли');
+}
+
+export async function assignProfileRole(profileId: string, roleCode: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/roles/${profileId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...buildActiveProfileHeaders(),
+    },
+    body: JSON.stringify({ roleCode }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Не удалось выдать роль');
+  }
+}
+
+export async function revokeProfileRole(profileId: string, roleCode: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/roles/${profileId}/${roleCode}`, {
+    method: 'DELETE',
+    headers: buildActiveProfileHeaders(),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Не удалось снять роль');
+  }
+}
+
 export async function updateProfileDocument(
   namespace: string,
   reference: string,
   profileKey: string,
   payload: ProfileUpdatePayload,
-  options?: { channel?: string; ifMatch?: string },
+  options?: { channel?: string; ifMatch?: string; devToken?: string },
 ): Promise<{ profile: UserProfileDocument; etag?: string }> {
   const response = await fetch(`${API_BASE_URL}/profile/${namespace}/${reference}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...buildProfileHeaders(profileKey, options?.channel, options?.ifMatch),
+      ...buildProfileHeaders(
+        profileKey,
+        options?.channel,
+        options?.ifMatch,
+        options?.devToken,
+      ),
     },
     body: JSON.stringify(payload),
   });

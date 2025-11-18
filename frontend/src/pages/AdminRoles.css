@@ -1,0 +1,95 @@
+.admin-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-roles-filter {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-roles-filter label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-roles-table-wrapper {
+  overflow-x: auto;
+}
+
+.admin-roles-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-roles-table th,
+.admin-roles-table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.admin-roles-table th {
+  background: #f9fafb;
+}
+
+.admin-roles-status {
+  color: #374151;
+}
+
+.admin-roles-empty {
+  text-align: center;
+  color: #6b7280;
+}
+
+.role-pill {
+  margin-right: 0.25rem;
+  margin-bottom: 0.25rem;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 9999px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+
+.role-pill span {
+  margin-left: 0.25rem;
+}
+
+.admin-roles-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-roles-pagination {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.admin-roles-audit ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.admin-roles-audit li {
+  margin-bottom: 0.25rem;
+}
+
+.audit-time {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.audit-type {
+  text-transform: capitalize;
+}
+
+.audit-channel {
+  color: #4b5563;
+}

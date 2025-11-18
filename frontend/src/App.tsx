@@ -9,6 +9,7 @@ import FlowsLayout from './pages/FlowsLayout';
 import FlowsOverview from './pages/FlowsOverview';
 import FlowAgents from './pages/FlowAgents';
 import ProfileSettings from './pages/ProfileSettings';
+import AdminRoles from './pages/AdminRoles';
 import './App.css';
 
 const App = () => (
@@ -31,6 +32,9 @@ const App = () => (
         <NavLink to="/profile" className="nav-link">
           Personalization
         </NavLink>
+        <NavLink to="/admin/roles" className="nav-link">
+          Admin
+        </NavLink>
       </nav>
     </header>
     <main className="app-content">
@@ -39,6 +43,7 @@ const App = () => (
         <Route path="/help" element={<Help />} />
         <Route path="/llm-chat" element={<LLMChat />} />
         <Route path="/profile" element={<ProfileSettings />} />
+        <Route path="/admin/roles" element={<AdminRoles />} />
         <Route path="/flows" element={<FlowsLayout />}>
           <Route index element={<FlowsOverview />} />
           <Route path="launch" element={<FlowLaunch />} />
