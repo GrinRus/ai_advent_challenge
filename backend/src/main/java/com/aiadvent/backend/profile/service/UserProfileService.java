@@ -33,11 +33,11 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.lang.Nullable;
+import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class UserProfileService {
@@ -137,7 +137,7 @@ public class UserProfileService {
     applyProfileUpdates(profile, command);
     userProfileRepository.save(profile);
     updateChannelOverrides(profile, command.channelOverrides());
-    return refreshAndPublish(profile);
+    return refreshAndPublish(profile, key.normalizedChannel());
   }
 
   @Transactional
@@ -171,8 +171,8 @@ public class UserProfileService {
     identity.setScopes(command.scopes());
 
     userIdentityRepository.save(identity);
-    profileEventLogger.identityAttached(profile, identity);
-    return refreshAndPublish(profile);
+    profileEventLogger.identityAttached(profile, identity, key.normalizedChannel());
+    return refreshAndPublish(profile, key.normalizedChannel());
   }
 
   @Transactional
@@ -187,10 +187,11 @@ public class UserProfileService {
                 throw new IllegalStateException("Identity belongs to another profile");
               }
               userIdentityRepository.delete(identity);
-              profileEventLogger.identityDetached(profile, identity.getProvider(), identity.getExternalId());
+              profileEventLogger.identityDetached(
+                  profile, identity.getProvider(), identity.getExternalId(), key.normalizedChannel());
             });
 
-    return refreshAndPublish(profile);
+    return refreshAndPublish(profile, key.normalizedChannel());
   }
 
   @Transactional(readOnly = true)
@@ -205,12 +206,12 @@ public class UserProfileService {
         .orElseThrow(() -> new IllegalStateException("Profile not found: " + profile.getId()));
   }
 
-  private UserProfileDocument refreshAndPublish(UserProfile profile) {
+  private UserProfileDocument refreshAndPublish(UserProfile profile, @Nullable String channel) {
     UserProfile reloaded = refreshEntity(profile);
     UserProfileDocument document = rebuildDocument(reloaded);
     cacheSnapshot(cacheKeyFromProfile(reloaded), document);
     changePublisher.publish(new ProfileChangedEvent(reloaded.getId(), reloaded.getUpdatedAt()));
-    profileEventLogger.profileUpdated(reloaded);
+    profileEventLogger.profileUpdated(reloaded, channel);
     return document;
   }
 
@@ -359,7 +360,7 @@ public class UserProfileService {
           .flatMap(userProfileRepository::findById)
           .orElse(saved);
     }
-    profileEventLogger.profileCreated(saved);
+    profileEventLogger.profileCreated(saved, key.normalizedChannel());
     return saved;
   }
 

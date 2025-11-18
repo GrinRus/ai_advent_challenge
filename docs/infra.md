@@ -42,15 +42,57 @@ Frontend контейнер проксирует все запросы `/api/*` 
    ```
 2. Перезапустите backend. Пока флаг включен, все запросы к `/api/profile/*`, `/api/llm/*` и `/api/flows/*` могут передавать заголовок `X-Profile-Auth: dev-profile-token` и будут приняты без OAuth.
 3. Клиент должен по-прежнему передавать `X-Profile-Key`/`X-Profile-Channel`; единственное отличие — токен заменяет настоящую сессию.
-4. Обязательно выключайте режим (`PROFILE_DEV_ENABLED=false`) перед публикацией или совместной разработкой: backend начнёт возвращать `403` для заголовка `X-Profile-Auth`, а все профили снова станут доступны только по реальной аутентификации.
+4. Опционально задайте `APP_PROFILE_DEV_LINK_TTL` (или `app.profile.dev.link-ttl` в `application.yaml`), чтобы контролировать TTL одноразовых ссылок для Telegram/CLI. Значение по умолчанию — `10m`.
+5. Через фронтенд (баннер “Dev session”) или REST `POST /api/profile/{namespace}/{reference}/dev-link` можно выпустить одноразовый код. Эндпоинт и UI доступны только при активном dev-token и возвращают `{code, channel, expiresAt}` для ручной привязки Telegram/CLI.
+6. Обязательно выключайте режим (`PROFILE_DEV_ENABLED=false`) перед публикацией или совместной разработкой: backend начнёт возвращать `403` для заголовка `X-Profile-Auth`, а все профили снова станут доступны только по реальной аутентификации.
 
 Для smoke-проверки можно выполнить:
 ```bash
 curl -H 'X-Profile-Key: web:demo' \
      -H 'X-Profile-Auth: dev-profile-token' \
      http://localhost:8080/api/profile/web/demo
+
+# Получение dev-link
+Выдаёт одноразовый код (по умолчанию живёт 10 минут), который можно отобразить в UI или отправить пользователю:
+
+```bash
+curl -X POST \
+     -H 'X-Profile-Key: web:demo' \
+     -H 'X-Profile-Auth: dev-profile-token' \
+     http://localhost:8080/api/profile/web/demo/dev-link
+```
+
+Ответ:
+
+```json
+{
+  "code": "XY2JK9PQ",
+  "channel": "telegram",
+  "expiresAt": "2025-02-05T18:20:00Z"
+}
+```
 ```
 В ответе будет новый профиль-заглушка; PUT/POST с тем же заголовком доступны до тех пор, пока dev-режим активен.
+
+## OAuth мониторинг и крон-джобы
+
+Чтобы Wave 43 не требовал архитектурных правок, уже в Wave 42 фиксируем требования по фоновой обработке токенов:
+
+1. **Конфигурация.** В `application.yaml` добавляем блок `app.oauth.refresh` с флагами `enabled`, `batch-size` и `lookahead` (например, 15 минут). Все значения можно переопределять через env (`APP_OAUTH_REFRESH_ENABLED=true`).
+2. **Планировщик.** Spring `@Scheduled` job запускается каждые 60 секунд, выбирает до `batch-size` записей `user_identity`, у которых `expires_at < now + lookahead`. Запрос выполняется с `FOR UPDATE SKIP LOCKED`, чтобы несколько инстансов могли делить нагрузку.
+3. **Метрики.**
+   - `oauth_refresh_success_total{provider}`
+   - `oauth_refresh_error_total{provider,reason}`
+   - `oauth_refresh_duration_seconds{provider}` (Timer)
+   - `oauth_tokens_expiring{provider}` (Gauge) — остаток токенов с expiry < 1ч.
+4. **Алерты.** Grafana/Alertmanager отслеживают:
+   - `oauth_refresh_error_total` рост >5% за 15 мин.
+   - `oauth_tokens_expiring{provider}` > 0 при `refresh_success_rate < 0.95`.
+   - Отсутствие job-метрик (`scrape_timestamp > 5m`) → проблема cron-джобы.
+5. **Логи.** Каждое событие фиксируем структурированным сообщением `oauth_refresh status=success|error provider=... reason=... profileId=...` с корреляционным ID (`state/deviceId`).
+6. **Fallback.** При постоянной ошибке (`invalid_grant`, `invalid_client`) job переводит identity в статус `REQUIRES_RELINK` и отправляет событие в audit, чтобы UI показал баннер «перепривязать».
+
+Требования выше нужно использовать при реализации реальных провайдеров (VK/GitHub/Google) — интерфейсы и конфиги уже готовы.
 
 ## Telegram бот
 - Управление включением: `TELEGRAM_BOT_ENABLED` (`true`/`false`, по умолчанию выключен).

@@ -24,14 +24,17 @@ public class RoleAssignmentService {
   private final RoleRepository roleRepository;
   private final UserProfileRepository userProfileRepository;
   private final ProfileRoleRepository profileRoleRepository;
+  private final ProfileEventLogger profileEventLogger;
 
   public RoleAssignmentService(
       RoleRepository roleRepository,
       UserProfileRepository userProfileRepository,
-      ProfileRoleRepository profileRoleRepository) {
+      ProfileRoleRepository profileRoleRepository,
+      ProfileEventLogger profileEventLogger) {
     this.roleRepository = roleRepository;
     this.userProfileRepository = userProfileRepository;
     this.profileRoleRepository = profileRoleRepository;
+    this.profileEventLogger = profileEventLogger;
   }
 
   public List<Role> listAvailableRoles() {
@@ -62,6 +65,7 @@ public class RoleAssignmentService {
     }
     profileRoleRepository.save(new ProfileRole(profile, role));
     log.info("role_assigned profileId={} roleCode={}", profileId, role.getCode());
+    profileEventLogger.roleAssigned(profile, role);
   }
 
   @Transactional
@@ -73,6 +77,9 @@ public class RoleAssignmentService {
     ProfileRoleId id = new ProfileRoleId(profileId, role.getId());
     profileRoleRepository.deleteById(id);
     log.info("role_revoked profileId={} roleCode={}", profileId, role.getCode());
+    userProfileRepository
+        .findById(profileId)
+        .ifPresent(profile -> profileEventLogger.roleRevoked(profile, role));
   }
 
   private String normalize(String code) {

@@ -21,7 +21,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 @EnableConfigurationProperties({
   ProfileCacheProperties.class,
   ProfileDevAuthProperties.class,
-  ProfilePromptProperties.class
+  ProfilePromptProperties.class,
+  OAuthProviderProperties.class
 })
 public class ProfileConfiguration {
 

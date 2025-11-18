@@ -26,8 +26,9 @@ X-Profile-Channel: web
    PROFILE_BASIC_TOKEN=dev-profile-token
    ```
 2. Передавайте заголовок `X-Profile-Auth: dev-profile-token` вместе с `X-Profile-Key`.
-3. Режим включает фильтр `ProfileDevAuthFilter`, который разрешает запросы и помечает их как dev-only. Выключайте флаг перед деплоем.
-4. Проверка: `curl -H 'X-Profile-Key: web:demo' -H 'X-Profile-Auth: dev-profile-token' http://localhost:8080/api/profile/web/demo`.
+3. Для Telegram/CLI можно выпустить одноразовый dev-link: на фронтенде откройте баннер “Dev session” и нажмите “Создать dev-link” или выполните `POST /api/profile/{ns}/{ref}/dev-link` (требует dev-token). TTL задаётся через `app.profile.dev.link-ttl` (по умолчанию 10 минут).
+4. Режим включает фильтр `ProfileDevAuthFilter`, который разрешает запросы и помечает их как dev-only. Выключайте флаг перед деплоем.
+5. Проверка: `curl -H 'X-Profile-Key: web:demo' -H 'X-Profile-Auth: dev-profile-token' http://localhost:8080/api/profile/web/demo`.
 
 ## 3. Persona snippets в Spring AI
 
@@ -58,7 +59,29 @@ If-Match: W/"5"
 
 При несовпадении backend вернёт `412 Precondition Failed`.
 
-## 6. Инвалидация кеша и метрики
+## 6. UX флоу «привязать внешний провайдер»
+
+Пока реальная реализация VK OAuth запланирована на Wave 43, UX и API-контракты фиксируем уже сейчас:
+
+1. Web UI отправляет `POST /api/profile/{ns}/{ref}/identities/{provider}/authorize` — backend генерирует `state`, `deviceId`, `codeChallenge` и возвращает `authorizationUrl + expiresAt`.
+2. UI выводит модалку с кнопкой «Открыть провайдера» и подсказкой для Telegram: `state` и `deviceId` можно использовать, чтобы открыть ссылку на другом устройстве.
+3. После клика UI открывает `authorizationUrl` в новом окне и запускает polling `GET /api/profile/{ns}/{ref}/identities/status?provider=vk&state=...` (интервал 2 сек, таймаут 2 мин). Telegram бот делает тоже самое во время linking.
+4. Когда backend завершает обмен токена и сохраняет `user_identity`, ответ status меняется на `linked`, фронтенд перезагружает профиль и показывает toast «Аккаунт привязан».
+5. При `error` UI отображает сообщение, предлагает «Повторить» (генерация нового state).
+
+Обязательные поля ответов:
+```json
+{
+  "authorizationUrl": "https://id.vk.ru/authorize?state=...",
+  "state": "abc123",
+  "deviceId": "dev-xyz",
+  "expiresAt": "2025-02-10T12:00:00Z"
+}
+```
+
+Polling status возвращает `{"status":"pending|linked|error","message":"..."}`. Telegram по завершении получает webhook-event `identity_linked` и уведомляет пользователя.
+
+## 7. Инвалидация кеша и метрики
 
 - `profile_resolve_seconds`, `user_profile_cache_hit_total`, `user_profile_cache_miss_total`, `profile_identity_total` доступны в Micrometer.
 - Любое обновление вызывает `ProfileChangedEvent` → Redis pub/sub → сброс локальных Caffeine кешей.
