@@ -131,14 +131,18 @@ public class AstFileContextFactory {
         }
       }
 
+      SymbolBuilder fileSymbol = fallbackNode(relativePath, lines.length, imports);
       if (builders.isEmpty()) {
-        builders.add(fallbackNode(relativePath, lines.length, imports));
+        builders.add(fileSymbol);
       } else {
         for (int i = 0; i < builders.size(); i++) {
           SymbolBuilder current = builders.get(i);
-          int endLine = (i + 1 < builders.size()) ? Math.max(current.startLine, builders.get(i + 1).startLine - 1) : lines.length;
+          int endLine = (i + 1 < builders.size())
+              ? Math.max(current.startLine, builders.get(i + 1).startLine - 1)
+              : lines.length;
           current.endLine = endLine;
         }
+        builders.add(0, fileSymbol);
       }
 
       java.util.List<AstSymbolMetadata> result = new java.util.ArrayList<>();

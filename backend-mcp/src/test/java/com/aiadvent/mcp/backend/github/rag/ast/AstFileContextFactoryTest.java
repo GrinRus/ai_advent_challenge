@@ -53,4 +53,26 @@ class AstFileContextFactoryTest {
     assertThat(method.imports()).contains("import java.util.List;");
     assertThat(method.symbolFqn()).contains("DemoService");
   }
+
+  @Test
+  void addsFileLevelSymbolEvenWhenOtherSymbolsPresent() {
+    String relativePath = "src/main/java/com/example/DemoService.java";
+    String content =
+        "package com.example;\n"
+            + "import java.util.List;\n"
+            + "public class DemoService {\n"
+            + "  public void process() {}\n"
+            + "}\n";
+
+    AstFileContext context =
+        factory.create(Path.of("DemoService.java"), relativePath, "java", content);
+
+    assertThat(context).isNotNull();
+    assertThat(context.symbols()).isNotEmpty();
+    AstSymbolMetadata fileSymbol = context.symbols().get(0);
+    assertThat(fileSymbol.symbolKind()).isEqualTo("file");
+    assertThat(fileSymbol.lineStart()).isEqualTo(1);
+    assertThat(fileSymbol.lineEnd()).isGreaterThanOrEqualTo(5);
+    assertThat(fileSymbol.symbolFqn()).isEqualTo("src.main.java.com.example.DemoService.java");
+  }
 }
