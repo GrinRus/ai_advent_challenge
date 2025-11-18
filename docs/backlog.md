@@ -1260,29 +1260,33 @@
 
 ## Wave 42 — Персональные профили и расширенный онбординг
 
-Цель: вынести персонализацию агента в редактируемый профиль пользователя, связать его с чатами (веб, Telegram) и подготовить плацдарм для будущей регистрации/авторизации через OAuth-провайдеров (VK, GitHub, Google и т.д.). Нужен API для CRUD профиля, кэширование для быстрого чтения и расширяемая модель идентичностей.
+Цель: перенести персональные настройки пользователя из статичных конфигов в управляемые профили, которые лежат в БД, доступны через REST API и кешируются для быстрого чтения. Профиль должен поддерживать разные каналы (Telegram, веб) и быть готовым к расширению для регистрации через OAuth-провайдеров (VK, GitHub, Google и т.д.).
 
-### Backend
-- [ ] Спроектировать схему `user_profile` (UUID, display_name, locale, habits, anti_patterns, availability, metadata JSONB, timestamps) и таблицу `user_identity` (profile_id, provider, external_id, attributes) для маппинга Telegram userId, OAuth-провайдеров и веб-аккаунтов. Добавить Liquibase-миграцию и JPA-entity/репозитории.
-- [ ] Реализовать `UserProfileService` с кэшированием (Caffeine или Spring Cache): методы `findOrCreate(profileKey)`, `updateProfile`, `attachIdentity`, события инвалидации. Поддержать загрузку профиля по (namespace, reference), чтобы Telegram/CLI могли работать до запуска OAuth.
-- [ ] Добавить REST API `/api/profile`:
-  - `GET /api/profile/{namespace}/{reference}` — возвращает публичную часть профиля + список привязанных identity (только для owner).
-  - `PUT /api/profile/{namespace}/{reference}` — обновляет displayName, locale, habits и т.д., валидирует размер текстов.
-  - `POST /api/profile/{namespace}/{reference}/identities` — регистрирует внешнего провайдера (VK, GitHub и т.п.), хранит `provider`, `externalId`, `accessScope`.
-  Продумать аудита и ограничения (max 5 identities, запрещён дубликат пары provider/externalId).
-- [ ] Внедрить интеграцию в `SyncChatService`, `StructuredSyncService`, `AgentInvocationService`: перед построением промпта подтягивать профиль, собирать из него блок системных сообщений (тон, preferred languages, рабочие часы). Закрыть фолбэк на статический конфиг, если профиль отсутствует.
-- [ ] Настроить `TelegramChatService` и веб-клиент так, чтобы при получении сообщения формировался `ProfileLookupKey` (`namespace=telegram`, `reference=userId`) и гарантировалось создание пустого профиля при первом контакте.
+### Архитектура и данные
+- [ ] Спроектировать схему `user_profile` (uuid, namespace, reference, display_name, locale, habits, anti_patterns, work_hours, metadata JSONB, timestamps) и `user_identity` (profile_id, provider, external_id, attributes JSONB, scopes) с внешними ключами и ограничениями уникальности `(provider, external_id)`. Добавить миграцию Liquibase + индексы по namespace/reference и provider.
+- [ ] Рассмотреть таблицу `user_profile_channel` или расширенный `metadata`, чтобы хранить отдельные настройки для Telegram/web (например, preferred reply length, включён ли синтез речи). Задокументировать, как добавлять новые поля, не ломая API.
 
-### Frontend / UX
-- [ ] Добавить страницу "Personalization" в веб-UI (React/Vite): форма с display name, языками, привычками и анти-паттернами, предпросмотр того, что получит агент. Интегрировать с новым REST API, предусмотреть optimistic update и подсказки.
-- [ ] До появления полноценной регистрации подготовить заглушку авторизации (e.g. dev-only токен или existing session). Задокументировать flow подключения Telegram профиля к веб-аккаунту через одноразовый код.
+### Backend API и кеш
+- [ ] Реализовать `UserProfileService` с Caffeine (TTL + maximumSize) и pub/sub-инвалидацией: методы `resolveProfile(ProfileLookupKey)`, `updateProfile`, `attachIdentity`, `detachIdentity`, `evict`. Продумать `ProfileLookupKey` (namespace, reference, channel) и fallback к авто-созданию пустого профиля.
+- [ ] Экспонировать REST API `/api/profile`:
+  - `GET /api/profile/{namespace}/{reference}` — отдаёт публичные поля, активный канал и список identity; только владелец видит провайдера/ID.
+  - `PUT /api/profile/{namespace}/{reference}` — обновляет поля профиля и channel overrides; валидирует размер текстов, ограничивает количество привычек/анти-паттернов.
+  - `POST /api/profile/{namespace}/{reference}/identities` и `DELETE .../identities/{provider}/{externalId}` — регистрирует/удаляет внешний аккаунт, проверяет лимит (≤5) и уникальность пары provider/externalId.
+  Добавить аудиторные события, метрики кеш-хитов/промахов и защиту от выдачи чужих профилей (`X-Profile-Context` или session binding).
+- [ ] Встроить `UserProfileService` в `SyncChatService`, `StructuredSyncService`, `AgentInvocationService`: перед сборкой промпта подмешивать тон, язык, рабочие часы и анти-паттерны из профиля. Добавить тесты и фичефлаг `ENABLE_PROFILE_PROMPTS`, чтобы можно было откатить.
+- [ ] Для `TelegramChatService`, CLI и веб-сокетов гарантировать генерацию `ProfileLookupKey` (`namespace=telegram`, `reference=telegramUserId` и т.д.), автосоздание профиля при первом сообщении и логирование событий (`profile_created`, `profile_updated`, `identity_attached`).
 
-### OAuth / Identity провайдеры
-- [ ] Обновить архитектурный документ с целевым flow OAuth: редирект на провайдера (VK), получение кода, обмен на токен, маппинг на `user_identity`. Зафиксировать требования по хранению токенов (шифрование, TTL, refresh), список обязательных полей профиля.
-- [ ] Реализовать базовый `OAuthProviderRegistry` + `VkOAuthClient` (конфиг `app.oauth.providers.vk.*`). Пока можно ограничиться server-side exchange и сохранением `externalId`, `screenName`, `avatar`.
-- [ ] Добавить CLI/Telegram-команду “Привязать VK”, которая инициирует выдачу oauth-link + одноразовый state, валидирует ответ и связывает identity c текущим пользователем.
+### Frontend и UX
+- [ ] Добавить страницу “Personalization” в веб-UI (React/Vite): форма с display name, языком, привычками, анти-паттернами, рабочими часами, превью системного сообщения и кнопка “привязать Telegram/VK”. Поддержать optimistic updates, спиннер кеширования и информирование о лимитах.
+- [ ] Показать активный профиль в основном чате (баннер или боковая панель). Дать возможность переключать канал (web/telegram) и видеть расхождения настроек.
+- [ ] До полноценного OAuth внедрить dev-only сессию (e.g. токен из `.env`) и документацию по связке Telegram ↔ веб через одноразовый код/QR.
 
-### Документация и тесты
-- [ ] Описать Wave 42 в `docs/architecture/personalization.md`: модель профиля, последовательности запросов (чат → профиль → кеш → БД), интеграция с OAuth.
-- [ ] Покрыть сервис интеграционными тестами: создание профиля, обновление, привязка Telegram/VK, инвалидация кеша, использование в `SyncChatService` (assert, что системный промпт содержит данные из профиля).
-Цель: обеспечить возможность запускать ключевые assisted-coding сценарии не только против GitHub, но и GitLab, с единым UX, безопасным хранением токенов и идентичным MCP-функционалом.
+### OAuth и провайдеры
+- [ ] Обновить `docs/architecture/personalization.md` и `docs/infra.md` с целевыми flow: redirect → code → token → `user_identity`, хранение `state` и `codeVerifier`, требования по шифрованию refresh/ access токенов и TTL. Добавить диаграммы для веб-регистрации и Telegram deep-link.
+- [ ] Реализовать `OAuthProviderRegistry` и `VkOAuthClient`: настройки `app.oauth.providers.vk.*`, методы построения auth URL, обмена кода на токен, получения профиля пользователя и сохранения `externalId`, `screenName`, `avatar`.
+- [ ] Добавить CLI/Telegram команду “Привязать VK”: создаёт одноразовый state, отдаёт ссылку, принимает callback, валидирует токен и вызывает `attachIdentity`. Продумать защиту от повторного связывания и отзыв привязки.
+
+### Наблюдаемость, документация и тесты
+- [ ] Добавить метрики (`user_profile_cache_hit`, `profile_resolve_seconds`, `profile_identity_total`), структурные логи и алерты на деградацию кеша/БД. Запротоколировать вручную вызываемый `ProfileAdminController`/CLI для ручного инвалидационного flush.
+- [ ] Дополнить `docs/architecture/personalization.md` и `docs/guides/flows.md` диаграммами: чат → lookup → кеш → БД, ветвление по каналу, шаги OAuth.
+- [ ] Написать unit и integration тесты: создание/обновление профиля, ограничение по полям, привязка Telegram/VK, инвалидация кеша, загрузка в `SyncChatService` (assert, что системное сообщение содержит пользовательские привычки), e2e фронтенд тесты страницы Personalization.
