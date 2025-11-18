@@ -36,6 +36,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -112,6 +113,7 @@ public class RepoRagIndexService {
     AtomicLong filesSkipped = new AtomicLong();
     AtomicLong filesDeleted = new AtomicLong();
     AtomicBoolean astReady = new AtomicBoolean(false);
+    AtomicInteger astFiles = new AtomicInteger();
     List<String> warnings = new ArrayList<>();
     Map<String, RepoRagFileStateEntity> stateByPath =
         fileStateRepository.findByNamespace(request.namespace()).stream()
@@ -198,9 +200,16 @@ public class RepoRagIndexService {
                 return FileVisitResult.CONTINUE;
               }
 
-              if (!astReady.get()
-                  && fileChunks.stream().anyMatch(chunk -> chunk.astMetadata() != null)) {
-                astReady.set(true);
+              boolean fileHasAst =
+                  fileChunks.stream().anyMatch(chunk -> chunk.astMetadata() != null);
+              if (fileHasAst) {
+                astFiles.incrementAndGet();
+                if (astReady.compareAndSet(false, true)) {
+                  log.info(
+                      "AST metadata detected for file {} (namespace={})",
+                      relativePath,
+                      request.namespace());
+                }
               }
 
               List<Document> fileDocuments =
@@ -250,11 +259,17 @@ public class RepoRagIndexService {
         filesDeleted.incrementAndGet();
       }
       log.info(
-          "Indexed repo {} with {} files and {} chunks (namespace={})",
+          "Indexed repo {} with {} files and {} chunks (namespace={}, astFiles={})",
           request.repoOwner(),
           files.get(),
           chunks.get(),
-          request.namespace());
+          request.namespace(),
+          astFiles.get());
+      if (!astReady.get()) {
+        log.warn(
+            "AST metadata was not produced for namespace {} during this run; call graph will remain disabled",
+            request.namespace());
+      }
     } catch (IOException ex) {
       throw new IllegalStateException("Failed to index workspace " + request.workspaceId(), ex);
     }
