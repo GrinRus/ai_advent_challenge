@@ -65,11 +65,15 @@ public class CodingAssistantProperties {
 
     private boolean enabled = true;
     private String baseUrl = "https://api.z.ai/api/anthropic";
-    private String model = "GLM-4.5";
+    private String model = "GLM-4.6";
     private String apiKey;
     private int maxRetries = 1;
     private String cliBin = "claude";
     private Duration cliTimeout = Duration.ofMinutes(2);
+    private Duration apiTimeout = Duration.ofMinutes(50);
+    private String defaultOpusModel = "GLM-4.6";
+    private String defaultSonnetModel = "GLM-4.6";
+    private String defaultHaikuModel = "GLM-4.5-Air";
 
     public boolean isEnabled() {
       return enabled;
@@ -125,6 +129,38 @@ public class CodingAssistantProperties {
 
     public void setCliTimeout(Duration cliTimeout) {
       this.cliTimeout = cliTimeout;
+    }
+
+    public Duration getApiTimeout() {
+      return apiTimeout;
+    }
+
+    public void setApiTimeout(Duration apiTimeout) {
+      this.apiTimeout = apiTimeout;
+    }
+
+    public String getDefaultOpusModel() {
+      return defaultOpusModel;
+    }
+
+    public void setDefaultOpusModel(String defaultOpusModel) {
+      this.defaultOpusModel = defaultOpusModel;
+    }
+
+    public String getDefaultSonnetModel() {
+      return defaultSonnetModel;
+    }
+
+    public void setDefaultSonnetModel(String defaultSonnetModel) {
+      this.defaultSonnetModel = defaultSonnetModel;
+    }
+
+    public String getDefaultHaikuModel() {
+      return defaultHaikuModel;
+    }
+
+    public void setDefaultHaikuModel(String defaultHaikuModel) {
+      this.defaultHaikuModel = defaultHaikuModel;
     }
   }
 }

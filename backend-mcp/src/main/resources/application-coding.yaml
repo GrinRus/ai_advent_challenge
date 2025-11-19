@@ -36,8 +36,12 @@ coding:
   claude:
     enabled: ${CODING_CLAUDE_ENABLED:true}
     base-url: ${CODING_CLAUDE_BASE_URL:https://api.z.ai/api/anthropic}
-    model: ${CODING_CLAUDE_MODEL:GLM-4.5}
+    model: ${CODING_CLAUDE_MODEL:GLM-4.6}
     api-key: ${ZHIPU_API_KEY:}
     max-retries: ${CODING_CLAUDE_MAX_RETRIES:1}
     cli-bin: ${CLAUDE_CODE_BIN:claude}
     cli-timeout: ${CLAUDE_CODE_TIMEOUT:PT2M}
+    api-timeout: ${CLAUDE_CODE_API_TIMEOUT:PT50M}
+    default-opus-model: ${CLAUDE_CODE_DEFAULT_OPUS_MODEL:GLM-4.6}
+    default-sonnet-model: ${CLAUDE_CODE_DEFAULT_SONNET_MODEL:GLM-4.6}
+    default-haiku-model: ${CLAUDE_CODE_DEFAULT_HAIKU_MODEL:GLM-4.5-Air}

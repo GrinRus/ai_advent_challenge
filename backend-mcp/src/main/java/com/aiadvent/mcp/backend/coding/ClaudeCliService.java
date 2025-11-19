@@ -62,7 +62,6 @@ class ClaudeCliService {
     String binary =
         StringUtils.hasText(cli.getCliBin()) ? cli.getCliBin().trim() : "claude";
     command.add(binary);
-    command.add("--no-ansi");
     command.add("--output-format");
     command.add("json");
     if (StringUtils.hasText(cli.getModel())) {
@@ -80,7 +79,20 @@ class ClaudeCliService {
     builder.directory(workspacePath.toFile());
     Map<String, String> env = builder.environment();
     env.put("ANTHROPIC_API_KEY", cli.getApiKey());
+    env.put("ANTHROPIC_AUTH_TOKEN", cli.getApiKey());
     env.put("ANTHROPIC_BASE_URL", cli.getBaseUrl());
+    if (cli.getApiTimeout() != null) {
+      env.put("API_TIMEOUT_MS", String.valueOf(cli.getApiTimeout().toMillis()));
+    }
+    if (StringUtils.hasText(cli.getDefaultOpusModel())) {
+      env.put("ANTHROPIC_DEFAULT_OPUS_MODEL", cli.getDefaultOpusModel());
+    }
+    if (StringUtils.hasText(cli.getDefaultSonnetModel())) {
+      env.put("ANTHROPIC_DEFAULT_SONNET_MODEL", cli.getDefaultSonnetModel());
+    }
+    if (StringUtils.hasText(cli.getDefaultHaikuModel())) {
+      env.put("ANTHROPIC_DEFAULT_HAIKU_MODEL", cli.getDefaultHaikuModel());
+    }
     env.put("CLAUDE_NO_TELEMETRY", "1");
     env.put("LANG", "en_US.UTF-8");
 

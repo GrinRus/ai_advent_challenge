@@ -137,7 +137,8 @@ Do not wrap the JSON in markdown fences and do not include extra explanations.
     if (!StringUtils.hasText(stdout)) {
       throw new IllegalStateException("Claude CLI returned empty response");
     }
-    String json = extractJson(stdout);
+    String cleanedOutput = AnsiCleaner.strip(stdout);
+    String json = extractJson(cleanedOutput);
     try {
       return objectMapper.readValue(json, CliPatchResponse.class);
     } catch (IOException ex) {
