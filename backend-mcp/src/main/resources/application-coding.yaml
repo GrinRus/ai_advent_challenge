@@ -69,3 +69,10 @@ coding:
     max-operations: ${CODING_OPENAI_MAX_OPERATIONS:8}
     max-file-lines: ${CODING_OPENAI_MAX_FILE_LINES:2000}
     max-file-bytes: ${CODING_OPENAI_MAX_FILE_BYTES:204800}
+
+logging:
+  level:
+    org.springframework.ai: DEBUG
+    org.springframework.ai.chat: DEBUG
+    org.springframework.ai.chat.client: DEBUG
+    org.springframework.ai.chat.client.advisor: DEBUG

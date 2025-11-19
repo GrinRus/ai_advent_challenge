@@ -1,6 +1,9 @@
 package com.aiadvent.mcp.backend.coding;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -15,6 +18,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
 class CodingOpenAiConfiguration {
+
+  private static final Logger log = LoggerFactory.getLogger(CodingOpenAiConfiguration.class);
 
   @Bean(name = "codingArtifactChatClientBuilder")
   @ConditionalOnProperty(
@@ -39,14 +44,21 @@ class CodingOpenAiConfiguration {
 
     OpenAiChatModel chatModel = chatModelProvider.getIfAvailable();
     if (chatModel == null) {
+      log.info("codingArtifactChatClientBuilder: OpenAiChatModel bean not found, building standalone instance");
       OpenAiApi openAiApi = openAiApiProvider.getIfAvailable();
       if (openAiApi == null) {
         openAiApi =
             buildOpenAiApi(environment, restClientBuilderProvider, webClientBuilderProvider);
       }
       chatModel = OpenAiChatModel.builder().openAiApi(openAiApi).defaultOptions(options).build();
+    } else {
+      log.debug("codingArtifactChatClientBuilder: Reusing existing OpenAiChatModel bean");
     }
-    ChatClient baseClient = ChatClient.builder(chatModel).defaultOptions(options).build();
+    ChatClient baseClient =
+        ChatClient.builder(chatModel)
+            .defaultOptions(options)
+            .defaultAdvisors(SimpleLoggerAdvisor.builder().order(-100).build())
+            .build();
     return baseClient.mutate();
   }
 
@@ -59,6 +71,10 @@ class CodingOpenAiConfiguration {
       throw new IllegalStateException(
           "spring.ai.openai.api-key must be configured to use coding.generate_artifact");
     }
+    log.info("codingArtifactChatClientBuilder: building OpenAiApi (baseUrl={}, restClient={}, webClient={})",
+        environment.getProperty("spring.ai.openai.base-url", "https://api.openai.com/v1"),
+        restClientBuilderProvider.getIfAvailable() != null,
+        webClientBuilderProvider.getIfAvailable() != null);
     OpenAiApi.Builder builder = OpenAiApi.builder().apiKey(apiKey);
     String baseUrl = environment.getProperty("spring.ai.openai.base-url");
     if (StringUtils.hasText(baseUrl)) {
