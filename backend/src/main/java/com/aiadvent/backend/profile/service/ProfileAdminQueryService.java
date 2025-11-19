@@ -19,6 +19,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -33,6 +34,7 @@ public class ProfileAdminQueryService {
     this.profileRoleRepository = profileRoleRepository;
   }
 
+  @Transactional(readOnly = true)
   public Page<ProfileAdminSummary> listProfiles(
       @Nullable String namespaceFilter, @Nullable String referenceFilter, int page, int size) {
     Pageable pageable =
