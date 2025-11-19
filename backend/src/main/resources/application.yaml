@@ -153,6 +153,8 @@ app:
       token: ${PROFILE_BASIC_TOKEN:}
     prompts:
       enabled: ${ENABLE_PROFILE_PROMPTS:true}
+    security:
+      enabled: ${PROFILE_SECURITY_ENABLED:true}
   chat:
     research:
       system-prompt: |

@@ -27,7 +27,7 @@ X-Profile-Channel: web
    ```
 2. Передавайте заголовок `X-Profile-Auth: dev-profile-token` вместе с `X-Profile-Key`.
 3. Для Telegram/CLI можно выпустить одноразовый dev-link: на фронтенде откройте баннер “Dev session” и нажмите “Создать dev-link” или выполните `POST /api/profile/{ns}/{ref}/dev-link` (требует dev-token). TTL задаётся через `app.profile.dev.link-ttl` (по умолчанию 10 минут).
-4. Режим включает фильтр `ProfileDevAuthFilter`, который разрешает запросы и помечает их как dev-only. Выключайте флаг перед деплоем.
+4. Режим включает central guard (`ProfileContextFilter` + `ProfileSecurityService`), который проверяет `X-Profile-Key`/`X-Profile-Auth`, помечает запросы как dev-only и отклоняет вызовы без токена. Выключайте флаг перед деплоем.
 5. Проверка: `curl -H 'X-Profile-Key: web:demo' -H 'X-Profile-Auth: dev-profile-token' http://localhost:8080/api/profile/web/demo`.
 
 ## 3. Persona snippets в Spring AI

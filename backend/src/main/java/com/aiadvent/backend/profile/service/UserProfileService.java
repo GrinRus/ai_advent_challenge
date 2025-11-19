@@ -147,9 +147,11 @@ public class UserProfileService {
     }
     UserProfile profile = resolveOrCreateEntity(key);
 
+    String provider = normalizeIdentityProvider(command.provider());
+    String externalId = normalizeIdentityExternalId(command.externalId());
+
     userIdentityRepository
-        .findByProviderAndExternalId(
-            normalize(command.provider()), command.externalId().trim().toLowerCase(Locale.ROOT))
+        .findByProviderAndExternalId(provider, externalId)
         .ifPresent(
             existing -> {
               if (!existing.getProfile().getId().equals(profile.getId())) {
@@ -165,8 +167,8 @@ public class UserProfileService {
 
     UserIdentity identity = new UserIdentity();
     identity.setProfile(profile);
-    identity.setProvider(normalize(command.provider()));
-    identity.setExternalId(command.externalId().trim());
+    identity.setProvider(provider);
+    identity.setExternalId(externalId);
     identity.setAttributes(command.attributes());
     identity.setScopes(command.scopes());
 
@@ -182,7 +184,8 @@ public class UserProfileService {
       ProfileLookupKey key, String provider, String externalId) {
     UserProfile profile = resolveOrCreateEntity(key);
     userIdentityRepository
-        .findByProviderAndExternalId(normalize(provider), externalId.trim())
+        .findByProviderAndExternalId(
+            normalizeIdentityProvider(provider), normalizeIdentityExternalId(externalId))
         .ifPresent(
             identity -> {
               if (!identity.getProfile().getId().equals(profile.getId())) {
@@ -355,6 +358,20 @@ public class UserProfileService {
     return node != null ? node.deepCopy() : null;
   }
 
+  private String normalizeIdentityProvider(String value) {
+    if (!StringUtils.hasText(value)) {
+      throw new IllegalArgumentException("provider must not be empty");
+    }
+    return value.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String normalizeIdentityExternalId(String value) {
+    if (!StringUtils.hasText(value)) {
+      throw new IllegalArgumentException("externalId must not be empty");
+    }
+    return value.trim().toLowerCase(Locale.ROOT);
+  }
+
   private JsonNode normalizeJsonObject(JsonNode node) {
     if (node == null || node.isNull()) {
       return objectMapper.createObjectNode();
@@ -461,10 +478,4 @@ public class UserProfileService {
     return profile.getNamespace() + ":" + profile.getReference();
   }
 
-  private String normalize(String value) {
-    if (!StringUtils.hasText(value)) {
-      return value;
-    }
-    return value.trim().toLowerCase(Locale.ROOT);
-  }
 }

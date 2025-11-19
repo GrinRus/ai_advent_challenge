@@ -31,18 +31,34 @@ const AdminRoles = () => {
   const activeChannel = useProfileStore((state) => state.channel);
   const devToken = useProfileStore((state) => state.devToken);
   const activeProfileKey = buildProfileKey(activeNamespace, activeReference);
+  const hasAdminRole = useProfileStore(
+    (state) => !!state.profile?.roles?.some((role) => role === 'admin'),
+  );
 
   useEffect(() => {
+    if (!hasAdminRole) {
+      setAvailableRoles([]);
+      return;
+    }
     fetchAdminRoles()
       .then((data) => setAvailableRoles(data))
       .catch((error) => setStatus(error instanceof Error ? error.message : 'Не удалось загрузить роли'));
-  }, []);
+  }, [hasAdminRole]);
 
   useEffect(() => {
+    if (!hasAdminRole) {
+      setProfiles([]);
+      setStatus('Недостаточно прав для просмотра админ-панели');
+      return;
+    }
     loadProfiles(0);
-  }, []);
+  }, [hasAdminRole]);
 
   const loadProfiles = async (targetPage: number) => {
+    if (!hasAdminRole) {
+      setStatus('Недостаточно прав для загрузки профилей');
+      return;
+    }
     setLoading(true);
     setStatus('Загрузка профилей…');
     try {
@@ -110,6 +126,18 @@ const AdminRoles = () => {
 
   const canGoPrev = page > 0;
   const canGoNext = page < totalPages - 1;
+
+  if (!hasAdminRole) {
+    return (
+      <div className="admin-roles">
+        <h2>Admin · Roles</h2>
+        <p>
+          Доступ запрещён. Активный профиль должен иметь роль <strong>admin</strong>.
+          Обновите профиль или запросите права у администратора.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-roles">

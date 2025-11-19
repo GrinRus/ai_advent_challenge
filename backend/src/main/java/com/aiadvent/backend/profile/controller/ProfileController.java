@@ -2,7 +2,7 @@ package com.aiadvent.backend.profile.controller;
 
 import com.aiadvent.backend.profile.api.IdentityRequest;
 import com.aiadvent.backend.profile.api.ProfileUpdateRequest;
-import com.aiadvent.backend.profile.security.ProfileDevAuthFilter;
+import com.aiadvent.backend.profile.security.ProfileSecurityService;
 import com.aiadvent.backend.profile.service.DevLinkResponse;
 import com.aiadvent.backend.profile.service.DevProfileLinkService;
 import com.aiadvent.backend.profile.service.ProfileAuditDocument;
@@ -38,14 +38,17 @@ public class ProfileController {
 
   private final UserProfileService userProfileService;
   private final ProfileAuditService profileAuditService;
+  private final ProfileSecurityService profileSecurityService;
   private final DevProfileLinkService devProfileLinkService;
 
   public ProfileController(
       UserProfileService userProfileService,
       ProfileAuditService profileAuditService,
+      ProfileSecurityService profileSecurityService,
       @Nullable DevProfileLinkService devProfileLinkService) {
     this.userProfileService = userProfileService;
     this.profileAuditService = profileAuditService;
+    this.profileSecurityService = profileSecurityService;
     this.devProfileLinkService = devProfileLinkService;
   }
 
@@ -125,7 +128,7 @@ public class ProfileController {
       @RequestHeader(PROFILE_KEY_HEADER) String profileKeyHeader,
       @RequestHeader(value = PROFILE_CHANNEL_HEADER, required = false) String channelHeader,
       HttpServletRequest request) {
-    requireDevAuth(request);
+    profileSecurityService.ensureDevAccess(request);
     if (devProfileLinkService == null) {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Dev linking is disabled");
     }
@@ -162,15 +165,6 @@ public class ProfileController {
 
     String normalizedChannel = normalizeOptional(effectiveChannel);
     return new ProfileLookupKey(normalizedNamespace, normalizedReference, normalizedChannel);
-  }
-
-  private void requireDevAuth(HttpServletRequest request) {
-    boolean devAuthenticated =
-        request != null
-            && Boolean.TRUE.equals(request.getAttribute(ProfileDevAuthFilter.DEV_AUTH_ATTRIBUTE));
-    if (!devAuthenticated) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Dev authentication required");
-    }
   }
 
   private String normalize(String value) {

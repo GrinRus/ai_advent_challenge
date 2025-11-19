@@ -71,7 +71,7 @@ User → Web UI (widget) → Backend callback → ProfileService.resolveOrCreate
 
 ## 4. Dev-only сценарии
 - В `application.yaml`: `app.profile.dev.enabled=true`, `app.profile.dev.token=dev-profile-token`, `app.profile.dev.link-ttl=10m`.
-- `ProfileDevAuthFilter` принимает заголовок `X-Profile-Auth` и помечает запрос как dev-only.
+- Центральный guard (`ProfileContextFilter` + `ProfileSecurityService`) принимает заголовок `X-Profile-Auth`, валидирует `X-Profile-Key` и помечает запрос как dev-only.
 - `POST /api/profile/{ns}/{ref}/dev-link` (только в dev-режиме) генерирует код (`ABCDEFGHJKMNPQRSTUVWXYZ23456789`, 8 символов), хранит его в Caffeine-cache с TTL из `linkTtl` и возвращает `{code, channel, expiresAt}`.
 - Фронтенд баннер “Dev session” отображает token, предупреждение и результат генерации. Telegram/CLI позже смогут вводить код для привязки профиля.
 

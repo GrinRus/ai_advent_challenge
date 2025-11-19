@@ -36,6 +36,8 @@ app:
   profile:
     cache:
       redis-enabled: false
+    security:
+      enabled: false
   chat:
     logging:
       model:

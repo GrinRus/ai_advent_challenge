@@ -94,4 +94,23 @@ class UserProfileServiceIntegrationTest extends PostgresTestContainer {
         userProfileService.detachIdentity(key, "telegram", "12345");
     assertThat(withoutIdentity.identities()).isEmpty();
   }
+
+  @Test
+  void attachIdentityNormalizesCase() {
+    ProfileLookupKey key = new ProfileLookupKey("web", "identity-normalize", "web");
+    userProfileService.resolveProfile(key);
+
+    ObjectNode attributes = objectMapper.createObjectNode().put("username", "demo");
+    IdentityCommand firstCommand = new IdentityCommand("Telegram", "User42", attributes, List.of());
+    userProfileService.attachIdentity(key, firstCommand);
+
+    IdentityCommand duplicateDifferentCase =
+        new IdentityCommand("telegram", "user42", attributes, List.of());
+    assertThatThrownBy(() -> userProfileService.attachIdentity(key, duplicateDifferentCase))
+        .isInstanceOf(IllegalStateException.class);
+
+    UserProfileDocument remaining =
+        userProfileService.detachIdentity(key, "TELEGRAM", "USER42");
+    assertThat(remaining.identities()).isEmpty();
+  }
 }

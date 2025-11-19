@@ -7,21 +7,27 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Locale;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.server.ResponseStatusException;
 
 @Component
+@ConditionalOnProperty(
+    prefix = "app.profile.security",
+    name = "enabled",
+    havingValue = "true",
+    matchIfMissing = false)
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ProfileContextFilter extends OncePerRequestFilter {
 
-  private static final String PROFILE_KEY_HEADER = "X-Profile-Key";
-  private static final String PROFILE_CHANNEL_HEADER = "X-Profile-Channel";
+  private final ProfileSecurityService profileSecurityService;
+
+  public ProfileContextFilter(ProfileSecurityService profileSecurityService) {
+    this.profileSecurityService = profileSecurityService;
+  }
 
   @Override
   protected void doFilterInternal(
@@ -33,51 +39,43 @@ public class ProfileContextFilter extends OncePerRequestFilter {
       return;
     }
 
-    String profileKey = request.getHeader(PROFILE_KEY_HEADER);
-    if (!StringUtils.hasText(profileKey)) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, PROFILE_KEY_HEADER + " header is required");
-    }
-
-    ProfileLookupKey lookupKey =
-        new ProfileLookupKey(
-            normalize(part(profileKey, 0)),
-            normalize(part(profileKey, 1)),
-            normalizeOptional(request.getHeader(PROFILE_CHANNEL_HEADER)));
-
+    ProfileLookupKey lookupKey = null;
     try {
+      lookupKey = profileSecurityService.resolveProfileKey(request);
+      profileSecurityService.ensureDevAccess(request);
+      if (isAdminPath(path)) {
+        profileSecurityService.ensureAdminRole(lookupKey);
+      }
       ProfileContextHolder.set(lookupKey);
       filterChain.doFilter(request, response);
+    } catch (ResponseStatusException ex) {
+      response.sendError(ex.getStatusCode().value(), ex.getReason());
+      return;
     } finally {
       ProfileContextHolder.clear();
     }
+  }
+
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+      return true;
+    }
+    String path = request.getRequestURI();
+    return !requiresProfileContext(path);
   }
 
   private boolean requiresProfileContext(String path) {
     if (path == null) {
       return false;
     }
-    return path.startsWith("/api/llm") || path.startsWith("/api/flows");
+    return path.startsWith("/api/llm")
+        || path.startsWith("/api/flows")
+        || path.startsWith("/api/profile")
+        || path.startsWith("/api/admin");
   }
 
-  private String part(String key, int index) {
-    String[] parts = key.split(":", 2);
-    if (parts.length != 2) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, PROFILE_KEY_HEADER + " must be namespace:reference");
-    }
-    return parts[index];
-  }
-
-  private String normalize(String value) {
-    if (!StringUtils.hasText(value)) {
-      throw new ResponseStatusException(
-          HttpStatus.BAD_REQUEST, "Profile handle is invalid");
-    }
-    return value.trim().toLowerCase(Locale.ROOT);
-  }
-
-  private String normalizeOptional(String value) {
-    return StringUtils.hasText(value) ? value.trim().toLowerCase(Locale.ROOT) : null;
+  private boolean isAdminPath(String path) {
+    return path != null && path.startsWith("/api/admin");
   }
 }
