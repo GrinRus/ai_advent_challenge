@@ -44,12 +44,7 @@ class WorkspaceArtifactGenerator {
     ChatClient client = builder.clone().build();
     String prompt = buildPrompt(command, openai);
     var response = client.prompt().user(prompt).call();
-    if (response == null
-        || response.chatResponse() == null
-        || response.chatResponse().getResult() == null
-        || response.chatResponse().getResult().getOutput() == null) {
-      throw new IllegalStateException("OpenAI response is empty");
-    }
+
     String text = response.chatResponse().getResult().getOutput().getText();
     String json = extractJson(text);
     LlmArtifactResponse parsed;
