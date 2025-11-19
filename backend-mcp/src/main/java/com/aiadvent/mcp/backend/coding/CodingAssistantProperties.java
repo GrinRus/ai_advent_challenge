@@ -12,6 +12,7 @@ public class CodingAssistantProperties {
   private int maxInstructionLength = 4000;
   private int maxFilesPerPatch = 25;
   private ClaudeCliProperties claude = new ClaudeCliProperties();
+  private OpenAiProperties openai = new OpenAiProperties();
 
   public Duration getPatchTtl() {
     return patchTtl;
@@ -59,6 +60,14 @@ public class CodingAssistantProperties {
 
   public void setClaude(ClaudeCliProperties claude) {
     this.claude = claude;
+  }
+
+  public OpenAiProperties getOpenai() {
+    return openai;
+  }
+
+  public void setOpenai(OpenAiProperties openai) {
+    this.openai = openai;
   }
 
   public static class ClaudeCliProperties {
@@ -161,6 +170,73 @@ public class CodingAssistantProperties {
 
     public void setDefaultHaikuModel(String defaultHaikuModel) {
       this.defaultHaikuModel = defaultHaikuModel;
+    }
+  }
+
+  public static class OpenAiProperties {
+
+    private boolean enabled = true;
+    private String model = "gpt-4o-mini";
+    private double temperature = 0.2;
+    private int maxTokens = 2048;
+    private int maxOperations = 8;
+    private int maxFileLines = 2000;
+    private int maxFileBytes = 200 * 1024;
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public String getModel() {
+      return model;
+    }
+
+    public void setModel(String model) {
+      this.model = model;
+    }
+
+    public double getTemperature() {
+      return temperature;
+    }
+
+    public void setTemperature(double temperature) {
+      this.temperature = temperature;
+    }
+
+    public int getMaxTokens() {
+      return maxTokens;
+    }
+
+    public void setMaxTokens(int maxTokens) {
+      this.maxTokens = maxTokens;
+    }
+
+    public int getMaxOperations() {
+      return maxOperations;
+    }
+
+    public void setMaxOperations(int maxOperations) {
+      this.maxOperations = maxOperations;
+    }
+
+    public int getMaxFileLines() {
+      return maxFileLines;
+    }
+
+    public void setMaxFileLines(int maxFileLines) {
+      this.maxFileLines = maxFileLines;
+    }
+
+    public int getMaxFileBytes() {
+      return maxFileBytes;
+    }
+
+    public void setMaxFileBytes(int maxFileBytes) {
+      this.maxFileBytes = maxFileBytes;
     }
   }
 }

@@ -105,6 +105,43 @@ Wave 31 дополнил этот этап:
   - Патч парсится и валидируется: не допускаются бинарники, файлы за пределами workspace, превышение лимитов.
   - Diff сохраняется в `PatchRegistry` с TTL (например, 2 часа) и флагами: `generated`, `requiresReview`.
 
+#### `coding.generate_artifact`
+- **Purpose**
+  - Ускоренный сценарий “скафолдинг файла”: GPT-4o Mini возвращает JSON с операциями (`create|overwrite|append|insert`), сервис применяет их напрямую в workspace и возвращает diff + git status. Используются общие `OPENAI_*` переменные (RAG/Notes) без дублирования ключей; профиль `coding` включает `spring.ai.openai` и отдельный набор лимитов (`coding.openai.*`).
+- **Request**
+  ```jsonc
+  {
+    "workspaceId": "uuid",
+    "instructions": "создай README + tsx компонент",
+    "targetPaths": ["docs/", "frontend/src/pages/ProfileSettings.tsx"],
+    "forbiddenPaths": ["backend/"],
+    "contextFiles": [{"path": "docs/backlog.md", "maxBytes": 16384}],
+    "operationsLimit": 4
+  }
+  ```
+- **Response**
+  ```jsonc
+  {
+    "workspaceId": "uuid",
+    "summary": "Файлы README/ProfileSettings обновлены",
+    "warnings": ["Добавь тесты вручную"],
+    "operations": [
+      {"path": "docs/README.md", "action": "create", "languageHint": "markdown", "insertBefore": "", "contents": "..."}
+    ],
+    "results": [
+      {"path": "docs/README.md", "action": "create", "created": true, "bytesWritten": 512}
+    ],
+    "diff": "git diff ...",
+    "modifiedFiles": ["A\tdocs/README.md", "M\tfrontend/src/pages/ProfileSettings.tsx"],
+    "gitStatus": "A  docs/README.md\nM  frontend/src/pages/ProfileSettings.tsx",
+    "completedAt": "ISO-8601"
+  }
+  ```
+- **Логика**
+  - `WorkspaceArtifactGenerator` формирует промпт, подкладывает инструкции, target/forbidden, контекст. Ответ модели парсится в операции, валидируются лимиты (≤ N файлов, ≤ 2000 строк/200 КБ каждая).
+  - `WorkspaceFileService` расширен методами записи (`CREATE/OVERWRITE/APPEND/INSERT`) с проверкой sandbox и marker-based вставок.
+  - После записи файлов сервис собирает `git diff`/`git status`, чтобы оператор видел изменения без запуска dry-run. Результат можно сразу прогнать через `coding.apply_patch_preview` (если требуется gradle-check) или перейти к GitHub инструментариям.
+
 #### `coding.review_patch`
 - **Request**
   ```jsonc

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.aiadvent.mcp.backend.coding.PatchGenerator;
 import com.aiadvent.mcp.backend.coding.PatchPlanGenerator;
+import com.aiadvent.mcp.backend.coding.WorkspaceArtifactGenerator;
 import com.aiadvent.mcp.backend.docker.DockerRunnerService;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.workspace.WorkspaceFileService;
@@ -228,6 +229,97 @@ class CodingAssistantServiceTest {
         "dry-run flag remains false when apply fails");
   }
 
+  @Test
+  void generateArtifactAppliesOperationsAndReturnsDiff(@TempDir Path workspaceDir) throws Exception {
+    initGitRepository(workspaceDir);
+    CodingAssistantProperties properties = new CodingAssistantProperties();
+    PatchRegistry patchRegistry = new PatchRegistry(properties);
+    MeterRegistry meterRegistry = new SimpleMeterRegistry();
+    TempWorkspaceService workspaceService = mock(TempWorkspaceService.class);
+    WorkspaceFileService workspaceFileService = new WorkspaceFileService(workspaceService);
+    DockerRunnerService dockerRunnerService = mock(DockerRunnerService.class);
+    WorkspaceArtifactGenerator workspaceArtifactGenerator = mock(WorkspaceArtifactGenerator.class);
+    PatchGenerator patchGenerator = new PatchPlanGenerator();
+
+    when(workspaceService.findWorkspace("workspace-id"))
+        .thenReturn(
+            Optional.of(
+                new TempWorkspaceService.Workspace(
+                    "workspace-id",
+                    workspaceDir,
+                    Instant.now(),
+                    Instant.now().plus(Duration.ofHours(1)),
+                    "req-1",
+                    "demo/repo",
+                    "main",
+                    0L,
+                    null,
+                    List.of(),
+                    null,
+                    null,
+                    null)));
+
+    List<WorkspaceArtifactGenerator.ArtifactOperation> operations =
+        List.of(
+            new WorkspaceArtifactGenerator.ArtifactOperation(
+                "docs/roadmap.md",
+                WorkspaceArtifactGenerator.ArtifactAction.CREATE,
+                "markdown",
+                "# Roadmap\n- item\n",
+                ""),
+            new WorkspaceArtifactGenerator.ArtifactOperation(
+                "README.md",
+                WorkspaceArtifactGenerator.ArtifactAction.APPEND,
+                "markdown",
+                "\n## Updates\nNew section\n",
+                ""));
+
+    when(workspaceArtifactGenerator.generate(any()))
+        .thenReturn(
+            new WorkspaceArtifactGenerator.GenerationResult(
+                "Созданы docs/roadmap.md и обновлён README",
+                operations,
+                List.of("Проверь текст вручную")));
+
+    CodingAssistantService service =
+        new CodingAssistantService(
+            workspaceService,
+            properties,
+            workspaceFileService,
+            patchRegistry,
+            patchGenerator,
+            dockerRunnerService,
+            workspaceArtifactGenerator,
+            meterRegistry);
+
+    CodingAssistantService.GenerateArtifactResponse response =
+        service.generateArtifact(
+            new CodingAssistantService.GenerateArtifactRequest(
+                "workspace-id",
+                "Добавь план и раздел обновлений",
+                List.of("docs/", "README.md"),
+                List.of(),
+                List.of(),
+                4));
+
+    Path roadmap = workspaceDir.resolve("docs/roadmap.md");
+    assertTrue(Files.exists(roadmap));
+    assertTrue(Files.readString(roadmap).contains("# Roadmap"));
+    assertTrue(Files.readString(workspaceDir.resolve("README.md")).contains("## Updates"));
+    assertTrue(response.diff().contains("README.md"));
+    assertTrue(
+        response.modifiedFiles().stream().anyMatch(entry -> entry.contains("README.md")));
+    assertEquals("Созданы docs/roadmap.md и обновлён README", response.summary());
+    assertEquals(List.of("Проверь текст вручную"), response.warnings());
+    assertEquals(2, response.operations().size());
+    assertEquals(2, response.results().size());
+    assertTrue(response.gitStatus().contains("README.md"));
+    assertEquals(
+        1.0,
+        meterRegistry.get("coding_artifact_generation_total").counter().count(),
+        0.0001);
+  }
+
   private TestHarness createHarness(Path workspacePath) {
     CodingAssistantProperties properties = new CodingAssistantProperties();
     PatchRegistry patchRegistry = new PatchRegistry(properties);
@@ -236,6 +328,7 @@ class CodingAssistantServiceTest {
     TempWorkspaceService workspaceService = mock(TempWorkspaceService.class);
     WorkspaceFileService workspaceFileService = mock(WorkspaceFileService.class);
     DockerRunnerService dockerRunnerService = mock(DockerRunnerService.class);
+    WorkspaceArtifactGenerator workspaceArtifactGenerator = mock(WorkspaceArtifactGenerator.class);
 
     when(workspaceService.findWorkspace(anyString()))
         .thenAnswer(
@@ -268,6 +361,7 @@ class CodingAssistantServiceTest {
             patchRegistry,
             patchGenerator,
             dockerRunnerService,
+            workspaceArtifactGenerator,
             meterRegistry);
 
     return new TestHarness(service, patchRegistry, meterRegistry, dockerRunnerService);

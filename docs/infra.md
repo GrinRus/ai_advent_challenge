@@ -288,6 +288,7 @@ Backend подключает сервис через `spring.ai.mcp.client.strea
 - `coding.generate_patch` — создаёт diff, summary, usage, сохраняет `patchId` в in-memory реестр с TTL и контролирует лимиты (diff ≤ 256 КБ, ≤ 25 файлов).
 - `coding.review_patch` — подсвечивает риски (build-файлы, TODO/FIXME, миграции), тестовые рекомендации и обновляет аннотации.
 - `coding.apply_patch_preview` — **MANUAL** инструмент. После явного подтверждения выполняет `git apply --check`, временно накладывает diff, собирает `git diff --stat`, откатывает изменения и (если переданы whitelisted команды) запускает dry-run через Docker. Ответ содержит статус dry-run, список изменённых файлов, рекомендации, аннотации и метрики (`coding_patch_*`).
+- `coding.generate_artifact` — упрощённый генератор файлов. Инструмент получает инструкции, target/forbidden paths и контекст, вызывает GPT-4o Mini (через общие `OPENAI_*` переменные) и возвращает массив операций (create/overwrite/append/insert). После генерации файлы записываются в workspace, возвращается diff, git status и список предупреждений. По умолчанию ограничение — ≤ 8 файлов, каждый ≤ 2000 строк и ≤ 200 КБ.
 
 #### Claude Code CLI + GLM (z.ai)
 - CLI устанавливается в контейнер (`npm install -g @anthropic-ai/claude-code`, Node 18). Для локального стенда повторите команды вручную или используйте официальный скрипт установки z.ai; проверяйте `claude --version` после обновлений.

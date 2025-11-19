@@ -4,6 +4,8 @@ import com.aiadvent.mcp.backend.coding.CodingAssistantService.ApplyPatchPreviewR
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.ApplyPatchPreviewResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.DiscardPatchRequest;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.DiscardPatchResponse;
+import com.aiadvent.mcp.backend.coding.CodingAssistantService.GenerateArtifactRequest;
+import com.aiadvent.mcp.backend.coding.CodingAssistantService.GenerateArtifactResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.GeneratePatchRequest;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.GeneratePatchResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.ListPatchesRequest;
@@ -40,6 +42,21 @@ class CodingTools {
               + "Перед вызовом убедитесь, что рабочая ветка создана инструментом github.create_branch; именно в неё будет применён патч.")
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
     return codingAssistantService.generatePatch(request);
+  }
+
+  @Tool(
+      name = "coding.generate_artifact",
+      description =
+          "Упрощённый генератор файлов: принимает {\"workspaceId\": \"...\", \"instructions\": \"...\", "
+              + "\"targetPaths\": [\"src/App.java\"], \"forbiddenPaths\": [...], "
+              + "\"contextFiles\": [{\"path\": \"README.md\", \"maxBytes\": 4096}], "
+              + "\"operationsLimit\": 4}. Инструмент вызывает GPT-4o Mini, который возвращает JSON "
+              + "с операциями создания/перезаписи/дополнения файлов. После генерации сервис применяет изменения в workspace, "
+              + "возвращает список операций, diff, git status, warnings. Используйте для быстрого создания boilerplate, "
+              + "когда полный diff через coding.generate_patch излишен. Инструкции ограничены 4000 символами, "
+              + "каждый файл ≤ 2000 строк и ≤ 200 КБ.")
+  GenerateArtifactResponse generateArtifact(GenerateArtifactRequest request) {
+    return codingAssistantService.generateArtifact(request);
   }
 
   @Tool(

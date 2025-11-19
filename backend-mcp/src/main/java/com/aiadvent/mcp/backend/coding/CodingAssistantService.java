@@ -59,6 +59,8 @@ class CodingAssistantService {
   private final Counter patchAttemptCounter;
   private final Counter patchSuccessCounter;
   private final Counter patchCompileFailCounter;
+  private final Counter artifactGenerationCounter;
+  private final WorkspaceArtifactGenerator workspaceArtifactGenerator;
 
   CodingAssistantService(
       TempWorkspaceService workspaceService,
@@ -67,6 +69,7 @@ class CodingAssistantService {
       PatchRegistry patchRegistry,
       PatchGenerator patchGenerator,
       DockerRunnerService dockerRunnerService,
+      WorkspaceArtifactGenerator workspaceArtifactGenerator,
       @Nullable MeterRegistry meterRegistry) {
     this.workspaceService = Objects.requireNonNull(workspaceService, "workspaceService");
     this.properties = Objects.requireNonNull(properties, "properties");
@@ -76,6 +79,8 @@ class CodingAssistantService {
     this.patchGenerator = Objects.requireNonNull(patchGenerator, "patchGenerator");
     this.dockerRunnerService =
         Objects.requireNonNull(dockerRunnerService, "dockerRunnerService");
+    this.workspaceArtifactGenerator =
+        Objects.requireNonNull(workspaceArtifactGenerator, "workspaceArtifactGenerator");
     MeterRegistry registry = meterRegistry;
     if (registry == null) {
       registry = new SimpleMeterRegistry();
@@ -85,6 +90,8 @@ class CodingAssistantService {
     this.patchSuccessCounter = this.meterRegistry.counter("coding_patch_success_total");
     this.patchCompileFailCounter =
         this.meterRegistry.counter("coding_patch_compile_fail_total");
+    this.artifactGenerationCounter =
+        this.meterRegistry.counter("coding_artifact_generation_total");
   }
 
   GeneratePatchResponse generatePatch(GeneratePatchRequest request) {
@@ -153,6 +160,97 @@ class CodingAssistantService {
         annotations,
         patch.usage(),
         patch.createdAt());
+  }
+
+  GenerateArtifactResponse generateArtifact(GenerateArtifactRequest request) {
+    Objects.requireNonNull(request, "request");
+    String workspaceId = sanitizeWorkspaceId(request.workspaceId());
+    String instructions =
+        Optional.ofNullable(request.instructions()).map(String::trim).orElse("");
+    if (!StringUtils.hasText(instructions)) {
+      throw new IllegalArgumentException("instructions must not be blank");
+    }
+    validateInstructionLength(instructions);
+    TempWorkspaceService.Workspace workspace =
+        workspaceService
+            .findWorkspace(workspaceId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    Path workspacePath = workspace.path();
+
+    List<String> targetPaths = normalizePaths(request.targetPaths());
+    validatePathList(targetPaths, "targetPaths");
+    List<String> forbiddenPaths = normalizePaths(request.forbiddenPaths());
+    validatePathList(forbiddenPaths, "forbiddenPaths");
+    ensureNoOverlap(targetPaths, forbiddenPaths);
+
+    List<ContextSnippet> snippets =
+        collectContext(workspaceId, normalizeContextFiles(request.contextFiles()));
+
+    CodingAssistantProperties.OpenAiProperties openaiProps =
+        properties.getOpenai() == null ? new CodingAssistantProperties.OpenAiProperties() : properties.getOpenai();
+    int requestedLimit =
+        request.operationsLimit() == null ? 0 : Math.max(0, request.operationsLimit());
+    int operationsLimit =
+        requestedLimit > 0 ? requestedLimit : Math.max(1, openaiProps.getMaxOperations());
+
+    WorkspaceArtifactGenerator.GenerationResult generation =
+        workspaceArtifactGenerator.generate(
+            new WorkspaceArtifactGenerator.Command(
+                workspaceId,
+                workspacePath,
+                instructions,
+                targetPaths,
+                forbiddenPaths,
+                snippets,
+                operationsLimit));
+
+    if (generation.operations().isEmpty()) {
+      throw new IllegalStateException("OpenAI did not return any artifact operations");
+    }
+    artifactGenerationCounter.increment();
+
+    List<String> warnings = new ArrayList<>(generation.warnings());
+    List<ArtifactOperationResult> applied = new ArrayList<>();
+    for (WorkspaceArtifactGenerator.ArtifactOperation operation : generation.operations()) {
+      validateRelativePath(operation.path(), "operation path");
+      if (forbiddenPaths.contains(operation.path())) {
+        throw new IllegalArgumentException(
+            "Operation touches forbidden path: " + operation.path());
+      }
+      WorkspaceFileService.WriteMode mode = mapWriteMode(operation.action());
+      WorkspaceFileService.FileWriteResult result =
+          workspaceFileService.writeTextFile(
+              workspaceId,
+              operation.path(),
+              operation.contents(),
+              mode,
+              operation.insertBefore(),
+              openaiProps.getMaxFileBytes());
+      applied.add(
+          new ArtifactOperationResult(
+              operation.path(), mode.name().toLowerCase(Locale.ROOT), result.created(), result.bytesWritten()));
+    }
+
+    String diff =
+        runGitCommand(workspacePath, null, Duration.ofMinutes(1), "git", "diff").stdout();
+    String nameStatus =
+        runGitCommand(workspacePath, null, Duration.ofSeconds(30), "git", "diff", "--name-status")
+            .stdout();
+    String gitStatus =
+        runGitCommand(workspacePath, null, Duration.ofSeconds(30), "git", "status", "--short")
+            .stdout();
+    List<String> modifiedFiles = extractFilesTouched(nameStatus);
+
+    return new GenerateArtifactResponse(
+        workspaceId,
+        generation.summary(),
+        warnings,
+        generation.operations(),
+        applied,
+        diff,
+        modifiedFiles,
+        gitStatus,
+        Instant.now());
   }
 
   ReviewPatchResponse reviewPatch(ReviewPatchRequest request) {
@@ -452,6 +550,19 @@ class CodingAssistantService {
       throw new IllegalArgumentException(
           "instructions exceeds max length of " + max + " characters");
     }
+  }
+
+  private WorkspaceFileService.WriteMode mapWriteMode(
+      WorkspaceArtifactGenerator.ArtifactAction action) {
+    if (action == null) {
+      return WorkspaceFileService.WriteMode.OVERWRITE;
+    }
+    return switch (action) {
+      case CREATE -> WorkspaceFileService.WriteMode.CREATE;
+      case APPEND -> WorkspaceFileService.WriteMode.APPEND;
+      case INSERT -> WorkspaceFileService.WriteMode.INSERT;
+      case OVERWRITE -> WorkspaceFileService.WriteMode.OVERWRITE;
+    };
   }
 
   private List<String> normalizePaths(List<String> paths) {
@@ -965,6 +1076,34 @@ class CodingAssistantService {
       PatchAnnotations annotations,
       PatchUsage usage,
       Instant createdAt) {}
+
+  record GenerateArtifactRequest(
+      String workspaceId,
+      String instructions,
+      List<String> targetPaths,
+      List<String> forbiddenPaths,
+      List<ContextFile> contextFiles,
+      Integer operationsLimit) {}
+
+  record GenerateArtifactResponse(
+      String workspaceId,
+      String summary,
+      List<String> warnings,
+      List<WorkspaceArtifactGenerator.ArtifactOperation> operations,
+      List<ArtifactOperationResult> results,
+      String diff,
+      List<String> modifiedFiles,
+      String gitStatus,
+      Instant completedAt) {
+    GenerateArtifactResponse {
+      warnings = warnings == null ? List.of() : List.copyOf(warnings);
+      operations = operations == null ? List.of() : List.copyOf(operations);
+      results = results == null ? List.of() : List.copyOf(results);
+      modifiedFiles = modifiedFiles == null ? List.of() : List.copyOf(modifiedFiles);
+    }
+  }
+
+  record ArtifactOperationResult(String path, String action, boolean created, long bytesWritten) {}
 
   record ReviewPatchRequest(String workspaceId, String patchId, List<String> focus) {}
 

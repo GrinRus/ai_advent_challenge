@@ -2,6 +2,7 @@ package com.aiadvent.mcp.backend.workspace;
 
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService;
 import com.aiadvent.mcp.backend.github.workspace.TempWorkspaceService.Workspace;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -10,11 +11,13 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.lang.Nullable;
 
 @Service
 public class WorkspaceFileService {
@@ -151,6 +154,111 @@ public class WorkspaceFileService {
   }
 
   private record FileRepresentation(boolean binary, String encoding, String text, String base64) {}
+
+  public FileWriteResult writeTextFile(
+      String workspaceId,
+      String path,
+      String contents,
+      WriteMode mode,
+      @Nullable String insertBefore,
+      int maxBytes) {
+    Workspace workspace = lookupWorkspace(workspaceId);
+    Path root = workspace.path().toAbsolutePath().normalize();
+    Path target = resolvePath(root, path);
+    if (target.getParent() != null) {
+      try {
+        Files.createDirectories(target.getParent());
+      } catch (IOException ex) {
+        throw new IllegalStateException("Failed to create parent directory for " + path, ex);
+      }
+    }
+    String value = contents == null ? "" : contents;
+    int limit = Math.max(1024, maxBytes);
+    int bytes = value.getBytes(StandardCharsets.UTF_8).length;
+    if (bytes > limit) {
+      throw new IllegalArgumentException(
+          "Operation exceeds max bytes limit for "
+              + path
+              + ": "
+              + bytes
+              + " > "
+              + limit);
+    }
+    boolean existed = Files.exists(target);
+    boolean created = !existed;
+    try {
+      switch (mode) {
+        case CREATE -> {
+          if (existed) {
+            throw new IllegalStateException("File already exists: " + path);
+          }
+          Files.writeString(
+              target, value, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+        }
+        case OVERWRITE -> {
+          Files.writeString(
+              target,
+              value,
+              StandardCharsets.UTF_8,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.TRUNCATE_EXISTING);
+          created = !existed;
+        }
+        case APPEND -> {
+          Files.writeString(
+              target,
+              value,
+              StandardCharsets.UTF_8,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.APPEND);
+          created = !existed;
+        }
+        case INSERT -> {
+          if (!existed) {
+            throw new IllegalStateException(
+                "Cannot insert into non-existent file: " + path);
+          }
+          if (!StringUtils.hasText(insertBefore)) {
+            throw new IllegalArgumentException("insertBefore marker is required for insert action");
+          }
+          String marker = insertBefore;
+          String existing = Files.readString(target, StandardCharsets.UTF_8);
+          int index = existing.indexOf(marker);
+          if (index < 0) {
+            throw new IllegalStateException(
+                "Marker not found in "
+                    + path
+                    + " for insertBefore: "
+                    + marker);
+          }
+          String combined =
+              existing.substring(0, index) + value + existing.substring(index);
+          try (BufferedWriter writer =
+              Files.newBufferedWriter(
+                  target,
+                  StandardCharsets.UTF_8,
+                  StandardOpenOption.TRUNCATE_EXISTING,
+                  StandardOpenOption.WRITE)) {
+            writer.write(combined);
+          }
+          created = false;
+        }
+        default -> throw new IllegalArgumentException("Unsupported write mode: " + mode);
+      }
+    } catch (IOException ex) {
+      throw new IllegalStateException("Failed to write file: " + path, ex);
+    }
+    return new FileWriteResult(path, mode, created, bytes);
+  }
+
+  public record FileWriteResult(String path, WriteMode mode, boolean created, long bytesWritten) {}
+
+  public enum WriteMode {
+    CREATE,
+    OVERWRITE,
+    APPEND,
+    INSERT
+  }
 
   public record WorkspaceFilePayload(
       String workspaceId,
