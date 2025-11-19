@@ -38,6 +38,11 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @ActiveProfiles("test")
 class ChatProvidersSmokeTest extends PostgresTestContainer {
 
+  private static final String PROFILE_KEY_HEADER = "X-Profile-Key";
+  private static final String PROFILE_CHANNEL_HEADER = "X-Profile-Channel";
+  private static final String PROFILE_KEY = "smoke:default";
+  private static final String PROFILE_CHANNEL = "web";
+
   @Autowired private WebTestClient webTestClient;
 
   @Autowired private ChatSessionRepository chatSessionRepository;
@@ -72,6 +77,8 @@ class ChatProvidersSmokeTest extends PostgresTestContainer {
         webTestClient
             .post()
             .uri("/api/llm/chat/stream")
+            .header(PROFILE_KEY_HEADER, PROFILE_KEY)
+            .header(PROFILE_CHANNEL_HEADER, PROFILE_CHANNEL)
             .contentType(MediaType.APPLICATION_JSON)
             .accept(MediaType.TEXT_EVENT_STREAM)
             .bodyValue(new ChatStreamRequest(null, "smoke check", provider, model, null, null))

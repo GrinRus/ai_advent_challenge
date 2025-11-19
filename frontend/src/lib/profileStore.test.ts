@@ -2,22 +2,19 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildActiveProfileHeaders, buildProfileKey, useProfileStore } from './profileStore';
 
 const resetStore = () =>
-  useProfileStore.setState(
-    {
-      namespace: 'web',
-      reference: 'demo',
-      channel: 'web',
-      profile: null,
-      etag: undefined,
-      isLoading: false,
-      error: undefined,
-      auditEvents: [],
-      isAuditLoading: false,
-      auditError: undefined,
-      devToken: undefined,
-    },
-    true,
-  );
+  useProfileStore.setState({
+    namespace: 'web',
+    reference: 'demo',
+    channel: 'web',
+    profile: null,
+    etag: undefined,
+    isLoading: false,
+    error: undefined,
+    auditEvents: [],
+    isAuditLoading: false,
+    auditError: undefined,
+    devToken: undefined,
+  });
 
 describe('profile store helpers', () => {
   afterEach(() => {

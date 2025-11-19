@@ -6,7 +6,6 @@ import {
   fetchProfileAudit,
   revokeProfileRole,
   type AdminRole,
-  type ProfileAdminPage,
   type ProfileAuditEntry,
 } from '../lib/apiClient';
 import { buildProfileKey, useProfileStore } from '../lib/profileStore';

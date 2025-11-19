@@ -35,7 +35,7 @@ const initialDevToken = import.meta.env.VITE_PROFILE_DEV_TOKEN?.trim();
 
 export const useProfileStore = create<ProfileStoreState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       namespace: DEFAULT_NAMESPACE,
       reference: DEFAULT_REFERENCE,
       channel: DEFAULT_CHANNEL,
