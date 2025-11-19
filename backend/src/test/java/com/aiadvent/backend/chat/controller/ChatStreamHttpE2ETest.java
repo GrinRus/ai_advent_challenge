@@ -61,6 +61,12 @@ class ChatStreamHttpE2ETest extends PostgresTestContainer {
     chatSessionRepository.deleteAll();
     jdbcTemplate.execute("DELETE FROM chat_memory_message");
     StubChatClientState.reset();
+    webTestClient =
+        webTestClient
+            .mutate()
+            .defaultHeader("X-Profile-Key", "web:http-stream")
+            .defaultHeader("X-Profile-Channel", "web")
+            .build();
   }
 
   @AfterEach

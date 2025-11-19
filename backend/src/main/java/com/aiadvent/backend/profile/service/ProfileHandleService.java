@@ -5,11 +5,12 @@ import com.aiadvent.backend.profile.domain.ProfileLookupId;
 import com.aiadvent.backend.profile.domain.UserProfile;
 import com.aiadvent.backend.profile.persistence.ProfileLookupRepository;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -57,11 +58,11 @@ public class ProfileHandleService {
       throw new IllegalArgumentException("Profile supplier must provide a persisted profile");
     }
 
-    Map<String, Object> params =
-        Map.of(
-            "namespace", id.getNamespace(),
-            "reference", id.getReference(),
-            "profileId", profile.getId());
+    SqlParameterSource params =
+        new MapSqlParameterSource()
+            .addValue("namespace", id.getNamespace())
+            .addValue("reference", id.getReference())
+            .addValue("profileId", profile.getId());
     jdbcTemplate.update(INSERT_SQL, params);
 
     return profileLookupRepository

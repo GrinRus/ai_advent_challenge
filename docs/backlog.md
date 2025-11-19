@@ -1275,7 +1275,7 @@
   **Лучший вариант:** Ввести таблицы `role`, `permission` и `role_permission`, чтобы дополнительно к базовым ролям можно было оперативно расширять granular-политики и отдавать агрегированные permissions в API.
 
 ### Backend API и кеш
-- [ ] Реализовать `UserProfileService` с Caffeine (TTL + maximumSize) и pub/sub-инвалидацией: методы `resolveProfile(ProfileLookupKey)`, `updateProfile`, `attachIdentity`, `detachIdentity`, `evict`. Продумать `ProfileLookupKey` (namespace, reference, channel) и fallback к авто-созданию пустого профиля.  
+- [x] Реализовать `UserProfileService` с Caffeine (TTL + maximumSize) и pub/sub-инвалидацией: методы `resolveProfile(ProfileLookupKey)`, `updateProfile`, `attachIdentity`, `detachIdentity`, `evict`. Продумать `ProfileLookupKey` (namespace, reference, channel) и fallback к авто-созданию пустого профиля.  
   **Лучший вариант:** Использовать двухуровневую схему Spring Cache: Redis в роли основного стора и Caffeine как near-cache, а pub/sub оповещения сбрасывают локальные записи и поддерживают TTL.
 - [x] Экспонировать REST API `/api/profile`:
   - `GET /api/profile/{namespace}/{reference}` — отдаёт публичные поля, активный канал и список identity; только владелец видит провайдера/ID.
@@ -1323,11 +1323,11 @@
 
 ### Наблюдаемость, документация и тесты
 - [x] Добавить метрики (`user_profile_cache_hit`, `profile_resolve_seconds`, `profile_identity_total`), структурные логи и алерты на деградацию кеша/БД. Запротоколировать вручную вызываемый `ProfileAdminController`/CLI для ручного инвалидационного flush.
-- [ ] Дополнить `docs/architecture/personalization.md` и `docs/guides/flows.md` диаграммами: чат → lookup → кеш → БД, ветвление по каналу, шаги OAuth. Добавить sequence “web изменил профиль → Telegram чат получил обновлённые настройки”.
+- [x] Дополнить `docs/architecture/personalization.md` и `docs/guides/flows.md` диаграммами: чат → lookup → кеш → БД, ветвление по каналу, шаги OAuth. Добавить sequence “web изменил профиль → Telegram чат получил обновлённые настройки”.
 - [x] Написать unit и integration тесты: создание/обновление профиля, ограничение по полям, привязка Telegram/внешнего идентификатора (stub), инвалидация кеша, загрузка в `SyncChatService` (assert, что системное сообщение содержит пользовательские привычки), e2e фронтенд тесты страницы Personalization.
-- [ ] Подготовить канонический набор контрактных тестов (REST + Telegram webhook), гарантирующих, что одна и та же `profileId` возвращается для разных каналов при одинаковой связке (namespace/reference). Добавить regression-тесты на конфликт версий и консистентность кеша.
+- [x] Подготовить канонический набор контрактных тестов (REST + Telegram webhook), гарантирующих, что одна и та же `profileId` возвращается для разных каналов при одинаковой связке (namespace/reference). Добавить regression-тесты на конфликт версий и консистентность кеша.
 - [ ] Запланировать отдельные сценарии для ролей: unit тесты `RoleAssignmentService`, e2e админ-панели, smoke для разграничения доступа (user не может вызвать admin API). При формировании релизного плана указать, что эти тесты могут быть выполнены в Wave 43, если функционал вынесен.
-- [ ] Сформировать полноценные e2e сценарии “web ↔ backend ↔ Telegram”: создание профиля в вебе, проверка отображения в Telegram, обновление привычек через чат с последующей проверкой в UI, смена канала и валидация кеш-инвалидации на всех сервисах.
+- [x] Сформировать полноценные e2e сценарии “web ↔ backend ↔ Telegram”: создание профиля в вебе, проверка отображения в Telegram, обновление привычек через чат с последующей проверкой в UI, смена канала и валидация кеш-инвалидации на всех сервисах.
 - [x] Документировать и проверить dev-only режим: тесты подтверждают, что при включённом `PROFILE_BASIC_TOKEN` запросы без аутентификации принимаются, но роли/OAuth отключены; при отключенном флаге доступ запрещён. Добавить описание в `docs/infra.md`.
 
 ## Wave 43 — Управление ролями, VK OAuth и Telegram auth

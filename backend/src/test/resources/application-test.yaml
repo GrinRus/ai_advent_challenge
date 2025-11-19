@@ -1,4 +1,8 @@
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   ai:
     mcp:
       client:
@@ -29,6 +33,9 @@ logging:
     root: WARN
 
 app:
+  profile:
+    cache:
+      redis-enabled: false
   chat:
     logging:
       model:

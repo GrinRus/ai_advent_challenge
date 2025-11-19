@@ -145,8 +145,9 @@ app:
       local-ttl: PT5M
       redis-ttl: PT10M
       maximum-size: 5000
-      redis-prefix: profile:cache:
-      event-channel: profile:cache:events
+      redis-enabled: ${PROFILE_CACHE_REDIS_ENABLED:false}
+      redis-prefix: "profile:cache:"
+      event-channel: "profile:cache:events"
     dev:
       enabled: ${PROFILE_DEV_ENABLED:false}
       token: ${PROFILE_BASIC_TOKEN:}

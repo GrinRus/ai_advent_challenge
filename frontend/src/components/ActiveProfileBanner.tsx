@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { loadActiveProfile } from '../lib/profileActions';
 import {
-  buildProfileKey,
-  type ProfileHistoryEntry,
-  useProfileStore,
-} from '../lib/profileStore';
-import type { UserProfileDocument } from '../lib/profileTypes';
+  createDevLink,
+  loadActiveProfile,
+  loadActiveProfileAudit,
+} from '../lib/profileActions';
+import { buildProfileKey, useProfileStore } from '../lib/profileStore';
+import type {
+  DevProfileLinkResponse,
+  ProfileAuditEntry,
+  UserProfileDocument,
+} from '../lib/profileTypes';
 import './ActiveProfileBanner.css';
 
 const formatTimestamp = (value?: string) => {
@@ -33,11 +37,22 @@ const ActiveProfileBanner = () => {
   const reference = useProfileStore((state) => state.reference);
   const channel = useProfileStore((state) => state.channel);
   const setChannel = useProfileStore((state) => state.setChannel);
-  const history = useProfileStore((state) => state.history);
+  const devToken = useProfileStore((state) => state.devToken);
+  const setDevToken = useProfileStore((state) => state.setDevToken);
+  const auditEvents = useProfileStore((state) => state.auditEvents);
+  const isAuditLoading = useProfileStore((state) => state.isAuditLoading);
+  const auditError = useProfileStore((state) => state.auditError);
   const isLoading = useProfileStore((state) => state.isLoading);
   const [bannerStatus, setBannerStatus] = useState<string>('');
   const [initialLoadRequested, setInitialLoadRequested] = useState(false);
+  const [devTokenDraft, setDevTokenDraft] = useState(devToken ?? '');
+  const [devLink, setDevLink] = useState<DevProfileLinkResponse | null>(null);
+  const [isGeneratingLink, setGeneratingLink] = useState(false);
   const profileKey = buildProfileKey(namespace, reference);
+
+  useEffect(() => {
+    setDevTokenDraft(devToken ?? '');
+  }, [devToken]);
 
   const availableChannels = useMemo(() => {
     const options = new Set<string>(['web', 'telegram']);
@@ -59,24 +74,88 @@ const ActiveProfileBanner = () => {
     return profile.channels.find((entry) => entry.channel === channel) ?? null;
   }, [profile, channel]);
 
+  const describeEvent = (entry: ProfileAuditEntry) => {
+    const metadata = (entry.metadata ?? {}) as Record<string, unknown>;
+    switch (entry.eventType) {
+      case 'profile_created':
+        return `Профиль создан (v${metadata.version ?? '—'})`;
+      case 'profile_updated':
+        return `Профиль обновлён (v${metadata.version ?? '—'})`;
+      case 'identity_attached':
+        return `Привязана учётная запись ${metadata.provider ?? ''}`.trim();
+      case 'identity_detached':
+        return `Откреплена учётная запись ${metadata.provider ?? ''}`.trim();
+      case 'role_assigned':
+        return `Выдана роль ${metadata.role ?? ''}`.trim();
+      case 'role_revoked':
+        return `Снята роль ${metadata.role ?? ''}`.trim();
+      default:
+        return entry.eventType;
+    }
+  };
+
+  const renderAuditItem = (entry: ProfileAuditEntry) => (
+    <li key={entry.id}>
+      <span className="profile-banner-history-time">{formatTimestamp(entry.createdAt)}</span>
+      <span className="profile-banner-history-source">{describeEvent(entry)}</span>
+      {entry.channel && <span className="profile-banner-history-channel"> · {entry.channel}</span>}
+    </li>
+  );
+
   const handleReload = async () => {
     setBannerStatus('Обновляем профиль…');
     try {
       await loadActiveProfile();
-      setBannerStatus('Профиль обновлён');
+      await loadActiveProfileAudit();
+      setBannerStatus('Профиль и журнал обновлены');
     } catch (error) {
-      setBannerStatus(error instanceof Error ? error.message : 'Не удалось обновить профиль');
+      setBannerStatus(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось обновить профиль',
+      );
     }
   };
 
-  const renderHistoryItem = (entry: ProfileHistoryEntry) => (
-    <li key={`${entry.timestamp}-${entry.source}`}>
-      <span className="profile-banner-history-time">{formatTimestamp(entry.timestamp)}</span>
-      <span className="profile-banner-history-source">{entry.source}</span>
-      {entry.channel && <span className="profile-banner-history-channel">· {entry.channel}</span>}
-      {entry.message && <span className="profile-banner-history-message"> — {entry.message}</span>}
-    </li>
-  );
+  const handleSaveDevToken = () => {
+    setDevToken(devTokenDraft || undefined);
+    setBannerStatus('Dev token обновлён');
+  };
+
+  const handleGenerateDevLink = async () => {
+    if (!devToken) {
+      setBannerStatus('Укажите dev token, чтобы сгенерировать ссылку');
+      return;
+    }
+    setGeneratingLink(true);
+    setBannerStatus('Создаём dev-link…');
+    try {
+      const link = await createDevLink();
+      setDevLink(link);
+      setBannerStatus('Dev-link сгенерирован');
+    } catch (error) {
+      setBannerStatus(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось создать dev-link',
+      );
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
+
+  const renderDevLink = () => {
+    if (!devLink) {
+      return null;
+    }
+    const expires = new Date(devLink.expiresAt).toLocaleString();
+    return (
+      <p className="profile-dev-link-result">
+        Код: <code>{devLink.code}</code> · канал{' '}
+        {devLink.channel ?? 'any'} · истекает {expires}
+      </p>
+    );
+  };
 
   useEffect(() => {
     if (profile || initialLoadRequested) {
@@ -87,6 +166,12 @@ const ActiveProfileBanner = () => {
       setBannerStatus('Не удалось загрузить профиль, попробуйте ещё раз.');
     });
   }, [profile, initialLoadRequested]);
+
+  useEffect(() => {
+    loadActiveProfileAudit().catch(() => {
+      setBannerStatus('Не удалось загрузить историю профиля.');
+    });
+  }, [profileKey, devToken]);
 
   return (
     <section className="profile-banner">
@@ -109,6 +194,38 @@ const ActiveProfileBanner = () => {
           <button type="button" onClick={handleReload} disabled={isLoading}>
             Обновить
           </button>
+        </div>
+      </div>
+      <div className="profile-banner-dev">
+        <div className="profile-banner-dev-token">
+          <label>
+            Dev token
+            <input
+              value={devTokenDraft}
+              onChange={(event) => setDevTokenDraft(event.target.value)}
+              placeholder="dev-profile-token"
+            />
+          </label>
+          <button type="button" onClick={handleSaveDevToken}>
+            Сохранить token
+          </button>
+          <span className="profile-banner-dev-note">
+            {devToken ? 'Dev session активна' : 'Введите токен из PROFILE_BASIC_TOKEN'}
+          </span>
+        </div>
+        <div className="profile-banner-dev-link">
+          <button
+            type="button"
+            onClick={handleGenerateDevLink}
+            disabled={!devToken || isGeneratingLink}
+          >
+            {isGeneratingLink ? 'Создание…' : 'Создать dev-link'}
+          </button>
+          <p>
+            Dev-link выдаёт одноразовый код для Telegram/CLI. Доступно только в dev-режиме и
+            действует ограниченное время.
+          </p>
+          {renderDevLink()}
         </div>
       </div>
       {profile ? (
@@ -136,10 +253,14 @@ const ActiveProfileBanner = () => {
           </div>
           <div className="profile-banner-history">
             <h4>История</h4>
-            {history.length === 0 ? (
-              <p>Нет локальных событий. Обновите профиль, чтобы увидеть журнал.</p>
+            {isAuditLoading ? (
+              <p>Загружаем журнал…</p>
+            ) : auditError ? (
+              <p>{auditError}</p>
+            ) : auditEvents.length === 0 ? (
+              <p>Журнал пуст — профиль ещё не обновляли.</p>
             ) : (
-              <ul>{history.slice(0, 3).map(renderHistoryItem)}</ul>
+              <ul>{auditEvents.slice(0, 5).map(renderAuditItem)}</ul>
             )}
           </div>
         </div>
@@ -148,7 +269,9 @@ const ActiveProfileBanner = () => {
           <p>Профиль ещё не загружен. Нажмите «Обновить», чтобы получить данные.</p>
         </div>
       )}
-      {bannerStatus && <p className="profile-banner-status">{bannerStatus}</p>}
+      {bannerStatus && (
+        <p className="profile-banner-status">{bannerStatus}</p>
+      )}
     </section>
   );
 };

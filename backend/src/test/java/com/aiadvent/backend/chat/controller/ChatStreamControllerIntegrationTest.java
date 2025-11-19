@@ -44,6 +44,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.util.StringUtils;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -60,12 +61,19 @@ import org.springframework.ai.openai.api.OpenAiApi;
       "app.chat.providers.real.default-model=real-model",
       "app.chat.providers.real.temperature=0.7",
       "app.chat.providers.real.top-p=1.0",
-      "app.chat.providers.real.max-tokens=1024"
+      "app.chat.providers.real.max-tokens=1024",
+      "app.profile.dev.enabled=true",
+      "app.profile.dev.token=test-profile-token"
     })
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 @Import(StubChatClientConfiguration.class)
 class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
+
+  private static final String PROFILE_HEADER = "X-Profile-Key";
+  private static final String PROFILE_CHANNEL_HEADER = "X-Profile-Channel";
+  private static final String DEFAULT_PROFILE = "web:chat-stream";
+  private static final String DEFAULT_CHANNEL = "web";
 
   @Autowired private MockMvc mockMvc;
 
@@ -200,7 +208,7 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
 
     mockMvc
         .perform(
-            post("/api/llm/chat/stream")
+            withProfileHeaders(post("/api/llm/chat/stream"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(request)))
         .andExpect(status().isBadRequest());
@@ -397,7 +405,8 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     MvcResult initialResult =
         mockMvc
             .perform(
-                post("/api/llm/chat/stream")
+                withProfileHeaders(
+                    post("/api/llm/chat/stream"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .content(objectMapper.writeValueAsString(request)))
@@ -421,5 +430,12 @@ class ChatStreamControllerIntegrationTest extends PostgresTestContainer {
     return parseSsePayload(responseBody).stream()
         .map(frame -> frame.event(objectMapper))
         .collect(Collectors.toList());
+  }
+
+  private MockHttpServletRequestBuilder withProfileHeaders(
+      MockHttpServletRequestBuilder builder) {
+    return builder
+        .header(PROFILE_HEADER, DEFAULT_PROFILE)
+        .header(PROFILE_CHANNEL_HEADER, DEFAULT_CHANNEL);
   }
 }

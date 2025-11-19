@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import ActiveProfileBanner from '../components/ActiveProfileBanner';
 import { updateProfileDocument } from '../lib/apiClient';
 import { loadActiveProfile } from '../lib/profileActions';
 import { buildProfileKey, useProfileStore } from '../lib/profileStore';
@@ -17,6 +18,8 @@ const ProfileSettings = () => {
   const profile = useProfileStore((state) => state.profile);
   const etag = useProfileStore((state) => state.etag);
   const isLoading = useProfileStore((state) => state.isLoading);
+  const devToken = useProfileStore((state) => state.devToken);
+  const setDevToken = useProfileStore((state) => state.setDevToken);
   const applyProfileSnapshot = useProfileStore((state) => state.applyProfileSnapshot);
   const profileKey = buildProfileKey(namespace, reference);
   const [form, setForm] = useState({
@@ -30,6 +33,11 @@ const ProfileSettings = () => {
     metadata: '{\n  "notes": ""\n}',
   });
   const [status, setStatus] = useState<string>('');
+  const [devTokenDraft, setDevTokenDraft] = useState(devToken ?? '');
+
+  useEffect(() => {
+    setDevTokenDraft(devToken ?? '');
+  }, [devToken]);
 
   const handleLoadProfile = async () => {
     setStatus('Загрузка профиля…');
@@ -81,9 +89,9 @@ const ProfileSettings = () => {
         reference,
         profileKey,
         payload,
-        { channel, ifMatch: etag },
+        { channel, ifMatch: etag, devToken },
       );
-      applyProfileSnapshot(updated, { etag: nextEtag, source: 'profile:manual-update', channel });
+      applyProfileSnapshot(updated, { etag: nextEtag });
       setStatus('Профиль сохранён');
     } catch (error) {
       if (error instanceof SyntaxError) {
@@ -113,6 +121,27 @@ const ProfileSettings = () => {
           </label>
           <button type="button" onClick={handleLoadProfile} disabled={isLoading}>
             Загрузить
+          </button>
+        </div>
+      </section>
+
+      <section className="dev-token-panel">
+        <h3>Dev session</h3>
+        <p className="dev-token-warning">
+          Режим предназначен только для локальных тестов. Запросы принимаются по dev-token без
+          OAuth — не используйте в продакшене.
+        </p>
+        <div className="dev-token-controls">
+          <label>
+            Dev token
+            <input
+              value={devTokenDraft}
+              onChange={(event) => setDevTokenDraft(event.target.value)}
+              placeholder="dev-profile-token"
+            />
+          </label>
+          <button type="button" onClick={() => setDevToken(devTokenDraft || undefined)}>
+            Сохранить token
           </button>
         </div>
       </section>
@@ -186,6 +215,10 @@ const ProfileSettings = () => {
         </button>
         <p className="profile-status">{status}</p>
       </form>
+
+      <section className="profile-active-banner">
+        <ActiveProfileBanner />
+      </section>
 
       {profile && (
         <section className="profile-meta">

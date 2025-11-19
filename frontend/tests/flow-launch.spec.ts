@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { mockProfileApi } from './utils';
 
 const definitionsResponse = [
   {
-    id: '11111111-1111-1111-1111-111111111111',
+    id: '11111111-1111-4111-8111-111111111111',
     name: 'customer-onboarding',
     version: 2,
     status: 'PUBLISHED',
@@ -12,7 +13,7 @@ const definitionsResponse = [
 ];
 
 const launchPreviewResponse = {
-  definitionId: '11111111-1111-1111-1111-111111111111',
+  definitionId: '11111111-1111-4111-8111-111111111111',
   definitionName: 'customer-onboarding',
   definitionVersion: 2,
   description: 'Primary onboarding flow',
@@ -23,9 +24,9 @@ const launchPreviewResponse = {
       name: 'Collect Context',
       prompt: 'Collect customer information.',
       agent: {
-        agentVersionId: 'aaaaaaaa-1111-2222-3333-444444444444',
+        agentVersionId: 'aaaaaaaa-1111-4222-8333-444444444444',
         agentVersionNumber: 5,
-        agentDefinitionId: 'bbbbbbbb-1111-2222-3333-444444444444',
+        agentDefinitionId: 'bbbbbbbb-1111-4222-8333-444444444444',
         agentIdentifier: 'context-collector',
         agentDisplayName: 'Context Collector',
         providerType: 'OPENAI',
@@ -85,7 +86,9 @@ const launchPreviewResponse = {
 
 test.describe('Flow launch workspace', () => {
   test('displays preview and starts flow', async ({ page }) => {
-    await page.route('**/api/flows/definitions', async (route) => {
+    await mockProfileApi(page);
+
+    await page.route('**/api/flows/definitions**', async (route) => {
       await route.fulfill({
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -108,7 +111,7 @@ test.describe('Flow launch workspace', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          sessionId: '99999999-9999-9999-9999-999999999999',
+          sessionId: '99999999-9999-4999-8999-999999999999',
           status: 'RUNNING',
           startedAt: '2025-01-01T10:00:00Z',
         }),
@@ -129,7 +132,7 @@ test.describe('Flow launch workspace', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           state: {
-            sessionId: '99999999-9999-9999-9999-999999999999',
+            sessionId: '99999999-9999-4999-8999-999999999999',
             status: 'RUNNING',
             stateVersion: 1,
             currentMemoryVersion: 0,
@@ -145,7 +148,7 @@ test.describe('Flow launch workspace', () => {
       });
     });
 
-    await page.route('**/api/flows/99999999-9999-9999-9999-999999999999*', async (route) => {
+    await page.route('**/api/flows/99999999-9999-4999-8999-999999999999*', async (route) => {
       await route.fulfill({ status: 204, body: '' });
     });
 
@@ -175,7 +178,7 @@ test.describe('Flow launch workspace', () => {
 
     await page.getByRole('button', { name: /Запустить флоу/i }).click();
 
-    await page.waitForURL('**/flows/sessions/99999999-9999-9999-9999-999999999999');
+    await page.waitForURL('**/flows/sessions/99999999-9999-4999-8999-999999999999');
 
     expect(startPayload).toEqual({
       parameters: { customerId: '42' },

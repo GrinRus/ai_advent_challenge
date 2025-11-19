@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.util.StringUtils;
 
 public class RedisProfileChangePublisher implements ProfileChangePublisher {
 
@@ -21,7 +22,11 @@ public class RedisProfileChangePublisher implements ProfileChangePublisher {
       ProfileCacheProperties cacheProperties) {
     this.redisTemplate = redisTemplate;
     this.objectMapper = objectMapper;
-    this.channel = cacheProperties.getRedisPrefix() + "events";
+    String configuredChannel = cacheProperties.getEventChannel();
+    if (!StringUtils.hasText(configuredChannel)) {
+      configuredChannel = cacheProperties.getRedisPrefix() + "events";
+    }
+    this.channel = configuredChannel;
   }
 
   @Override

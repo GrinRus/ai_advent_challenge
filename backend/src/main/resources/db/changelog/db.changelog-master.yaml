@@ -3577,3 +3577,9 @@ databaseChangeLog:
       file: db/changelog/0217-user-profiles.yaml
   - include:
       file: db/changelog/0218-rbac-admin-upgrade.yaml
+  - include:
+      file: db/changelog/0219-profile-audit.yaml
+  - include:
+      file: db/changelog/0220-oauth-tokens.yaml
+  - include:
+      file: db/changelog/0221-profile-lookup-multi-handle.yaml

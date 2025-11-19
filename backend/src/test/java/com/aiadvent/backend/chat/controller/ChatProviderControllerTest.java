@@ -13,12 +13,17 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ChatProviderController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class ChatProviderControllerTest {
+
+  private static final String PROFILE_KEY = "web:providers";
+  private static final String PROFILE_CHANNEL = "web";
 
   @Autowired private MockMvc mockMvc;
 
@@ -91,7 +96,10 @@ class ChatProviderControllerTest {
     when(chatProviderService.providers()).thenReturn(providers);
 
     mockMvc
-        .perform(get("/api/llm/providers"))
+        .perform(
+            get("/api/llm/providers")
+                .header("X-Profile-Key", PROFILE_KEY)
+                .header("X-Profile-Channel", PROFILE_CHANNEL))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.defaultProvider").value("openai"))
         .andExpect(jsonPath("$.providers[0].id").value("openai"))

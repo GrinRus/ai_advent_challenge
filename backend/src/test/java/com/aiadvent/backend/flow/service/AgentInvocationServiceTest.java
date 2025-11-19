@@ -28,6 +28,7 @@ import com.aiadvent.backend.flow.memory.FlowMemoryChannels;
 import com.aiadvent.backend.flow.memory.FlowMemoryService;
 import com.aiadvent.backend.flow.memory.FlowMemorySummarizerService;
 import com.aiadvent.backend.flow.tool.service.McpToolBindingService;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
@@ -51,6 +52,7 @@ class AgentInvocationServiceTest {
   private FlowMemorySummarizerService flowMemorySummarizerService;
   private McpToolBindingService mcpToolBindingService;
   private ObjectMapper objectMapper;
+  private ProfilePromptService profilePromptService;
 
   private AgentInvocationService agentInvocationService;
 
@@ -62,6 +64,7 @@ class AgentInvocationServiceTest {
     flowMemorySummarizerService = mock(FlowMemorySummarizerService.class);
     mcpToolBindingService = mock(McpToolBindingService.class);
     objectMapper = new ObjectMapper();
+    profilePromptService = mock(ProfilePromptService.class);
 
     agentInvocationService =
         new AgentInvocationService(
@@ -70,7 +73,8 @@ class AgentInvocationServiceTest {
             flowMemoryService,
             flowMemorySummarizerService,
             mcpToolBindingService,
-            objectMapper);
+            objectMapper,
+            profilePromptService);
   }
 
   @Test

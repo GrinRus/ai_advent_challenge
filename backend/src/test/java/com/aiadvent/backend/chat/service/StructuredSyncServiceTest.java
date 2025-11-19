@@ -13,6 +13,9 @@ import com.aiadvent.backend.chat.api.StructuredSyncStatus;
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
 import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -21,6 +24,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.converter.BeanOutputConverter;
@@ -29,9 +33,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 @ExtendWith(MockitoExtension.class)
 class StructuredSyncServiceTest {
@@ -46,6 +47,8 @@ class StructuredSyncServiceTest {
 
   @Mock private ChatResearchToolBindingService researchToolBindingService;
 
+  @Mock private ProfilePromptService profilePromptService;
+
   private StructuredSyncService structuredSyncService;
 
   @BeforeEach
@@ -57,7 +60,8 @@ class StructuredSyncServiceTest {
             outputConverter,
             new ObjectMapper(),
             preflightManager,
-            researchToolBindingService);
+            researchToolBindingService,
+            profilePromptService);
     lenient()
         .when(researchToolBindingService.resolve(
             org.mockito.ArgumentMatchers.any(),

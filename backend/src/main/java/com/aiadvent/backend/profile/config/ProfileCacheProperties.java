@@ -2,9 +2,7 @@ package com.aiadvent.backend.profile.config;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
-@Component
 @ConfigurationProperties(prefix = "app.profile.cache")
 public class ProfileCacheProperties {
 
@@ -13,6 +11,7 @@ public class ProfileCacheProperties {
   private long maximumSize = 5_000;
   private String redisPrefix = "profile:cache:";
   private String eventChannel = "profile:cache:events";
+  private boolean redisEnabled = true;
 
   public Duration getLocalTtl() {
     return localTtl;
@@ -52,5 +51,13 @@ public class ProfileCacheProperties {
 
   public void setEventChannel(String eventChannel) {
     this.eventChannel = eventChannel;
+  }
+
+  public boolean isRedisEnabled() {
+    return redisEnabled;
+  }
+
+  public void setRedisEnabled(boolean redisEnabled) {
+    this.redisEnabled = redisEnabled;
   }
 }

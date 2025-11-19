@@ -27,7 +27,10 @@ import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.service.TelegramChatState;
 import com.aiadvent.backend.telegram.service.TelegramChatService;
 import com.aiadvent.backend.telegram.service.TelegramChatStateStore;
-import com.aiadvent.backend.telegram.service.TelegramChatStateStore;
+import com.aiadvent.backend.profile.domain.UserProfile;
+import com.aiadvent.backend.profile.service.ProfileLookupKey;
+import com.aiadvent.backend.profile.service.UserProfileDocument;
+import com.aiadvent.backend.profile.service.UserProfileService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -40,6 +43,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.ai.openai.OpenAiAudioTranscriptionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -49,6 +53,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.web.reactive.function.client.WebClient;
+import com.aiadvent.backend.profile.config.ProfileDevAuthProperties;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.Message;
@@ -58,6 +63,7 @@ import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 @WebMvcTest(controllers = TelegramWebhookController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import({
   TelegramChatService.class,
   TelegramChatStateStore.class,
@@ -86,6 +92,7 @@ class TelegramWebhookControllerIntegrationTest {
   @MockBean private ChatResearchToolBindingService chatResearchToolBindingService;
   @MockBean private TelegramWebhookBotAdapter telegramWebhookBotAdapter;
   @MockBean private OpenAiAudioTranscriptionModel openAiAudioTranscriptionModel;
+  @MockBean private UserProfileService userProfileService;
 
   @BeforeEach
   void setUp() throws TelegramApiException {
@@ -107,6 +114,25 @@ class TelegramWebhookControllerIntegrationTest {
         .when(telegramWebhookBotAdapter)
         .onWebhookUpdateReceived(any(Update.class));
     stateStore.reset(CHAT_ID);
+    UserProfileDocument profileDocument =
+        new UserProfileDocument(
+            UUID.randomUUID(),
+            "telegram",
+            Long.toString(CHAT_ID),
+            "Test User",
+            "ru",
+            "UTC",
+            UserProfile.CommunicationMode.TEXT,
+            List.of(),
+            List.of(),
+            null,
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            Instant.now(),
+            0L);
+    when(userProfileService.resolveProfile(any(ProfileLookupKey.class))).thenReturn(profileDocument);
   }
 
   @Test
@@ -207,6 +233,13 @@ class TelegramWebhookControllerIntegrationTest {
     @Bean
     WebClient.Builder webClientBuilder() {
       return WebClient.builder();
+    }
+
+    @Bean
+    ProfileDevAuthProperties profileDevAuthProperties() {
+      ProfileDevAuthProperties properties = new ProfileDevAuthProperties();
+      properties.setEnabled(false);
+      return properties;
     }
   }
 }

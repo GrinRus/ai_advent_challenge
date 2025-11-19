@@ -15,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @ConditionalOnProperty(prefix = "app.profile.dev", name = "enabled", havingValue = "true")
 public class ProfileDevAuthFilter extends OncePerRequestFilter {
 
+  public static final String DEV_AUTH_ATTRIBUTE = "profile.dev-authenticated";
   private static final String HEADER = "X-Profile-Auth";
 
   private final String devToken;
@@ -34,7 +35,7 @@ public class ProfileDevAuthFilter extends OncePerRequestFilter {
 
     String headerValue = request.getHeader(HEADER);
     if (StringUtils.hasText(headerValue) && devToken.equals(headerValue.trim())) {
-      request.setAttribute("profile.dev-authenticated", Boolean.TRUE);
+      request.setAttribute(DEV_AUTH_ATTRIBUTE, Boolean.TRUE);
     }
 
     filterChain.doFilter(request, response);

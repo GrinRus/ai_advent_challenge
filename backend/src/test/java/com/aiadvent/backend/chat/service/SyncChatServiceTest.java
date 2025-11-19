@@ -5,12 +5,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 
 import com.aiadvent.backend.chat.config.ChatProvidersProperties;
-import com.aiadvent.backend.chat.provider.ChatProviderService;
 import com.aiadvent.backend.chat.memory.ChatSummarizationPreflightManager;
+import com.aiadvent.backend.chat.provider.ChatProviderService;
+import com.aiadvent.backend.profile.service.ProfilePromptService;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.converter.BeanOutputConverter;
@@ -20,7 +22,6 @@ import org.springframework.retry.support.RetryTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 @ExtendWith(MockitoExtension.class)
 class SyncChatServiceTest {
@@ -36,6 +37,8 @@ class SyncChatServiceTest {
   @Mock private BeanOutputConverter<com.aiadvent.backend.chat.api.StructuredSyncResponse>
       structuredOutputConverter;
 
+  @Mock private ProfilePromptService profilePromptService;
+
   private SyncChatService syncChatService;
 
   @BeforeEach
@@ -46,7 +49,8 @@ class SyncChatServiceTest {
             chatService,
             preflightManager,
             researchToolBindingService,
-            structuredOutputConverter);
+            structuredOutputConverter,
+            profilePromptService);
     lenient()
         .when(
             researchToolBindingService.resolve(

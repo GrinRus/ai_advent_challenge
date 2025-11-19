@@ -2,12 +2,20 @@ package com.aiadvent.backend.profile.controller;
 
 import com.aiadvent.backend.profile.api.IdentityRequest;
 import com.aiadvent.backend.profile.api.ProfileUpdateRequest;
+import com.aiadvent.backend.profile.security.ProfileDevAuthFilter;
+import com.aiadvent.backend.profile.service.DevLinkResponse;
+import com.aiadvent.backend.profile.service.DevProfileLinkService;
+import com.aiadvent.backend.profile.service.ProfileAuditDocument;
+import com.aiadvent.backend.profile.service.ProfileAuditService;
 import com.aiadvent.backend.profile.service.ProfileLookupKey;
 import com.aiadvent.backend.profile.service.UserProfileDocument;
 import com.aiadvent.backend.profile.service.UserProfileService;
-import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +25,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -28,9 +37,16 @@ public class ProfileController {
   private static final String PROFILE_CHANNEL_HEADER = "X-Profile-Channel";
 
   private final UserProfileService userProfileService;
+  private final ProfileAuditService profileAuditService;
+  private final DevProfileLinkService devProfileLinkService;
 
-  public ProfileController(UserProfileService userProfileService) {
+  public ProfileController(
+      UserProfileService userProfileService,
+      ProfileAuditService profileAuditService,
+      @Nullable DevProfileLinkService devProfileLinkService) {
     this.userProfileService = userProfileService;
+    this.profileAuditService = profileAuditService;
+    this.devProfileLinkService = devProfileLinkService;
   }
 
   @GetMapping("/{namespace}/{reference}")
@@ -91,6 +107,33 @@ public class ProfileController {
     return document;
   }
 
+  @GetMapping("/{namespace}/{reference}/audit")
+  public List<ProfileAuditDocument> getProfileAudit(
+      @PathVariable String namespace,
+      @PathVariable String reference,
+      @RequestHeader(PROFILE_KEY_HEADER) String profileKeyHeader,
+      @RequestHeader(value = PROFILE_CHANNEL_HEADER, required = false) String channelHeader) {
+    ProfileLookupKey key = parseAndValidate(namespace, reference, profileKeyHeader, channelHeader);
+    UserProfileDocument document = userProfileService.resolveProfile(key);
+    return profileAuditService.findRecent(document.profileId(), 50);
+  }
+
+  @PostMapping("/{namespace}/{reference}/dev-link")
+  public DevLinkResponse createDevLink(
+      @PathVariable String namespace,
+      @PathVariable String reference,
+      @RequestHeader(PROFILE_KEY_HEADER) String profileKeyHeader,
+      @RequestHeader(value = PROFILE_CHANNEL_HEADER, required = false) String channelHeader,
+      HttpServletRequest request) {
+    requireDevAuth(request);
+    if (devProfileLinkService == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Dev linking is disabled");
+    }
+    ProfileLookupKey key = parseAndValidate(namespace, reference, profileKeyHeader, channelHeader);
+    UserProfileDocument document = userProfileService.resolveProfile(key);
+    return devProfileLinkService.issueLink(document, key.normalizedChannel());
+  }
+
   private ProfileLookupKey parseAndValidate(
       String pathNamespace, String pathReference, String header, String channelHeader) {
     if (!StringUtils.hasText(header)) {
@@ -119,6 +162,15 @@ public class ProfileController {
 
     String normalizedChannel = normalizeOptional(effectiveChannel);
     return new ProfileLookupKey(normalizedNamespace, normalizedReference, normalizedChannel);
+  }
+
+  private void requireDevAuth(HttpServletRequest request) {
+    boolean devAuthenticated =
+        request != null
+            && Boolean.TRUE.equals(request.getAttribute(ProfileDevAuthFilter.DEV_AUTH_ATTRIBUTE));
+    if (!devAuthenticated) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Dev authentication required");
+    }
   }
 
   private String normalize(String value) {

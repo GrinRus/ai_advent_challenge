@@ -38,7 +38,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = "app.flow.api.v2-enabled=true")
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 class FlowDefinitionControllerV2IntegrationTest extends PostgresTestContainer {
 

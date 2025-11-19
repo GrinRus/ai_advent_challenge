@@ -1,20 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserProfileDocument } from './profileTypes';
+import type { ProfileAuditEntry, UserProfileDocument } from './profileTypes';
 
 const DEFAULT_NAMESPACE = 'web';
 const DEFAULT_REFERENCE = 'demo';
 const DEFAULT_CHANNEL = 'web';
-const HISTORY_LIMIT = 10;
-
-export type ProfileHistoryEntry = {
-  timestamp: string;
-  source: string;
-  channel?: string | null;
-  version?: number;
-  message?: string;
-};
-
 type ProfileStoreState = {
   namespace: string;
   reference: string;
@@ -23,18 +13,15 @@ type ProfileStoreState = {
   etag?: string;
   isLoading: boolean;
   error?: string;
-  lastFetchedAt?: string;
-  history: ProfileHistoryEntry[];
   devToken?: string;
+  auditEvents: ProfileAuditEntry[];
+  isAuditLoading: boolean;
+  auditError?: string;
   setNamespace: (value: string) => void;
   setReference: (value: string) => void;
   setChannel: (value: string) => void;
   setDevToken: (value?: string) => void;
-  applyProfileSnapshot: (
-    profile: UserProfileDocument,
-    options?: { etag?: string; source?: string; channel?: string | null },
-  ) => void;
-  recordHistory: (entry: ProfileHistoryEntry) => void;
+  applyProfileSnapshot: (profile: UserProfileDocument, options?: { etag?: string }) => void;
 };
 
 const sanitizeHandle = (value: string, fallback: string) => {
@@ -56,8 +43,9 @@ export const useProfileStore = create<ProfileStoreState>()(
       etag: undefined,
       isLoading: false,
       error: undefined,
-      lastFetchedAt: undefined,
-      history: [],
+      auditEvents: [],
+      isAuditLoading: false,
+      auditError: undefined,
       devToken: initialDevToken || undefined,
       setNamespace: (value) =>
         set({ namespace: sanitizeHandle(value, DEFAULT_NAMESPACE) }),
@@ -67,27 +55,13 @@ export const useProfileStore = create<ProfileStoreState>()(
         set({ channel: sanitizeHandle(value, DEFAULT_CHANNEL) }),
       setDevToken: (value) => set({ devToken: value?.trim() || undefined }),
       applyProfileSnapshot: (profile, options) => {
-        const timestamp = new Date().toISOString();
         set((state) => ({
           profile,
           etag: options?.etag ?? state.etag,
           isLoading: false,
           error: undefined,
-          lastFetchedAt: timestamp,
-          history: [
-            {
-              timestamp,
-              source: options?.source ?? 'profile:update',
-              channel: options?.channel ?? state.channel,
-              version: profile.version,
-              message: `v${profile.version} · ${profile.updatedAt}`,
-            },
-            ...state.history,
-          ].slice(0, HISTORY_LIMIT),
         }));
       },
-      recordHistory: (entry) =>
-        set((state) => ({ history: [entry, ...state.history].slice(0, HISTORY_LIMIT) })),
     }),
     {
       name: 'profile-store',

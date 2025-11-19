@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0221-drop-profile-lookup-unique-and-add-index
+      author: codex
+      context: local,prod
+      changes:
+        - dropUniqueConstraint:
+            tableName: profile_lookup
+            constraintName: uq_profile_lookup_profile
+        - createIndex:
+            tableName: profile_lookup
+            indexName: idx_profile_lookup_profile_id
+            columns:
+              - column:
+                  name: profile_id

@@ -7,6 +7,7 @@
 - `profile_lookup`: idempotent соответствие namespace/reference → profile_id.
 - `user_profile_channel`: channel overrides (web/telegram/etc) с JSON-настройками.
 - `user_identity`: внешние провайдеры (provider, external_id, attributes, scopes). Токены/секреты выносятся в отдельную таблицу (`user_identity_secret`) в Wave 43.
+- `oauth_token`: подготовленная таблица для хранения зашифрованных access/refresh токенов. Связана 1:1 с `user_identity`, содержит `token_type`, `scopes[]`, `expires_at` и служит источником для refresh job.
 - `profile_role`, `role`, `permission`, `role_permission`: RBAC.
 - `profile_audit_event`: журнал `profile_created/profile_updated/identity_attached/...`.
 
@@ -113,6 +114,63 @@ FE -> User: показать код
 (User uses code в Telegram) # future Wave 43
 @enduml
 ```
+
+## 7. Lookup → кеш → БД
+Чтобы визуализировать стандартный запрос (LLM чат или Flow), используем следующую диаграмму:
+
+```plantuml
+@startuml
+participant "ProfileContextFilter" as filter
+participant "ProfileService" as svc
+participant "Redis (pub/sub + cache)" as redis
+participant "Postgres" as db
+
+filter -> svc: resolveProfile(namespace, reference)
+svc -> svc: localCache.get()
+svc --> filter: hit? (возврат)
+svc -> redis: GET profile:cache:ns:ref
+redis --> svc: cached document or null
+svc -> db: SELECT user_profile + identities + channels
+svc <- db: entity
+svc -> redis: SET profile cache, publish ProfileChangedEvent
+svc --> filter: UserProfileDocument
+@enduml
+```
+
+### Обмен между каналами
+Последовательность «web изменил профиль → Telegram получил обновления»:
+
+```plantuml
+@startuml
+actor WebUser
+participant "Web UI" as web
+participant "ProfileController" as api
+participant "ProfileService" as svc
+participant "Redis pub/sub" as red
+participant "TelegramBot" as tg
+
+WebUser -> web: PUT /api/profile/web/demo
+web -> api: JSON + If-Match
+api -> svc: updateProfile
+svc -> db: UPDATE user_profile
+svc -> red: publish ProfileChangedEvent(ns=web,ref=demo)
+svc --> api: updated profile
+api --> web: 200 + ETag
+
+tg -> red: subscribe profile:changed
+red --> tg: ProfileChangedEvent(profileId,...)
+tg -> svc: resolveProfile(telegram,userId)
+svc: cache hit or reload
+tg: обновляет системное сообщение / UI команд
+@enduml
+```
+
+### Pub/Sub инвалидация кеша
+- `UserProfileService` после любого изменения профиля публикует `ProfileChangedEvent(profileId, namespace, reference, updatedAt)` через `ProfileChangePublisher`.
+- При наличии Redis в окружении используется `RedisProfileChangePublisher`, который пишет событие в канал `profile:cache:events`. В dev-режиме без Redis события отправляются прямо в `ApplicationEventPublisher`.
+- `ProfileCacheInvalidator` подписан на эти события (через Spring events или Redis listener) и вызывает `UserProfileService.evict(...)`, чтобы удалить запись из локального Caffeine и Redis. Это позволяет синхронно сбрасывать кэш на всех нодах.
+- Метрики: `user_profile_cache_evict_total` (ручные и автоматические сбросы), `user_profile_cache_invalidation_total` (успешные обработки событий), `profile_resolve_seconds`, `user_profile_cache_hit/_miss`.
+- E2E покрытие: `UserProfileCacheRedisIntegrationTest` поднимает Postgres + Redis Testcontainers, проворачивает `resolveProfile → pub/sub → evict` и проверяет, что `findProfile` возвращает `Optional.empty()` после обработки события.
 
 ## 7. Контракты API
 - `GET /api/profile/{namespace}/{reference}`

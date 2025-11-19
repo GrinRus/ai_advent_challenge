@@ -19,6 +19,7 @@ import com.aiadvent.backend.chat.service.SyncChatService;
 import com.aiadvent.backend.chat.service.SyncChatService.SyncChatResult;
 import com.aiadvent.backend.telegram.bot.TelegramWebhookBotAdapter;
 import com.aiadvent.backend.telegram.config.TelegramBotProperties;
+import com.aiadvent.backend.profile.service.UserProfileService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
@@ -62,6 +63,7 @@ class TelegramChatServiceCallbacksTest {
   @Mock private OpenAiAudioTranscriptionModel transcriptionModel;
   @Mock private WebClient.Builder webClientBuilder;
   @Mock private WebClient telegramWebClient;
+  @Mock private UserProfileService userProfileService;
 
   private TelegramChatStateStore stateStore;
   private TelegramBotProperties properties;
@@ -98,7 +100,8 @@ class TelegramChatServiceCallbacksTest {
             properties,
             transcriptionModelProvider,
             webClientBuilder,
-            new ObjectMapper());
+            new ObjectMapper(),
+            userProfileService);
 
     when(webhookBot.execute(any(SendMessage.class))).thenReturn(new Message());
     lenient().when(webhookBot.execute(any(AnswerCallbackQuery.class))).thenReturn(Boolean.TRUE);

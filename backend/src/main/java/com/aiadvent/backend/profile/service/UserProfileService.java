@@ -33,8 +33,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.lang.Nullable;
-import org.springframework.http.HttpStatus;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -61,6 +59,7 @@ public class UserProfileService {
   private final Timer profileResolveTimer;
   private final Counter cacheHitCounter;
   private final Counter cacheMissCounter;
+  private final Counter cacheEvictCounter;
   private final DistributionSummary identitySummary;
 
   public UserProfileService(
@@ -95,10 +94,11 @@ public class UserProfileService {
     this.profileResolveTimer = meterRegistry.timer("profile_resolve_seconds");
     this.cacheHitCounter = meterRegistry.counter("user_profile_cache_hit_total");
     this.cacheMissCounter = meterRegistry.counter("user_profile_cache_miss_total");
+    this.cacheEvictCounter = meterRegistry.counter("user_profile_cache_evict_total");
     this.identitySummary = meterRegistry.summary("profile_identity_total");
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public UserProfileDocument resolveProfile(ProfileLookupKey key) {
     String cacheKey = key.cacheKey();
     Timer.Sample sample = Timer.start(meterRegistry);
@@ -171,6 +171,8 @@ public class UserProfileService {
     identity.setScopes(command.scopes());
 
     userIdentityRepository.save(identity);
+    profileHandleService.resolveOrCreateHandle(
+        identity.getProvider(), identity.getExternalId(), () -> profile);
     profileEventLogger.identityAttached(profile, identity, key.normalizedChannel());
     return refreshAndPublish(profile, key.normalizedChannel());
   }
@@ -200,6 +202,25 @@ public class UserProfileService {
         .or(() -> Optional.ofNullable(readFromRedis(key.cacheKey())));
   }
 
+  public void evict(@Nullable ProfileLookupKey key) {
+    if (key == null) {
+      return;
+    }
+    String cacheKey = key.cacheKey();
+    localCache.invalidate(cacheKey);
+    if (redisTemplate != null) {
+      try {
+        redisTemplate.delete(redisKey(cacheKey));
+      } catch (RuntimeException ex) {
+        log.debug("Failed to delete redis cache entry {}: {}", cacheKey, ex.getMessage());
+      }
+    }
+    cacheEvictCounter.increment();
+    if (log.isDebugEnabled()) {
+      log.debug("Evicted profile cache for {}", cacheKey);
+    }
+  }
+
   private UserProfile refreshEntity(UserProfile profile) {
     return userProfileRepository
         .findById(profile.getId())
@@ -210,7 +231,12 @@ public class UserProfileService {
     UserProfile reloaded = refreshEntity(profile);
     UserProfileDocument document = rebuildDocument(reloaded);
     cacheSnapshot(cacheKeyFromProfile(reloaded), document);
-    changePublisher.publish(new ProfileChangedEvent(reloaded.getId(), reloaded.getUpdatedAt()));
+    changePublisher.publish(
+        new ProfileChangedEvent(
+            reloaded.getId(),
+            reloaded.getNamespace(),
+            reloaded.getReference(),
+            reloaded.getUpdatedAt()));
     profileEventLogger.profileUpdated(reloaded, channel);
     return document;
   }
@@ -238,10 +264,10 @@ public class UserProfileService {
       profile.setAntiPatterns(command.antiPatterns());
     }
     if (command.workHours() != null) {
-      profile.setWorkHours(command.workHours());
+      profile.setWorkHours(normalizeJsonObject(command.workHours()));
     }
     if (command.metadata() != null) {
-      profile.setMetadata(command.metadata());
+      profile.setMetadata(normalizeJsonObject(command.metadata()));
     }
   }
 
@@ -329,6 +355,16 @@ public class UserProfileService {
     return node != null ? node.deepCopy() : null;
   }
 
+  private JsonNode normalizeJsonObject(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return objectMapper.createObjectNode();
+    }
+    if (!node.isObject()) {
+      throw new IllegalArgumentException("JSON value must be an object");
+    }
+    return node;
+  }
+
   private UserProfile resolveOrCreateEntity(ProfileLookupKey key) {
     Optional<UUID> profileId =
         profileHandleService.findProfileId(key.normalizedNamespace(), key.normalizedReference());
@@ -348,8 +384,12 @@ public class UserProfileService {
     profile.setDisplayName(key.normalizedReference());
     profile.setLocale("en");
     profile.setTimezone("UTC");
+    profile.setHabits(List.of());
+    profile.setAntiPatterns(List.of());
+    profile.setWorkHours(objectMapper.createObjectNode());
+    profile.setMetadata(objectMapper.createObjectNode());
 
-    UserProfile saved = userProfileRepository.save(profile);
+    UserProfile saved = userProfileRepository.saveAndFlush(profile);
     try {
       profileHandleService.resolveOrCreateHandle(
           saved.getNamespace(), saved.getReference(), () -> saved);

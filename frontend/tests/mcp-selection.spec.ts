@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mockProfileApi } from './utils';
 
 const providersFixture = {
   defaultProvider: 'openai',
@@ -55,7 +56,7 @@ const mcpCatalogFixture = {
 };
 
 const syncResponseFixture = {
-  requestId: '44444444-5555-6666-7777-888888888888',
+  requestId: '44444444-5555-4666-8888-888888888888',
   content: 'Ответ подготовлен с использованием инструментов Perplexity.',
   provider: {
     type: 'OPENAI',
@@ -78,6 +79,8 @@ const syncResponseFixture = {
 };
 
 test('sync request includes selected MCP tools and renders tool badges', async ({ page }) => {
+  await mockProfileApi(page);
+
   await page.route('**/api/llm/providers', async (route) => {
     await route.fulfill({
       status: 200,

@@ -1,10 +1,10 @@
 package com.aiadvent.backend.profile.oauth;
 
-import java.util.Map;
+import com.fasterxml.jackson.databind.JsonNode;
 
 public record OAuthUserInfo(
     String providerId,
     String externalId,
     String displayName,
     String email,
-    Map<String, Object> attributes) {}
+    JsonNode attributes) {}

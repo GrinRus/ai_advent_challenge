@@ -21,11 +21,19 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-@SpringBootTest
-@AutoConfigureMockMvc
+@SpringBootTest(
+    properties = {
+      "app.profile.dev.enabled=true",
+      "app.profile.dev.token=test-profile-token"
+    })
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 class ChatSessionUsageControllerIntegrationTest extends PostgresTestContainer {
+
+  private static final String PROFILE_KEY = "web:session-usage";
+  private static final String PROFILE_CHANNEL = "web";
 
   @Autowired private MockMvc mockMvc;
 
@@ -43,7 +51,8 @@ class ChatSessionUsageControllerIntegrationTest extends PostgresTestContainer {
   void usageReturns404ForMissingSession() throws Exception {
     mockMvc
         .perform(
-            get("/api/llm/sessions/{id}/usage", UUID.randomUUID())
+            withProfileHeaders(
+                get("/api/llm/sessions/{id}/usage", UUID.randomUUID()))
                 .accept(MediaType.APPLICATION_JSON))
         .andExpect(status().isNotFound());
   }
@@ -64,7 +73,7 @@ class ChatSessionUsageControllerIntegrationTest extends PostgresTestContainer {
     chatMessageRepository.save(assistantMessage);
 
     mockMvc
-        .perform(get("/api/llm/sessions/{id}/usage", session.getId()))
+        .perform(withProfileHeaders(get("/api/llm/sessions/{id}/usage", session.getId())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.sessionId").value(session.getId().toString()))
         .andExpect(jsonPath("$.messages[1].usage.totalTokens").value(250))
@@ -74,5 +83,12 @@ class ChatSessionUsageControllerIntegrationTest extends PostgresTestContainer {
         .andExpect(jsonPath("$.totals.cost.currency").value("USD"));
 
     assertThat(chatMessageRepository.findBySessionOrderBySequenceNumberAsc(session)).hasSize(2);
+  }
+
+  private MockHttpServletRequestBuilder withProfileHeaders(
+      MockHttpServletRequestBuilder builder) {
+    return builder
+        .header("X-Profile-Key", PROFILE_KEY)
+        .header("X-Profile-Channel", PROFILE_CHANNEL);
   }
 }

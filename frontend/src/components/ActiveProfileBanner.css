@@ -48,6 +48,44 @@
   margin-top: 16px;
 }
 
+.profile-banner-dev {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.profile-banner-dev-token,
+.profile-banner-dev-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-banner-dev-note {
+  font-size: 0.85rem;
+  color: #92400e;
+}
+
+.profile-banner-dev-link button {
+  width: fit-content;
+}
+
+.profile-banner-dev-link p {
+  margin: 0;
+  color: #78350f;
+  font-size: 0.9rem;
+}
+
+.profile-dev-link-result {
+  margin: 0;
+  font-weight: 600;
+}
+
 .profile-banner-summary p {
   margin: 0 0 6px;
 }

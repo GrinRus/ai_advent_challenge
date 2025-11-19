@@ -42,7 +42,7 @@ public class RoleAssignmentService {
   }
 
   public List<Role> listRolesForProfile(UUID profileId) {
-    return profileRoleRepository.findByIdProfileId(profileId).stream()
+    return profileRoleRepository.findWithRoleByProfileId(profileId).stream()
         .map(ProfileRole::getRole)
         .collect(Collectors.toList());
   }

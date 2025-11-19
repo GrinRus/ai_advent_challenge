@@ -94,6 +94,43 @@ curl -X POST \
 
 Требования выше нужно использовать при реализации реальных провайдеров (VK/GitHub/Google) — интерфейсы и конфиги уже готовы.
 
+### Конфигурация провайдеров (`app.oauth.providers.*`)
+В `application.yaml` описываем каждый провайдер отдельным ключом:
+
+```yaml
+app:
+  oauth:
+    providers:
+      vk:
+        client-id: ${VK_OAUTH_CLIENT_ID}
+        client-secret: ${VK_OAUTH_CLIENT_SECRET}
+        authorization-uri: https://id.vk.ru/authorize
+        token-uri: https://id.vk.ru/oauth2/token
+        user-info-uri: https://id.vk.ru/oauth2/user_info
+        redirect-uri: https://ai.riabov.tech/auth/vk/callback
+        scopes:
+          - email
+          - phone
+      github:
+        client-id: ${GITHUB_OAUTH_CLIENT_ID}
+        client-secret: ${GITHUB_OAUTH_CLIENT_SECRET}
+        authorization-uri: https://github.com/login/oauth/authorize
+        token-uri: https://github.com/login/oauth/access_token
+        user-info-uri: https://api.github.com/user
+        redirect-uri: https://ai.riabov.tech/auth/github/callback
+```
+
+Для локальной разработки добавьте переменные в `.env`:
+
+```
+VK_OAUTH_CLIENT_ID=123
+VK_OAUTH_CLIENT_SECRET=secret
+GITHUB_OAUTH_CLIENT_ID=abc
+GITHUB_OAUTH_CLIENT_SECRET=xyz
+```
+
+Backend автоматически читает эти настройки через `OAuthProviderProperties`, а адаптеры регистрируются в `OAuthProviderRegistry`. Даже если конкретный клиент ещё не реализован, конфигурация помогает тестировать UI и dev-flow (`/api/profile/.../identities/authorize`).
+
 ## Telegram бот
 - Управление включением: `TELEGRAM_BOT_ENABLED` (`true`/`false`, по умолчанию выключен).
 - Креды бота: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`.

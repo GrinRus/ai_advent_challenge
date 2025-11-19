@@ -81,7 +81,53 @@ If-Match: W/"5"
 
 Polling status возвращает `{"status":"pending|linked|error","message":"..."}`. Telegram по завершении получает webhook-event `identity_linked` и уведомляет пользователя.
 
-## 7. Инвалидация кеша и метрики
+## 7. Lookup → кеш → БД (sequence)
+
+```plantuml
+@startuml
+actor Client
+participant "ProfileContextFilter" as filter
+participant "UserProfileService" as svc
+participant "Redis" as redis
+participant "Postgres" as db
+
+Client -> filter: GET /api/llm/chat
+filter -> svc: resolveProfile(key)
+svc -> svc: local cache?
+svc -> redis: read cache
+svc -> db: SELECT user_profile + relations
+svc -> redis: populate cache + publish change
+svc --> filter: UserProfileDocument
+filter --> Client: продолжаем вызов (LLM prompt)
+@enduml
+```
+
+## 8. Обновление web → Telegram
+
+```plantuml
+@startuml
+actor WebUser
+participant "Web UI" as web
+participant "Profile API" as api
+participant "ProfileService" as svc
+participant "Redis pub/sub" as red
+participant "TelegramBot" as tg
+
+WebUser -> web: PUT /api/profile/web/demo
+web -> api: запрашивает сохранение
+api -> svc: updateProfile
+svc -> db: UPDATE profile
+svc -> red: publish ProfileChangedEvent
+svc --> api: документ
+api --> web: 200 OK
+
+red --> tg: event(profileId)
+tg -> svc: resolveProfile(telegram, userId)
+tg: обновляет тон/команды в чате
+@enduml
+```
+
+## 9. Инвалидация кеша и метрики
 
 - `profile_resolve_seconds`, `user_profile_cache_hit_total`, `user_profile_cache_miss_total`, `profile_identity_total` доступны в Micrometer.
 - Любое обновление вызывает `ProfileChangedEvent` → Redis pub/sub → сброс локальных Caffeine кешей.

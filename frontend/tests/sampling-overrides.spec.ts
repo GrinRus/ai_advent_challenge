@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mockProfileApi } from './utils';
 
 const providersFixture = {
   defaultProvider: 'openai',
@@ -38,6 +39,8 @@ const structuredResponses = [
 ];
 
 test('sampling overrides are sent and can be reset to defaults', async ({ page }) => {
+  await mockProfileApi(page);
+
   await page.route('**/api/llm/providers', async (route) => {
     await route.fulfill({
       status: 200,
@@ -81,7 +84,7 @@ test('sampling overrides are sent and can be reset to defaults', async ({ page }
         'x-new-session': syncCallCount === 1 ? 'true' : 'false',
       },
       body: JSON.stringify({
-        requestId: '11111111-2222-3333-4444-555555555555',
+        requestId: '11111111-2222-4333-8444-555555555555',
         status: 'success',
         provider: {
           type: 'OPENAI',
@@ -106,7 +109,9 @@ test('sampling overrides are sent and can be reset to defaults', async ({ page }
   await page.locator('#llm-chat-structured-input').fill('Запрос с overrides');
   await page.getByRole('button', { name: /Отправ/ }).click();
 
-  await expect(page.getByText(structuredResponses[0].answer.summary)).toBeVisible();
+  await expect(
+    page.getByTestId('structured-summary-text').first(),
+  ).toHaveText(structuredResponses[0].answer.summary);
   await expect(page.getByTestId('structured-options').last()).toHaveText(
     'Temp 0.3 · TopP 0.7 · Max 600',
   );
@@ -122,7 +127,9 @@ test('sampling overrides are sent and can be reset to defaults', async ({ page }
   await page.locator('#llm-chat-structured-input').fill('Запрос по умолчанию');
   await page.getByRole('button', { name: /Отправ/ }).click();
 
-  await expect(page.getByText(structuredResponses[1].answer.summary)).toBeVisible();
+  await expect(
+    page.getByTestId('structured-summary-text').last(),
+  ).toHaveText(structuredResponses[1].answer.summary);
   await expect(page.getByTestId('structured-options').last()).toHaveText(
     'Temp 0.45 · TopP 0.88 · Max 1600',
   );

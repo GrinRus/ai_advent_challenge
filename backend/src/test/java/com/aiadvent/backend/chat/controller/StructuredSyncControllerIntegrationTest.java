@@ -37,6 +37,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 @SpringBootTest(
@@ -46,14 +47,18 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
       "app.chat.memory.window-size=3",
       "app.chat.memory.retention=PT24H",
       "app.chat.memory.cleanup-interval=PT1H",
-      "app.chat.default-provider=stub"
+      "app.chat.default-provider=stub",
+      "app.profile.dev.enabled=true",
+      "app.profile.dev.token=test-profile-token"
     })
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 @Import(StubChatClientConfiguration.class)
 class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
   private static final String SYNC_ENDPOINT = "/api/llm/chat/sync/structured";
+  private static final String PROFILE_KEY = "web:structured-sync";
+  private static final String PROFILE_CHANNEL = "web";
 
   @Autowired private MockMvc mockMvc;
 
@@ -105,7 +110,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     MvcResult result =
         mockMvc
             .perform(
-                post(SYNC_ENDPOINT)
+                withProfileHeaders(
+                    post(SYNC_ENDPOINT))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -155,7 +161,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     mockMvc
         .perform(
-            post(SYNC_ENDPOINT)
+            withProfileHeaders(
+                post(SYNC_ENDPOINT))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
         .andExpect(status().isOk());
@@ -179,7 +186,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     mockMvc
         .perform(
-            post(SYNC_ENDPOINT)
+            withProfileHeaders(
+                post(SYNC_ENDPOINT))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
         .andExpect(status().isOk());
@@ -216,7 +224,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
     MvcResult result =
         mockMvc
             .perform(
-                post(SYNC_ENDPOINT)
+                withProfileHeaders(
+                    post(SYNC_ENDPOINT))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
             .andExpect(status().isOk())
@@ -242,7 +251,8 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     mockMvc
         .perform(
-            post(SYNC_ENDPOINT)
+            withProfileHeaders(
+                post(SYNC_ENDPOINT))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
         .andExpect(status().isUnprocessableEntity());
@@ -268,11 +278,19 @@ class StructuredSyncControllerIntegrationTest extends PostgresTestContainer {
 
     mockMvc
         .perform(
-            post(SYNC_ENDPOINT)
+            withProfileHeaders(
+                post(SYNC_ENDPOINT))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
         .andExpect(status().isBadGateway());
 
     assertThat(StubChatClientState.syncCallCount()).isGreaterThanOrEqualTo(3);
+  }
+
+  private MockHttpServletRequestBuilder withProfileHeaders(
+      MockHttpServletRequestBuilder builder) {
+    return builder
+        .header("X-Profile-Key", PROFILE_KEY)
+        .header("X-Profile-Channel", PROFILE_CHANNEL);
   }
 }

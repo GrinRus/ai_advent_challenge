@@ -46,3 +46,32 @@
   padding: 1rem;
   border-radius: 8px;
 }
+
+.dev-token-panel {
+  border: 1px solid #f97316;
+  background: #fff7ed;
+  padding: 1rem;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dev-token-warning {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.9rem;
+}
+
+.dev-token-controls {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.dev-token-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}

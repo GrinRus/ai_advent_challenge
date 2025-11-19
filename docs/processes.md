@@ -126,6 +126,20 @@
 
 Алгоритм фиксируем в релизных заметках, чтобы поддержка знала: вместе с флагом `app.features.profiles` нужно проверять двойную выдачу ролей и журнал `profile_updated`.
 
+### E2E проверки профилей и Telegram
+- **Backend (Testcontainers, Docker обязателен):**
+  ```bash
+  cd backend
+  ./gradlew test --tests com.aiadvent.backend.profile.service.ProfileWebTelegramE2ETest
+  ```
+  Тест поднимает `pgvector/pg15` и `redis:7.4-alpine`, обновляет профиль через REST, отправляет Telegram webhook (`/telegram/update`) и проверяет, что `ProfileLookupKey("telegram", ...)` видит те же данные после pub/sub-инвалидации.
+- **Frontend (Playwright):**
+  ```bash
+  cd frontend
+  npm run test:e2e -- profile-personalization.spec.ts
+  ```
+  Спека эмулирует API, заполняет страницу `/profile`, сохраняет dev token, выдаёт dev-link и проверяет баннер на `/llm-chat`. Перед запуском нужен `npm install`; тест стартует Vite dev server автоматически.
+
 ## Управление задачами
 - Волны (Wave) фиксируются в `docs/backlog.md`.
 - По завершении задачи отмечайте статус и указывайте дату/версию, если критично.

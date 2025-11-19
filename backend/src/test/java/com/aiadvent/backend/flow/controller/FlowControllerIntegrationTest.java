@@ -72,7 +72,7 @@ import org.springframework.test.web.servlet.MvcResult;
       "app.chat.default-provider=stub",
       "app.flow.worker.enabled=false"
     })
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 class FlowControllerIntegrationTest extends PostgresTestContainer {
 

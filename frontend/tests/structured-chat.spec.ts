@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { mockProfileApi } from './utils';
 
 const providersFixture = {
   defaultProvider: 'openai',
@@ -23,7 +24,7 @@ const providersFixture = {
 };
 
 const structuredResponseFixture = {
-  requestId: '11111111-2222-3333-4444-555555555555',
+  requestId: '11111111-2222-4333-8444-555555555555',
   status: 'success',
   provider: {
     type: 'OPENAI',
@@ -55,6 +56,8 @@ const structuredResponseFixture = {
 };
 
 test('structured chat request renders structured response', async ({ page }) => {
+  await mockProfileApi(page);
+
   await page.route('**/api/llm/providers', async (route) => {
     await route.fulfill({
       status: 200,

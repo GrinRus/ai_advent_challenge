@@ -42,7 +42,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("test")
 class FlowDefinitionControllerIntegrationTest extends PostgresTestContainer {
 
