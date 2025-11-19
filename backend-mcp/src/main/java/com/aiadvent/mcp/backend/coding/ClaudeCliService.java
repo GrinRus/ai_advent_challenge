@@ -75,6 +75,13 @@ class ClaudeCliService {
 
   private ClaudeCliInvocation runOnce(
       List<String> command, Path workspacePath, CodingAssistantProperties.ClaudeCliProperties cli) {
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "Starting Claude CLI process (bin={}, args={}, workspace={})",
+          command.isEmpty() ? "<empty>" : command.get(0),
+          String.join(" ", command.subList(Math.min(1, command.size()), command.size())),
+          workspacePath);
+    }
     ProcessBuilder builder = new ProcessBuilder(command);
     builder.directory(workspacePath.toFile());
     Map<String, String> env = builder.environment();
@@ -95,6 +102,15 @@ class ClaudeCliService {
     }
     env.put("CLAUDE_NO_TELEMETRY", "1");
     env.put("LANG", "en_US.UTF-8");
+    if (log.isDebugEnabled()) {
+      log.debug(
+          "Claude CLI env prepared (baseUrl={}, opus={}, sonnet={}, haiku={}, timeoutMs={})",
+          cli.getBaseUrl(),
+          cli.getDefaultOpusModel(),
+          cli.getDefaultSonnetModel(),
+          cli.getDefaultHaikuModel(),
+          cli.getApiTimeout() == null ? null : cli.getApiTimeout().toMillis());
+    }
 
     Process process;
     try {
