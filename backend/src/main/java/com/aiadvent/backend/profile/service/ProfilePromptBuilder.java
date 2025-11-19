@@ -1,5 +1,6 @@
 package com.aiadvent.backend.profile.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Locale;
 import java.util.StringJoiner;
 import org.springframework.stereotype.Component;
@@ -31,10 +32,39 @@ public class ProfilePromptBuilder {
     if (profile.antiPatterns() != null && !profile.antiPatterns().isEmpty()) {
       joiner.add("Avoid the following anti-patterns: " + String.join(", ", profile.antiPatterns()));
     }
+    String metadataLine = formatMetadata(profile.metadata());
+    if (StringUtils.hasText(metadataLine)) {
+      joiner.add(metadataLine);
+    }
     return joiner.toString();
   }
 
   private String safe(String value) {
     return StringUtils.hasText(value) ? value : "the user";
+  }
+
+  private String formatMetadata(JsonNode metadata) {
+    if (metadata == null || metadata.isMissingNode() || metadata.isNull() || !metadata.isObject()) {
+      return "";
+    }
+    StringJoiner details = new StringJoiner("; ");
+    metadata.fields()
+        .forEachRemaining(
+            entry -> {
+              JsonNode value = entry.getValue();
+              if (value == null || value.isNull()) {
+                return;
+              }
+              if (value.isTextual() || value.isNumber() || value.isBoolean()) {
+                details.add(entry.getKey() + "=" + value.asText());
+              } else {
+                details.add(entry.getKey() + "=" + value.toString());
+              }
+            });
+    String rendered = details.toString();
+    if (!StringUtils.hasText(rendered)) {
+      return "";
+    }
+    return "Additional profile metadata: " + rendered;
   }
 }
