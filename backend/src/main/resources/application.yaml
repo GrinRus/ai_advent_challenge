@@ -224,6 +224,9 @@ app:
         - code: coding.generate_patch
           schema-version: 1
           execution-mode: AUTO
+        - code: coding.generate_artifact
+          schema-version: 1
+          execution-mode: AUTO
         - code: coding.review_patch
           schema-version: 1
           execution-mode: AUTO

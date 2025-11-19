@@ -3046,7 +3046,6 @@ databaseChangeLog:
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.discard_patch' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
 
-
   - changeSet:
       id: 0207-seed-github-write-tools
       author: ai-advent
@@ -3579,7 +3578,29 @@ databaseChangeLog:
       file: db/changelog/0218-rbac-admin-upgrade.yaml
   - include:
       file: db/changelog/0219-profile-audit.yaml
-  - include:
+- include:
       file: db/changelog/0220-oauth-tokens.yaml
   - include:
       file: db/changelog/0221-profile-lookup-multi-handle.yaml
+  - changeSet:
+      id: 0222-insert-coding-generate-artifact
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('coding.generate_artifact', 1,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"instructions":{"type":"string","minLength":1,"maxLength":4000},"targetPaths":{"type":"array","items":{"type":"string"},"maxItems":25},"forbiddenPaths":{"type":"array","items":{"type":"string"},"maxItems":25},"contextFiles":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string","minLength":1},"maxBytes":{"type":"integer","minimum":1}},"required":["path"]},"maxItems":25},"operationsLimit":{"type":"integer","minimum":1,"maximum":25}},"required":["workspaceId","instructions"]}'::jsonb,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string"},"summary":{"type":"string"},"warnings":{"type":"array","items":{"type":"string"}},"operations":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string"},"languageHint":{"type":"string"},"contents":{"type":"string"},"insertBefore":{"type":"string"}},"required":["path","action","contents"]}},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"action":{"type":"string"},"created":{"type":"boolean"},"bytesWritten":{"type":"integer","minimum":0}},"required":["path","action","created","bytesWritten"]}},"diff":{"type":"string"},"modifiedFiles":{"type":"array","items":{"type":"string"}},"gitStatus":{"type":"string"},"completedAt":{"type":"string","format":"date-time"}},"required":["workspaceId","summary","warnings","operations","results","diff","modifiedFiles","gitStatus","completedAt"]}'::jsonb,
+                 'checksum-coding.generate_artifact-v1', '[]'::jsonb, 'coding-mcp', 'coding.generate_artifact', 'http-stream', 'coding')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('coding.generate_artifact', 'Coding · Generate artifact', 'Simplified GPT-4o Mini generator that creates or updates files directly inside workspace and returns git diff.', 'coding', 'AUTO', '["coding","generation"]'::jsonb, '["coding-write"]'::jsonb, 'Local MCP service', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.generate_artifact' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;
