@@ -46,7 +46,8 @@ class CodingOpenAiConfiguration {
       }
       chatModel = OpenAiChatModel.builder().openAiApi(openAiApi).defaultOptions(options).build();
     }
-    return ChatClient.builder(chatModel).defaultOptions(options);
+    ChatClient baseClient = ChatClient.builder(chatModel).defaultOptions(options).build();
+    return baseClient.mutate();
   }
 
   private OpenAiApi buildOpenAiApi(
