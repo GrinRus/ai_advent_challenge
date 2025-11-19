@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.coding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.ChatModelCallAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -28,11 +29,24 @@ class CodingOpenAiConfiguration {
                         .temperature(openai.getTemperature())
                         .maxTokens(openai.getMaxTokens())
                         .build();
-        ChatClient baseClient =
-                ChatClient.builder(chatModel)
-                        .defaultOptions(options)
-                        .defaultAdvisors(SimpleLoggerAdvisor.builder().order(-100).build())
-                        .build();
-        return baseClient.mutate();
+        // advisor, который делает вызов модели
+        var modelAdvisor = ChatModelCallAdvisor.builder()
+                .chatModel(chatModel)
+                .build();
+
+        // твой логгер
+        var loggerAdvisor = SimpleLoggerAdvisor.builder()
+                .order(-100)
+                .build();
+
+        ChatClient client = ChatClient.builder(chatModel)
+                .defaultOptions(options)
+                .defaultAdvisors(
+                        loggerAdvisor,
+                        modelAdvisor   // <-- обязательный
+                )
+                .build();
+
+        return client.mutate();
     }
 }
