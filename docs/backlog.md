@@ -1383,3 +1383,22 @@
   **Лучший вариант:** Cypress/Playwright тест с mock Telegram widget, куда подаём подготовленный payload.
 - [ ] Подготовить rollout-план: как включать админку/roles флагами, как откатывать, как уведомлять пользователей о новой авторизации.  
   **Лучший вариант:** Управлять релизом через feature-flag `app.features.profiles` и чек-лист в `docs/processes.md`.
+
+## Wave 44 — Упрощённый LLM-генератор кода для Coding MCP
+Цель: добавить в Coding MCP новый инструмент, который создаёт/редактирует файлы напрямую по инструкциям оператора с помощью GPT-4o Mini. Реализуем вариант №3: модель формирует содержимое файлов и отдаёт структуру операций, после чего сервис записывает изменения в workspace, валидирует пути и показывает diff. Конфигурацию OpenAI для coding-профиля заимствуем из RAG-модуля (используем те же `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL=gpt-4o-mini` и общую секцию `spring.ai.openai`).
+
+### Архитектура и конфигурация
+- [ ] Перенести настройки OpenAI в `application-coding.yaml`: включить `spring.ai.openai.enabled=true`, использовать shared env из RAG, добавить override для coding-профиля, чтобы активировать GPT-4o Mini без дублирования переменных.
+- [ ] Расширить `CodingAssistantProperties` новой секцией `openai` (enabled, temperature, maxTokens, лимиты по размеру ответа) и описать, что при пустых значениях берутся общие настройки RAG.
+- [ ] Зафиксировать формат JSON-ответа модели: массив операций `{path, action, languageHint, contents, insertBefore}` + сводка и предупреждения. Документировать ограничения (строгий UTF-8, максимум 2000 строк на файл, запрет бинарных payload).
+
+### Backend (Coding MCP)
+- [ ] Реализовать сервис `WorkspaceArtifactGenerator`, который принимает workspace/instructions/targetPaths, вызывает OpenAI через `ChatClient`/`OpenAiChatModel`, валидирует JSON и превращает его в список операций записи.
+- [ ] Обновить `WorkspaceFileService`: добавить методы записи (создание, overwrite, append) с проверкой, что путь остаётся в workspace, не входит во `forbiddenPaths` и не пересекается с существующими каталогами.
+- [ ] После применения операций собирать `git status`/`git diff` в workspace, формировать summary и `CodingPatch` (опционально) так же, как это делает текущий генератор, чтобы downstream-инструменты (review/apply) могли работать без изменений.
+- [ ] Добавить MCP tool `coding.generate_artifact`: описание входа (`workspaceId`, `instructions`, `operationsLimit`, `targetPaths`), возврат созданных файлов, diff и рекомендаций по дальнейшим шагам (например, dry-run через `coding.apply_patch_preview`).
+
+### Наблюдаемость и QA
+- [ ] Добавить метрики/логи: время вызова OpenAI, количество файлов/операций, объём записанных байтов, случаи блокировки `forbiddenPaths`, JSON parse errors. Новый counter `coding_artifact_generation_total`.
+- [ ] Написать unit-тесты на парсинг ответа, валидацию путей и применение операций, а также интеграционные тесты MCP tool (с mock OpenAI client) + smoke энд-ту-энд (сохранение файла → git diff → dry-run).
+- [ ] Обновить `docs/architecture/coding-mcp.md`, `docs/tools.md` и release notes, описав сценарии использования инструмента, ограничения по размеру, требования по безопасности и повторное использование openai-переменных из RAG.
