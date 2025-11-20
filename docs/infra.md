@@ -40,7 +40,12 @@ Frontend контейнер проксирует все запросы `/api/*` 
    ```bash
    cp docs/env/local.env .env
    ```
-   Файл включает профиль `local`, подключение к `postgres:5434`, отключённый Telegram и OpenAI-compatible Gateway `http://localhost:11434/v1` (Ollama/vLLM).
+   Файл включает профиль `local`, подключение к `postgres:5432`, отключённый Telegram и OpenAI-compatible Gateway `http://localhost:11434/v1` (Ollama/vLLM). Поскольку значения заточены под Docker Compose, при запуске backend вне контейнера переопределяйте БД и Redis прямо в командной строке, например:
+   ```bash
+   APP_DB_URL=jdbc:postgresql://localhost:5434/ai_advent \
+   SPRING_DATA_REDIS_HOST=localhost \
+   SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+   ```
 2. Запускайте тот же набор сервисов, что и в prod-режиме, но с оверрайдом `docker-compose.local.yaml`, который переключает backend на профиль `local`:
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.local.yaml up --build
@@ -52,7 +57,7 @@ Frontend контейнер проксирует все запросы `/api/*` 
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d postgres redis
    ```
-   Далее запускайте `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` и `npm run dev` в соответствующих директориях — они будут использовать те же порты.
+   Далее запускайте `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` (с ручными `APP_DB_URL`/`SPRING_DATA_REDIS_HOST`, как показано выше) и `npm run dev` в соответствующих директориях — они будут использовать те же порты. Для Vite создайте `frontend/.env.local` (уже добавлен в репозитории) либо задайте `VITE_API_BASE_URL=/api` перед запуском, чтобы клиент всегда отправлял запросы с префиксом `/api`.
 
 ## Dev-only режим профилей
 Для локальной отладки профилей предусмотрен упрощённый режим аутентификации. Он отключает проверку внешних провайдеров и ролей и позволяет вызывать профильные API напрямую.
