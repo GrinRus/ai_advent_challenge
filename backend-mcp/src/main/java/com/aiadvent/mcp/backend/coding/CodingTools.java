@@ -8,6 +8,8 @@ import com.aiadvent.mcp.backend.coding.CodingAssistantService.GenerateArtifactRe
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.GenerateArtifactResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.GeneratePatchRequest;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.GeneratePatchResponse;
+import com.aiadvent.mcp.backend.coding.CodingAssistantService.GitAddRequest;
+import com.aiadvent.mcp.backend.coding.CodingAssistantService.GitAddResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.ListPatchesRequest;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.ListPatchesResponse;
 import com.aiadvent.mcp.backend.coding.CodingAssistantService.ReviewPatchRequest;
@@ -105,5 +107,15 @@ class CodingTools {
               + "\"notes-1\", \"patchId\": \"abc123\"}.")
   DiscardPatchResponse discardPatch(DiscardPatchRequest request) {
     return codingAssistantService.discardPatch(request);
+  }
+
+  @Tool(
+      name = "coding.git_add",
+      description =
+          "Ставит изменения в индекс внутри workspace. Ожидает {\"workspaceId\": \"...\", \"paths\": [\"src/App.java\", \"frontend/\"]}. "
+              + "Пути обязательны и задаются относительно корня workspace; перед выполнением убедитесь, что нужные файлы уже созданы. "
+              + "Инструмент выполняет git add -- <paths> и возвращает список проиндексированных файлов плюс git status.")
+  GitAddResponse gitAdd(GitAddRequest request) {
+    return codingAssistantService.gitAdd(request);
   }
 }

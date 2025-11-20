@@ -3604,3 +3604,25 @@ databaseChangeLog:
                 ('coding.generate_artifact', 'Coding · Generate artifact', 'Simplified GPT-4o Mini generator that creates or updates files directly inside workspace and returns git diff.', 'coding', 'AUTO', '["coding","generation"]'::jsonb, '["coding-write"]'::jsonb, 'Local MCP service', NULL, 45000,
                  (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.generate_artifact' AND version = 1))
               ON CONFLICT (code) DO NOTHING;
+  - changeSet:
+      id: 0223-insert-coding-git-add
+      author: ai-advent
+      context: local,prod
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT INTO tool_schema_version (tool_code, version, request_schema, response_schema, schema_checksum, examples, mcp_server, mcp_tool_name, transport, auth_scope)
+              VALUES
+                ('coding.git_add', 1,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string","minLength":1},"paths":{"type":"array","items":{"type":"string","minLength":1},"minItems":1,"maxItems":50}},"required":["workspaceId","paths"]}'::jsonb,
+                 '{"type":"object","properties":{"workspaceId":{"type":"string"},"paths":{"type":"array","items":{"type":"string"}},"stagedFiles":{"type":"array","items":{"type":"string"}},"gitStatus":{"type":"string"},"completedAt":{"type":"string","format":"date-time"}},"required":["workspaceId","paths","stagedFiles","gitStatus","completedAt"]}'::jsonb,
+                 'checksum-coding.git_add-v1', '[]'::jsonb, 'coding-mcp', 'coding.git_add', 'http-stream', 'coding')
+              ON CONFLICT (tool_code, version) DO NOTHING;
+
+              INSERT INTO tool_definition (code, display_name, description, provider_hint, call_type, tags, capabilities, cost_hint, icon_url, default_timeout_ms, schema_version_id)
+              VALUES
+                ('coding.git_add', 'Coding · Git add', 'Stage specific files inside the prepared workspace.', 'coding', 'MANUAL', '["coding","git"]'::jsonb, '["staging"]'::jsonb, 'Local MCP service', NULL, 45000,
+                 (SELECT id FROM tool_schema_version WHERE tool_code = 'coding.git_add' AND version = 1))
+              ON CONFLICT (code) DO NOTHING;

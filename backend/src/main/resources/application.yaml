@@ -239,6 +239,9 @@ app:
         - code: coding.discard_patch
           schema-version: 1
           execution-mode: MANUAL
+        - code: coding.git_add
+          schema-version: 1
+          execution-mode: MANUAL
         - code: github.workspace_git_state
           schema-version: 1
           execution-mode: AUTO

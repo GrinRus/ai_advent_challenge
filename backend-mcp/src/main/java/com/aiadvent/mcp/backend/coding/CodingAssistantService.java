@@ -253,6 +253,59 @@ class CodingAssistantService {
         Instant.now());
   }
 
+  GitAddResponse gitAdd(GitAddRequest request) {
+    Objects.requireNonNull(request, "request");
+    String workspaceId = sanitizeWorkspaceId(request.workspaceId());
+    List<String> paths = normalizePaths(request.paths());
+    if (paths.isEmpty()) {
+      throw new IllegalArgumentException("paths must not be empty");
+    }
+    validatePathList(paths, "paths");
+
+    TempWorkspaceService.Workspace workspace =
+        workspaceService
+            .findWorkspace(workspaceId)
+            .orElseThrow(() -> new IllegalArgumentException("Unknown workspaceId: " + workspaceId));
+    Path workspacePath = workspace.path();
+
+    List<String> command = new ArrayList<>();
+    command.add("git");
+    command.add("add");
+    command.add("--");
+    command.addAll(paths);
+    GitResult addResult =
+        runGitCommand(
+            workspacePath,
+            null,
+            Duration.ofMinutes(1),
+            command.toArray(String[]::new));
+    if (addResult.exitCode() != 0) {
+      throw new IllegalStateException(
+          "git add failed: " + Optional.ofNullable(addResult.stderr()).orElse(""));
+    }
+
+    String stagedNameStatus =
+        runGitCommand(
+                workspacePath,
+                null,
+                Duration.ofSeconds(30),
+                "git",
+                "diff",
+                "--name-status",
+                "--cached")
+            .stdout();
+    String gitStatus =
+        runGitCommand(workspacePath, null, Duration.ofSeconds(30), "git", "status", "--short")
+            .stdout();
+
+    return new GitAddResponse(
+        workspaceId,
+        List.copyOf(paths),
+        extractFilesTouched(stagedNameStatus),
+        gitStatus,
+        Instant.now());
+  }
+
   ReviewPatchResponse reviewPatch(ReviewPatchRequest request) {
     Objects.requireNonNull(request, "request");
     CodingPatch patch = requirePatch(request.workspaceId(), request.patchId());
@@ -1164,4 +1217,14 @@ class CodingAssistantService {
   record DiscardPatchRequest(String workspaceId, String patchId) {}
 
   record DiscardPatchResponse(String patchId, PatchSummary patch, Instant discardedAt) {}
+
+  record GitAddRequest(String workspaceId, List<String> paths) {}
+
+  record GitAddResponse(
+      String workspaceId, List<String> paths, List<String> stagedFiles, String gitStatus, Instant completedAt) {
+    GitAddResponse {
+      paths = paths == null ? List.of() : List.copyOf(paths);
+      stagedFiles = stagedFiles == null ? List.of() : List.copyOf(stagedFiles);
+    }
+  }
 }
