@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: ${APP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
+    url: ${APP_DB_URL:jdbc:postgresql://localhost:5434/ai_advent}
     username: ${APP_DB_USERNAME:ai_advent}
     password: ${APP_DB_PASSWORD:ai_advent}
     driver-class-name: org.postgresql.Driver
@@ -15,7 +15,62 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     contexts: local
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:ollama-local}
+      base-url: ${OPENAI_BASE_URL:http://localhost:11434/v1}
+      chat:
+        options:
+          model: ${OPENAI_DEFAULT_MODEL:llama3.1:8b-instruct}
+          temperature: ${OPENAI_TEMPERATURE:0.3}
+          top-p: ${OPENAI_TOP_P:0.9}
+          max-tokens: ${OPENAI_MAX_TOKENS:2048}
+      embedding:
+        options:
+          model: ${NOTES_EMBEDDING_MODEL:bge-m3}
+          dimensions: ${NOTES_EMBEDDING_DIMENSIONS:1024}
+    zhipuai:
+      # зеркалим на локальный OpenAI-совместимый endpoint (Ollama/vLLM)
+      api-key: ${ZHIPU_API_KEY:${OPENAI_API_KEY:ollama-local}}
+      base-url: ${ZHIPU_BASE_URL:${OPENAI_BASE_URL:http://localhost:11434/v1}}
+      chat:
+        completions-path: ${ZHIPU_COMPLETIONS_PATH:/v1/chat/completions}
+        options:
+          model: ${ZHIPU_DEFAULT_MODEL:${OPENAI_DEFAULT_MODEL:llama3.1:8b-instruct}}
+          temperature: ${ZHIPU_TEMPERATURE:${OPENAI_TEMPERATURE:0.3}}
+          top-p: ${ZHIPU_TOP_P:${OPENAI_TOP_P:0.9}}
+          max-tokens: ${ZHIPU_MAX_TOKENS:${OPENAI_MAX_TOKENS:2048}}
 
 logging:
   level:
     root: INFO
+
+app:
+  chat:
+    default-provider: local-llama
+    providers:
+      local-llama:
+        type: OPENAI
+        display-name: "Local Ollama (Llama 3.1 8B)"
+        base-url: ${OPENAI_BASE_URL:http://localhost:11434/v1}
+        api-key: ${OPENAI_API_KEY:ollama-local}
+        timeout: PT60S
+        temperature: 0.3
+        top-p: 0.9
+        max-tokens: 2048
+        default-model: ${OPENAI_DEFAULT_MODEL:llama3.1:8b-instruct}
+        models:
+          "llama3.1:8b-instruct":
+            display-name: "Llama 3.1 8B Instruct (q4_K_M)"
+            tier: local
+            context-window: 131072
+            max-output-tokens: 4000
+            sync-enabled: true
+            streaming-enabled: true
+            structured-enabled: true
+            pricing:
+              currency: USD
+              input-per-1k-tokens: 0
+              output-per-1k-tokens: 0
+            usage:
+              mode: native

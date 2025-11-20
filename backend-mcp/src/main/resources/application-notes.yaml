@@ -49,7 +49,7 @@ spring:
         format_sql: true
   liquibase:
     change-log: classpath:db/changelog/notes/db.changelog-master.yaml
-    contexts: notes
+    contexts: ${NOTES_LIQUIBASE_CONTEXTS:notes}
 
 notes:
   embedding:

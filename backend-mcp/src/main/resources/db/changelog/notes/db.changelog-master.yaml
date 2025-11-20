@@ -131,3 +131,32 @@ databaseChangeLog:
         - sql:
             splitStatements: false
             sql: CREATE INDEX IF NOT EXISTS idx_note_vector_store_embedding ON note_vector_store USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  - changeSet:
+      id: notes-0002-local-embedding
+      author: ai-advent
+      context: notes-local
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: DROP INDEX IF EXISTS idx_note_vector_store_embedding;
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: ALTER TABLE note_vector_store ALTER COLUMN embedding TYPE VECTOR(1024);
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: ALTER TABLE note_vector_store ALTER COLUMN embedding_dimensions SET DEFAULT 1024;
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: UPDATE note_vector_store SET embedding_dimensions = 1024 WHERE embedding_dimensions <> 1024;
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: ALTER TABLE note_vector_store ALTER COLUMN embedding_provider SET DEFAULT 'bge-m3';
+        - sql:
+            splitStatements: false
+            stripComments: true
+            sql: CREATE INDEX IF NOT EXISTS idx_note_vector_store_embedding ON note_vector_store USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);

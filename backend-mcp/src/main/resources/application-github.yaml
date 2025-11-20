@@ -19,7 +19,7 @@ spring:
         format_sql: true
   liquibase:
     change-log: classpath:db/changelog/github/db.changelog-master.yaml
-    contexts: github-rag
+    contexts: ${GITHUB_LIQUIBASE_CONTEXTS:github-rag}
   ai:
     mcp:
       server:

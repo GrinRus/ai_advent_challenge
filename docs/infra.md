@@ -22,6 +22,8 @@
 ## Docker Compose
 Скопируйте `.env.example` в `.env`, откорректируйте значения переменных при необходимости. Для GitHub MCP обязательно задайте Personal Access Token (`GITHUB_PAT`) с правами `repo`, `read:org` и `read:checks`. Оформите процесс выдачи и ротации PAT согласно внутренним правилам безопасности (см. `docs/processes.md`).
 
+### Полный стек (prod-профиль)
+
 Для локального запуска всех компонентов выполните:
 
 ```bash
@@ -31,6 +33,26 @@ docker compose up --build
 Переменные окружения для backend (URL, логин, пароль БД) передаются через `APP_DB_*` и уже заданы в `docker-compose.yml`. При необходимости вынесите их в `.env` файл и подключите через ключ `env_file`.
 
 Frontend контейнер проксирует все запросы `/api/*` на backend, поэтому приложение доступно по адресу `http://localhost:4179`, а API — через `http://localhost:4179/api`.
+
+### Локальный режим с Ollama (без MCP)
+
+1. Подготовьте локальный `.env`:
+   ```bash
+   cp docs/env/local.env .env
+   ```
+   Файл включает профиль `local`, подключение к `postgres:5434`, отключённый Telegram и OpenAI-compatible Gateway `http://localhost:11434/v1` (Ollama/vLLM).
+2. Запускайте тот же набор сервисов, что и в prod-режиме, но с оверрайдом `docker-compose.local.yaml`, который переключает backend на профиль `local`:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yaml up --build
+   ```
+   Все MCP-сервисы и инфраструктура стартуют так же, как в базовом compose. Разница только в параметрах backend (локальный LLM, отключённый Telegram и т. п.).
+   В `.env` для локального режима дополнительно задаём `NOTES_LIQUIBASE_CONTEXTS=notes,notes-local` и
+   `GITHUB_LIQUIBASE_CONTEXTS=github-rag,github-rag-local`, чтобы Liquibase применил change set-ы, уменьшающие размерность векторов под локальную embedding-модель.
+3. Если хотите оставить backend/фронт вне контейнеров, но при этом получить инфраструктуру docker’ом, можно ограничиться базой данных и Redis:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d postgres redis
+   ```
+   Далее запускайте `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` и `npm run dev` в соответствующих директориях — они будут использовать те же порты.
 
 ## Dev-only режим профилей
 Для локальной отладки профилей предусмотрен упрощённый режим аутентификации. Он отключает проверку внешних провайдеров и ролей и позволяет вызывать профильные API напрямую.
