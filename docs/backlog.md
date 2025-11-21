@@ -1402,3 +1402,31 @@
 - [x] Добавить метрики/логи: время вызова OpenAI, количество файлов/операций, объём записанных байтов, случаи блокировки `forbiddenPaths`, JSON parse errors. Новый counter `coding_artifact_generation_total`.
 - [x] Написать unit-тесты на парсинг ответа, валидацию путей и применение операций, а также интеграционные тесты MCP tool (с mock OpenAI client) + smoke энд-ту-энд (сохранение файла → git diff → dry-run).
 - [x] Обновить `docs/architecture/coding-mcp.md`, `docs/tools.md` и release notes, описав сценарии использования инструмента, ограничения по размеру, требования по безопасности и повторное использование openai-переменных из RAG.
+
+## Wave 45 — Графовый AST и IDE-подобная навигация для GitHub RAG
+Цель: заменить эвристические AST-метаданные и плоский call graph на полноценный граф кода, построенный на Tree-sitter и графовой БД (Neo4j/JanusGraph). MCP/LLM должны получать такую же картину проекта, как IDE: связи “файл → класс → метод”, вызовы, имплементации, пути от контроллеров до БД и т.д.
+
+### Tree-sitter и AST слой
+- [ ] Реализовать `TreeSitterParser`/`AstNode` обёртку вокруг собраных грамматик (`treesitter/*`), поддерживающую Java/Kotlin/TS/JS/Python/Go (минимум) и готовую к расширению. Прогонять парсинг внутри `AstFileContextFactory` вместо `HeuristicAstExtractor`.
+- [ ] Построить нормализованный DTO `SymbolNode` (id, fqn, kind, modifiers, signature, docstring, span, imports) и набор edge DTO (`CONTAINS`, `CALLS`, `IMPLEMENTS`, `READS_FIELD`, `USES_TYPE`). Обновить `SemanticCodeChunker`/`Chunk` чтобы брать метаданные из нового контекста.
+- [ ] Подготовить regression-fixtures с наследованием, перегрузками, интерфейсами и docstring на каждом языке (`backend-mcp/src/test/resources/mini-repos`). Тест `RepoRagIndexServiceMultiLanguageTest` должен проверять корректность FQN, docstring, наборов edges и ошибки парсинга.
+
+### Графовая БД и синхронизация
+- [ ] Выбрать и задокументировать графовую БД (по умолчанию Neo4j): схема, индексы, требования к деплойменту. Добавить секцию `github.rag.graph.*` в конфиг, описать переменные окружения и миграции.
+- [ ] Создать `GraphSyncService`, который после chunking батчево отправляет `SymbolNode`/`Edge` в граф: `MERGE Repo -> File -> Symbol`, `Symbol-[:CALLS]->Symbol`, `Symbol-[:IMPLEMENTS]->Interface`, хранить `astVersion`, `graphSchemaVersion` и `graphReadyAt`.
+- [ ] Настроить инкрементальные апдейты: при удалении файла чистить узлы/ребра, при изменении — пересобирать только затронутые символы. Писать idempotent операции, логировать размер батчей и время sync.
+
+### MCP инструменты и использование графа
+- [ ] Добавить инструменты `repo.code_graph_neighbors`, `repo.code_graph_path`, `repo.code_graph_definition`: вход — `namespace`, `symbolFqn`, параметры фильтрации по типу ребра, выход — компактный JSON с путями, файлами/линиями и типом связи. Прописать контракты в `docs/tools.md`.
+- [ ] Переписать `NeighborChunkDocumentPostProcessor` и `RepoRagSymbolService` на графовую БД: вместо таблицы `repo_rag_symbol_graph` исполнять подготовленные Cypher/GQL запросы и возвращать точные соседи. Падение графа должно переводить стратегию в LINEAR/PARENT с предупреждением.
+- [ ] В генерации ответов добавлять “graph lens”: извлекать для каждого чанка описание родителя/детей/вызовов и прикреплять к `matches[].metadata` (`graph_neighbors`, `graph_path`, `explainer`). Документировать, как UI показывает эти подсказки.
+
+### Наблюдаемость, миграции и UX
+- [ ] Добавить метрики `graph_nodes_total`, `graph_edges_total{relation}`, latency на запис/чтение, алерты на деградацию (`graph_sync_failure_total`, `graph_lookup_throttled_total`). Репортить `astReady` + `graphReady` в `repo.rag_index_status`.
+- [ ] Написать миграционный план: как включать граф для новых namespace, как перегенерировать существующие, как откатываться на Postgres. Описать чек-лист в `docs/processes.md` и архитектуру в `docs/architecture/github-rag-modular.md`.
+- [ ] Провести end-to-end сценарий “оператор спрашивает путь контроллер → репозиторий”: fetch → индекс → `repo.code_graph_path` → `repo.rag_search` → UI показывает граф. Зафиксировать в release notes и добавить примеры запросов в `docs/guides/mcp-operators.md`.
+
+### Тестирование и e2e
+- [ ] Переписать unit/интеграционные тесты chunking/graph слоя: покрыть `TreeSitterParser`, `GraphSyncService`, `repo.code_graph_*` инструмент с моками Neo4j.
+- [ ] Добавить end-to-end тест с Testcontainers Neo4j: поднять контейнер, прогнать полный цикл `RepoRagIndexService` → `GraphSyncService` → `repo.code_graph_neighbors`, проверить сохранённые узлы/ребра и отдачу MCP инструмента.
+- [ ] Включить smoke e2e (workspace fetch → индекс → поиск) в CI, используя тестовый Neo4j контейнер и fixture-репозиторий.
