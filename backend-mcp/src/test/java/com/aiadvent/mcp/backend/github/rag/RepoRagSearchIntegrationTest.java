@@ -45,7 +45,7 @@ class RepoRagSearchIntegrationTest {
         new RepoRagGenerationService(properties, new DefaultResourceLoader());
     service =
         new RepoRagSearchService(
-            properties, retrievalPipeline, reranker, generationService, namespaceStateService);
+            properties, retrievalPipeline, reranker, generationService, namespaceStateService, null);
   }
 
   @Test

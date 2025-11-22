@@ -22,3 +22,8 @@
 | `repo.code_graph_path` | Кратчайший путь между двумя символами (по умолчанию до 4 ребер). | `namespace`, `sourceFqn`, `targetFqn`, `relation` (опц.), `maxDepth`. Возвращает `nodes[]`/`edges[]` для визуализации или пояснений. |
 
 > Требования: `GITHUB_RAG_GRAPH_ENABLED=true`, доступ к Neo4j (`GITHUB_RAG_GRAPH_URI/USERNAME/PASSWORD`). Если граф не включён, инструменты вернут ошибку.
+
+**Graph lens в поисковой выдаче**
+- `repo.rag_search` и `repo.rag_search_global` автоматически добавляют в `matches[].metadata.graph_neighbors` список `nodes[]/edges[]`, если включён граф и у чанка есть `symbol_fqn` с `ast_version >= RepoRagIndexService.AST_VERSION`.
+- Модуль `graph.lens` появляется в `appliedModules`, чтобы UI мог подсветить использование графа.
+- Если граф недоступен или символ без AST, результаты вернутся как раньше без `graph_neighbors`.

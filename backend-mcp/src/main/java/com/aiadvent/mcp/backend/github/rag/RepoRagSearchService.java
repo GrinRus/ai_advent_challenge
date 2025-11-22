@@ -5,10 +5,12 @@ import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEnti
 import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.ai.document.Document;
@@ -27,6 +29,7 @@ public class RepoRagSearchService {
   private final RepoRagSearchReranker reranker;
   private final RepoRagGenerationService generationService;
   private final RepoRagNamespaceStateService namespaceStateService;
+  private final GraphQueryService graphQueryService;
   private final FilterExpressionTextParser filterExpressionParser = new FilterExpressionTextParser();
 
   public RepoRagSearchService(
@@ -34,13 +37,15 @@ public class RepoRagSearchService {
       RepoRagRetrievalPipeline retrievalPipeline,
       RepoRagSearchReranker reranker,
       RepoRagGenerationService generationService,
-      RepoRagNamespaceStateService namespaceStateService) {
+      RepoRagNamespaceStateService namespaceStateService,
+      @org.springframework.lang.Nullable GraphQueryService graphQueryService) {
     this.properties = Objects.requireNonNull(properties, "properties");
     this.retrievalPipeline = Objects.requireNonNull(retrievalPipeline, "retrievalPipeline");
     this.reranker = Objects.requireNonNull(reranker, "reranker");
     this.generationService = Objects.requireNonNull(generationService, "generationService");
     this.namespaceStateService =
         Objects.requireNonNull(namespaceStateService, "namespaceStateService");
+    this.graphQueryService = graphQueryService;
   }
 
   public SearchResponse search(SearchCommand command) {
@@ -118,7 +123,14 @@ public class RepoRagSearchService {
     RepoRagGenerationService.GenerationResult generationResult =
         generateResult(command, finalAttempt);
 
+    GraphLensResult lensResult =
+        applyGraphLens(
+            state.getNamespace(), finalAttempt.documents(), namespaceAstReady);
+
     List<String> allModules = new ArrayList<>(finalAttempt.appliedModules());
+    if (lensResult.applied()) {
+      allModules.add("graph.lens");
+    }
     if (lowThresholdApplied || finalAttempt.plan().mode() == RagParameterGuard.SearchPlanMode.LOW_THRESHOLD) {
       allModules.add("retrieval.low-threshold");
     }
@@ -128,7 +140,7 @@ public class RepoRagSearchService {
     allModules.addAll(generationResult.appliedModules());
     allModules.add("profile:" + plan.profileName());
 
-    List<SearchMatch> matches = toMatches(finalAttempt.documents());
+    List<SearchMatch> matches = toMatches(lensResult.documents());
     boolean noResults = matches.isEmpty();
     return new SearchResponse(
         matches,
@@ -182,10 +194,16 @@ public class RepoRagSearchService {
     List<String> appliedModules = new ArrayList<>(pipelineResult.appliedModules());
     appliedModules.addAll(postProcessingResult.appliedModules());
 
+    GraphLensResult lensResult =
+        applyGraphLensAcrossNamespaces(postProcessingResult.documents(), 5);
+    if (lensResult.applied()) {
+      appliedModules.add("graph.lens");
+    }
+
     RepoRagGenerationService.GenerationResult generationResult =
         generateResult(
             finalQuery,
-            postProcessingResult.documents(),
+            lensResult.documents(),
             safeDisplay(command.displayRepoOwner()),
             safeDisplay(command.displayRepoName()),
             command.responseChannel());
@@ -194,7 +212,7 @@ public class RepoRagSearchService {
     allModules.addAll(generationResult.appliedModules());
     allModules.add("profile:" + plan.profileName());
 
-    List<SearchMatch> matches = toMatches(postProcessingResult.documents());
+    List<SearchMatch> matches = toMatches(lensResult.documents());
     boolean noResults = matches.isEmpty();
     return new SearchResponse(
         matches,
@@ -450,6 +468,191 @@ public class RepoRagSearchService {
       matches.add(new SearchMatch(path, snippet, summary, score, metadata));
     }
     return matches;
+  }
+
+  private GraphLensResult applyGraphLens(
+      String namespace, List<Document> documents, boolean namespaceAstReady) {
+    if (graphQueryService == null
+        || !properties.getGraph().isEnabled()
+        || !namespaceAstReady
+        || CollectionUtils.isEmpty(documents)) {
+      return new GraphLensResult(documents, false);
+    }
+    List<Document> enriched = new ArrayList<>(documents.size());
+    boolean applied = false;
+    int budget = Math.min(5, documents.size());
+    for (int i = 0; i < documents.size(); i++) {
+      Document document = documents.get(i);
+      Map<String, Object> metadata =
+          document.getMetadata() != null
+              ? new LinkedHashMap<>(document.getMetadata())
+              : new LinkedHashMap<>();
+      if (i < budget) {
+        Object symbolValue = metadata.get("symbol_fqn");
+        String symbolFqn =
+            symbolValue instanceof String str && StringUtils.hasText(str) ? str.trim() : null;
+        if (StringUtils.hasText(symbolFqn)) {
+          try {
+            GraphQueryService.GraphNeighbors neighbors =
+                graphQueryService.neighbors(
+                    namespace,
+                    symbolFqn,
+                    GraphQueryService.Direction.OUTGOING,
+                    Set.of(),
+                    12);
+            if (!neighbors.nodes().isEmpty() || !neighbors.edges().isEmpty()) {
+              Map<String, Object> neighborPayload = new LinkedHashMap<>();
+              neighborPayload.put(
+                  "nodes",
+                  neighbors.nodes().stream()
+                      .map(
+                          node -> {
+                            Map<String, Object> map = new LinkedHashMap<>();
+                            map.put("fqn", node.fqn());
+                            map.put("file_path", node.filePath());
+                            map.put("kind", node.kind());
+                            map.put("visibility", node.visibility());
+                            map.put("line_start", node.lineStart());
+                            map.put("line_end", node.lineEnd());
+                            return map;
+                          })
+                      .toList());
+              neighborPayload.put(
+                  "edges",
+                  neighbors.edges().stream()
+                      .map(
+                          edge -> {
+                            Map<String, Object> map = new LinkedHashMap<>();
+                            map.put("from", edge.from());
+                            map.put("to", edge.to());
+                            map.put("relation", edge.relation());
+                            map.put("chunk_hash", edge.chunkHash());
+                            map.put("chunk_index", edge.chunkIndex());
+                            return map;
+                          })
+                      .toList());
+              metadata.put("graph_neighbors", neighborPayload);
+              applied = true;
+            }
+          } catch (RuntimeException ex) {
+            // Не блокируем выдачу, просто пропускаем графовую линзу
+          }
+        }
+      }
+      enriched.add(cloneDocument(document, metadata));
+    }
+    return new GraphLensResult(List.copyOf(enriched), applied);
+  }
+
+  private GraphLensResult applyGraphLensAcrossNamespaces(List<Document> documents, int budget) {
+    if (graphQueryService == null || !properties.getGraph().isEnabled() || CollectionUtils.isEmpty(documents)) {
+      return new GraphLensResult(documents, false);
+    }
+    int maxBudget = Math.max(0, Math.min(budget > 0 ? budget : 5, documents.size()));
+    List<Document> enriched = new ArrayList<>(documents.size());
+    boolean applied = false;
+    int used = 0;
+    for (Document document : documents) {
+      Map<String, Object> metadata =
+          document.getMetadata() != null
+              ? new LinkedHashMap<>(document.getMetadata())
+              : new LinkedHashMap<>();
+      if (used < maxBudget) {
+        String namespace = asString(metadata.get("namespace"));
+        String symbolFqn = asString(metadata.get("symbol_fqn"));
+        Integer astVersion = asInteger(metadata.get("ast_version"));
+        boolean namespaceAstReady =
+            astVersion != null && astVersion >= RepoRagIndexService.AST_VERSION;
+        if (StringUtils.hasText(namespace) && StringUtils.hasText(symbolFqn) && namespaceAstReady) {
+          try {
+            GraphQueryService.GraphNeighbors neighbors =
+                graphQueryService.neighbors(
+                    namespace,
+                    symbolFqn,
+                    GraphQueryService.Direction.OUTGOING,
+                    Set.of(),
+                    12);
+            if (!neighbors.nodes().isEmpty() || !neighbors.edges().isEmpty()) {
+              Map<String, Object> neighborPayload = new LinkedHashMap<>();
+              neighborPayload.put(
+                  "nodes",
+                  neighbors.nodes().stream()
+                      .map(
+                          node -> {
+                            Map<String, Object> map = new LinkedHashMap<>();
+                            map.put("fqn", node.fqn());
+                            map.put("file_path", node.filePath());
+                            map.put("kind", node.kind());
+                            map.put("visibility", node.visibility());
+                            map.put("line_start", node.lineStart());
+                            map.put("line_end", node.lineEnd());
+                            return map;
+                          })
+                      .toList());
+              neighborPayload.put(
+                  "edges",
+                  neighbors.edges().stream()
+                      .map(
+                          edge -> {
+                            Map<String, Object> map = new LinkedHashMap<>();
+                            map.put("from", edge.from());
+                            map.put("to", edge.to());
+                            map.put("relation", edge.relation());
+                            map.put("chunk_hash", edge.chunkHash());
+                            map.put("chunk_index", edge.chunkIndex());
+                            return map;
+                          })
+                      .toList());
+              metadata.put("graph_neighbors", neighborPayload);
+              applied = true;
+              used++;
+            }
+          } catch (RuntimeException ex) {
+            // fallback silently
+          }
+        }
+      }
+      enriched.add(cloneDocument(document, metadata));
+    }
+    return new GraphLensResult(List.copyOf(enriched), applied);
+  }
+
+  private Document cloneDocument(Document source, Map<String, Object> metadata) {
+    return Document.builder()
+        .id(source.getId())
+        .text(source.getText())
+        .metadata(metadata)
+        .score(source.getScore())
+        .build();
+  }
+
+  private record GraphLensResult(List<Document> documents, boolean applied) {}
+
+  private String asString(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof String str) {
+      return str;
+    }
+    return value.toString();
+  }
+
+  private Integer asInteger(Object value) {
+    if (value instanceof Integer i) {
+      return i;
+    }
+    if (value instanceof Number n) {
+      return n.intValue();
+    }
+    if (value instanceof String str) {
+      try {
+        return Integer.parseInt(str.trim());
+      } catch (NumberFormatException ignore) {
+        return null;
+      }
+    }
+    return null;
   }
 
   private Filter.Expression buildFilterExpression(String namespace) {

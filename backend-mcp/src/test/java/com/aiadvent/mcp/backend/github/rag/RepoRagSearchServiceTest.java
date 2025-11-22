@@ -3,12 +3,15 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
+import com.aiadvent.mcp.backend.github.rag.RepoRagIndexService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,7 @@ import org.mockito.MockitoAnnotations;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import com.aiadvent.mcp.backend.github.rag.postprocessing.RepoRagPostProcessingRequest;
+import com.aiadvent.mcp.backend.github.rag.GraphQueryService;
 
 class RepoRagSearchServiceTest {
 
@@ -28,6 +32,7 @@ class RepoRagSearchServiceTest {
   @Mock private RepoRagSearchReranker reranker;
   @Mock private RepoRagNamespaceStateService namespaceStateService;
   @Mock private RepoRagGenerationService generationService;
+  @Mock private GraphQueryService graphQueryService;
 
   private GitHubRagProperties properties;
   private RepoRagSearchService service;
@@ -38,7 +43,7 @@ class RepoRagSearchServiceTest {
     properties = new GitHubRagProperties();
     service =
         new RepoRagSearchService(
-            properties, pipeline, reranker, generationService, namespaceStateService);
+            properties, pipeline, reranker, generationService, namespaceStateService, graphQueryService);
     when(generationService.generate(any()))
         .thenReturn(
             new RepoRagGenerationService.GenerationResult(
@@ -187,7 +192,7 @@ class RepoRagSearchServiceTest {
             plan("balanced"),
             List.of(),
             null,
-            RepoRagResponseChannel.BOTH);
+        RepoRagResponseChannel.BOTH);
 
     service.search(command);
 
@@ -197,6 +202,113 @@ class RepoRagSearchServiceTest {
     RepoRagPostProcessingRequest request = requestCaptor.getValue();
     assertThat(request.neighborStrategy()).isEqualTo(RepoRagPostProcessingRequest.NeighborStrategy.CALL_GRAPH);
     assertThat(request.neighborLimit()).isEqualTo(3);
+  }
+
+  @Test
+  void graphLensAddsNeighborsAndModule() {
+    properties.getGraph().setEnabled(true);
+
+    RepoRagNamespaceStateEntity state = readyState();
+    state.setAstSchemaVersion(RepoRagIndexService.AST_VERSION);
+    state.setAstReadyAt(Instant.now());
+    when(namespaceStateService.findByRepoOwnerAndRepoName("owner", "repo"))
+        .thenReturn(Optional.of(state));
+
+    Query query = Query.builder().text("raw").history(List.of()).build();
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("class Demo { void run() { helper(); }}")
+            .metadata(Map.of("language", "java", "symbol_fqn", "com.demo.Demo#run"))
+            .score(0.9)
+            .build();
+    when(pipeline.execute(any()))
+        .thenReturn(
+            new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult postResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(postResult);
+
+    GraphQueryService.GraphNode sourceNode =
+        new GraphQueryService.GraphNode("com.demo.Demo#run", "src/Demo.java", "method", "public", 3, 12);
+    GraphQueryService.GraphNode targetNode =
+        new GraphQueryService.GraphNode("com.demo.Helper#call", "src/Helper.java", "method", "public", 20, 30);
+    GraphQueryService.GraphEdge edge =
+        new GraphQueryService.GraphEdge("com.demo.Demo#run", "com.demo.Helper#call", "CALLS", "hash", 0);
+    when(graphQueryService.neighbors(any(), any(), any(), any(), anyInt()))
+        .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
+
+    RepoRagSearchService.SearchCommand command =
+        new RepoRagSearchService.SearchCommand(
+            "owner",
+            "repo",
+            "raw",
+            plan("balanced"),
+            List.of(),
+            null,
+            RepoRagResponseChannel.BOTH);
+
+    RepoRagSearchService.SearchResponse response = service.search(command);
+
+    assertThat(response.matches()).hasSize(1);
+    Map<String, Object> metadata = response.matches().get(0).metadata();
+    assertThat(metadata).containsKey("graph_neighbors");
+    @SuppressWarnings("unchecked")
+    Map<String, Object> neighbors = (Map<String, Object>) metadata.get("graph_neighbors");
+    assertThat(neighbors).isNotNull();
+    assertThat(response.appliedModules()).contains("graph.lens");
+  }
+
+  @Test
+  void graphLensAppliedInGlobalSearchWhenNamespacePresent() {
+    properties.getGraph().setEnabled(true);
+
+    Query query = Query.builder().text("raw").history(List.of()).build();
+    when(pipeline.buildQuery(any(), anyList(), any(), anyInt())).thenReturn(query);
+    Document doc =
+        Document.builder()
+            .id("1")
+            .text("class Demo { void run() { helper(); }}")
+            .metadata(
+                Map.of(
+                    "namespace", "repo:owner/repo",
+                    "symbol_fqn", "com.demo.Demo#run",
+                    "ast_version", RepoRagIndexService.AST_VERSION))
+            .score(0.9)
+            .build();
+    when(pipeline.execute(any()))
+        .thenReturn(
+            new RepoRagRetrievalPipeline.PipelineResult(query, List.of(doc), List.of(), List.of(query)));
+    RepoRagSearchReranker.PostProcessingResult postResult =
+        new RepoRagSearchReranker.PostProcessingResult(List.of(doc), false, List.of());
+    when(reranker.process(any(), any(), any())).thenReturn(postResult);
+
+    GraphQueryService.GraphNode sourceNode =
+        new GraphQueryService.GraphNode("com.demo.Demo#run", "src/Demo.java", "method", "public", 3, 12);
+    GraphQueryService.GraphNode targetNode =
+        new GraphQueryService.GraphNode("com.demo.Helper#call", "src/Helper.java", "method", "public", 20, 30);
+    GraphQueryService.GraphEdge edge =
+        new GraphQueryService.GraphEdge("com.demo.Demo#run", "com.demo.Helper#call", "CALLS", "hash", 0);
+    when(graphQueryService.neighbors(any(), any(), any(), any(), anyInt()))
+        .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
+
+    RepoRagSearchService.GlobalSearchCommand command =
+        new RepoRagSearchService.GlobalSearchCommand(
+            "raw",
+            plan("balanced"),
+            List.of(),
+            null,
+            "global",
+            "global",
+            RepoRagResponseChannel.BOTH);
+
+    RepoRagSearchService.SearchResponse response = service.searchGlobal(command);
+
+    assertThat(response.matches()).hasSize(1);
+    Map<String, Object> metadata = response.matches().get(0).metadata();
+    assertThat(metadata).containsKey("graph_neighbors");
+    assertThat(response.appliedModules()).contains("graph.lens");
+    verify(graphQueryService).neighbors(any(), any(), any(), any(), anyInt());
   }
 
   private RepoRagNamespaceStateEntity readyState() {

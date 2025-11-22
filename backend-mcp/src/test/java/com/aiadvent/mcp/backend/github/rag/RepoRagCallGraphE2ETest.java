@@ -273,7 +273,12 @@ class RepoRagCallGraphE2ETest {
         new RepoRagGenerationService(searchProperties, new DefaultResourceLoader());
     RepoRagSearchService searchService =
         new RepoRagSearchService(
-            searchProperties, retrievalPipeline, reranker, generationService, namespaceStateService);
+            searchProperties,
+            retrievalPipeline,
+            reranker,
+            generationService,
+            namespaceStateService,
+            null);
 
     RagParameterGuard guard = new RagParameterGuard(searchProperties);
     RagParameterGuard.ResolvedSearchPlan plan =
