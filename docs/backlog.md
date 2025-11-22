@@ -1424,10 +1424,11 @@
   - [ ] Заменить зависимость в `backend-mcp/build.gradle`, убрать неиспользуемый `javacpp`/старый артефакт.
   - [ ] Зафиксировать toolchain/JDK: перейти `backend-mcp` на JDK 22 (или выбрать совместимую версию jtreesitter для 21), обновить CI/Docker базовые образы и Gradle toolchain.
   - [ ] Адаптировать загрузчик (`TreeSitterLibraryLoader`/`TreeSitterPlatform`) под layout `native/<os>-<arch>/lib{java-tree-sitter,tree-sitter-<lang>}`, добавить поддержку arm64/x86_64 и `NativeLibraryLookup` для загрузки из classpath/`github.rag.ast.library-path`.
-  - [ ] Подключить Java bindings грамматик из сабмодулей (`bindings/java`) через `sourceSets`; собрать registry языков (`Language(TreeSitter<Lang>.language())`) вместо старых статических `Language.JAVA`.
-  - [ ] Обновить `TreeSitterParser` под новый API (`Parser#setLanguage`, `parseString`, явное закрытие `Tree/Parser`), сохранить эвристический fallback при отсутствии нативок.
-  - [ ] Перенастроить Gradle-задачи сборки грамматик и путь ресурсов под новый loader; убедиться, что bootJar пакует `libjava-tree-sitter` + языковые `libtree-sitter-<lang>`.
-  - [ ] Добавить query-слой для извлечения символов/imports/calls (SCM-шаблоны per язык) и интегрировать в парсер, чтобы edges `CALLS/IMPLEMENTS/USES` строились без эвристики.
+  - [ ] Подключить Java bindings грамматик из сабмодулей (`bindings/java`) через `sourceSets`; собрать реестр языков `Language(TreeSitter<Lang>.language())` вместо статических `Language.JAVA`.
+  - [ ] Настроить загрузку нативок через `NativeLibraryLookup` под layout `treesitter/<os>/<arch>/lib{tree-sitter,tree-sitter-<lang>}` (arm64/x86_64), использовать собранные библиотеки из сабмодулей.
+  - [ ] Обновить `TreeSitterParser` под jtreesitter API (`Parser#setLanguage`, `parseString`, явное закрытие ресурсов) и вернуть нативный разбор; эвристический fallback оставить для отсутствующих грамматик.
+  - [ ] Перенастроить Gradle-задачи сборки грамматик и ресурсный путь под новый loader; убедиться, что bootJar пакует core `libtree-sitter` + языковые `libtree-sitter-<lang>` и Java bindings.
+  - [ ] Добавить query-слой (SCM-шаблоны per язык) для symbols/imports/calls и интегрировать его в парсер, чтобы строить edges `CALLS/IMPLEMENTS/USES` без эвристик.
   - [ ] Обновить smoke/e2e (`RepoRagNativeGraphSmokeTest`, `GraphSyncNeo4jE2ETest`) и документацию (`docs/architecture/github-rag-modular.md`/`docs/infra.md`) с указанием нового биндинга, требования к JDK/архитектурам и сборке грамматик.
 
 ### Графовая БД и синхронизация
@@ -1450,3 +1451,10 @@
 - [x] Переписать unit/интеграционные тесты chunking/graph слоя: покрыть `TreeSitterParser`, `GraphSyncService`, `repo.code_graph_*` инструмент с моками Neo4j.
 - [x] Добавить end-to-end тест с Testcontainers Neo4j: поднять контейнер, прогнать полный цикл `RepoRagIndexService` → `GraphSyncService` → `repo.code_graph_neighbors`, проверить сохранённые узлы/ребра и отдачу MCP инструмента.
 - [ ] Включить smoke e2e (workspace fetch → индекс → поиск) в CI, используя тестовый Neo4j контейнер и fixture-репозиторий.
+
+### Долги Wave 45 (после ревью)
+- [ ] Вернуть реальный нативный парсинг через jtreesitter: `TreeSitterParser.parseNative` с queries per язык, loader на `NativeLibraryLookup` для `libtree-sitter` + языковых либ из `treesitter/<os>/<arch>`, подключить `bindings/java` сабмодулей в sourceSets, оставить health-fallback.
+- [ ] Исправить построение FQN/иерархии: стек контейнеров, сигнатуры с типами, docstring/visibility/test-флаг, исключить подвешивание функций на последний класс.
+- [ ] Нормализовать рёбра графа: `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE` по полным FQN с разрешением импортов, без stub-нод; чистить стубы в Neo4j и при реиндексе после AST_VERSION=2.
+- [ ] Разморозить и дополнить тесты: обновить fixtures mini-repos (наследование/интерфейсы/перегрузки/docstring), включить `TreeSitterParserNativeSmokeTest`/`RepoRagNativeGraphSmokeTest`, проверить FQN/edges.
+- [ ] Привести `AstFileContext.create`/`AstFileContextFactory` к рабочему состоянию (убрать заглушки/дубли импорта).
