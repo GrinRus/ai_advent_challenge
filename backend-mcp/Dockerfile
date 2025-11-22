@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM gradle:8.10.2-jdk21 AS build
+FROM gradle:8.10.2-jdk22 AS build
 WORKDIR /workspace
 
 RUN apt-get update \
@@ -17,7 +17,7 @@ COPY src src
 
 RUN ./gradlew --no-daemon treeSitterBuild bootJar
 
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:22-jre AS runtime
 WORKDIR /app
 
 RUN apt-get update \

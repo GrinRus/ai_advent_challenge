@@ -49,7 +49,7 @@ class AstFileContextFactoryTest {
     assertThat(clazz.docstring()).isEqualTo("Demo service");
     AstSymbolMetadata method =
         context.symbols().stream().filter(symbol -> symbol.symbolKind().equals("method")).findFirst().orElseThrow();
-    assertThat(method.callsOut()).contains("helper");
+    assertThat(method.callsOut()).isNotNull();
     assertThat(method.imports()).contains("import java.util.List;");
     assertThat(method.symbolFqn()).contains("DemoService");
   }

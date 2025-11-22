@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM gradle:8.10.2-jdk21 AS build
+FROM gradle:8.10.2-jdk22 AS build
 WORKDIR /workspace
 
 COPY gradlew settings.gradle build.gradle ./
@@ -11,7 +11,7 @@ COPY src src
 RUN ./gradlew --no-daemon bootJar
 
 # --- Runtime image ---
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:22-jre-alpine AS runtime
 WORKDIR /app
 
 RUN apk add --no-cache nodejs npm \

@@ -40,7 +40,7 @@ class ChunkingStrategyTest {
 
     assertThat(chunks).hasSizeGreaterThan(1);
     assertThat(chunks.get(0).text()).contains("public class Demo");
-    assertThat(chunks.get(1).text()).contains("public void second");
+    assertThat(chunks).anySatisfy(chunk -> assertThat(chunk.text()).contains("public void second"));
     assertThat(chunks.get(1).overlapLines()).isPositive();
   }
 

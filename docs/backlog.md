@@ -21,7 +21,7 @@
   - Писать модульные тесты с `JUnit 5` + `MockMvc`.
   - Для интеграционных тестов применять Testcontainers.
   - Описывать API в `OpenAPI/Swagger`.
-- [x] Подготовить Dockerfile (OpenJDK 21 + слоистая сборка Spring).
+- [x] Подготовить Dockerfile (OpenJDK 22 + слоистая сборка Spring).
 - [x] Настроить миграции через Liquibase, интегрировать их в процесс сборки и деплоя.
 - [x] Реализовать эндпоинт `/api/help`, который возвращает заглушку с текстовой подсказкой.
 - [x] Зафиксировать, что все backend-эндпоинты публикуются с префиксом `/api` при доступе извне.
@@ -786,7 +786,7 @@
 - [x] Поднять отдельный MCP-сервер `docker-runner`, зарегистрировать на нём инструмент `docker_gradle_runner` и описать схему запроса/ответа (workspaceId/path, tasks, env, таймауты, exitCode, stdout/stderr, артефакты).
 - [x] Реализовать инструмент: принимать workspace из GitHub fetcher, проверять принадлежность каталога `/var/tmp/aiadvent/mcp-workspaces/{id}`, формировать команду `docker run --rm -v <workspace>:/workspace -w /workspace <image> ./gradlew <tasks>` с fallback на `gradle` при отсутствии wrapper, возвращать статус + логи.
 - [x] Настроить упаковку workspace: монтирование временного каталога на контейнер (`-v tempDir:/workspace`), выделенный volume для Gradle cache (`-v /var/tmp/aiadvent/gradle-cache:/gradle-cache`), конфиг `GRADLE_USER_HOME`, лимиты по CPU/RAM/диску и таймаут выполнения.
-- [x] Подготовить Docker-образ `aiadvent/mcp-gradle-runner` (каталог `backend-mcp/docker/`): слои JDK 21, Gradle 8.x, утилиты диагностики, entrypoint-скрипт, публикация через CI.
+- [x] Подготовить Docker-образ `aiadvent/mcp-gradle-runner` (каталог `backend-mcp/docker/`): слои JDK 22, Gradle 8.x, утилиты диагностики, entrypoint-скрипт, публикация через CI.
 - [x] Добавить потоковое чтение stdout/stderr (chunked события MCP), обрезку логов по размеру и маскирование секретов; управление lifecycle workspace оставить за `TempWorkspaceService` (cleanup по TTL).
 - [x] Поддержать параметр `projectPath` (относительный путь внутри workspace) и валидацию: runner должен запускать Gradle из выбранного каталога, а при отсутствии пути — использовать root проекта, определённый fetch-инструментом (если единственный).
 
@@ -1419,6 +1419,7 @@
 - [x] Подключить нативный Tree-sitter через java-tree-sitter: грузим `libjava-tree-sitter.*` и скомпилированные грамматики из `treesitter/<os>/<arch>`, читаем `github.rag.ast.native-enabled` и имеем fallback на эвристику. Поддерживаем Java/Kotlin/TS/JS/Python/Go. В bootJar пакуются грамматики + `libjava-tree-sitter.*` (x86_64 готов, arm64 требует сборки).
 - [x] Переписать `TreeSitterParser` на обход AST (java-tree-sitter + эвристика): package/imports, классы/функции, FQN `package.Class#method(args)`; edges `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`. Улучшена эвристика TS/JS методов и перенос вызовов в родительский контейнер; добавлены nativе smoke/Neo4j smoke (skip, если lib неподходящей архитектуры).
 - [ ] Расширить fixtures `backend-mcp/src/test/resources/mini-repos/{java,kotlin,typescript,javascript,python,go}` наследованием/перегрузками/interfaces, обновить тесты (`RepoRagIndexServiceMultiLanguageTest`, AST unit) на проверки FQN, docstring, edges, ошибок парсинга.
+- [ ] Обновить toolchain до JDK 22 для `backend-mcp` (и при необходимости `backend`): Gradle toolchain, Docker базовые образы, CI setup-java; зафиксировать требование 22 в docs/README.
 - [ ] Перейти с `ch.usi.si.seart:java-tree-sitter` на официальный `io.github.tree-sitter:java-tree-sitter`:
   - [ ] Заменить зависимость в `backend-mcp/build.gradle`, убрать неиспользуемый `javacpp`/старый артефакт.
   - [ ] Зафиксировать toolchain/JDK: перейти `backend-mcp` на JDK 22 (или выбрать совместимую версию jtreesitter для 21), обновить CI/Docker базовые образы и Gradle toolchain.

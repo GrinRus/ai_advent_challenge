@@ -159,7 +159,7 @@ cd backend-mcp
 - Ручной пересчёт — `POST /api/admin/chat/sessions/{id}/summary/rebuild`; массовый бэкфилл активируется `CHAT_MEMORY_SUMMARIZATION_BACKFILL_ENABLED=true`.
 
 ## Репозитории и сервисы
-- `backend/` — Spring Boot приложение (Java 21).
+- `backend/` — Spring Boot приложение (Java 22).
 - `backend-mcp/` — HTTP MCP серверы (Agent Ops, Flow Ops, Insight, GitHub, Notes).
 - `frontend/` — веб-клиент на React + Vite.
 - `local-rag/` — вспомогательные утилиты и эксперименты с RAG (при необходимости).

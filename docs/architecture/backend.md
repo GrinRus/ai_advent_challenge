@@ -1,6 +1,6 @@
 # Архитектура backend
 
-Backend реализован на Spring Boot (Java 21) и следует принципам Clean Architecture. Основные слои и зависимости описаны ниже.
+Backend реализован на Spring Boot (Java 22) и следует принципам Clean Architecture. Основные слои и зависимости описаны ниже.
 
 ## Слои и зависимости
 - **Controller слой** (`backend/src/main/java/com/aiadvent/backend/*/controller`) — выставляет REST и SSE эндпоинты, делегирует бизнес-логику сервисам.
