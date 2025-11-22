@@ -21,6 +21,7 @@ import com.aiadvent.mcp.backend.github.rag.RepoRagSearchService;
 import com.aiadvent.mcp.backend.github.rag.SymbolGraphWriter;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentMapper;
@@ -157,8 +158,9 @@ class RepoRagCallGraphE2ETest {
             fileStateRepository,
             chunker,
             indexProperties,
-            new AstFileContextFactory(analyzer),
-            new SymbolGraphWriter(symbolGraphRepository, null));
+            new AstFileContextFactory(analyzer, new TreeSitterParser()),
+            new SymbolGraphWriter(symbolGraphRepository, null),
+            null);
 
     RepoRagIndexService.IndexRequest indexRequest =
         new RepoRagIndexService.IndexRequest(
@@ -225,8 +227,10 @@ class RepoRagCallGraphE2ETest {
                     RepoRagSymbolGraphEntity::getReferencedSymbolFqn,
                     (String) inv.getArgument(1)));
 
+    GitHubRagProperties symbolProps = new GitHubRagProperties();
+    symbolProps.getGraph().setEnabled(false);
     RepoRagSymbolService symbolService =
-        new RepoRagSymbolService(searchGraphRepository, null);
+        new RepoRagSymbolService(searchGraphRepository, null, null, symbolProps);
     RepoRagDocumentMapper documentMapper = new RepoRagDocumentMapper(OBJECT_MAPPER);
 
     GitHubRagProperties searchProperties = new GitHubRagProperties();

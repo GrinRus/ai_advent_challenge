@@ -86,6 +86,7 @@ github:
         chunk-size-tokens: ${GITHUB_RAG_CHUNKING_SEMANTIC_CHUNK_SIZE:1024}
     ast:
       enabled: ${GITHUB_RAG_AST_ENABLED:false}
+      native-enabled: ${GITHUB_RAG_AST_NATIVE_ENABLED:false}
       languages:
         - java
         - kotlin

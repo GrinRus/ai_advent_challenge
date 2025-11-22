@@ -42,6 +42,17 @@ public class TreeSitterParser {
           "match");
 
   public Optional<AstFileContext> parse(String content, String language, String relativePath) {
+    return parse(content, language, relativePath, false);
+  }
+
+  public Optional<AstFileContext> parse(
+      String content, String language, String relativePath, boolean nativeEnabled) {
+    if (nativeEnabled) {
+      Optional<AstFileContext> nativeAst = parseNative(content, language, relativePath);
+      if (nativeAst.isPresent()) {
+        return nativeAst;
+      }
+    }
     String normalizedLanguage = language != null ? language.toLowerCase(Locale.ROOT) : "";
     String[] lines = content != null ? content.split("\\n", -1) : new String[0];
     String packageName = detectPackage(lines);
@@ -312,5 +323,11 @@ public class TreeSitterParser {
       return signature.substring(open, close + 1);
     }
     return "()";
+  }
+
+  private Optional<AstFileContext> parseNative(String content, String language, String relativePath) {
+    // Placeholder for native Tree-sitter parsing via JavaCPP bindings.
+    // If native parsing is not available or fails, fallback to heuristic.
+    return Optional.empty();
   }
 }

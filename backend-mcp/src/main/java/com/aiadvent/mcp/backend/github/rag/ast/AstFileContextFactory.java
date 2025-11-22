@@ -47,7 +47,7 @@ public class AstFileContextFactory {
       log.debug("AST fallback: unable to load Tree-sitter grammar for {} ({})", relativePath, language);
       return null;
     }
-    return parser.parse(content, language, relativePath).orElse(null);
+    return parser.parse(content, language, relativePath, analyzer.isNativeEnabled()).orElse(null);
   }
 
   public Optional<AstFileContext> optional(Path absolutePath, String relativePath, String language, String content) {

@@ -628,6 +628,7 @@ public class GitHubRagProperties implements InitializingBean {
 
   public static class Ast {
     private boolean enabled = false;
+    private boolean nativeEnabled = false;
     private List<String> languages =
         new ArrayList<>(List.of("java", "kotlin", "typescript", "javascript", "python", "go"));
     private String libraryPath = "classpath:treesitter";
@@ -639,6 +640,14 @@ public class GitHubRagProperties implements InitializingBean {
 
     public void setEnabled(boolean enabled) {
       this.enabled = enabled;
+    }
+
+    public boolean isNativeEnabled() {
+      return nativeEnabled;
+    }
+
+    public void setNativeEnabled(boolean nativeEnabled) {
+      this.nativeEnabled = nativeEnabled;
     }
 
     public List<String> getLanguages() {

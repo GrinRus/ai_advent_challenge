@@ -75,4 +75,28 @@ class AstFileContextFactoryTest {
     assertThat(fileSymbol.lineEnd()).isGreaterThanOrEqualTo(5);
     assertThat(fileSymbol.symbolFqn()).isEqualTo("com.example.src.main.java.com.example.DemoService.java");
   }
+
+  @Test
+  void buildsFqnWithArgs() {
+    String relativePath = "src/main/java/com/example/Demo.java";
+    String content =
+        "package com.example;\n"
+            + "public class Demo {\n"
+            + "  public void process(String name, int count) {\n"
+            + "    helper();\n"
+            + "  }\n"
+            + "}\n";
+
+    AstFileContext context =
+        factory.create(Path.of("Demo.java"), relativePath, "java", content);
+
+    assertThat(context).isNotNull();
+    assertThat(context.symbols())
+        .anySatisfy(
+            symbol -> {
+              if ("method".equals(symbol.symbolKind())) {
+                assertThat(symbol.symbolFqn()).isEqualTo("com.example.Demo#process(Stringname,intcount)");
+              }
+            });
+  }
 }

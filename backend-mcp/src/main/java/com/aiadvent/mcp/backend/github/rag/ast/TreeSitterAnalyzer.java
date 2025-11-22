@@ -32,6 +32,10 @@ public class TreeSitterAnalyzer {
     return properties.getAst().isEnabled() && !degraded.get();
   }
 
+  public boolean isNativeEnabled() {
+    return properties.getAst().isNativeEnabled();
+  }
+
   public boolean supportsLanguage(String language) {
     return properties.getAst().getLanguages().stream()
         .anyMatch(entry -> entry.equalsIgnoreCase(language));
