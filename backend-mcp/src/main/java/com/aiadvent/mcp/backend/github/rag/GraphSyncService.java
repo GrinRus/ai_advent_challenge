@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -65,21 +66,10 @@ public class GraphSyncService {
           node.updatedAt = $updatedAt
       """;
 
-  private static final String DELETE_FILE_CALL_EDGES_QUERY =
+  private static final String DELETE_FILE_EDGES_QUERY =
       """
-      MATCH (file:File {namespace:$namespace, path:$filePath})-[:DECLARES]->(symbol:Symbol)-[rel:CALLS {namespace:$namespace}]->()
+      MATCH (file:File {namespace:$namespace, path:$filePath})-[:DECLARES]->(symbol:Symbol)-[rel {namespace:$namespace}]->()
       DELETE rel
-      """;
-
-  private static final String UPSERT_CALL_EDGES_QUERY =
-      """
-      UNWIND $edges AS edge
-      MATCH (source:Symbol {namespace:$namespace, fqn:edge.sourceFqn})
-      MERGE (target:Symbol {namespace:$namespace, fqn:edge.targetFqn})
-      MERGE (source)-[rel:CALLS {namespace:$namespace}]->(target)
-      SET rel.updatedAt = $updatedAt,
-          rel.chunkHash = edge.chunkHash,
-          rel.chunkIndex = edge.chunkIndex
       """;
 
   private final Driver driver;
@@ -174,29 +164,46 @@ public class GraphSyncService {
     for (int i = 0; i < chunks.size(); i++) {
       Chunk chunk = chunks.get(i);
       AstSymbolMetadata ast = chunk.astMetadata();
-      if (ast == null
-          || CollectionUtils.isEmpty(ast.callsOut())
-          || !StringUtils.hasText(ast.symbolFqn())) {
+      if (ast == null || !StringUtils.hasText(ast.symbolFqn())) {
         continue;
       }
       String source = normalize(ast.symbolFqn());
-      for (String target : ast.callsOut()) {
-        if (!StringUtils.hasText(target)) {
-          continue;
-        }
-        String normalizedTarget = normalize(target);
-        String key = source + "->" + normalizedTarget;
-        if (dedup.add(key)) {
-          edges.add(
-              Map.of(
-                  "sourceFqn", source,
-                  "targetFqn", normalizedTarget,
-                  "chunkHash", chunk.hash(),
-                  "chunkIndex", i));
-        }
-      }
+      appendEdges(edges, dedup, source, ast.callsOut(), "CALLS", chunk, i);
+      appendEdges(edges, dedup, source, ast.implementsTypes(), "IMPLEMENTS", chunk, i);
+      appendEdges(edges, dedup, source, ast.readsFields(), "READS_FIELD", chunk, i);
+      appendEdges(edges, dedup, source, ast.usesTypes(), "USES_TYPE", chunk, i);
     }
     return edges;
+  }
+
+  private void appendEdges(
+      List<Map<String, Object>> target,
+      Set<String> dedup,
+      String source,
+      List<String> references,
+      String relation,
+      Chunk chunk,
+      int chunkIndex) {
+    if (CollectionUtils.isEmpty(references) || !StringUtils.hasText(source)) {
+      return;
+    }
+    for (String reference : references) {
+      if (!StringUtils.hasText(reference)) {
+        continue;
+      }
+      String normalizedTarget = normalize(reference);
+      String key = relation + ":" + source + "->" + normalizedTarget;
+      if (dedup.add(key)) {
+        Map<String, Object> edge =
+            Map.of(
+                "sourceFqn", source,
+                "targetFqn", normalizedTarget,
+                "chunkHash", chunk.hash(),
+                "chunkIndex", chunkIndex,
+                "relation", relation);
+        target.add(edge);
+      }
+    }
   }
 
   private String normalize(String value) {
@@ -250,18 +257,29 @@ public class GraphSyncService {
             }
 
             ResultSummary deleteEdgesSummary =
-                tx.run(DELETE_FILE_CALL_EDGES_QUERY, baseParams).consume();
+                tx.run(DELETE_FILE_EDGES_QUERY, baseParams).consume();
             stats.edgesRemoved += deleteEdgesSummary.counters().relationshipsDeleted();
 
-            for (List<Map<String, Object>> batch : partition(edges, batchSize)) {
-              if (batch.isEmpty()) {
+            Map<String, List<Map<String, Object>>> edgesByRelation = new LinkedHashMap<>();
+            for (Map<String, Object> edge : edges) {
+              String relation = (String) edge.getOrDefault("relation", "CALLS");
+              edgesByRelation.computeIfAbsent(relation, key -> new ArrayList<>()).add(edge);
+            }
+
+            for (Map.Entry<String, List<Map<String, Object>>> entry : edgesByRelation.entrySet()) {
+              List<Map<String, Object>> relationEdges = entry.getValue();
+              if (relationEdges.isEmpty()) {
                 continue;
               }
-              Map<String, Object> edgeParams = new LinkedHashMap<>(baseParams);
-              edgeParams.put("edges", batch);
-              ResultSummary summary = tx.run(UPSERT_CALL_EDGES_QUERY, edgeParams).consume();
-              stats.edgesInserted += summary.counters().relationshipsCreated();
-              stats.edgeBatches++;
+              String relation = entry.getKey();
+              String upsertQuery = buildUpsertEdgeQuery(relation);
+              for (List<Map<String, Object>> batch : partition(relationEdges, batchSize)) {
+                Map<String, Object> edgeParams = new LinkedHashMap<>(baseParams);
+                edgeParams.put("edges", batch);
+                ResultSummary summary = tx.run(upsertQuery, edgeParams).consume();
+                stats.edgesInserted += summary.counters().relationshipsCreated();
+                stats.edgeBatches++;
+              }
             }
             return null;
           });
@@ -286,6 +304,24 @@ public class GraphSyncService {
         stats.symbolBatches,
         stats.edgeBatches,
         duration.toMillis());
+  }
+
+  private String buildUpsertEdgeQuery(String relation) {
+    String safeRelation = relation != null ? relation.trim().toUpperCase(Locale.ROOT) : "CALLS";
+    // relation name must be a valid Cypher identifier; fallback to CALLS if not
+    if (!safeRelation.matches("[A-Z_][A-Z0-9_]*")) {
+      safeRelation = "CALLS";
+    }
+    return """
+        UNWIND $edges AS edge
+        MATCH (source:Symbol {namespace:$namespace, fqn:edge.sourceFqn})
+        MERGE (target:Symbol {namespace:$namespace, fqn:edge.targetFqn})
+        MERGE (source)-[rel:%s {namespace:$namespace}]->(target)
+        SET rel.updatedAt = $updatedAt,
+            rel.chunkHash = edge.chunkHash,
+            rel.chunkIndex = edge.chunkIndex
+        """
+        .formatted(safeRelation);
   }
 
   private void runWithRetry(Runnable runnable) {

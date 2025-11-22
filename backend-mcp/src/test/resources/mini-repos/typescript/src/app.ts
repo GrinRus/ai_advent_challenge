@@ -1,9 +1,16 @@
-class DemoService {
+export interface Runner { run(): void; }
+
+export class DemoService implements Runner {
   public run(): void {
-    helper();
+    this.process("demo", 3);
+  }
+
+  process(name: string, count: number): string {
+    helper(count);
+    return `${name}-${count}`;
   }
 }
 
-function helper(): void {
-  console.log("helper");
+export function helper(count: number): void {
+  console.log("count", count);
 }

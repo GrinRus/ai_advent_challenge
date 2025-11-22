@@ -43,6 +43,9 @@ class SymbolGraphWriterTest {
             List.of("java.util.List"),
             List.of("com.demo.Helper#run", "com.demo.Helper#run"),
             List.<String>of(),
+            List.<String>of(),
+            List.<String>of(),
+            List.<String>of(),
             1,
             5);
     Chunk chunk =

@@ -65,6 +65,9 @@ class GraphSyncNeo4jE2ETest {
             List.of(),
             List.of("com.demo.Helper#run"),
             List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
             3,
             10);
     AstSymbolMetadata helperSymbol =
@@ -75,6 +78,9 @@ class GraphSyncNeo4jE2ETest {
             "run()",
             null,
             false,
+            List.of(),
+            List.of(),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),

@@ -113,12 +113,12 @@ public final class SemanticCodeChunker implements ChunkingStrategy {
   }
 
   private boolean shouldStartNewChunk(String line, String language, int currentLines, int minChunkLines) {
-    if (currentLines < minChunkLines) {
-      return false;
-    }
     String symbol = ParentSymbolResolver.detectSymbol(line);
     if (StringUtils.hasText(symbol)) {
       return true;
+    }
+    if (currentLines < minChunkLines) {
+      return false;
     }
     String trimmed = line == null ? "" : line.trim();
     if (!StringUtils.hasText(trimmed)) {

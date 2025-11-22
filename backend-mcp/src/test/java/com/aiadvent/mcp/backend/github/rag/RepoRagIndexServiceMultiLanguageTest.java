@@ -59,7 +59,7 @@ class RepoRagIndexServiceMultiLanguageTest {
   @BeforeEach
   void setUp() {
     GitHubRagProperties properties = new GitHubRagProperties();
-    properties.getChunking().getLine().setMaxLines(8);
+    properties.getChunking().getLine().setMaxLines(4);
     properties.getChunking().setOverlapLines(0);
     properties.getChunking().setStrategy(GitHubRagProperties.Strategy.SEMANTIC);
     properties.getChunking().getSemantic().setEnabled(true);
@@ -71,6 +71,7 @@ class RepoRagIndexServiceMultiLanguageTest {
     when(analyzer.isEnabled()).thenReturn(true);
     when(analyzer.supportsLanguage(anyString())).thenReturn(true);
     when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
+    when(analyzer.isNativeEnabled()).thenReturn(false);
 
     AstFileContextFactory astFactory = new AstFileContextFactory(analyzer, new TreeSitterParser());
     SymbolGraphWriter symbolGraphWriter =
@@ -197,7 +198,7 @@ class RepoRagIndexServiceMultiLanguageTest {
   private static Stream<MiniRepoFixture> fixtures() {
     return Stream.of(
         new MiniRepoFixture(
-            "java", "owner", "java-demo", "src/main/java/com/example/DemoService.java", "helper"),
+            "java", "owner", "java-demo", "src/main/java/com/example/DemoService.java", "log"),
         new MiniRepoFixture(
             "typescript",
             "owner",

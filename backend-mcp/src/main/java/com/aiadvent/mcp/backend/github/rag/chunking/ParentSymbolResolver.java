@@ -39,6 +39,14 @@ public final class ParentSymbolResolver {
   private static final Pattern JS_FUNCTION_PATTERN =
       Pattern.compile("^function\\s+([A-Za-z_$][\\w$]*)\\s*\\(", Pattern.CASE_INSENSITIVE);
 
+  private static final Pattern TS_METHOD_PATTERN =
+      Pattern.compile(
+          "^(?:export\\s+)?"
+              + "(?:public\\s+|protected\\s+|private\\s+)?"
+              + "(?:static\\s+|async\\s+|readonly\\s+|declare\\s+|abstract\\s+|override\\s+)?"
+              + "([A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*(?::\\s*[\\w\\[\\]<>.?|&]+)?\\s*[;\\{]?$",
+          Pattern.CASE_INSENSITIVE);
+
   private static final Pattern ARROW_PATTERN =
       Pattern.compile("^(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*\\([^)]*\\)\\s*=>");
 
@@ -111,6 +119,10 @@ public final class ParentSymbolResolver {
     matcher = ARROW_PATTERN.matcher(trimmed);
     if (matcher.find()) {
       return "function " + matcher.group(1);
+    }
+    matcher = TS_METHOD_PATTERN.matcher(trimmed);
+    if (matcher.find()) {
+      return "method " + matcher.group(1);
     }
     return null;
   }

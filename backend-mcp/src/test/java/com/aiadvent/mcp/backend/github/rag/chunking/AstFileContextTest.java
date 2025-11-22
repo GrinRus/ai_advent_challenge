@@ -10,7 +10,21 @@ class AstFileContextTest {
   @Test
   void returnsPerfectMatchWhenChunkInsideSymbol() {
     AstSymbolMetadata method =
-        new AstSymbolMetadata("Demo.process", "method", "public", "void process()", null, false, List.of(), List.of(), List.of(), 10, 30);
+        new AstSymbolMetadata(
+            "Demo.process",
+            "method",
+            "public",
+            "void process()",
+            null,
+            false,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            10,
+            30);
     AstFileContext context = new AstFileContext(List.of(method));
 
     assertThat(context.symbolForRange(12, 15)).contains(method);
@@ -19,7 +33,21 @@ class AstFileContextTest {
   @Test
   void fallsBackToSymbolContainingStartLine() {
     AstSymbolMetadata method =
-        new AstSymbolMetadata("Demo.process", "method", "public", "void process()", null, false, List.of(), List.of(), List.of(), 10, 20);
+        new AstSymbolMetadata(
+            "Demo.process",
+            "method",
+            "public",
+            "void process()",
+            null,
+            false,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            10,
+            20);
     AstFileContext context = new AstFileContext(List.of(method));
 
     assertThat(context.symbolForRange(12, 25)).contains(method);
@@ -28,7 +56,21 @@ class AstFileContextTest {
   @Test
   void returnsOverlappingSymbolWhenStartNotContained() {
     AstSymbolMetadata method =
-        new AstSymbolMetadata("Demo.process", "method", "public", "void process()", null, false, List.of(), List.of(), List.of(), 10, 20);
+        new AstSymbolMetadata(
+            "Demo.process",
+            "method",
+            "public",
+            "void process()",
+            null,
+            false,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            10,
+            20);
     AstFileContext context = new AstFileContext(List.of(method));
 
     assertThat(context.symbolForRange(5, 12)).contains(method);
@@ -37,9 +79,37 @@ class AstFileContextTest {
   @Test
   void returnsFirstSymbolWhenNoOverlap() {
     AstSymbolMetadata fileSymbol =
-        new AstSymbolMetadata("Demo.java", "file", "public", "Demo.java", null, false, List.of(), List.of(), List.of(), 1, 100);
+        new AstSymbolMetadata(
+            "Demo.java",
+            "file",
+            "public",
+            "Demo.java",
+            null,
+            false,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            1,
+            100);
     AstSymbolMetadata method =
-        new AstSymbolMetadata("Demo.process", "method", "public", "void process()", null, false, List.of(), List.of(), List.of(), 10, 20);
+        new AstSymbolMetadata(
+            "Demo.process",
+            "method",
+            "public",
+            "void process()",
+            null,
+            false,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            10,
+            20);
     AstFileContext context = new AstFileContext(List.of(fileSymbol, method));
 
     assertThat(context.symbolForRange(101, 110)).contains(fileSymbol);

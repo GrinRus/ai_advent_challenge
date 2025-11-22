@@ -53,7 +53,7 @@ public class RepoRagIndexService {
   private static final Logger log = LoggerFactory.getLogger(RepoRagIndexService.class);
   private static final int MAX_WARNINGS = 20;
   public static final int METADATA_SCHEMA_VERSION = 2;
-  public static final int AST_VERSION = 1;
+  public static final int AST_VERSION = 2;
   private static final Set<String> BINARY_EXTENSIONS =
       Set.of(
           "png",
@@ -331,6 +331,15 @@ public class RepoRagIndexService {
         }
         if (ast.callsIn() != null && !ast.callsIn().isEmpty()) {
           metadata.put("calls_in", ast.callsIn());
+        }
+        if (ast.implementsTypes() != null && !ast.implementsTypes().isEmpty()) {
+          metadata.put("implements", ast.implementsTypes());
+        }
+        if (ast.readsFields() != null && !ast.readsFields().isEmpty()) {
+          metadata.put("reads_fields", ast.readsFields());
+        }
+        if (ast.usesTypes() != null && !ast.usesTypes().isEmpty()) {
+          metadata.put("uses_types", ast.usesTypes());
         }
       }
       if (StringUtils.hasText(chunk.parentSymbol())) {

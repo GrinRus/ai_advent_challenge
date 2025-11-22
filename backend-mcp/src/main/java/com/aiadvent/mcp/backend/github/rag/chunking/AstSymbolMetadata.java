@@ -12,5 +12,8 @@ public record AstSymbolMetadata(
     List<String> imports,
     List<String> callsOut,
     List<String> callsIn,
+    List<String> implementsTypes,
+    List<String> readsFields,
+    List<String> usesTypes,
     int lineStart,
     int lineEnd) {}

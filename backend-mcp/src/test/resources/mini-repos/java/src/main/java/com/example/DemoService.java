@@ -1,13 +1,27 @@
 package com.example;
 
-/** Simple Java service for AST tests. */
-public class DemoService {
+/** Demo service doc. */
+public class DemoService extends BaseService implements Runnable {
 
-  public void process() {
-    helper();
+  @Override
+  public void run() {
+    process();
   }
 
-  private void helper() {
-    System.out.println("helper");
+  public String process(String name, int count) {
+    helper(count);
+    return name + count;
   }
+
+  private void helper(int count) {
+    this.log(count);
+  }
+
+  private void log(int value) {
+    System.out.println("value=" + value);
+  }
+}
+
+class BaseService {
+  protected void baseMethod() {}
 }

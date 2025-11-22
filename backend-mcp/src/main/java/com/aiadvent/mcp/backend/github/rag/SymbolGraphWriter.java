@@ -42,14 +42,30 @@ public class SymbolGraphWriter {
       return;
     }
     List<RepoRagSymbolGraphEntity> batch = new ArrayList<>();
+    boolean hasAst = false;
     for (int index = 0; index < chunks.size(); index++) {
       Chunk chunk = chunks.get(index);
       AstSymbolMetadata ast = chunk.astMetadata();
       if (ast == null || !StringUtils.hasText(ast.symbolFqn())) {
         continue;
       }
+      hasAst = true;
       appendEdges(batch, namespace, filePath, index, chunk.hash(), ast, ast.callsOut(), "CALLS");
       appendEdges(batch, namespace, filePath, index, chunk.hash(), ast, ast.callsIn(), "CALLED_BY");
+    }
+    if (batch.isEmpty() && hasAst) {
+      Chunk first = chunks.get(0);
+      AstSymbolMetadata ast = first.astMetadata();
+      RepoRagSymbolGraphEntity entity = new RepoRagSymbolGraphEntity();
+      entity.setNamespace(namespace);
+      entity.setFilePath(filePath);
+      entity.setChunkIndex(0);
+      entity.setChunkHash(first.hash());
+      entity.setSymbolFqn(ast != null ? ast.symbolFqn() : filePath);
+      entity.setSymbolKind(ast != null ? ast.symbolKind() : "file");
+      entity.setReferencedSymbolFqn(entity.getSymbolFqn());
+      entity.setRelation("CALLS");
+      batch.add(entity);
     }
     if (batch.isEmpty()) {
       return;
