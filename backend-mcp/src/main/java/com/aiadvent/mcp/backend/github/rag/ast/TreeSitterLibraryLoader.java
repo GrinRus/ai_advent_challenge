@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -28,6 +29,7 @@ public class TreeSitterLibraryLoader {
   private final ResourceLoader resourceLoader;
   private final TreeSitterPlatform platform;
   private final Map<String, LoadedLibrary> loadedLibraries = new ConcurrentHashMap<>();
+  private final AtomicBoolean coreLoaded = new AtomicBoolean(false);
 
   public TreeSitterLibraryLoader(GitHubRagProperties properties, ResourceLoader resourceLoader) {
     this.properties = properties;
@@ -36,6 +38,7 @@ public class TreeSitterLibraryLoader {
   }
 
   public Optional<LoadedLibrary> loadLanguage(String languageId) {
+    ensureCoreLibraryLoaded();
     if (!properties.getAst().isEnabled()) {
       return Optional.empty();
     }
@@ -45,6 +48,29 @@ public class TreeSitterLibraryLoader {
     }
     return Optional.ofNullable(
         loadedLibraries.computeIfAbsent(languageId, key -> loadInternal(languageId)));
+  }
+
+  private void ensureCoreLibraryLoaded() {
+    if (coreLoaded.get()) {
+      return;
+    }
+    String coreName = platform.libraryFileName("java-tree-sitter");
+    Resource coreResource = new ClassPathResource(coreName);
+    if (!coreResource.exists()) {
+      log.debug("libjava-tree-sitter is not present on classpath; native parsing will stay disabled");
+      return;
+    }
+    try (InputStream input = coreResource.getInputStream()) {
+      Path temp =
+          Files.createTempFile("libjava-tree-sitter-", platform.libraryExtension());
+      Files.copy(input, temp, StandardCopyOption.REPLACE_EXISTING);
+      temp.toFile().deleteOnExit();
+      System.load(temp.toAbsolutePath().toString());
+      coreLoaded.set(true);
+      log.info("Loaded libjava-tree-sitter ({})", temp.toAbsolutePath());
+    } catch (IOException | UnsatisfiedLinkError ex) {
+      log.warn("Failed to load libjava-tree-sitter: {}", ex.getMessage());
+    }
   }
 
   private LoadedLibrary loadInternal(String languageId) {

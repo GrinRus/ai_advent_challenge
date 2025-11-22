@@ -628,7 +628,7 @@ public class GitHubRagProperties implements InitializingBean {
 
   public static class Ast {
     private boolean enabled = false;
-    private boolean nativeEnabled = false;
+    private boolean nativeEnabled = true;
     private List<String> languages =
         new ArrayList<>(List.of("java", "kotlin", "typescript", "javascript", "python", "go"));
     private String libraryPath = "classpath:treesitter";
