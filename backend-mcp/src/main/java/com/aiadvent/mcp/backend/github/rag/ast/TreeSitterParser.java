@@ -29,8 +29,16 @@ import org.springframework.util.StringUtils;
  */
 @Component
 public class TreeSitterParser {
+  private final TreeSitterLibraryLoader libraryLoader;
+
   /** Default constructor for Spring. Native parsing uses built-in java-tree-sitter grammars. */
-  public TreeSitterParser() {}
+  public TreeSitterParser() {
+    this.libraryLoader = null;
+  }
+
+  public TreeSitterParser(TreeSitterLibraryLoader libraryLoader) {
+    this.libraryLoader = libraryLoader;
+  }
   private static final Pattern CALL_PATTERN = Pattern.compile("\\b([A-Za-z_][\\w$]*)\\s*\\(");
   private static final Pattern IMPLEMENTS_PATTERN =
       Pattern.compile("\\bimplements\\s+([A-Za-z_][\\w$.,\\s<>]*)");
@@ -772,6 +780,9 @@ public class TreeSitterParser {
       List<String> usesTypes) {}
 
   private Optional<AstFileContext> parseNative(String content, String language, String relativePath) {
+    if (libraryLoader != null && !libraryLoader.ensureCoreLibraryLoaded()) {
+      return Optional.empty();
+    }
     Language tsLanguage = resolveLanguage(language);
     if (tsLanguage == null) {
       return Optional.empty();

@@ -84,6 +84,7 @@ def treeSitterLanguages = [
 ]
 
 def treeSitterOutputDir = layout.buildDirectory.dir("treesitter/${treeSitterOs}/${treeSitterArch}")
+def javaTreeSitterLibDir = layout.buildDirectory.dir("generated/java-tree-sitter/${treeSitterOs}/${treeSitterArch}")
 
 treeSitterLanguages.each { language ->
     def capitalized = language.name.capitalize()
@@ -141,13 +142,31 @@ def syncTreeSitterResources = tasks.register('syncTreeSitterResources', Sync) {
     into layout.buildDirectory.dir("generated/treesitter/${treeSitterOs}/${treeSitterArch}")
 }
 
+def syncJavaTreeSitterCore = tasks.register('syncJavaTreeSitterCore', Copy) {
+    group = 'tree-sitter'
+    description = 'Copies libjava-tree-sitter.* from dependency into resources'
+    def coreJar = configurations.runtimeClasspath.find { it.name.startsWith('java-tree-sitter-') }
+    from(coreJar ? zipTree(coreJar) : []) {
+        include 'libjava-tree-sitter.*'
+        rename { _ -> "${treeSitterLibPrefix}java-tree-sitter${treeSitterLibExt}" }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    into javaTreeSitterLibDir
+    onlyIf { coreJar != null }
+}
+
 tasks.named('processResources') {
     dependsOn syncTreeSitterResources
+    dependsOn syncJavaTreeSitterCore
     from(syncTreeSitterResources.map { it.destinationDir }) {
+        into "treesitter/${treeSitterOs}/${treeSitterArch}"
+    }
+    from(syncJavaTreeSitterCore.map { it.destinationDir }) {
         into "treesitter/${treeSitterOs}/${treeSitterArch}"
     }
 }
 
 tasks.named('bootJar') {
     dependsOn syncTreeSitterResources
+    dependsOn syncJavaTreeSitterCore
 }

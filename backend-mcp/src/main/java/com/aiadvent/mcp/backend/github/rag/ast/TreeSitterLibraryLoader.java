@@ -50,15 +50,20 @@ public class TreeSitterLibraryLoader {
         loadedLibraries.computeIfAbsent(languageId, key -> loadInternal(languageId)));
   }
 
-  private void ensureCoreLibraryLoaded() {
+  /**
+   * Loads libjava-tree-sitter if present on the classpath.
+   *
+   * @return true if the library is loaded and ready, false otherwise.
+   */
+  public boolean ensureCoreLibraryLoaded() {
     if (coreLoaded.get()) {
-      return;
+      return true;
     }
     String coreName = platform.libraryFileName("java-tree-sitter");
     Resource coreResource = new ClassPathResource(coreName);
     if (!coreResource.exists()) {
       log.debug("libjava-tree-sitter is not present on classpath; native parsing will stay disabled");
-      return;
+      return false;
     }
     try (InputStream input = coreResource.getInputStream()) {
       Path temp =
@@ -68,8 +73,10 @@ public class TreeSitterLibraryLoader {
       System.load(temp.toAbsolutePath().toString());
       coreLoaded.set(true);
       log.info("Loaded libjava-tree-sitter ({})", temp.toAbsolutePath());
+      return true;
     } catch (IOException | UnsatisfiedLinkError ex) {
       log.warn("Failed to load libjava-tree-sitter: {}", ex.getMessage());
+      return false;
     }
   }
 
