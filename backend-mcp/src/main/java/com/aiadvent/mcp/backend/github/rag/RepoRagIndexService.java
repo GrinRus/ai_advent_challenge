@@ -42,7 +42,9 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.lang.Nullable;
 import org.springframework.util.StringUtils;
 
 @Service
@@ -77,6 +79,7 @@ public class RepoRagIndexService {
   private final RepoRagChunker chunker;
   private final AstFileContextFactory astFileContextFactory;
   private final SymbolGraphWriter symbolGraphWriter;
+  private final GraphSyncService graphSyncService;
   private final GitHubRagProperties properties;
 
   public RepoRagIndexService(
@@ -86,7 +89,8 @@ public class RepoRagIndexService {
       RepoRagChunker chunker,
       GitHubRagProperties properties,
       AstFileContextFactory astFileContextFactory,
-      SymbolGraphWriter symbolGraphWriter) {
+      SymbolGraphWriter symbolGraphWriter,
+      @Autowired(required = false) @Nullable GraphSyncService graphSyncService) {
     this.workspaceService = workspaceService;
     this.vectorStoreAdapter = vectorStoreAdapter;
     this.fileStateRepository = fileStateRepository;
@@ -94,6 +98,7 @@ public class RepoRagIndexService {
     this.properties = properties;
     this.astFileContextFactory = astFileContextFactory;
     this.symbolGraphWriter = symbolGraphWriter;
+    this.graphSyncService = graphSyncService;
   }
 
   public IndexResult indexWorkspace(IndexRequest request) {
@@ -226,20 +231,13 @@ public class RepoRagIndexService {
                       fileHash,
                       fileDocuments.size(),
                       stateByPath);
-                  try {
-                    symbolGraphWriter.syncFile(request.namespace(), relativePath, fileChunks);
-                  } catch (RuntimeException writerEx) {
-                    log.warn(
-                        "Failed to update symbol graph for {}: {}",
-                        relativePath,
-                        writerEx.getMessage());
-                  }
+                  syncSymbolGraphs(request.namespace(), relativePath, fileChunks);
                   files.incrementAndGet();
                   chunks.addAndGet(fileDocuments.size());
                 } else {
                   vectorStoreAdapter.deleteFile(request.namespace(), relativePath);
                   deleteFileState(request.namespace(), relativePath, stateByPath);
-                  symbolGraphWriter.deleteFile(request.namespace(), relativePath);
+                  deleteSymbolGraphs(request.namespace(), relativePath);
                   filesDeleted.incrementAndGet();
                 }
                 stalePaths.remove(relativePath);
@@ -255,7 +253,7 @@ public class RepoRagIndexService {
       for (String stalePath : stalePaths) {
         vectorStoreAdapter.deleteFile(request.namespace(), stalePath);
         deleteFileState(request.namespace(), stalePath, stateByPath);
-        symbolGraphWriter.deleteFile(request.namespace(), stalePath);
+        deleteSymbolGraphs(request.namespace(), stalePath);
         filesDeleted.incrementAndGet();
       }
       log.info(
@@ -380,6 +378,33 @@ public class RepoRagIndexService {
       String namespace, String relativePath, Map<String, RepoRagFileStateEntity> cache) {
     fileStateRepository.deleteByNamespaceAndFilePath(namespace, relativePath);
     cache.remove(relativePath);
+  }
+
+  private void syncSymbolGraphs(String namespace, String filePath, List<Chunk> chunks) {
+    boolean legacyEnabled = properties.getGraph().isLegacyTableEnabled();
+    if (legacyEnabled) {
+      try {
+        symbolGraphWriter.syncFile(namespace, filePath, chunks);
+      } catch (RuntimeException ex) {
+        log.warn("Failed to update SQL symbol graph for {}: {}", filePath, ex.getMessage());
+      }
+    }
+    if (graphSyncService != null) {
+      try {
+        graphSyncService.syncFile(namespace, filePath, chunks);
+      } catch (RuntimeException graphEx) {
+        log.warn("Failed to sync Neo4j graph for {}: {}", filePath, graphEx.getMessage());
+      }
+    }
+  }
+
+  private void deleteSymbolGraphs(String namespace, String filePath) {
+    if (properties.getGraph().isLegacyTableEnabled()) {
+      symbolGraphWriter.deleteFile(namespace, filePath);
+    }
+    if (graphSyncService != null) {
+      graphSyncService.deleteFile(namespace, filePath);
+    }
   }
 
   private String hashFile(Path file) throws IOException {

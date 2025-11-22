@@ -35,6 +35,7 @@ public class GitHubRagProperties implements InitializingBean {
   private int maxConcurrency = 2;
   private final Chunking chunking = new Chunking();
   private final Ast ast = new Ast();
+  private final Graph graph = new Graph();
   private final Retry retry = new Retry();
   private final Ignore ignore = new Ignore();
   private final Embedding embedding = new Embedding();
@@ -75,6 +76,10 @@ public class GitHubRagProperties implements InitializingBean {
 
   public Ast getAst() {
     return ast;
+  }
+
+  public Graph getGraph() {
+    return graph;
   }
 
   public Retry getRetry() {
@@ -666,6 +671,90 @@ public class GitHubRagProperties implements InitializingBean {
       public void setFailureThreshold(int failureThreshold) {
         this.failureThreshold = Math.max(1, failureThreshold);
       }
+    }
+  }
+
+  public static class Graph {
+    private boolean enabled = false;
+    private String uri = "bolt://localhost:7687";
+    private String username = "neo4j";
+    private String password;
+    private String database = "neo4j";
+    private boolean legacyTableEnabled = true;
+    private Duration syncTimeout = Duration.ofSeconds(45);
+    private int syncBatchSize = 500;
+    private Duration syncRetryDelay = Duration.ofSeconds(5);
+
+    public boolean isEnabled() {
+      return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    public String getUri() {
+      return uri;
+    }
+
+    public void setUri(String uri) {
+      this.uri = uri;
+    }
+
+    public String getUsername() {
+      return username;
+    }
+
+    public void setUsername(String username) {
+      this.username = username;
+    }
+
+    public String getPassword() {
+      return password;
+    }
+
+    public void setPassword(String password) {
+      this.password = password;
+    }
+
+    public String getDatabase() {
+      return database;
+    }
+
+    public void setDatabase(String database) {
+      this.database = database;
+    }
+
+    public boolean isLegacyTableEnabled() {
+      return legacyTableEnabled;
+    }
+
+    public void setLegacyTableEnabled(boolean legacyTableEnabled) {
+      this.legacyTableEnabled = legacyTableEnabled;
+    }
+
+    public Duration getSyncTimeout() {
+      return syncTimeout;
+    }
+
+    public void setSyncTimeout(Duration syncTimeout) {
+      this.syncTimeout = syncTimeout != null ? syncTimeout : Duration.ofSeconds(45);
+    }
+
+    public int getSyncBatchSize() {
+      return syncBatchSize;
+    }
+
+    public void setSyncBatchSize(int syncBatchSize) {
+      this.syncBatchSize = Math.max(1, syncBatchSize);
+    }
+
+    public Duration getSyncRetryDelay() {
+      return syncRetryDelay;
+    }
+
+    public void setSyncRetryDelay(Duration syncRetryDelay) {
+      this.syncRetryDelay = syncRetryDelay != null ? syncRetryDelay : Duration.ofSeconds(5);
     }
   }
 

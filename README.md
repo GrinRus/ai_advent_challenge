@@ -39,6 +39,24 @@ cd backend-mcp
 
 В Dockerfile мы вызываем `treeSitterBuild` перед `bootJar`, копируем артефакты `build/treesitter/linux/**` в `/app/treesitter` и задаём `GITHUB_RAG_AST_LIBRARY_PATH=/app/treesitter`.
 
+## Neo4j code graph (Wave 45)
+- Основной движок графа — Neo4j (локально — Testcontainers/bolt, в проде — Aura/кластер). Поддерживается fallback на таблицу `repo_rag_symbol_graph`, но после включения Neo4j весь call graph и IDE-подобная навигация строятся из него.
+- Граф содержит `Repo → File → Symbol` узлы, а также ребра `CALLS`, `IMPLEMENTS`, `READS_FIELD`, `USES_TYPE`. У каждого символа фиксированный `symbol_fqn` вида `package.Class#method(argTypes)`.
+
+| Переменная | Назначение |
+| --- | --- |
+| `GITHUB_RAG_GRAPH_ENABLED` | Включает синхронизацию с Neo4j. |
+| `GITHUB_RAG_GRAPH_URI` | Bolt/neo4j URI (`bolt://localhost:7687` по умолчанию). |
+| `GITHUB_RAG_GRAPH_USERNAME` | Имя пользователя Neo4j. |
+| `GITHUB_RAG_GRAPH_PASSWORD` | Пароль/секрет Neo4j. |
+| `GITHUB_RAG_GRAPH_DATABASE` | Имя базы данных (обычно `neo4j`). |
+| `GITHUB_RAG_GRAPH_LEGACY_TABLE_ENABLED` | Оставляет обновление Postgres-таблицы для fallback. |
+| `GITHUB_RAG_GRAPH_SYNC_TIMEOUT` | Таймаут синхронизации одного файла. |
+| `GITHUB_RAG_GRAPH_SYNC_RETRY_DELAY` | Пауза между повторными попытками sync. |
+| `GITHUB_RAG_GRAPH_SYNC_BATCH_SIZE` | Размер батча `MERGE` операций при записи графа. |
+
+При локальной разработке достаточно запустить `docker run neo4j` или Testcontainers — backend подключится к `bolt://localhost:7687`. Для продакшена настройте `GITHUB_RAG_GRAPH_*` переменные и убедитесь, что `repo.rag_index_status` показывает `graphReady=true` после переиндексации.
+
 ### Проверка работоспособности
 
 - `repo.rag_index_status` возвращает `astReady`, `astSchemaVersion`, `astReadyAt`. Если `astReady=false`, call graph автоматически отключается (`neighbor.call-graph-disabled` в warnings).

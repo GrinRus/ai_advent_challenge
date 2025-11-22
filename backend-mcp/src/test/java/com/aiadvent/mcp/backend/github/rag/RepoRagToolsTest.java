@@ -28,6 +28,7 @@ class RepoRagToolsTest {
   @Mock private RepoRagToolInputSanitizer inputSanitizer;
   @Mock private GitHubRagProperties properties;
   @Mock private RagParameterGuard parameterGuard;
+  @Mock private GraphQueryService graphQueryService;
 
   private RepoRagTools tools;
   private GitHubRagProperties.ResolvedRagParameterProfile balancedProfile;
@@ -44,7 +45,8 @@ class RepoRagToolsTest {
             fetchRegistry,
             inputSanitizer,
             properties,
-            parameterGuard);
+            parameterGuard,
+            graphQueryService);
     when(inputSanitizer.sanitizeSimple(any()))
         .thenAnswer(
             invocation ->

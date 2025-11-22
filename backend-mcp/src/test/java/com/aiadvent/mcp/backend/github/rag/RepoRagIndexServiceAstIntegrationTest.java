@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
@@ -63,7 +64,7 @@ class RepoRagIndexServiceAstIntegrationTest {
     when(analyzer.supportsLanguage(anyString())).thenReturn(true);
     when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
 
-    astFactory = new AstFileContextFactory(analyzer);
+    astFactory = new AstFileContextFactory(analyzer, new TreeSitterParser());
     SymbolGraphWriter symbolGraphWriter =
         new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
 
@@ -75,7 +76,8 @@ class RepoRagIndexServiceAstIntegrationTest {
             chunker,
             properties,
             astFactory,
-            symbolGraphWriter);
+            symbolGraphWriter,
+            null);
   }
 
   @Test

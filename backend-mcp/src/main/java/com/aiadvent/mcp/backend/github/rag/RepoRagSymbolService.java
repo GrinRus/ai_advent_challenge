@@ -1,5 +1,6 @@
 package com.aiadvent.mcp.backend.github.rag;
 
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -10,8 +11,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -27,6 +30,8 @@ public class RepoRagSymbolService {
   private static final Logger log = LoggerFactory.getLogger(RepoRagSymbolService.class);
 
   private final RepoRagSymbolGraphRepository repository;
+  private final GraphQueryService graphQueryService;
+  private final GitHubRagProperties properties;
   private final Cache<String, List<SymbolNeighbor>> incomingCache;
   private final Cache<String, List<SymbolNeighbor>> outgoingCache;
   private final Cache<String, Optional<SymbolDefinition>> definitionCache;
@@ -37,8 +42,13 @@ public class RepoRagSymbolService {
   private final Counter throttledRequests;
 
   public RepoRagSymbolService(
-      RepoRagSymbolGraphRepository repository, @Nullable MeterRegistry meterRegistry) {
+      RepoRagSymbolGraphRepository repository,
+      @Nullable MeterRegistry meterRegistry,
+      @Nullable GraphQueryService graphQueryService,
+      GitHubRagProperties properties) {
     this.repository = repository;
+    this.graphQueryService = graphQueryService;
+    this.properties = properties;
     this.incomingCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(5)).build();
     this.outgoingCache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(Duration.ofMinutes(5)).build();
     this.definitionCache = Caffeine.newBuilder().maximumSize(2000).expireAfterWrite(Duration.ofMinutes(10)).build();
@@ -56,6 +66,9 @@ public class RepoRagSymbolService {
     }
     incomingRequests.increment();
     String key = cacheKey(namespace, symbolFqn);
+    if (isGraphEnabled()) {
+      return incomingCache.get(key, ignored -> fetchGraphNeighbors(namespace, symbolFqn));
+    }
     return incomingCache.get(key, ignored -> fetchIncoming(namespace, symbolFqn));
   }
 
@@ -65,6 +78,9 @@ public class RepoRagSymbolService {
     }
     definitionRequests.increment();
     String key = cacheKey(namespace, symbolFqn);
+    if (isGraphEnabled()) {
+      return definitionCache.get(key, ignored -> fetchGraphDefinition(namespace, symbolFqn));
+    }
     return definitionCache.get(key, ignored -> fetchDefinition(namespace, symbolFqn));
   }
 
@@ -85,6 +101,50 @@ public class RepoRagSymbolService {
         entity.getRelation(),
         entity.getSymbolFqn(),
         entity.getReferencedSymbolFqn());
+  }
+
+  private boolean isGraphEnabled() {
+    return graphQueryService != null && properties != null && properties.getGraph().isEnabled();
+  }
+
+  private List<SymbolNeighbor> fetchGraphNeighbors(String namespace, String symbolFqn) {
+    GraphQueryService.GraphNeighbors neighbors =
+        graphQueryService.neighbors(
+            namespace,
+            symbolFqn,
+            GraphQueryService.Direction.OUTGOING,
+            Set.of(),
+            24);
+    Map<String, GraphQueryService.GraphNode> nodeByFqn =
+        neighbors.nodes().stream()
+            .collect(java.util.stream.Collectors.toMap(GraphQueryService.GraphNode::fqn, node -> node, (a, b) -> a));
+    List<SymbolNeighbor> converted = new java.util.ArrayList<>();
+    for (GraphQueryService.GraphEdge edge : neighbors.edges()) {
+      GraphQueryService.GraphNode target = nodeByFqn.get(edge.to());
+      String filePath = target != null ? target.filePath() : null;
+      converted.add(
+          new SymbolNeighbor(
+              filePath,
+              edge.chunkIndex() != null ? edge.chunkIndex() : -1,
+              edge.chunkHash(),
+              edge.relation(),
+              edge.from(),
+              edge.to()));
+    }
+    return List.copyOf(converted);
+  }
+
+  private Optional<SymbolDefinition> fetchGraphDefinition(String namespace, String symbolFqn) {
+    GraphQueryService.GraphNode node = graphQueryService.definition(namespace, symbolFqn);
+    if (node == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new SymbolDefinition(
+            node.filePath(),
+            node.lineStart() != null ? node.lineStart() : -1,
+            null,
+            node.kind()));
   }
 
   private boolean hasText(String value) {

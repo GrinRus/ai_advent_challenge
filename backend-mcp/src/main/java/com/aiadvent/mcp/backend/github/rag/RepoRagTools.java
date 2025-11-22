@@ -5,10 +5,12 @@ import com.aiadvent.mcp.backend.github.GitHubRepositoryFetchRegistry;
 import com.aiadvent.mcp.backend.github.rag.RepoRagStatusService.StatusView;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagNamespaceStateEntity;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -23,6 +25,7 @@ public class RepoRagTools {
   private final RepoRagToolInputSanitizer inputSanitizer;
   private final GitHubRagProperties properties;
   private final RagParameterGuard parameterGuard;
+  private final GraphQueryService graphQueryService;
 
   public RepoRagTools(
       RepoRagStatusService statusService,
@@ -31,7 +34,8 @@ public class RepoRagTools {
       GitHubRepositoryFetchRegistry fetchRegistry,
       RepoRagToolInputSanitizer inputSanitizer,
       GitHubRagProperties properties,
-      RagParameterGuard parameterGuard) {
+      RagParameterGuard parameterGuard,
+      @org.springframework.lang.Nullable GraphQueryService graphQueryService) {
     this.statusService = statusService;
     this.searchService = searchService;
     this.namespaceStateService = namespaceStateService;
@@ -39,6 +43,7 @@ public class RepoRagTools {
     this.inputSanitizer = inputSanitizer;
     this.properties = properties;
     this.parameterGuard = parameterGuard;
+    this.graphQueryService = graphQueryService;
   }
 
   @Tool(
@@ -78,7 +83,10 @@ public class RepoRagTools {
         status.ready(),
         status.astReady(),
         status.astSchemaVersion(),
-        status.astReadyAt());
+        status.astReadyAt(),
+        status.graphReady(),
+        status.graphSchemaVersion(),
+        status.graphReadyAt());
   }
 
   @Tool(
@@ -275,6 +283,77 @@ public class RepoRagTools {
         List.of("profile:" + guardResult.plan().profileName()));
   }
 
+  @Tool(
+      name = "repo.code_graph_neighbors",
+      description =
+          """
+          Возвращает соседей символа из Neo4j-графа. Полезно для IDE-подобной навигации.
+          Вход: `namespace`, `symbolFqn`, `direction` (OUTGOING/INCOMING/BOTH), `relation` (CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE), `limit`.
+          Выход: `nodes[]` с файлами/линиями и `edges[]` c relation.
+          """)
+  public GraphNeighborsResponse codeGraphNeighbors(GraphNeighborsInput input) {
+    ensureGraphEnabled();
+    if (!StringUtils.hasText(input.namespace()) || !StringUtils.hasText(input.symbolFqn())) {
+      throw new IllegalArgumentException("namespace and symbolFqn must not be blank");
+    }
+    GraphQueryService.Direction direction =
+        Optional.ofNullable(input.direction())
+            .map(GraphQueryService.Direction::valueOf)
+            .orElse(GraphQueryService.Direction.OUTGOING);
+    Set<String> relations = new HashSet<>();
+    if (input.relation() != null) {
+      relations.add(input.relation());
+    }
+    GraphQueryService.GraphNeighbors neighbors =
+        graphQueryService.neighbors(input.namespace(), input.symbolFqn(), direction, relations, input.limit());
+    return new GraphNeighborsResponse(neighbors.nodes(), neighbors.edges());
+  }
+
+  @Tool(
+      name = "repo.code_graph_definition",
+      description =
+          """
+          Возвращает определение символа из графа (файл, строки, kind, visibility).
+          Вход: `namespace`, `symbolFqn`.
+          """)
+  public GraphDefinitionResponse codeGraphDefinition(GraphDefinitionInput input) {
+    ensureGraphEnabled();
+    if (!StringUtils.hasText(input.namespace()) || !StringUtils.hasText(input.symbolFqn())) {
+      throw new IllegalArgumentException("namespace and symbolFqn must not be blank");
+    }
+    GraphQueryService.GraphNode node =
+        graphQueryService.definition(input.namespace(), input.symbolFqn());
+    return new GraphDefinitionResponse(node);
+  }
+
+  @Tool(
+      name = "repo.code_graph_path",
+      description =
+          """
+          Строит кратчайший путь между двумя символами (до maxDepth). Полезно для сценариев контроллер → сервис → репозиторий.
+          Вход: `namespace`, `sourceFqn`, `targetFqn`, `relation` (опционально), `maxDepth` (по умолчанию 4).
+          """)
+  public GraphNeighborsResponse codeGraphPath(GraphPathInput input) {
+    ensureGraphEnabled();
+    if (!StringUtils.hasText(input.namespace())
+        || !StringUtils.hasText(input.sourceFqn())
+        || !StringUtils.hasText(input.targetFqn())) {
+      throw new IllegalArgumentException("namespace, sourceFqn and targetFqn must not be blank");
+    }
+    Set<String> relations = new HashSet<>();
+    if (input.relation() != null) {
+      relations.add(input.relation());
+    }
+    GraphQueryService.GraphNeighbors path =
+        graphQueryService.shortestPath(
+            input.namespace(),
+            input.sourceFqn(),
+            input.targetFqn(),
+            relations,
+            input.maxDepth());
+    return new GraphNeighborsResponse(path.nodes(), path.edges());
+  }
+
   private List<String> mergeWarnings(List<String> first, List<String> second) {
     boolean emptyFirst = first == null || first.isEmpty();
     boolean emptySecond = second == null || second.isEmpty();
@@ -360,7 +439,10 @@ public class RepoRagTools {
       boolean ready,
       boolean astReady,
       int astSchemaVersion,
-      java.time.Instant astReadyAt) {}
+      java.time.Instant astReadyAt,
+      boolean graphReady,
+      int graphSchemaVersion,
+      java.time.Instant graphReadyAt) {}
 
   @JsonIgnoreProperties(ignoreUnknown = false)
   public record RepoRagSearchInput(
@@ -401,4 +483,23 @@ public class RepoRagTools {
       String rawAnswer) {}
 
   public record RepoRagSimpleGlobalSearchInput(String rawQuery) {}
+
+  private void ensureGraphEnabled() {
+    if (graphQueryService == null || !properties.getGraph().isEnabled()) {
+      throw new IllegalStateException("Neo4j graph is disabled. Set GITHUB_RAG_GRAPH_ENABLED=true.");
+    }
+  }
+
+  public record GraphNeighborsInput(
+      String namespace, String symbolFqn, String direction, String relation, int limit) {}
+
+  public record GraphNeighborsResponse(
+      List<GraphQueryService.GraphNode> nodes, List<GraphQueryService.GraphEdge> edges) {}
+
+  public record GraphDefinitionInput(String namespace, String symbolFqn) {}
+
+  public record GraphDefinitionResponse(GraphQueryService.GraphNode symbol) {}
+
+  public record GraphPathInput(
+      String namespace, String sourceFqn, String targetFqn, String relation, int maxDepth) {}
 }

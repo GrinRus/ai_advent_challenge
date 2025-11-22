@@ -73,7 +73,8 @@ class RepoRagIndexServiceTest {
             chunker,
             properties,
             astFileContextFactory,
-            symbolGraphWriter);
+            symbolGraphWriter,
+            null);
   }
 
   @Test
@@ -191,7 +192,8 @@ class RepoRagIndexServiceTest {
             failingChunker,
             properties,
             astFileContextFactory,
-            symbolGraphWriter);
+            symbolGraphWriter,
+            null);
 
     RepoRagIndexService.IndexResult result =
         flakyService.indexWorkspace(request("ws-4"));

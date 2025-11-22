@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagIndexJobRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagJobStatus;
@@ -25,7 +26,9 @@ class RepoRagStatusServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new RepoRagStatusService(jobRepository, namespaceStateService);
+    GitHubRagProperties properties = new GitHubRagProperties();
+    properties.getGraph().setEnabled(false);
+    service = new RepoRagStatusService(jobRepository, namespaceStateService, properties);
   }
 
   @Test

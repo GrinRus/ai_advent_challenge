@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -24,7 +25,9 @@ class RepoRagSymbolServiceTest {
   @BeforeEach
   void setUp() {
     MockitoAnnotations.openMocks(this);
-    service = new RepoRagSymbolService(repository, new SimpleMeterRegistry());
+    GitHubRagProperties properties = new GitHubRagProperties();
+    properties.getGraph().setEnabled(false);
+    service = new RepoRagSymbolService(repository, new SimpleMeterRegistry(), null, properties);
   }
 
   @Test

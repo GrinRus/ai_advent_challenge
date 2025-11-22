@@ -12,3 +12,13 @@
 | `coding.discard_patch` | Удаляет патч из in-memory реестра. | `workspaceId`, `patchId`. |
 
 > Совет: для быстрой генерации boilerplate используйте `coding.generate_artifact`, а для сложных правок, требующих ручного dry-run/review, оставайтесь на `coding.generate_patch`.
+
+## GitHub RAG — Graph tools (Wave 45)
+
+| Tool | Назначение | Основные параметры |
+|------|------------|-------------------|
+| `repo.code_graph_neighbors` | Получить соседей символа из Neo4j (CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE). | `namespace`, `symbolFqn`, `direction` (OUTGOING/INCOMING/BOTH), `relation` (опц.), `limit` (по умолчанию 16). Возвращает `nodes[]` (fqn, file, kind, lines) и `edges[]` (from, to, relation, chunkHash, chunkIndex). |
+| `repo.code_graph_definition` | Найти определение символа. | `namespace`, `symbolFqn`. Возвращает file/kind/visibility/lines. |
+| `repo.code_graph_path` | Кратчайший путь между двумя символами (по умолчанию до 4 ребер). | `namespace`, `sourceFqn`, `targetFqn`, `relation` (опц.), `maxDepth`. Возвращает `nodes[]`/`edges[]` для визуализации или пояснений. |
+
+> Требования: `GITHUB_RAG_GRAPH_ENABLED=true`, доступ к Neo4j (`GITHUB_RAG_GRAPH_URI/USERNAME/PASSWORD`). Если граф не включён, инструменты вернут ошибку.

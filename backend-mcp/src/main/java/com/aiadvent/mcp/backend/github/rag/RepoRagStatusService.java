@@ -16,12 +16,15 @@ public class RepoRagStatusService {
 
   private final RepoRagIndexJobRepository jobRepository;
   private final RepoRagNamespaceStateService namespaceStateService;
+  private final com.aiadvent.mcp.backend.config.GitHubRagProperties properties;
 
   public RepoRagStatusService(
       RepoRagIndexJobRepository jobRepository,
-      RepoRagNamespaceStateService namespaceStateService) {
+      RepoRagNamespaceStateService namespaceStateService,
+      com.aiadvent.mcp.backend.config.GitHubRagProperties properties) {
     this.jobRepository = jobRepository;
     this.namespaceStateService = namespaceStateService;
+    this.properties = properties;
   }
 
   public StatusView currentStatus(String repoOwner, String repoName) {
@@ -41,6 +44,10 @@ public class RepoRagStatusService {
       RepoRagIndexJobEntity job = optionalJob.get();
       Progress progress = computeProgress(job);
       RepoRagNamespaceStateEntity state = namespaceState.orElse(null);
+
+      boolean graphReady = properties.getGraph().isEnabled() && state != null && state.isReady();
+      int graphSchemaVersion = graphReady ? 1 : 0;
+      Instant graphReadyAt = graphReady && state != null ? state.getLastIndexedAt() : null;
 
       return new StatusView(
           job.getRepoOwner(),
@@ -63,12 +70,18 @@ public class RepoRagStatusService {
           state != null && state.isReady(),
           state != null && state.getAstSchemaVersion() > 0,
           state != null ? state.getAstSchemaVersion() : 0,
-          state != null ? state.getAstReadyAt() : null);
+          state != null ? state.getAstReadyAt() : null,
+          graphReady,
+          graphSchemaVersion,
+          graphReadyAt);
     }
 
     if (namespaceState.isPresent()) {
       RepoRagNamespaceStateEntity state = namespaceState.get();
       String status = state.isReady() ? "READY" : "STALE";
+      boolean graphReady = properties.getGraph().isEnabled() && state.isReady();
+      int graphSchemaVersion = graphReady ? 1 : 0;
+      Instant graphReadyAt = graphReady ? state.getLastIndexedAt() : null;
       return new StatusView(
           state.getRepoOwner(),
           state.getRepoName(),
@@ -90,7 +103,10 @@ public class RepoRagStatusService {
           state.isReady(),
           state.getAstSchemaVersion() > 0,
           state.getAstSchemaVersion(),
-          state.getAstReadyAt());
+          state.getAstReadyAt(),
+          graphReady,
+          graphSchemaVersion,
+          graphReadyAt);
     }
 
     return StatusView.notFound(normalize(repoOwner), normalize(repoName));
@@ -143,7 +159,10 @@ public class RepoRagStatusService {
       boolean ready,
       boolean astReady,
       int astSchemaVersion,
-      Instant astReadyAt) {
+      Instant astReadyAt,
+      boolean graphReady,
+      int graphSchemaVersion,
+      Instant graphReadyAt) {
 
     static StatusView notFound(String owner, String name) {
       return new StatusView(
@@ -165,6 +184,9 @@ public class RepoRagStatusService {
           null,
           null,
           false,
+          false,
+          0,
+          null,
           false,
           0,
           null);

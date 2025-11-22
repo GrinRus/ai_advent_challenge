@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
@@ -48,6 +50,7 @@ class RepoRagIndexServiceMultiLanguageTest {
   @Mock private RepoRagVectorStoreAdapter vectorStoreAdapter;
   @Mock private RepoRagFileStateRepository fileStateRepository;
   @Mock private RepoRagSymbolGraphRepository symbolGraphRepository;
+  @Mock private GraphSyncService graphSyncService;
 
   @TempDir Path tempDir;
 
@@ -69,7 +72,7 @@ class RepoRagIndexServiceMultiLanguageTest {
     when(analyzer.supportsLanguage(anyString())).thenReturn(true);
     when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
 
-    AstFileContextFactory astFactory = new AstFileContextFactory(analyzer);
+    AstFileContextFactory astFactory = new AstFileContextFactory(analyzer, new TreeSitterParser());
     SymbolGraphWriter symbolGraphWriter =
         new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
 
@@ -81,7 +84,8 @@ class RepoRagIndexServiceMultiLanguageTest {
             chunker,
             properties,
             astFactory,
-            symbolGraphWriter);
+            symbolGraphWriter,
+            graphSyncService);
   }
 
   @ParameterizedTest
@@ -138,6 +142,9 @@ class RepoRagIndexServiceMultiLanguageTest {
               edge -> assertThat(edge.getReferencedSymbolFqn())
                   .containsIgnoringCase(fixture.expectedCall()));
     }
+
+    verify(graphSyncService)
+        .syncFile(eq(namespace), eq(fixture.relativeFile()), any());
   }
 
   private Path copyFixtureToWorkspace(String fixtureName) throws IOException {

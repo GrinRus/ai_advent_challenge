@@ -19,7 +19,7 @@ class AstFileContextFactoryTest {
   @BeforeEach
   void setUp() {
     analyzer = mock(TreeSitterAnalyzer.class);
-    factory = new AstFileContextFactory(analyzer);
+    factory = new AstFileContextFactory(analyzer, new TreeSitterParser());
     when(analyzer.isEnabled()).thenReturn(true);
     when(analyzer.supportsLanguage("java")).thenReturn(true);
     when(analyzer.ensureLanguageLoaded("java")).thenReturn(true);
@@ -73,6 +73,6 @@ class AstFileContextFactoryTest {
     assertThat(fileSymbol.symbolKind()).isEqualTo("file");
     assertThat(fileSymbol.lineStart()).isEqualTo(1);
     assertThat(fileSymbol.lineEnd()).isGreaterThanOrEqualTo(5);
-    assertThat(fileSymbol.symbolFqn()).isEqualTo("src.main.java.com.example.DemoService.java");
+    assertThat(fileSymbol.symbolFqn()).isEqualTo("com.example.src.main.java.com.example.DemoService.java");
   }
 }

@@ -74,6 +74,12 @@
 - Секреты деплоя хранятся в GitHub Secrets; локальные `.env` не коммитим.
 - При обновлении пайплайнов обязательно документируйте изменения в `docs/infra.md`.
 
+## Миграция на Neo4j code graph (Wave 45)
+- **Подготовка:** задать переменные `GITHUB_RAG_GRAPH_ENABLED=true`, `...GRAPH_URI/USERNAME/PASSWORD/DATABASE`, при необходимости оставить `...GRAPH_LEGACY_TABLE_ENABLED=true` (двойная запись в Postgres для отката).
+- **Re-fetch / backfill:** для каждого namespace выполнить `github.repository_fetch` и дождаться `ready=true`/`graphReady=true` (после включения поля в статусе). Очередь индексатора должна быть пустой перед выкатыванием.
+- **Откат:** выставить `GITHUB_RAG_GRAPH_ENABLED=false` (и при надобности `...LEGACY_TABLE_ENABLED=true`), повторить `github.repository_fetch` критичных репозиториев, чтобы call graph снова строился в Postgres. После отката отключить graph-инструменты в UI/операторке.
+- **Мониторинг:** следить за метриками `graph_sync_success_total`, `graph_sync_failure_total`, `graph_edges_written_total`, `graph_nodes_written_total`, `graph_sync_duration_ms`, а также алертами на рост `graph_lookup_throttled_total` (будет добавлен вместе с Neo4j lookup).
+- **Верификация:** `repo.rag_index_status` должен показывать `graphReady=true` и `graphSchemaVersion>=1`; новый инструментарий `repo.code_graph_*` возвращает узлы/ребра для тестового репозитория (минимум Java fixture). документацию в `docs/tools.md` и `docs/backlog.md` держать в актуальном состоянии.
 ## Документация
 - Перед слиянием проверяйте, что затронутые разделы обновлены.
 - Если появился новый раздел, добавьте ссылку в `docs/overview.md`.

@@ -96,6 +96,16 @@ github:
       library-path: ${GITHUB_RAG_AST_LIBRARY_PATH:classpath:treesitter}
       health:
         failure-threshold: ${GITHUB_RAG_AST_FAILURE_THRESHOLD:3}
+    graph:
+      enabled: ${GITHUB_RAG_GRAPH_ENABLED:false}
+      uri: ${GITHUB_RAG_GRAPH_URI:bolt://localhost:7687}
+      username: ${GITHUB_RAG_GRAPH_USERNAME:neo4j}
+      password: ${GITHUB_RAG_GRAPH_PASSWORD:neo4j}
+      database: ${GITHUB_RAG_GRAPH_DATABASE:neo4j}
+      legacy-table-enabled: ${GITHUB_RAG_GRAPH_LEGACY_TABLE_ENABLED:true}
+      sync-timeout: ${GITHUB_RAG_GRAPH_SYNC_TIMEOUT:PT45S}
+      sync-retry-delay: ${GITHUB_RAG_GRAPH_SYNC_RETRY_DELAY:PT5S}
+      sync-batch-size: ${GITHUB_RAG_GRAPH_SYNC_BATCH_SIZE:500}
     retry:
       max-attempts: ${GITHUB_RAG_MAX_ATTEMPTS:5}
       initial-backoff: ${GITHUB_RAG_INITIAL_BACKOFF:PT15S}
