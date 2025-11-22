@@ -1,8 +1,11 @@
 package com.aiadvent.mcp.backend.github.rag.ast;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
+import io.github.treesitter.jtreesitter.Language;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.foreign.Arena;
+import java.lang.foreign.SymbolLookup;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -10,7 +13,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -29,7 +31,6 @@ public class TreeSitterLibraryLoader {
   private final ResourceLoader resourceLoader;
   private final TreeSitterPlatform platform;
   private final Map<String, LoadedLibrary> loadedLibraries = new ConcurrentHashMap<>();
-  private final AtomicBoolean coreLoaded = new AtomicBoolean(false);
 
   public TreeSitterLibraryLoader(GitHubRagProperties properties, ResourceLoader resourceLoader) {
     this.properties = properties;
@@ -51,33 +52,13 @@ public class TreeSitterLibraryLoader {
   }
 
   /**
-   * Loads libjava-tree-sitter if present on the classpath.
+   * Ensures that tree-sitter runtime is available. For jtreesitter we rely on per-language shared
+   * libraries that already link against the runtime, so this is a no-op.
    *
-   * @return true if the library is loaded and ready, false otherwise.
+   * @return true if runtime can be used.
    */
   public boolean ensureCoreLibraryLoaded() {
-    if (coreLoaded.get()) {
-      return true;
-    }
-    String coreName = platform.libraryFileName("java-tree-sitter");
-    Resource coreResource = new ClassPathResource(coreName);
-    if (!coreResource.exists()) {
-      log.debug("libjava-tree-sitter is not present on classpath; native parsing will stay disabled");
-      return false;
-    }
-    try (InputStream input = coreResource.getInputStream()) {
-      Path temp =
-          Files.createTempFile("libjava-tree-sitter-", platform.libraryExtension());
-      Files.copy(input, temp, StandardCopyOption.REPLACE_EXISTING);
-      temp.toFile().deleteOnExit();
-      System.load(temp.toAbsolutePath().toString());
-      coreLoaded.set(true);
-      log.info("Loaded libjava-tree-sitter ({})", temp.toAbsolutePath());
-      return true;
-    } catch (IOException | UnsatisfiedLinkError ex) {
-      log.warn("Failed to load libjava-tree-sitter: {}", ex.getMessage());
-      return false;
-    }
+    return true;
   }
 
   private LoadedLibrary loadInternal(String languageId) {
@@ -104,15 +85,17 @@ public class TreeSitterLibraryLoader {
               "treesitter-" + language.id() + "-", platform.libraryExtension());
       Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
       tempFile.toFile().deleteOnExit();
-      System.load(tempFile.toAbsolutePath().toString());
+      SymbolLookup lookup = SymbolLookup.libraryLookup(tempFile, Arena.global());
+      String symbolName = "tree_sitter_" + language.id();
+      Language tsLanguage = Language.load(lookup, symbolName);
       log.info(
           "Loaded Tree-sitter library {} for language {} ({}-{})",
           tempFile.toAbsolutePath(),
           language.id(),
           platform.os(),
           platform.arch());
-      return new LoadedLibrary(language, tempFile);
-    } catch (IOException | UnsatisfiedLinkError ex) {
+      return new LoadedLibrary(language, tempFile, tsLanguage);
+    } catch (IOException | UnsatisfiedLinkError | RuntimeException ex) {
       log.warn("Failed to load Tree-sitter library for {}: {}", languageId, ex.getMessage());
       return null;
     }
@@ -157,5 +140,5 @@ public class TreeSitterLibraryLoader {
     return normalized;
   }
 
-  public record LoadedLibrary(TreeSitterLanguage language, Path path) {}
+  public record LoadedLibrary(TreeSitterLanguage language, Path path, Language languageHandle) {}
 }
