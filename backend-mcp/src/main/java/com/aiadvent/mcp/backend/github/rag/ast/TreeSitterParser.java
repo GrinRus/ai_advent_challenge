@@ -451,35 +451,8 @@ public class TreeSitterParser {
   }
 
   private Optional<AstFileContext> parseNative(String content, String language, String relativePath) {
-    if (libraryLoader == null) {
-      return Optional.empty();
-    }
-    if (!libraryLoader.ensureCoreLibraryLoaded()) {
-      return Optional.empty();
-    }
-    Optional<TreeSitterLibraryLoader.LoadedLibrary> loaded = libraryLoader.loadLanguage(language);
-    if (loaded.isEmpty() || loaded.get().languageHandle() == null) {
-      return Optional.empty();
-    }
-    String source = content != null ? content : "";
-    String[] lines = source.split("\\n", -1);
-    String packageName = detectPackage(lines);
-    AstSymbolMetadata fileSymbol =
-        new AstSymbolMetadata(
-            fallbackFqn(relativePath, packageName),
-            "file",
-            "public",
-            relativePath,
-            null,
-            isTestSymbol(relativePath, relativePath),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            1,
-            lines.length == 0 ? 1 : lines.length);
-    return Optional.of(new AstFileContext(List.of(fileSymbol)));
+    // Until full jtreesitter AST extraction is wired, fall back to heuristic parsing but keep the
+    // native code path explicit to simplify future replacement.
+    return parse(content, language, relativePath, false);
   }
 }
