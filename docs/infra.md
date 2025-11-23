@@ -217,6 +217,8 @@ docker compose up --build docker-runner-mcp
 - **Очередь и ретраи:** `GITHUB_RAG_MAX_CONCURRENCY` — параллельность воркеров; `GITHUB_RAG_MAX_ATTEMPTS` и `GITHUB_RAG_INITIAL_BACKOFF` — backoff ретраев. За метрики следят `repo_rag_queue_depth`, `repo_rag_index_duration`, `repo_rag_index_fail_total`, `repo_rag_embeddings_total`.
 - **Heuristic rerank:** без внешней модели. Параметры `GITHUB_RAG_RERANK_TOP_N`, `GITHUB_RAG_RERANK_SCORE_WEIGHT`, `GITHUB_RAG_RERANK_LINE_SPAN_WEIGHT`, `GITHUB_RAG_MAX_SNIPPET_LINES` управляют сортировкой чанков по комбинации similarity score и длины фрагмента.
 - **Инструменты:** `repo.rag_index_status` (MANUAL) и `repo.rag_search` зарегистрированы в backend каталоге и доступны агентам `repo-fetcher`, GitHub flow и чату (`app.chat.research.tools`). Перед тяжёлыми задачами проверяйте `status=SUCCEEDED`.
+- **Graph readiness:** `graphReady=true` выставляется только при включённом графе и `astSchemaVersion >= AST_VERSION`; `graphSchemaVersion` и `graphReadyAt` отдаются в `repo.rag_index_status`. Метрики: `graph_sync_success_total`, `graph_sync_failure_total`, `graph_nodes_total`, `graph_edges_total{relation}`.
+- **Graph lens:** в выдаче `repo.rag_search` (`matches[].metadata`) появляются `graph_neighbors` (узлы/рёбра) и `graph_path` (кратчайший путь через `shortestPath`), а в `appliedModules` добавляется `graph.lens`. UI/агенты должны использовать эти подсказки для навигации по коду.
 
 Backend автоматически подключает `github-mcp` по адресу `http://github-mcp:8080` (см. `GITHUB_MCP_HTTP_BASE_URL` в `docker-compose.yml`). Для локального запуска бэкенда вне Compose укажите:
 
