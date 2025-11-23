@@ -29,6 +29,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
+import org.neo4j.driver.SessionConfig;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -169,6 +172,35 @@ class RepoRagIndexServiceNeo4jE2ETest {
                         .asLong());
 
     assertThat(symbolCount).isGreaterThan(0);
+
+    Map<String, String> endpoints =
+        driver
+            .session(SessionConfig.builder().withDatabase("neo4j").build())
+            .executeRead(
+                tx ->
+                    tx.run(
+                            """
+                            MATCH (a:Symbol {namespace:$ns})-[r:CALLS]->(b:Symbol {namespace:$ns})
+                            RETURN a.fqn AS source, b.fqn AS target
+                            LIMIT 1
+                            """,
+                            Map.of("ns", NAMESPACE))
+                        .list())
+            .stream()
+            .findFirst()
+            .map(
+                record ->
+                    Map.of(
+                        "source", record.get("source").asString(),
+                        "target", record.get("target").asString()))
+            .orElseThrow(() -> new IllegalStateException("No CALLS edges found"));
+
+    GraphQueryService.GraphNeighbors path =
+        graphQueryService.shortestPath(
+            NAMESPACE, endpoints.get("source"), endpoints.get("target"), Set.of(), 4);
+    assertThat(path.edges()).isNotEmpty();
+    assertThat(path.nodes().stream().map(GraphQueryService.GraphNode::fqn).toList())
+        .contains(endpoints.get("target"));
   }
 
   private void copyFixture(Path source, Path target) throws IOException {

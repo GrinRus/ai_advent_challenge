@@ -121,15 +121,16 @@ public class GraphQueryService {
       params.put("sourceFqn", sourceFqn);
       params.put("targetFqn", targetFqn);
       params.put("relations", relationFilter.isEmpty() ? List.of() : List.copyOf(relationFilter));
-      params.put("depth", depth);
+      String depthPattern = depth > 0 ? ".." + depth : "";
       String query =
           """
           MATCH (a:Symbol {namespace:$namespace, fqn:$sourceFqn})
           MATCH (b:Symbol {namespace:$namespace, fqn:$targetFqn})
-          MATCH p=shortestPath((a)-[r*..$depth]-(b))
+          MATCH p=shortestPath((a)-[r*%s]-(b))
           WHERE $relations = [] OR ALL(rel IN relationships(p) WHERE type(rel) IN $relations)
           RETURN p
-          """;
+          """
+              .formatted(depthPattern);
       Result result = session.run(query, params);
       if (!result.hasNext()) {
         return new GraphNeighbors(List.of(), List.of());
