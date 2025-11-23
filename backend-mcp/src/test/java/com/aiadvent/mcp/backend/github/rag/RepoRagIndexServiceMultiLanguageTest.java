@@ -139,6 +139,9 @@ class RepoRagIndexServiceMultiLanguageTest {
     Map<String, Object> metadata = target.getMetadata();
     assertThat(metadata.get("ast_available")).isEqualTo(true);
     assertThat(metadata.get("symbol_fqn")).as("symbol_fqn present").isNotNull();
+    if ("java".equals(fixture.fixtureName())) {
+      assertThat(metadata.get("docstring")).as("docstring present for java fixture").isNotNull();
+    }
 
     ArgumentCaptor<List<RepoRagSymbolGraphEntity>> edgesCaptor =
         ArgumentCaptor.forClass(List.class);

@@ -237,6 +237,8 @@ class RepoRagSearchServiceTest {
         new GraphQueryService.GraphEdge("com.demo.Demo#run", "com.demo.Helper#call", "CALLS", "hash", 0);
     when(graphQueryService.neighbors(any(), any(), any(), any(), anyInt()))
         .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
+    when(graphQueryService.shortestPath(any(), any(), any(), any(), anyInt()))
+        .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
 
     RepoRagSearchService.SearchCommand command =
         new RepoRagSearchService.SearchCommand(
@@ -252,7 +254,7 @@ class RepoRagSearchServiceTest {
 
     assertThat(response.matches()).hasSize(1);
     Map<String, Object> metadata = response.matches().get(0).metadata();
-    assertThat(metadata).containsKey("graph_neighbors");
+    assertThat(metadata).containsKeys("graph_neighbors", "graph_path");
     @SuppressWarnings("unchecked")
     Map<String, Object> neighbors = (Map<String, Object>) metadata.get("graph_neighbors");
     assertThat(neighbors).isNotNull();
@@ -291,6 +293,8 @@ class RepoRagSearchServiceTest {
         new GraphQueryService.GraphEdge("com.demo.Demo#run", "com.demo.Helper#call", "CALLS", "hash", 0);
     when(graphQueryService.neighbors(any(), any(), any(), any(), anyInt()))
         .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
+    when(graphQueryService.shortestPath(any(), any(), any(), any(), anyInt()))
+        .thenReturn(new GraphQueryService.GraphNeighbors(List.of(sourceNode, targetNode), List.of(edge)));
 
     RepoRagSearchService.GlobalSearchCommand command =
         new RepoRagSearchService.GlobalSearchCommand(
@@ -306,7 +310,7 @@ class RepoRagSearchServiceTest {
 
     assertThat(response.matches()).hasSize(1);
     Map<String, Object> metadata = response.matches().get(0).metadata();
-    assertThat(metadata).containsKey("graph_neighbors");
+    assertThat(metadata).containsKeys("graph_neighbors", "graph_path");
     assertThat(response.appliedModules()).contains("graph.lens");
     verify(graphQueryService).neighbors(any(), any(), any(), any(), anyInt());
   }

@@ -501,37 +501,8 @@ public class RepoRagSearchService {
                     Set.of(),
                     12);
             if (!neighbors.nodes().isEmpty() || !neighbors.edges().isEmpty()) {
-              Map<String, Object> neighborPayload = new LinkedHashMap<>();
-              neighborPayload.put(
-                  "nodes",
-                  neighbors.nodes().stream()
-                      .map(
-                          node -> {
-                            Map<String, Object> map = new LinkedHashMap<>();
-                            map.put("fqn", node.fqn());
-                            map.put("file_path", node.filePath());
-                            map.put("kind", node.kind());
-                            map.put("visibility", node.visibility());
-                            map.put("line_start", node.lineStart());
-                            map.put("line_end", node.lineEnd());
-                            return map;
-                          })
-                      .toList());
-              neighborPayload.put(
-                  "edges",
-                  neighbors.edges().stream()
-                      .map(
-                          edge -> {
-                            Map<String, Object> map = new LinkedHashMap<>();
-                            map.put("from", edge.from());
-                            map.put("to", edge.to());
-                            map.put("relation", edge.relation());
-                            map.put("chunk_hash", edge.chunkHash());
-                            map.put("chunk_index", edge.chunkIndex());
-                            return map;
-                          })
-                      .toList());
-              metadata.put("graph_neighbors", neighborPayload);
+              metadata.put("graph_neighbors", graphPayload(neighbors));
+              addGraphPath(namespace, symbolFqn, neighbors, metadata);
               applied = true;
             }
           } catch (RuntimeException ex) {
@@ -573,37 +544,8 @@ public class RepoRagSearchService {
                     Set.of(),
                     12);
             if (!neighbors.nodes().isEmpty() || !neighbors.edges().isEmpty()) {
-              Map<String, Object> neighborPayload = new LinkedHashMap<>();
-              neighborPayload.put(
-                  "nodes",
-                  neighbors.nodes().stream()
-                      .map(
-                          node -> {
-                            Map<String, Object> map = new LinkedHashMap<>();
-                            map.put("fqn", node.fqn());
-                            map.put("file_path", node.filePath());
-                            map.put("kind", node.kind());
-                            map.put("visibility", node.visibility());
-                            map.put("line_start", node.lineStart());
-                            map.put("line_end", node.lineEnd());
-                            return map;
-                          })
-                      .toList());
-              neighborPayload.put(
-                  "edges",
-                  neighbors.edges().stream()
-                      .map(
-                          edge -> {
-                            Map<String, Object> map = new LinkedHashMap<>();
-                            map.put("from", edge.from());
-                            map.put("to", edge.to());
-                            map.put("relation", edge.relation());
-                            map.put("chunk_hash", edge.chunkHash());
-                            map.put("chunk_index", edge.chunkIndex());
-                            return map;
-                          })
-                      .toList());
-              metadata.put("graph_neighbors", neighborPayload);
+              metadata.put("graph_neighbors", graphPayload(neighbors));
+              addGraphPath(namespace, symbolFqn, neighbors, metadata);
               applied = true;
               used++;
             }
@@ -627,6 +569,69 @@ public class RepoRagSearchService {
   }
 
   private record GraphLensResult(List<Document> documents, boolean applied) {}
+
+  private Map<String, Object> graphPayload(GraphQueryService.GraphNeighbors neighbors) {
+    Map<String, Object> payload = new LinkedHashMap<>();
+    payload.put(
+        "nodes",
+        neighbors.nodes().stream()
+            .map(
+                node -> {
+                  Map<String, Object> map = new LinkedHashMap<>();
+                  map.put("fqn", node.fqn());
+                  map.put("file_path", node.filePath());
+                  map.put("kind", node.kind());
+                  map.put("visibility", node.visibility());
+                  map.put("line_start", node.lineStart());
+                  map.put("line_end", node.lineEnd());
+                  return map;
+                })
+            .toList());
+    payload.put(
+        "edges",
+        neighbors.edges().stream()
+            .map(
+                edge -> {
+                  Map<String, Object> map = new LinkedHashMap<>();
+                  map.put("from", edge.from());
+                  map.put("to", edge.to());
+                  map.put("relation", edge.relation());
+                  map.put("chunk_hash", edge.chunkHash());
+                  map.put("chunk_index", edge.chunkIndex());
+                  return map;
+                })
+            .toList());
+    return payload;
+  }
+
+  private void addGraphPath(
+      String namespace,
+      String sourceSymbol,
+      GraphQueryService.GraphNeighbors neighbors,
+      Map<String, Object> metadata) {
+    if (neighbors == null || CollectionUtils.isEmpty(neighbors.edges()) || graphQueryService == null) {
+      return;
+    }
+    String target =
+        neighbors.edges().stream()
+            .map(GraphQueryService.GraphEdge::to)
+            .filter(StringUtils::hasText)
+            .findFirst()
+            .orElse(null);
+    if (!StringUtils.hasText(target)) {
+      return;
+    }
+    try {
+      GraphQueryService.GraphNeighbors path =
+          graphQueryService.shortestPath(namespace, sourceSymbol, target, Set.of(), 6);
+      if (path != null
+          && (!CollectionUtils.isEmpty(path.nodes()) || !CollectionUtils.isEmpty(path.edges()))) {
+        metadata.put("graph_path", graphPayload(path));
+      }
+    } catch (RuntimeException ex) {
+      // ignore path failures
+    }
+  }
 
   private String asString(Object value) {
     if (value == null) {
