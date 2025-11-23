@@ -6,8 +6,13 @@ import java.util.Optional;
 
 public record AstFileContext(List<AstSymbolMetadata> symbols) {
 
+  /**
+   * Deprecated: prefer using {@link com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory}
+   * with injected TreeSitterParser/Analyzer to honor native loading/health.
+   */
+  @Deprecated
   public static AstFileContext create(String content, String language) {
-    return new TreeSitterParser().parse(content, language, null).orElse(null);
+    throw new IllegalStateException("Use AstFileContextFactory for AST parsing");
   }
 
   public Optional<AstSymbolMetadata> symbolForRange(int startLine, int endLine) {

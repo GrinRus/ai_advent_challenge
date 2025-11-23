@@ -8,7 +8,10 @@ import static org.mockito.Mockito.when;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
+import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
@@ -85,8 +88,13 @@ class RepoRagIndexServiceNeo4jE2ETest {
     when(analyzer.isEnabled()).thenReturn(true);
     when(analyzer.supportsLanguage(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
     when(analyzer.ensureLanguageLoaded(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
-
-    AstFileContextFactory astFactory = new AstFileContextFactory(analyzer, new TreeSitterParser());
+    when(analyzer.isNativeEnabled()).thenReturn(true);
+    LanguageRegistry languageRegistry = org.mockito.Mockito.mock(LanguageRegistry.class);
+    TreeSitterQueryRegistry queryRegistry = org.mockito.Mockito.mock(TreeSitterQueryRegistry.class);
+    TreeSitterLibraryLoader loader = org.mockito.Mockito.mock(TreeSitterLibraryLoader.class);
+    AstFileContextFactory astFactory =
+        new AstFileContextFactory(
+            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
     SymbolGraphWriter symbolGraphWriter =
         new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
     GraphSyncService graphSyncService =

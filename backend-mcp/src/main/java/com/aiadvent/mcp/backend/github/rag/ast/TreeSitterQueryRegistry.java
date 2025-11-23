@@ -49,7 +49,10 @@ public class TreeSitterQueryRegistry {
     try (InputStream input = resource.getInputStream()) {
       String source = new String(input.readAllBytes());
       return Optional.of(new Query(language, source));
-    } catch (IOException | QueryError | RuntimeException ex) {
+    } catch (QueryError ex) {
+      log.warn("Failed to load Tree-sitter query {} for {}: {}", fileName, languageId, ex.getMessage());
+      return Optional.empty();
+    } catch (IOException | RuntimeException ex) {
       log.warn("Failed to load Tree-sitter query {} for {}: {}", fileName, languageId, ex.getMessage());
       return Optional.empty();
     }

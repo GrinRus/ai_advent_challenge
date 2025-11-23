@@ -19,12 +19,17 @@ public class AstFileContextFactory {
   private final LanguageRegistry languageRegistry;
   private final TreeSitterQueryRegistry queryRegistry;
   private final TreeSitterParser parser;
+  private final TreeSitterAnalyzer analyzer;
 
   public AstFileContextFactory(
-      LanguageRegistry languageRegistry, TreeSitterQueryRegistry queryRegistry, TreeSitterParser parser) {
+      LanguageRegistry languageRegistry,
+      TreeSitterQueryRegistry queryRegistry,
+      TreeSitterParser parser,
+      TreeSitterAnalyzer analyzer) {
     this.languageRegistry = languageRegistry;
     this.queryRegistry = queryRegistry;
     this.parser = parser;
+    this.analyzer = analyzer;
   }
 
   public Supplier<AstFileContext> supplier(
@@ -38,11 +43,12 @@ public class AstFileContextFactory {
       log.debug("AST fallback: language missing for file {}", relativePath);
       return null;
     }
-    boolean nativeEnabled = true;
-    if (languageRegistry.language(language).isEmpty()) {
-      log.debug("AST fallback: unable to load Tree-sitter language {}, using heuristics for {}", language, relativePath);
-      nativeEnabled = false;
+    if (analyzer != null && (!analyzer.isEnabled() || !analyzer.supportsLanguage(language))) {
+      log.debug("AST fallback: Tree-sitter disabled or unsupported language {} for {}", language, relativePath);
+      return parser.parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty()).orElse(null);
     }
+    boolean nativeEnabled =
+        analyzer == null ? true : analyzer.ensureLanguageLoaded(language) && analyzer.isNativeEnabled();
     return parser.parse(content, language, relativePath, nativeEnabled, queries(language)).orElse(null);
   }
 

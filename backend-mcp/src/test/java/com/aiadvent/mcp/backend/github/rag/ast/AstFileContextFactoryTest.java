@@ -6,6 +6,9 @@ import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext;
 import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
+import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,14 +18,23 @@ class AstFileContextFactoryTest {
 
   private TreeSitterAnalyzer analyzer;
   private AstFileContextFactory factory;
+  private LanguageRegistry languageRegistry;
+  private TreeSitterQueryRegistry queryRegistry;
 
   @BeforeEach
   void setUp() {
     analyzer = mock(TreeSitterAnalyzer.class);
-    factory = new AstFileContextFactory(analyzer, new TreeSitterParser());
+    languageRegistry = mock(LanguageRegistry.class);
+    queryRegistry = mock(TreeSitterQueryRegistry.class);
+    TreeSitterLibraryLoader loader = mock(TreeSitterLibraryLoader.class);
+    factory =
+        new AstFileContextFactory(
+            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
     when(analyzer.isEnabled()).thenReturn(true);
     when(analyzer.supportsLanguage("java")).thenReturn(true);
     when(analyzer.ensureLanguageLoaded("java")).thenReturn(true);
+    when(analyzer.isNativeEnabled()).thenReturn(true);
+    when(languageRegistry.language("java")).thenReturn(java.util.Optional.empty());
   }
 
   @Test

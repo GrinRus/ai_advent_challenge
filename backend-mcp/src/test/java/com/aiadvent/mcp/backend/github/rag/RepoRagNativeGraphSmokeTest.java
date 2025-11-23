@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
+import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
@@ -116,7 +118,11 @@ class RepoRagNativeGraphSmokeTest {
         loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available for current arch");
     TreeSitterAnalyzer analyzer = new TreeSitterAnalyzer(properties, loader);
     RepoRagChunker chunker = new RepoRagChunker(properties);
-    AstFileContextFactory astFactory = new AstFileContextFactory(analyzer, new TreeSitterParser(loader));
+    LanguageRegistry languageRegistry = new LanguageRegistry(loader);
+    TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
+    AstFileContextFactory astFactory =
+        new AstFileContextFactory(
+            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
     SymbolGraphWriter symbolGraphWriter = new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
     GraphSyncService graphSyncService = new GraphSyncService(driver, properties, new SimpleMeterRegistry());
 
