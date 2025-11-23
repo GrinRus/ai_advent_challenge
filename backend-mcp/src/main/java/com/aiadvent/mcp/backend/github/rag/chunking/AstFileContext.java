@@ -1,14 +1,13 @@
 package com.aiadvent.mcp.backend.github.rag.chunking;
 
-import java.util.List;
-
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
 import java.util.List;
 import java.util.Optional;
 
 public record AstFileContext(List<AstSymbolMetadata> symbols) {
 
   public static AstFileContext create(String content, String language) {
-    return null;
+    return new TreeSitterParser().parse(content, language, null).orElse(null);
   }
 
   public Optional<AstSymbolMetadata> symbolForRange(int startLine, int endLine) {

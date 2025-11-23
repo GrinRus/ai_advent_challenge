@@ -31,6 +31,7 @@ public class TreeSitterLibraryLoader {
   private final ResourceLoader resourceLoader;
   private final TreeSitterPlatform platform;
   private final Map<String, LoadedLibrary> loadedLibraries = new ConcurrentHashMap<>();
+  private volatile boolean coreLoaded = false;
 
   public TreeSitterLibraryLoader(GitHubRagProperties properties, ResourceLoader resourceLoader) {
     this.properties = properties;
@@ -58,7 +59,34 @@ public class TreeSitterLibraryLoader {
    * @return true if runtime can be used.
    */
   public boolean ensureCoreLibraryLoaded() {
-    return true;
+    if (coreLoaded) {
+      return true;
+    }
+    Resource resource = resolveCoreResource();
+    if (resource == null || !resource.exists()) {
+      log.warn(
+          "Tree-sitter core library not found for platform {}-{} at configured path",
+          platform.os(),
+          platform.arch());
+      return false;
+    }
+    try (InputStream input = resource.getInputStream()) {
+      Path tempFile =
+          Files.createTempFile("treesitter-core-", platform.libraryExtension());
+      Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
+      tempFile.toFile().deleteOnExit();
+      SymbolLookup.libraryLookup(tempFile, Arena.global());
+      coreLoaded = true;
+      log.info(
+          "Loaded Tree-sitter core library {} for platform {}-{}",
+          tempFile.toAbsolutePath(),
+          platform.os(),
+          platform.arch());
+      return true;
+    } catch (IOException | UnsatisfiedLinkError | RuntimeException ex) {
+      log.warn("Failed to load Tree-sitter core library: {}", ex.getMessage());
+      return false;
+    }
   }
 
   private LoadedLibrary loadInternal(String languageId) {
@@ -126,6 +154,34 @@ public class TreeSitterLibraryLoader {
       return new ClassPathResource(resourcePath);
     }
     Path fullPath = Path.of(basePath, platform.os(), platform.arch(), language.resolveLibraryFile(platform));
+    return new FileSystemResource(fullPath);
+  }
+
+  private Resource resolveCoreResource() {
+    String configuredPath = properties.getAst().getLibraryPath();
+    String basePath;
+    boolean classpath;
+    if (!StringUtils.hasText(configuredPath) || configuredPath.startsWith("classpath:")) {
+      classpath = true;
+      basePath =
+          StringUtils.hasText(configuredPath)
+              ? configuredPath.substring("classpath:".length())
+              : "treesitter";
+    } else {
+      classpath = false;
+      basePath = configuredPath;
+    }
+    String resourcePath =
+        normalize(basePath)
+            + platform.os()
+            + "/"
+            + platform.arch()
+            + "/"
+            + platform.libraryFileName("tree-sitter");
+    if (classpath) {
+      return new ClassPathResource(resourcePath);
+    }
+    Path fullPath = Path.of(basePath, platform.os(), platform.arch(), platform.libraryFileName("tree-sitter"));
     return new FileSystemResource(fullPath);
   }
 

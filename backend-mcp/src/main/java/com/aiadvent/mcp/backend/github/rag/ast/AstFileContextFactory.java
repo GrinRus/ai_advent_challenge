@@ -16,11 +16,14 @@ public class AstFileContextFactory {
 
   private static final Logger log = LoggerFactory.getLogger(AstFileContextFactory.class);
 
-  private final TreeSitterAnalyzer analyzer;
+  private final LanguageRegistry languageRegistry;
+  private final TreeSitterQueryRegistry queryRegistry;
   private final TreeSitterParser parser;
 
-  public AstFileContextFactory(TreeSitterAnalyzer analyzer, TreeSitterParser parser) {
-    this.analyzer = analyzer;
+  public AstFileContextFactory(
+      LanguageRegistry languageRegistry, TreeSitterQueryRegistry queryRegistry, TreeSitterParser parser) {
+    this.languageRegistry = languageRegistry;
+    this.queryRegistry = queryRegistry;
     this.parser = parser;
   }
 
@@ -35,23 +38,23 @@ public class AstFileContextFactory {
       log.debug("AST fallback: language missing for file {}", relativePath);
       return null;
     }
-    if (!analyzer.isEnabled()) {
-      log.debug("AST fallback: analyzer disabled, using heuristics for {} ({})", relativePath, language);
-      return null;
+    boolean nativeEnabled = true;
+    if (languageRegistry.language(language).isEmpty()) {
+      log.debug("AST fallback: unable to load Tree-sitter language {}, using heuristics for {}", language, relativePath);
+      nativeEnabled = false;
     }
-    if (!analyzer.supportsLanguage(language)) {
-      log.debug("AST fallback: language {} not supported for {}", language, relativePath);
-      return null;
-    }
-    if (!analyzer.ensureLanguageLoaded(language)) {
-      log.debug("AST fallback: unable to load Tree-sitter grammar for {} ({})", relativePath, language);
-      return null;
-    }
-    return parser.parse(content, language, relativePath, analyzer.isNativeEnabled()).orElse(null);
+    return parser.parse(content, language, relativePath, nativeEnabled, queries(language)).orElse(null);
   }
 
-  public Optional<AstFileContext> optional(Path absolutePath, String relativePath, String language, String content) {
+  public Optional<AstFileContext> optional(
+      Path absolutePath, String relativePath, String language, String content) {
     return Optional.ofNullable(create(absolutePath, relativePath, language, content));
   }
 
+  private TreeSitterQueryRegistry.LanguageQueries queries(String language) {
+    return languageRegistry
+        .language(language)
+        .map(lang -> queryRegistry.queries(lang, language.toLowerCase(java.util.Locale.ROOT)))
+        .orElse(TreeSitterQueryRegistry.empty());
+  }
 }

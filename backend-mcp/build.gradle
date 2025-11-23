@@ -85,7 +85,6 @@ def treeSitterLanguages = [
 
 def treeSitterOutputDir = layout.buildDirectory.dir("treesitter/${treeSitterOs}/${treeSitterArch}")
 def javaTreeSitterLibDir = layout.buildDirectory.dir("generated/java-tree-sitter/${treeSitterOs}/${treeSitterArch}")
-
 treeSitterLanguages.each { language ->
     def capitalized = language.name.capitalize()
     tasks.register("treeSitterCompile${capitalized}") {
@@ -169,4 +168,24 @@ tasks.named('processResources') {
 tasks.named('bootJar') {
     dependsOn syncTreeSitterResources
     dependsOn syncJavaTreeSitterCore
+}
+
+sourceSets {
+    main {
+        java {
+            def bindingDirs = [
+                    "treesitter/tree-sitter-java/bindings/java/src/main/java",
+                    "treesitter/tree-sitter-kotlin/bindings/java/src/main/java",
+                    "treesitter/tree-sitter-typescript/bindings/java/src/main/java",
+                    "treesitter/tree-sitter-javascript/bindings/java/src/main/java",
+                    "treesitter/tree-sitter-python/bindings/java/src/main/java",
+                    "treesitter/tree-sitter-go/bindings/java/src/main/java"
+            ]
+            bindingDirs.each { dir ->
+                if (file(dir).exists()) {
+                    srcDir dir
+                }
+            }
+        }
+    }
 }

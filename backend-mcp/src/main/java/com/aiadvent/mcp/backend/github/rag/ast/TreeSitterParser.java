@@ -2,6 +2,15 @@ package com.aiadvent.mcp.backend.github.rag.ast;
 
 import com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext;
 import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry.LanguageQueries;
+import io.github.treesitter.jtreesitter.InputEncoding;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Tree;
+import io.github.treesitter.jtreesitter.Query;
+import io.github.treesitter.jtreesitter.QueryCapture;
+import io.github.treesitter.jtreesitter.QueryCursor;
+import io.github.treesitter.jtreesitter.QueryMatch;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,13 +34,21 @@ import org.springframework.util.StringUtils;
 @Component
 public class TreeSitterParser {
   private final TreeSitterLibraryLoader libraryLoader;
+  private final LanguageRegistry languageRegistry;
 
   /** Default constructor for Spring. Native parsing uses built-in java-tree-sitter grammars. */
   public TreeSitterParser() {
     this.libraryLoader = null;
+    this.languageRegistry = null;
   }
 
   public TreeSitterParser(TreeSitterLibraryLoader libraryLoader) {
+    this.libraryLoader = libraryLoader;
+    this.languageRegistry = new LanguageRegistry(libraryLoader);
+  }
+
+  public TreeSitterParser(LanguageRegistry languageRegistry, TreeSitterLibraryLoader libraryLoader) {
+    this.languageRegistry = languageRegistry;
     this.libraryLoader = libraryLoader;
   }
   private static final Pattern CALL_PATTERN = Pattern.compile("\\b([A-Za-z_][\\w$]*)\\s*\\(");
@@ -67,20 +84,29 @@ public class TreeSitterParser {
           "match");
 
   public Optional<AstFileContext> parse(String content, String language, String relativePath) {
-    return parse(content, language, relativePath, false);
+    return parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty());
   }
 
   public Optional<AstFileContext> parse(
       String content, String language, String relativePath, boolean nativeEnabled) {
+    return parse(content, language, relativePath, nativeEnabled, TreeSitterQueryRegistry.empty());
+  }
+
+  public Optional<AstFileContext> parse(
+      String content,
+      String language,
+      String relativePath,
+      boolean nativeEnabled,
+      LanguageQueries queries) {
     if (nativeEnabled) {
-      Optional<AstFileContext> nativeAst = parseNative(content, language, relativePath);
+      Optional<AstFileContext> nativeAst = parseNative(content, language, relativePath, queries);
       if (nativeAst.isPresent()) {
         return nativeAst;
       }
     }
     String normalizedLanguage = language != null ? language.toLowerCase(Locale.ROOT) : "";
     String[] lines = content != null ? content.split("\\n", -1) : new String[0];
-    String packageName = detectPackage(lines);
+    String packageName = detectModuleOrPackage(lines, relativePath);
     List<String> docBuffer = new ArrayList<>();
     List<String> imports = collectImports(lines);
     List<SymbolBuilder> builders = new ArrayList<>();
@@ -368,6 +394,22 @@ public class TreeSitterParser {
     return null;
   }
 
+  private String detectModuleOrPackage(String[] lines, String relativePath) {
+    String pkg = detectPackage(lines);
+    if (StringUtils.hasText(pkg)) {
+      return pkg;
+    }
+    if (!StringUtils.hasText(relativePath)) {
+      return null;
+    }
+    String sanitized = relativePath.replace('\\', '/');
+    int idx = sanitized.lastIndexOf('.');
+    if (idx > 0) {
+      sanitized = sanitized.substring(0, idx);
+    }
+    return sanitized.replace('/', '.');
+  }
+
   private String buildFqn(String packageName, String containerFqn, String symbolName, boolean isContainer, String signature) {
     String base = StringUtils.hasText(packageName) ? packageName : null;
     if (StringUtils.hasText(containerFqn)) {
@@ -451,8 +493,688 @@ public class TreeSitterParser {
   }
 
   private Optional<AstFileContext> parseNative(String content, String language, String relativePath) {
-    // Until full jtreesitter AST extraction is wired, fall back to heuristic parsing but keep the
-    // native code path explicit to simplify future replacement.
-    return parse(content, language, relativePath, false);
+    return parseNative(content, language, relativePath, TreeSitterQueryRegistry.empty());
+  }
+
+  private Optional<AstFileContext> parseNative(
+      String content, String language, String relativePath, LanguageQueries queries) {
+    if ((libraryLoader == null && languageRegistry == null) || !StringUtils.hasText(language) || content == null) {
+      return Optional.empty();
+    }
+    Optional<io.github.treesitter.jtreesitter.Language> lang =
+        languageRegistry != null
+            ? languageRegistry.language(language)
+            : libraryLoader != null
+                ? libraryLoader.loadLanguage(language).map(TreeSitterLibraryLoader.LoadedLibrary::languageHandle)
+                : Optional.empty();
+    if (lang.isEmpty()) {
+      return Optional.empty();
+    }
+    try (Parser parser = new Parser(lang.get())) {
+      Optional<Tree> tree = parser.parse(content, InputEncoding.UTF_8);
+      if (tree.isEmpty()) {
+        return Optional.empty();
+      }
+      Tree parsedTree = tree.get();
+      if (parsedTree.getRootNode() == null || parsedTree.getRootNode().hasError()) {
+        return Optional.empty();
+      }
+      NativeAstExtractor extractor =
+          new NativeAstExtractor(
+              parsedTree.getRootNode(),
+              content,
+              language,
+              relativePath,
+              detectPackage(content.split("\\n", -1)),
+              queries);
+      AstFileContext nativeContext = extractor.extract();
+      if (nativeContext != null && nativeContext.symbols() != null && !nativeContext.symbols().isEmpty()) {
+        return Optional.of(nativeContext);
+      }
+      return Optional.empty();
+    } catch (RuntimeException ex) {
+      return Optional.empty();
+    }
+  }
+
+  /**
+   * Lightweight native AST extractor that walks the Tree-sitter tree and builds symbol metadata
+   * using generic heuristics. If we fail to find symbols, callers fall back to text heuristics.
+   */
+  private final class NativeAstExtractor {
+    private final Node root;
+    private final String content;
+    private final String language;
+    private final String relativePath;
+    private final String packageName;
+    private final List<String> imports;
+    private final LanguageQueries queries;
+    private final Map<String, String> importIndex;
+    private final String[] contentLines;
+
+    NativeAstExtractor(
+        Node root,
+        String content,
+        String language,
+        String relativePath,
+        String packageName,
+        LanguageQueries queries) {
+      this.root = root;
+      this.content = content;
+      this.language = language != null ? language.toLowerCase(Locale.ROOT) : "";
+      this.relativePath = relativePath;
+      this.packageName = packageName;
+      this.imports = collectImports(content.split("\\n", -1));
+      this.queries = queries != null ? queries : TreeSitterQueryRegistry.empty();
+      this.importIndex = buildImportIndex(this.imports);
+      this.contentLines = content != null ? content.split("\\n", -1) : new String[0];
+    }
+
+    AstFileContext extract() {
+      List<SymbolBuilder> builders = new ArrayList<>();
+      if (queries.symbols().isPresent()) {
+        builders.addAll(extractSymbolsViaQueries(root, queries.symbols().get()));
+      } else {
+        Deque<String> containerStack = new ArrayDeque<>();
+        walk(root, builders, containerStack);
+      }
+      if (builders.isEmpty()) {
+        return null;
+      }
+      if (queries.calls().isPresent()) {
+        enrichCallsWithQueries(root, queries.calls().get(), builders);
+      }
+      if (queries.heritage().isPresent()) {
+        Map<String, SymbolBuilder> byName =
+            builders.stream()
+                .collect(java.util.stream.Collectors.toMap(b -> b.name, b -> b, (a, b) -> a, java.util.LinkedHashMap::new));
+        enrichHeritageWithQueries(root, queries.heritage().get(), byName);
+      }
+      if (queries.fields().isPresent()) {
+        enrichFieldsWithQueries(root, queries.fields().get(), builders);
+      }
+      assignParents(builders);
+
+      List<AstSymbolMetadata> result = new ArrayList<>();
+      Map<String, SymbolBuilder> byFqn = new java.util.LinkedHashMap<>();
+      for (SymbolBuilder builder : builders) {
+        if (!StringUtils.hasText(builder.symbolFqn)) {
+          continue;
+        }
+        int endLine = builder.endLine > 0 ? builder.endLine : builder.startLine;
+        builder.endLine = endLine;
+        byFqn.put(builder.symbolFqn, builder);
+      }
+      for (SymbolBuilder builder : builders) {
+        if (builder.parentFqn != null && StringUtils.hasText(builder.parentFqn)) {
+          SymbolBuilder parent = byFqn.get(builder.parentFqn);
+          if (parent != null) {
+            parent.callsOut.addAll(builder.callsOut);
+          }
+        }
+      }
+      for (SymbolBuilder builder : builders) {
+        result.add(
+            new AstSymbolMetadata(
+                builder.symbolFqn,
+                builder.kind,
+                builder.visibility,
+                builder.signature,
+                builder.docstring,
+                builder.isTest,
+                builder.imports,
+                List.copyOf(builder.callsOut),
+                builder.callsIn,
+                List.copyOf(builder.implementsTypes),
+                List.copyOf(builder.readsFields),
+                List.copyOf(builder.usesTypes),
+                builder.startLine,
+                builder.endLine > 0 ? builder.endLine : builder.startLine));
+      }
+      return new AstFileContext(List.copyOf(result));
+    }
+
+    private List<SymbolBuilder> extractSymbolsViaQueries(Node rootNode, Query symbolsQuery) {
+      List<SymbolBuilder> builders = new ArrayList<>();
+      QueryCursor cursor = new QueryCursor();
+      for (QueryMatch match : cursor.matches(symbolsQuery, rootNode)) {
+        Node decl = null;
+        Node nameNode = null;
+        Node paramsNode = null;
+        for (QueryCapture capture : match.getCaptures()) {
+          String capName = symbolsQuery.getCaptureName(capture.getIndex());
+          if ("symbol.decl".equals(capName)) {
+            decl = capture.getNode();
+          } else if ("symbol.name".equals(capName)) {
+            nameNode = capture.getNode();
+          } else if ("symbol.params".equals(capName)) {
+            paramsNode = capture.getNode();
+          }
+        }
+        if (decl == null || nameNode == null) {
+          continue;
+        }
+        String name = cleanupIdentifier(nameNode.getText());
+        if (!StringUtils.hasText(name)) {
+          continue;
+        }
+        SymbolBuilder builder = new SymbolBuilder();
+        builder.name = name;
+        builder.kind = deriveKind(decl.getType());
+        builder.signature = buildSignature(name, paramsNode);
+        builder.startLine = decl.getStartPoint().row() + 1;
+        builder.endLine = decl.getEndPoint().row() + 1;
+        builder.docstring = findDocstring(builder.startLine);
+        builder.visibility = inferVisibility(decl.getText());
+        builder.imports = imports;
+        builder.isTest = isTestSymbol(relativePath, name);
+        builder.callsOut = new LinkedHashSet<>();
+        builder.implementsTypes = new LinkedHashSet<>();
+        builder.readsFields = new LinkedHashSet<>();
+        builder.usesTypes = new LinkedHashSet<>();
+        builder.callsIn = List.of();
+        builder.parentFqn = null;
+        builder.symbolFqn =
+            buildFqn(packageName, null, builder.name, isContainer(builder.kind), builder.signature);
+        // populate local symbol index
+        builders.add(builder);
+      }
+      return builders;
+    }
+
+    private void enrichCallsWithQueries(Node rootNode, Query callsQuery, List<SymbolBuilder> builders) {
+      QueryCursor cursor = new QueryCursor();
+      for (QueryMatch match : cursor.matches(callsQuery, rootNode)) {
+        Node callNode = null;
+        Node nameNode = null;
+        for (QueryCapture capture : match.getCaptures()) {
+          String capName = callsQuery.getCaptureName(capture.getIndex());
+          if ("call.expr".equals(capName)) {
+            callNode = capture.getNode();
+          } else if ("call.name".equals(capName)) {
+            nameNode = capture.getNode();
+          }
+        }
+        if (callNode == null || nameNode == null) {
+          continue;
+        }
+        String name = cleanupIdentifier(nameNode.getText());
+        SymbolBuilder owner = findOwner(builders, callNode);
+        if (owner != null && StringUtils.hasText(name)) {
+          String resolved = resolveReference(name, builders);
+          if (StringUtils.hasText(resolved)) {
+            owner.callsOut.add(resolved);
+          }
+        }
+      }
+    }
+
+    private void enrichHeritageWithQueries(Node rootNode, Query heritageQuery, Map<String, SymbolBuilder> byName) {
+      QueryCursor cursor = new QueryCursor();
+      for (QueryMatch match : cursor.matches(heritageQuery, rootNode)) {
+        Node childNode = null;
+        Node baseNode = null;
+        for (QueryCapture capture : match.getCaptures()) {
+          String capName = heritageQuery.getCaptureName(capture.getIndex());
+          if ("heritage.child".equals(capName)) {
+            childNode = capture.getNode();
+          } else if ("heritage.base".equals(capName)) {
+            baseNode = capture.getNode();
+          }
+        }
+        if (childNode == null || baseNode == null) {
+          continue;
+        }
+        String child = cleanupIdentifier(childNode.getText());
+        String base = cleanupIdentifier(baseNode.getText());
+        SymbolBuilder builder = byName.get(child);
+        if (builder != null && StringUtils.hasText(base)) {
+          String resolved = resolveReference(base, byName.values().stream().toList());
+          if (StringUtils.hasText(resolved)) {
+            builder.implementsTypes.add(resolved);
+          }
+        }
+      }
+    }
+
+    private void enrichFieldsWithQueries(Node rootNode, Query fieldsQuery, List<SymbolBuilder> builders) {
+      QueryCursor cursor = new QueryCursor();
+      for (QueryMatch match : cursor.matches(fieldsQuery, rootNode)) {
+        Node accessNode = null;
+        Node fieldNode = null;
+        for (QueryCapture capture : match.getCaptures()) {
+          String capName = fieldsQuery.getCaptureName(capture.getIndex());
+          if ("field.access".equals(capName)) {
+            accessNode = capture.getNode();
+          } else if ("field.name".equals(capName)) {
+            fieldNode = capture.getNode();
+          }
+        }
+        if (accessNode == null || fieldNode == null) {
+          continue;
+        }
+        String field = cleanupIdentifier(fieldNode.getText());
+        SymbolBuilder owner = findOwner(builders, accessNode);
+        if (owner != null && StringUtils.hasText(field)) {
+          String resolved = resolveReference(field, builders);
+          if (StringUtils.hasText(resolved)) {
+            owner.readsFields.add(resolved);
+          }
+        }
+      }
+    }
+
+    private SymbolBuilder findOwner(List<SymbolBuilder> builders, Node node) {
+      int start = node.getStartPoint().row() + 1;
+      int end = node.getEndPoint().row() + 1;
+      SymbolBuilder best = null;
+      for (SymbolBuilder builder : builders) {
+        if (builder.startLine <= start && builder.endLine >= end) {
+          if (best == null || span(builder) < span(best)) {
+            best = builder;
+          }
+        }
+      }
+      return best;
+    }
+
+    private void assignParents(List<SymbolBuilder> builders) {
+      List<SymbolBuilder> containers = builders.stream().filter(b -> isContainer(b.kind)).toList();
+      for (SymbolBuilder builder : builders) {
+        if (isContainer(builder.kind)) {
+          continue;
+        }
+        SymbolBuilder parent = findOwner(containers, builder.startLine, builder.endLine);
+        if (parent != null) {
+          builder.parentFqn = parent.symbolFqn;
+          builder.symbolFqn = buildFqn(packageName, parent.symbolFqn, builder.name, false, builder.signature);
+        }
+      }
+    }
+
+    private SymbolBuilder findOwner(List<SymbolBuilder> containers, int start, int end) {
+      SymbolBuilder best = null;
+      for (SymbolBuilder container : containers) {
+        if (container.startLine <= start && container.endLine >= end) {
+          if (best == null || span(container) < span(best)) {
+            best = container;
+          }
+        }
+      }
+      return best;
+    }
+
+    private String deriveKind(String declType) {
+      String lower = declType != null ? declType.toLowerCase(Locale.ROOT) : "";
+      if (lower.contains("interface")) {
+        return "interface";
+      }
+      if (lower.contains("enum")) {
+        return "enum";
+      }
+      if (lower.contains("class")) {
+        return "class";
+      }
+      if (lower.contains("object")) {
+        return "object";
+      }
+      if (lower.contains("function")) {
+        return "function";
+      }
+      if (lower.contains("method")) {
+        return "method";
+      }
+      if (lower.contains("constructor")) {
+        return "constructor";
+      }
+      return "symbol";
+    }
+
+    private String buildSignature(String name, Node paramsNode) {
+      if (paramsNode == null) {
+        return name + "()";
+      }
+      String params = paramsNode.getText();
+      return (name + "(" + params.replaceAll("[\\r\\n]+", " ").trim() + ")").replaceAll("\\s+", " ");
+    }
+
+    private String findDocstring(int startLine) {
+      if (contentLines.length == 0 || startLine <= 1) {
+        return null;
+      }
+      List<String> buffer = new ArrayList<>();
+      for (int line = startLine - 2; line >= 0; line--) {
+        String trimmed = contentLines[line].trim();
+        if (trimmed.isEmpty()) {
+          if (!buffer.isEmpty()) {
+            break;
+          }
+          continue;
+        }
+        if (trimmed.startsWith("///")
+            || trimmed.startsWith("//")
+            || trimmed.startsWith("#")
+            || trimmed.startsWith("/*")
+            || trimmed.startsWith("*")
+            || trimmed.startsWith("\"\"\"")
+            || trimmed.startsWith("'''")) {
+          buffer.add(trimmed);
+        } else {
+          break;
+        }
+      }
+      if (buffer.isEmpty()) {
+        return null;
+      }
+      java.util.Collections.reverse(buffer);
+      return buffer.stream()
+          .map(this::cleanDocLine)
+          .filter(StringUtils::hasText)
+          .reduce((a, b) -> a + "\n" + b)
+          .orElse(null);
+    }
+
+    private String cleanDocLine(String trimmed) {
+      String sanitized = trimmed.replaceAll("^(?:/\\*\\*?|//|#|\\*|\"\"\"|''')\\s*", "");
+      if (sanitized.endsWith("*/")) {
+        sanitized = sanitized.substring(0, sanitized.length() - 2);
+      }
+      if (sanitized.endsWith("\"\"\"")) {
+        sanitized = sanitized.substring(0, sanitized.length() - 3);
+      }
+      if (sanitized.endsWith("'''")) {
+        sanitized = sanitized.substring(0, sanitized.length() - 3);
+      }
+      return sanitized.trim();
+    }
+
+    private Map<String, String> buildImportIndex(List<String> imports) {
+      Map<String, String> map = new java.util.LinkedHashMap<>();
+      for (String imp : imports) {
+        if (!StringUtils.hasText(imp)) {
+          continue;
+        }
+        String cleaned = imp.replace("import", " ").replace("from", " ").replace(";", " ").trim();
+        cleaned = cleaned.replaceAll("\\{", " ").replaceAll("}", " ");
+        String[] tokens = cleaned.split(",");
+        for (String token : tokens) {
+          String t = token.trim();
+          if (!StringUtils.hasText(t)) {
+            continue;
+          }
+          String[] parts = t.split("\\s+");
+          String candidate = parts[0];
+          if (candidate.contains(".")) {
+            String shortName = candidate.substring(candidate.lastIndexOf('.') + 1);
+            map.put(shortName, candidate);
+          } else {
+            map.putIfAbsent(candidate, candidate);
+          }
+        }
+      }
+      return map;
+    }
+
+    private String resolveReference(String name, List<SymbolBuilder> builders) {
+      Map<String, String> local = new java.util.LinkedHashMap<>();
+      for (SymbolBuilder builder : builders) {
+        if (StringUtils.hasText(builder.name) && StringUtils.hasText(builder.symbolFqn)) {
+          local.putIfAbsent(builder.name, builder.symbolFqn);
+        }
+      }
+      return resolveReference(name, local.values().stream().toList(), local);
+    }
+
+    private String resolveReference(String name, java.util.Collection<String> knownFqns) {
+      Map<String, String> local = new java.util.LinkedHashMap<>();
+      for (String fqn : knownFqns) {
+        if (StringUtils.hasText(fqn)) {
+          String shortName = fqn.contains("#") || fqn.contains(".")
+              ? fqn.substring(fqn.contains("#") ? fqn.lastIndexOf('#') + 1 : fqn.lastIndexOf('.') + 1)
+              : fqn;
+          local.putIfAbsent(shortName, fqn);
+        }
+      }
+      return resolveReference(name, knownFqns, local);
+    }
+
+    private String resolveReference(String name, java.util.Collection<String> knownFqns, Map<String, String> localMap) {
+      if (!StringUtils.hasText(name)) {
+        return null;
+      }
+      String shortName = cleanupIdentifier(name);
+      if (localMap.containsKey(shortName)) {
+        return localMap.get(shortName);
+      }
+      if (importIndex.containsKey(shortName)) {
+        return importIndex.get(shortName);
+      }
+      if (StringUtils.hasText(packageName)) {
+        return packageName + "." + shortName;
+      }
+      return null;
+    }
+
+    private void walk(Node node, List<SymbolBuilder> builders, Deque<String> containerStack) {
+      if (node == null) {
+        return;
+      }
+      String type = node.getType();
+      boolean isContainer = isContainerType(type);
+      boolean isCallable = isCallableType(type);
+      if (isContainer || isCallable) {
+        String name = extractNodeName(node);
+        if (StringUtils.hasText(name)) {
+          SymbolBuilder builder = new SymbolBuilder();
+          builder.kind = isContainer ? normalizeContainerKind(type) : "method";
+          builder.name = name;
+          builder.signature = buildSignature(node, name, isContainer);
+          builder.startLine = node.getStartPoint().row() + 1;
+          builder.endLine = node.getEndPoint().row() + 1;
+          builder.docstring = null;
+          builder.visibility = inferVisibility(node.getText());
+          builder.imports = imports;
+          builder.isTest = isTestSymbol(relativePath, name);
+          builder.callsOut = new LinkedHashSet<>();
+          collectCallsFromAst(node, builder.callsOut);
+          if (builder.callsOut.isEmpty()) {
+            builder.callsOut.addAll(collectCalls(node.getText()));
+          }
+          builder.implementsTypes = new LinkedHashSet<>(detectInheritance(node.getText(), language));
+          collectInheritanceFromAst(node, builder.implementsTypes);
+          builder.readsFields = new LinkedHashSet<>(detectFieldReads(node.getText()));
+          collectFieldReadsFromAst(node, builder.readsFields);
+          builder.usesTypes = List.of();
+          builder.callsIn = List.of();
+          builder.parentFqn = containerStack.peek();
+          String containerFqn = containerStack.peek();
+          builder.symbolFqn = buildFqn(packageName, containerFqn, name, isContainer, builder.signature);
+          builders.add(builder);
+          if (isContainer) {
+            containerStack.push(builder.symbolFqn);
+            node.getNamedChildren().forEach(child -> walk(child, builders, containerStack));
+            containerStack.pop();
+            return;
+          }
+        }
+      }
+      node.getNamedChildren().forEach(child -> walk(child, builders, containerStack));
+    }
+
+    private String extractNodeName(Node node) {
+      return node.getChildByFieldName("name").map(Node::getText).orElseGet(() -> {
+        for (Node child : node.getNamedChildren()) {
+          String t = child.getType();
+          if ("identifier".equals(t) || t.endsWith("identifier") || t.equals("type_identifier")) {
+            return child.getText();
+          }
+        }
+        return null;
+      });
+    }
+
+    private String buildSignature(Node node, String name, boolean isContainer) {
+      if (isContainer) {
+        return name;
+      }
+      return name + extractArgs(node);
+    }
+
+    private String extractArgs(Node node) {
+      return node.getChildByFieldName("parameters")
+          .map(param -> "(" + param.getText().replaceAll("\\s+", " ").trim() + ")")
+          .orElse("()");
+    }
+
+    private boolean isContainerType(String type) {
+      String lower = type.toLowerCase(Locale.ROOT);
+      return lower.contains("class")
+          || lower.contains("interface")
+          || lower.contains("enum")
+          || lower.contains("record")
+          || lower.contains("struct")
+          || lower.contains("trait");
+    }
+
+    private boolean isCallableType(String type) {
+      String lower = type.toLowerCase(Locale.ROOT);
+      return lower.contains("function")
+          || lower.contains("method")
+          || lower.contains("constructor")
+          || lower.contains("lambda")
+          || lower.contains("arrow_function");
+    }
+
+    private String normalizeContainerKind(String type) {
+      String lower = type.toLowerCase(Locale.ROOT);
+      if (lower.contains("interface")) {
+        return "interface";
+      }
+      if (lower.contains("enum")) {
+        return "enum";
+      }
+      if (lower.contains("record")) {
+        return "record";
+      }
+      if (lower.contains("struct")) {
+        return "struct";
+      }
+      return "class";
+    }
+
+    private Set<String> collectCalls(String text) {
+      Set<String> calls = new LinkedHashSet<>();
+      Matcher matcher = CALL_PATTERN.matcher(text);
+      while (matcher.find()) {
+        String candidate = matcher.group(1);
+        if (!CALL_KEYWORDS.contains(candidate)) {
+          calls.add(candidate);
+        }
+      }
+      return calls;
+    }
+
+    private void collectCallsFromAst(Node node, Set<String> target) {
+      if (node == null) {
+        return;
+      }
+      String type = node.getType().toLowerCase(Locale.ROOT);
+      boolean isCall =
+          type.contains("call")
+              || type.contains("invocation")
+              || type.contains("constructor_invocation")
+              || type.contains("new_expression")
+              || type.contains("decorator");
+      if (isCall) {
+        String name = extractCallableName(node);
+        if (StringUtils.hasText(name) && !CALL_KEYWORDS.contains(name)) {
+          target.add(name);
+        }
+      }
+      for (Node child : node.getNamedChildren()) {
+        collectCallsFromAst(child, target);
+      }
+    }
+
+    private String extractCallableName(Node node) {
+      if (node == null) {
+        return null;
+      }
+      Optional<Node> fn =
+          node.getChildByFieldName("function")
+              .or(() -> node.getChildByFieldName("name"))
+              .or(() -> node.getChildByFieldName("member"));
+      if (fn.isPresent()) {
+        return cleanupIdentifier(fn.get().getText());
+      }
+      for (Node child : node.getNamedChildren()) {
+        String t = child.getType().toLowerCase(Locale.ROOT);
+        if (t.contains("identifier") || t.contains("property_identifier")) {
+          return cleanupIdentifier(child.getText());
+        }
+      }
+      return null;
+    }
+
+    private void collectInheritanceFromAst(Node node, Set<String> target) {
+      if (node == null) {
+        return;
+      }
+      String type = node.getType().toLowerCase(Locale.ROOT);
+      boolean isHeritage =
+          type.contains("heritage_clause")
+              || type.contains("superclass")
+              || type.contains("interface_list")
+              || type.contains("implements_clause")
+              || type.contains("extends_clause");
+      if (isHeritage) {
+        for (Node child : node.getNamedChildren()) {
+          String t = child.getType().toLowerCase(Locale.ROOT);
+          if (t.contains("identifier") || t.contains("type_identifier")) {
+            target.add(cleanupIdentifier(child.getText()));
+          }
+        }
+      }
+      for (Node child : node.getNamedChildren()) {
+        collectInheritanceFromAst(child, target);
+      }
+    }
+
+    private void collectFieldReadsFromAst(Node node, Set<String> target) {
+      if (node == null) {
+        return;
+      }
+      String type = node.getType().toLowerCase(Locale.ROOT);
+      if (type.contains("field_access") || type.contains("member_expression")) {
+        String field =
+            node.getChildByFieldName("field")
+                .map(Node::getText)
+                .orElseGet(() -> {
+                  for (Node child : node.getNamedChildren()) {
+                    if (child.getType().toLowerCase(Locale.ROOT).contains("identifier")) {
+                      return child.getText();
+                    }
+                  }
+                  return null;
+                });
+        if (StringUtils.hasText(field)) {
+          target.add(cleanupIdentifier(field));
+        }
+      }
+      for (Node child : node.getNamedChildren()) {
+        collectFieldReadsFromAst(child, target);
+      }
+    }
+
+    private String cleanupIdentifier(String value) {
+      if (value == null) {
+        return null;
+      }
+      return value.replaceAll("[^A-Za-z0-9_$.]", "").trim();
+    }
+
+    private String inferVisibility(String nodeText) {
+      return TreeSitterParser.this.inferVisibility(nodeText);
+    }
   }
 }
