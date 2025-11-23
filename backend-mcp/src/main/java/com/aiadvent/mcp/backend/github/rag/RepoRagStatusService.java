@@ -45,8 +45,8 @@ public class RepoRagStatusService {
       Progress progress = computeProgress(job);
       RepoRagNamespaceStateEntity state = namespaceState.orElse(null);
 
-      boolean graphReady = properties.getGraph().isEnabled() && state != null && state.isReady();
-      int graphSchemaVersion = graphReady ? 1 : 0;
+      boolean graphReady = isGraphReady(state);
+      int graphSchemaVersion = graphReady ? RepoRagIndexService.AST_VERSION : 0;
       Instant graphReadyAt = graphReady && state != null ? state.getLastIndexedAt() : null;
 
       return new StatusView(
@@ -79,8 +79,8 @@ public class RepoRagStatusService {
     if (namespaceState.isPresent()) {
       RepoRagNamespaceStateEntity state = namespaceState.get();
       String status = state.isReady() ? "READY" : "STALE";
-      boolean graphReady = properties.getGraph().isEnabled() && state.isReady();
-      int graphSchemaVersion = graphReady ? 1 : 0;
+      boolean graphReady = isGraphReady(state);
+      int graphSchemaVersion = graphReady ? RepoRagIndexService.AST_VERSION : 0;
       Instant graphReadyAt = graphReady ? state.getLastIndexedAt() : null;
       return new StatusView(
           state.getRepoOwner(),
@@ -110,6 +110,13 @@ public class RepoRagStatusService {
     }
 
     return StatusView.notFound(normalize(repoOwner), normalize(repoName));
+  }
+
+  private boolean isGraphReady(RepoRagNamespaceStateEntity state) {
+    if (!properties.getGraph().isEnabled() || state == null) {
+      return false;
+    }
+    return state.isReady() && state.getAstSchemaVersion() >= RepoRagIndexService.AST_VERSION;
   }
 
   private Progress computeProgress(RepoRagIndexJobEntity job) {
