@@ -1419,18 +1419,6 @@
 - [x] Подключить нативный Tree-sitter через java-tree-sitter: грузим `libjava-tree-sitter.*` и скомпилированные грамматики из `treesitter/<os>/<arch>`, читаем `github.rag.ast.native-enabled` и имеем fallback на эвристику. Поддерживаем Java/Kotlin/TS/JS/Python/Go. В bootJar пакуются грамматики + `libjava-tree-sitter.*` (x86_64 готов, arm64 требует сборки).
 - [x] Переписать `TreeSitterParser` на обход AST (java-tree-sitter + эвристика): package/imports, классы/функции, FQN `package.Class#method(args)`; edges `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`. Улучшена эвристика TS/JS методов и перенос вызовов в родительский контейнер; добавлены nativе smoke/Neo4j smoke (skip, если lib неподходящей архитектуры).
 - [x] Расширить fixtures `backend-mcp/src/test/resources/mini-repos/{java,kotlin,typescript,javascript,python,go}` наследованием/перегрузками/interfaces, обновить тесты (`RepoRagIndexServiceMultiLanguageTest`, AST unit) на проверки FQN, docstring, edges, ошибок парсинга.
-- [ ] Обновить toolchain до JDK 22 для `backend-mcp` (и при необходимости `backend`): Gradle toolchain, Docker базовые образы, CI setup-java; зафиксировать требование 22 в docs/README.
-- [ ] Перейти с `ch.usi.si.seart:java-tree-sitter` на официальный `io.github.tree-sitter:java-tree-sitter`:
-  - [ ] Заменить зависимость в `backend-mcp/build.gradle`, убрать неиспользуемый `javacpp`/старый артефакт.
-  - [ ] Зафиксировать toolchain/JDK: перейти `backend-mcp` на JDK 22 (или выбрать совместимую версию jtreesitter для 21), обновить CI/Docker базовые образы и Gradle toolchain.
-  - [ ] Адаптировать загрузчик (`TreeSitterLibraryLoader`/`TreeSitterPlatform`) под layout `native/<os>-<arch>/lib{java-tree-sitter,tree-sitter-<lang>}`, добавить поддержку arm64/x86_64 и `NativeLibraryLookup` для загрузки из classpath/`github.rag.ast.library-path`.
-  - [x] Подключить Java bindings грамматик из сабмодулей (`bindings/java`) через `sourceSets`; собрать реестр языков `Language(TreeSitter<Lang>.language())` вместо статических `Language.JAVA` (при наличии биндингов).
-  - [x] Настроить загрузку нативок через `NativeLibraryLookup` под layout `treesitter/<os>/<arch>/lib{tree-sitter,tree-sitter-<lang>}` (arm64/x86_64), использовать собранные библиотеки из сабмодулей.
-  - [x] Обновить `TreeSitterParser` под jtreesitter API (`Parser#setLanguage`, `parseString`, явное закрытие ресурсов) и вернуть нативный разбор; эвристический fallback оставить для отсутствующих грамматик.
-  - [ ] Перенастроить Gradle-задачи сборки грамматик и ресурсный путь под новый loader; убедиться, что bootJar пакует core `libtree-sitter` + языковые `libtree-sitter-<lang>` и Java bindings.
-  - [x] Добавить query-слой (SCM-шаблоны per язык) для symbols/imports/calls и интегрировать его в парсер, чтобы строить edges `CALLS/IMPLEMENTS/USES` без эвристик.
-  - [ ] Обновить smoke/e2e (`RepoRagNativeGraphSmokeTest`, `GraphSyncNeo4jE2ETest`) и документацию (`docs/architecture/github-rag-modular.md`/`docs/infra.md`) с указанием нового биндинга, требования к JDK/архитектурам и сборке грамматик.
-
 ### Графовая БД и синхронизация
 - [x] Зафиксировать выбор Neo4j: описать схему (`(:Repo {namespace})-[:CONTAINS]->(:File {path})-[:DECLARES]->(:Symbol {fqn,...})`, `CALLS`, `IMPLEMENTS`, `READS_FIELD`, `USES_TYPE`), индексы на `Symbol.fqn` и `File.path`, требования к деплою (Aura/Cluster), переменные `GITHUB_RAG_GRAPH_URI/USER/PASSWORD`.
 - [x] Создать `GraphSyncService`, который после chunking батчево отправляет `SymbolNode`/`Edge` в граф: `UNWIND $nodes ... MERGE`, `UNWIND $edges ... MERGE`. Вызывать сервис асинхронно из `RepoRagIndexService`, но блокировать завершение job, пока sync не завершён (или пока очередь не примет работу), чтобы `graphReadyAt` отражал фактическое состояние.
@@ -1450,11 +1438,12 @@
 ### Тестирование и e2e
 - [x] Переписать unit/интеграционные тесты chunking/graph слоя: покрыть `TreeSitterParser`, `GraphSyncService`, `repo.code_graph_*` инструмент с моками Neo4j.
 - [x] Добавить end-to-end тест с Testcontainers Neo4j: поднять контейнер, прогнать полный цикл `RepoRagIndexService` → `GraphSyncService` → `repo.code_graph_neighbors`, проверить сохранённые узлы/ребра и отдачу MCP инструмента.
-- [ ] Включить smoke e2e (workspace fetch → индекс → поиск) в CI, используя тестовый Neo4j контейнер и fixture-репозиторий.
 
 ### Долги Wave 45 (после ревью)
-- [ ] Починить jtreesitter 0.25.6 API в `TreeSitterParser`/`TreeSitterQueryRegistry`: `QueryCursor` с query в конструкторе, `matches` → `findMatches`, `captures().node()/name()`, корректный catch без дублирования `QueryError`, привести `usesTypes` к Set.
-- [ ] Прокинуть native AST через DI: убрать боевой no-arg `TreeSitterParser`, использовать `TreeSitterLibraryLoader`/`LanguageRegistry`/`TreeSitterAnalyzer` в бинах, исключить `new TreeSitterParser()` в `AstFileContext` и учитывать health/failureThreshold при fallback.
-- [ ] Обновить fixtures и тесты: mini-repos с наследованием/перегрузками/docstring, `AstFileContextFactoryTest`/`RepoRagIndexService*Test` под новый конструктор, разморозить `TreeSitterParserNativeSmokeTest` и `RepoRagNativeGraphSmokeTest`.
+- [x] Починить jtreesitter 0.25.6 API в `TreeSitterParser`/`TreeSitterQueryRegistry`: `QueryCursor` с query в конструкторе, `matches` → `findMatches`, `captures().node()/name()`, корректный catch без дублирования `QueryError`, привести `usesTypes` к Set.
+- [x] Прокинуть native AST через DI: убрать боевой no-arg `TreeSitterParser`, использовать `TreeSitterLibraryLoader`/`LanguageRegistry`/`TreeSitterAnalyzer` в бинах, исключить `new TreeSitterParser()` в `AstFileContext` и учитывать health/failureThreshold при fallback.
+- [x] Обновить fixtures и тесты: mini-repos с наследованием/перегрузками/docstring, `AstFileContextFactoryTest`/`RepoRagIndexService*Test` под новый конструктор, разморозить `TreeSitterParserNativeSmokeTest` и `RepoRagNativeGraphSmokeTest`.
 - [ ] Нормализовать FQN/иерархии/edges: стек контейнеров, сигнатуры по типам, docstring/visibility/test-флаг; резолв импортов для `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`; чистка stub-нод при AST_VERSION=2.
-- [x] Graph-ready/lens: `graphReadyAt`/`graphSchemaVersion` обновляются после `GraphSyncService`, добавить `graph_path` в `RepoRagSearchService`/MCP выдачу и smoke с Neo4j+Tree-sitter в CI, обновить доки под новую связку.
+- [ ] Обновить toolchain до JDK 22 для `backend-mcp` (и при необходимости `backend`): Gradle toolchain, Docker базовые образы, CI setup-java; зафиксировать требование 22 в docs/README.
+- [ ] Перейти на официальный `io.github.tree-sitter:java-tree-sitter` полностью: заменить зависимость в `backend-mcp/build.gradle`, убрать `javacpp`/старый артефакт, адаптировать loader под `native/<os>-<arch>/lib{java-tree-sitter,tree-sitter-<lang>}`, перенастроить Gradle-задачи сборки грамматик и упаковку core+langs в bootJar, обновить smoke/e2e (`RepoRagNativeGraphSmokeTest`, `GraphSyncNeo4jE2ETest`) и документацию (`docs/architecture/github-rag-modular.md`/`docs/infra.md`) с требованиями к JDK/архитектурам и сборке грамматик.
+- [ ] Включить smoke e2e (workspace fetch → индекс → поиск) в CI, используя тестовый Neo4j контейнер и fixture-репозиторий.
