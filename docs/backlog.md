@@ -1440,9 +1440,32 @@
 - [x] Добавить end-to-end тест с Testcontainers Neo4j: поднять контейнер, прогнать полный цикл `RepoRagIndexService` → `GraphSyncService` → `repo.code_graph_neighbors`, проверить сохранённые узлы/ребра и отдачу MCP инструмента.
 
 ### Долги Wave 45 (после ревью)
-- [ ] Graph readiness: добавить в `RepoRagNamespaceStateEntity`/`StateService` поля `graphReady/graphSchemaVersion/graphReadyAt` (миграция), вызывать `markGraphSyncStarted/Succeeded/Failed` после полного `GraphSyncService` по namespace; `RepoRagStatusService`/`repo.rag_index_status` должны отдавать реальные graph-флаги.
-- [ ] Tree-sitter DI + API 0.25.6: убрать боевой no-arg `TreeSitterParser`, везде через бины `TreeSitterLibraryLoader/LanguageRegistry/TreeSitterAnalyzer`; переписать `QueryCursor`/`findMatches`/`captures().node()`/`QueryError` обработку; `usesTypes` хранить как Set.
-- [ ] AST качество: нормализовать FQN (стек контейнеров, сигнатуры с типами), docstring/visibility/test-флаг, резолв импортов для `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`, очистка stub-нод при `AST_VERSION=2`.
-- [ ] Fixtures и тесты: расширить mini-repos (наследование/перегрузки/docstring), обновить `AstFileContextFactoryTest`/`RepoRagIndexService*Test` под DI, разморозить нативные smokes (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`).
-- [ ] CI/e2e: добавить smoke с Testcontainers Neo4j + tree-sitter (индекс mini-repo → `repo.code_graph_neighbors/path` → graph lens в выдаче), проверить layout нативок в jar и удалить лишний `javacpp` при ненужности.
-- [ ] Документация: `docs/infra.md`/`docs/architecture/github-rag-modular.md`/release notes — jtreesitter (JDK 22, `--enable-native-access`), layout `treesitter/<os>/<arch>`, пайплайн AST→Neo4j→graph lens, сценарий контроллер→репозиторий.
+- [ ] **Graph readiness и статус MCP**
+  - [ ] Добавить в `repo_rag_namespace_state` миграцией новые поля `graph_ready`, `graph_ready_at`, `graph_schema_version` и `graph_sync_error`.
+  - [ ] Расширить `RepoRagNamespaceStateEntity`/`RepoRagNamespaceStateService` методами `markGraphSyncStarted/Succeeded/Failed(namespace, version, error)` и вызывать их из `GraphSyncService` после успешной/неуспешной загрузки Neo4j (включая очистку при удалении).
+  - [ ] Обновить `RepoRagStatusService`, `RepoRagTools`, REST/MCP ответ `repo.rag_index_status`, чтобы возвращать реальные значения графовых полей, и написать unit-тест на сценарии ready/failed/in-progress.
+
+- [ ] **Tree-sitter DI + обновление API 0.25.6**
+  - [ ] Перейти на jtreesitter `0.25.6`, переписать использование `QueryCursor`, `QueryMatch.captures()` и обработку `QueryError`, включить `usesTypes` как `Set<String>`.
+  - [ ] Удалить боевой no-arg конструктор `TreeSitterParser`, добившись, чтобы все компоненты создавались только через Spring-бин из `TreeSitterLibraryLoader/LanguageRegistry/TreeSitterAnalyzer`.
+  - [ ] Добавить интеграционные тесты/health-check, которые проверяют graceful fallback при отсутствии грамматики и корректное включение native режима (`isNativeEnabled=true`).
+
+- [ ] **Качество AST и нормализация FQN**
+  - [ ] Реализовать построение FQN через стек контейнеров (`package.Class.Inner#method(Type arg)`), нормализовать типы аргументов и видимость, и хранить `AST_VERSION=2` только для новых нод.
+  - [ ] Извлекать docstring/visibility/test-флаг из нативных узлов Tree-sitter (JavaDoc/KDoc/JSDoc/docstring) и прокидывать в `AstSymbolMetadata`.
+  - [ ] Добавить резолв импортов: маппинг `import` → FQN, который подставляется в `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`, чтобы граф получал полноценных соседей.
+
+- [ ] **Fixtures и тесты**
+  - [ ] Расширить mini-repos для всех поддерживаемых языков: наследование, интерфейсы, перегрузки методов, docstring-комментарии, вызовы между файлами.
+  - [ ] Обновить `AstFileContextFactoryTest`, `RepoRagIndexService*Test` и смежные тесты на DI-подход: использовать `TreeSitterAnalyzer`/`LanguageRegistry` вместо ручных моков и проверять новые FQN/edges/docstrings.
+  - [ ] Разморозить native-smoke тесты (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`) и добавить ассерт на пропуск при неподдерживаемой архитектуре.
+
+- [ ] **CI / e2e smoke**
+  - [ ] Добавить job, который поднимает Testcontainers Neo4j + включает native Tree-sitter, индексирует mini-repo, вызывает `repo.code_graph_neighbors`/`repo.code_graph_path` и проверяет наличие `graph_neighbors`/`graph_path` в `repo.rag_search`.
+  - [ ] Проверить layout `treesitter/<os>/<arch>` в собранном bootJar и удалить неиспользуемые зависимости (например, лишний `javacpp`).
+  - [ ] Настроить алерты/метрики CI на деградацию графа (падение sync/test шага).
+
+- [ ] **Документация и гайды**
+  - [ ] Обновить `docs/infra.md` и `docs/architecture/github-rag-modular.md` разделами про Tree-sitter (JDK 22, `--enable-native-access`), layout библиотек и Neo4j пайплайн.
+  - [ ] Дополнить release notes и `docs/guides/mcp-operators.md` сценарием “контроллер → сервис → репозиторий” с примерами вызова `repo.code_graph_*` и скринами UI.
+  - [ ] Добавить troubleshooting чек-лист: как проверить `graphReady`, как восстанавливать граф, что делать при ошибке загрузки нативных библиотек.
