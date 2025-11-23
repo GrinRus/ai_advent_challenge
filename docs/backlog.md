@@ -1445,7 +1445,7 @@
 - [x] Добавить метрики `graph_nodes_total`, `graph_edges_total{relation}`, latency на записи/чтение, алерты на деградацию (`graph_sync_failure_total`, `graph_lookup_throttled_total`). 
 - [x] Репортить `graphReady`, `graphSchemaVersion` в `repo.rag_index_status` (и MCP tool `repo.rag_index_status`), чтобы операторы видели готовность графа.
 - [x] Написать миграционный план: как включать граф для новых namespace, как перегенерировать существующие, как откатываться на Postgres (feature-flag + queue). Описать чек-лист в `docs/processes.md`, диаграмму обновить в `docs/architecture/github-rag-modular.md`.
-- [ ] Провести end-to-end сценарий “оператор спрашивает путь контроллер → репозиторий”: fetch → индекс → `repo.code_graph_path` → `repo.rag_search` → UI показывает граф. Зафиксировать в release notes и добавить примеры запросов и UI скриншоты в `docs/guides/mcp-operators.md`.
+- [x] Провести end-to-end сценарий “оператор спрашивает путь контроллер → репозиторий”: fetch → индекс → `repo.code_graph_path` → `repo.rag_search` → UI показывает граф. Зафиксировать в release notes и добавить примеры запросов и UI скриншоты в `docs/guides/mcp-operators.md`.
 
 ### Тестирование и e2e
 - [x] Переписать unit/интеграционные тесты chunking/graph слоя: покрыть `TreeSitterParser`, `GraphSyncService`, `repo.code_graph_*` инструмент с моками Neo4j.
@@ -1457,4 +1457,4 @@
 - [ ] Прокинуть native AST через DI: убрать боевой no-arg `TreeSitterParser`, использовать `TreeSitterLibraryLoader`/`LanguageRegistry`/`TreeSitterAnalyzer` в бинах, исключить `new TreeSitterParser()` в `AstFileContext` и учитывать health/failureThreshold при fallback.
 - [ ] Обновить fixtures и тесты: mini-repos с наследованием/перегрузками/docstring, `AstFileContextFactoryTest`/`RepoRagIndexService*Test` под новый конструктор, разморозить `TreeSitterParserNativeSmokeTest` и `RepoRagNativeGraphSmokeTest`.
 - [ ] Нормализовать FQN/иерархии/edges: стек контейнеров, сигнатуры по типам, docstring/visibility/test-флаг; резолв импортов для `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`; чистка stub-нод при AST_VERSION=2.
-- [ ] Graph-ready/lens: `graphReadyAt`/`graphSchemaVersion` обновляются после `GraphSyncService`, добавить `graph_path` в `RepoRagSearchService`/MCP выдачу и smoke с Neo4j+Tree-sitter в CI, обновить доки под новую связку.
+- [x] Graph-ready/lens: `graphReadyAt`/`graphSchemaVersion` обновляются после `GraphSyncService`, добавить `graph_path` в `RepoRagSearchService`/MCP выдачу и smoke с Neo4j+Tree-sitter в CI, обновить доки под новую связку.
