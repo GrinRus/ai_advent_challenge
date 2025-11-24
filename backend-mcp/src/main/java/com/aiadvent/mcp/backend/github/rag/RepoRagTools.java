@@ -86,7 +86,8 @@ public class RepoRagTools {
         status.astReadyAt(),
         status.graphReady(),
         status.graphSchemaVersion(),
-        status.graphReadyAt());
+        status.graphReadyAt(),
+        status.graphSyncError());
   }
 
   @Tool(
@@ -442,7 +443,8 @@ public class RepoRagTools {
       java.time.Instant astReadyAt,
       boolean graphReady,
       int graphSchemaVersion,
-      java.time.Instant graphReadyAt) {}
+      java.time.Instant graphReadyAt,
+      String graphSyncError) {}
 
   @JsonIgnoreProperties(ignoreUnknown = false)
   public record RepoRagSearchInput(

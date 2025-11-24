@@ -1,18 +1,17 @@
 package com.aiadvent.mcp.backend.github.rag.ast;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Optional;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.springframework.core.io.DefaultResourceLoader;
 
-@Disabled("Native Tree-sitter bindings not yet wired with jtreesitter")
 class TreeSitterLibraryLoaderSmokeTest {
 
   @Test
@@ -24,6 +23,7 @@ class TreeSitterLibraryLoaderSmokeTest {
 
     TreeSitterLibraryLoader loader =
         new TreeSitterLibraryLoader(properties, new DefaultResourceLoader());
+    assumeTrue(loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available");
 
     Optional<TreeSitterLibraryLoader.LoadedLibrary> loaded = loader.loadLanguage("java");
 

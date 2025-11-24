@@ -67,6 +67,18 @@ public class RepoRagNamespaceStateEntity {
   @Column(name = "ast_ready_at")
   private Instant astReadyAt;
 
+  @Column(name = "graph_ready", nullable = false)
+  private boolean graphReady = false;
+
+  @Column(name = "graph_schema_version", nullable = false)
+  private int graphSchemaVersion = 0;
+
+  @Column(name = "graph_ready_at")
+  private Instant graphReadyAt;
+
+  @Column(name = "graph_sync_error")
+  private String graphSyncError;
+
   @OneToOne
   @JoinColumn(name = "last_job_id")
   private RepoRagIndexJobEntity lastJob;
@@ -199,6 +211,38 @@ public class RepoRagNamespaceStateEntity {
 
   public void setAstReadyAt(Instant astReadyAt) {
     this.astReadyAt = astReadyAt;
+  }
+
+  public boolean isGraphReady() {
+    return graphReady;
+  }
+
+  public void setGraphReady(boolean graphReady) {
+    this.graphReady = graphReady;
+  }
+
+  public int getGraphSchemaVersion() {
+    return graphSchemaVersion;
+  }
+
+  public void setGraphSchemaVersion(int graphSchemaVersion) {
+    this.graphSchemaVersion = Math.max(0, graphSchemaVersion);
+  }
+
+  public Instant getGraphReadyAt() {
+    return graphReadyAt;
+  }
+
+  public void setGraphReadyAt(Instant graphReadyAt) {
+    this.graphReadyAt = graphReadyAt;
+  }
+
+  public String getGraphSyncError() {
+    return graphSyncError;
+  }
+
+  public void setGraphSyncError(String graphSyncError) {
+    this.graphSyncError = graphSyncError;
   }
 
   public RepoRagIndexJobEntity getLastJob() {

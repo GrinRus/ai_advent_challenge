@@ -3,6 +3,7 @@ package com.aiadvent.mcp.backend.github.rag.chunking;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class AstFileContextTest {
@@ -22,7 +23,7 @@ class AstFileContextTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             10,
             30);
     AstFileContext context = new AstFileContext(List.of(method));
@@ -45,7 +46,7 @@ class AstFileContextTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             10,
             20);
     AstFileContext context = new AstFileContext(List.of(method));
@@ -68,7 +69,7 @@ class AstFileContextTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             10,
             20);
     AstFileContext context = new AstFileContext(List.of(method));
@@ -91,7 +92,7 @@ class AstFileContextTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             1,
             100);
     AstSymbolMetadata method =
@@ -107,7 +108,7 @@ class AstFileContextTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             10,
             20);
     AstFileContext context = new AstFileContext(List.of(fileSymbol, method));

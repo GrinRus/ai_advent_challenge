@@ -1,20 +1,14 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
-import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.AstTestSupport;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
@@ -60,21 +54,11 @@ class RepoRagIndexServiceAstIntegrationTest {
     properties.getChunking().getLine().setMaxLines(4);
     properties.getChunking().setOverlapLines(0);
     properties.getAst().setEnabled(true);
+    properties.getAst().setNativeEnabled(false);
     properties.getAst().setLanguages(List.of("java"));
 
     RepoRagChunker chunker = new RepoRagChunker(properties);
-    TreeSitterAnalyzer analyzer = mock(TreeSitterAnalyzer.class);
-    when(analyzer.isEnabled()).thenReturn(true);
-    when(analyzer.supportsLanguage(anyString())).thenReturn(true);
-    when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
-    when(analyzer.isNativeEnabled()).thenReturn(true);
-    LanguageRegistry languageRegistry = mock(LanguageRegistry.class);
-    TreeSitterQueryRegistry queryRegistry = mock(TreeSitterQueryRegistry.class);
-    TreeSitterLibraryLoader loader = mock(TreeSitterLibraryLoader.class);
-
-    astFactory =
-        new AstFileContextFactory(
-            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
+    astFactory = AstTestSupport.astComponents(properties).factory();
     SymbolGraphWriter symbolGraphWriter =
         new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
 
@@ -141,9 +125,18 @@ class RepoRagIndexServiceAstIntegrationTest {
             docCaptor.capture());
     List<Document> documents = docCaptor.getValue();
     assertThat(documents).hasSize(3);
-    Document document = documents.get(2);
-    assertThat(document.getMetadata().get("ast_available")).isEqualTo(true);
-    assertThat(document.getMetadata().get("symbol_fqn")).isNotNull();
+    assertThat(documents)
+        .anySatisfy(
+            doc ->
+                assertThat(doc.getMetadata().get("ast_available"))
+                    .isInstanceOf(Boolean.class)
+                    .isEqualTo(true));
+    assertThat(documents)
+        .anySatisfy(
+            doc ->
+                assertThat(doc.getMetadata().get("symbol_fqn"))
+                    .as("symbol_fqn present")
+                    .isInstanceOf(String.class));
     verify(symbolGraphRepository).saveAll(anyList());
   }
 

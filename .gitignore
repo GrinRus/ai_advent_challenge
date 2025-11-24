@@ -5,6 +5,8 @@ node_modules/
 dist/
 build/
 local-rag/
+backend-mcp/BOOT-INF/
+backend-mcp/backend-mcp/
 
 # IDE settings
 .idea/

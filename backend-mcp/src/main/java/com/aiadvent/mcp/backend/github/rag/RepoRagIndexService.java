@@ -120,6 +120,7 @@ public class RepoRagIndexService {
     AtomicBoolean astReady = new AtomicBoolean(false);
     AtomicInteger astFiles = new AtomicInteger();
     List<String> warnings = new ArrayList<>();
+    GraphSyncTracker graphSyncTracker = new GraphSyncTracker(isGraphSyncEnabled());
     Map<String, RepoRagFileStateEntity> stateByPath =
         fileStateRepository.findByNamespace(request.namespace()).stream()
             .collect(Collectors.toMap(RepoRagFileStateEntity::getFilePath, Function.identity()));
@@ -231,13 +232,15 @@ public class RepoRagIndexService {
                       fileHash,
                       fileDocuments.size(),
                       stateByPath);
-                  syncSymbolGraphs(request.namespace(), relativePath, fileChunks);
+                  syncSymbolGraphs(
+                      request.namespace(), relativePath, fileChunks, warnings, graphSyncTracker);
                   files.incrementAndGet();
                   chunks.addAndGet(fileDocuments.size());
                 } else {
                   vectorStoreAdapter.deleteFile(request.namespace(), relativePath);
                   deleteFileState(request.namespace(), relativePath, stateByPath);
-                  deleteSymbolGraphs(request.namespace(), relativePath);
+                  deleteSymbolGraphs(
+                      request.namespace(), relativePath, warnings, graphSyncTracker);
                   filesDeleted.incrementAndGet();
                 }
                 stalePaths.remove(relativePath);
@@ -253,7 +256,7 @@ public class RepoRagIndexService {
       for (String stalePath : stalePaths) {
         vectorStoreAdapter.deleteFile(request.namespace(), stalePath);
         deleteFileState(request.namespace(), stalePath, stateByPath);
-        deleteSymbolGraphs(request.namespace(), stalePath);
+        deleteSymbolGraphs(request.namespace(), stalePath, warnings, graphSyncTracker);
         filesDeleted.incrementAndGet();
       }
       log.info(
@@ -278,7 +281,8 @@ public class RepoRagIndexService {
         filesSkipped.get(),
         filesDeleted.get(),
         List.copyOf(warnings),
-        astReady.get());
+        astReady.get(),
+        graphSyncTracker.result());
   }
 
   private List<Document> buildDocuments(
@@ -389,7 +393,12 @@ public class RepoRagIndexService {
     cache.remove(relativePath);
   }
 
-  private void syncSymbolGraphs(String namespace, String filePath, List<Chunk> chunks) {
+  private void syncSymbolGraphs(
+      String namespace,
+      String filePath,
+      List<Chunk> chunks,
+      List<String> warnings,
+      GraphSyncTracker graphSyncTracker) {
     boolean legacyEnabled = properties.getGraph().isLegacyTableEnabled();
     if (legacyEnabled) {
       try {
@@ -398,21 +407,39 @@ public class RepoRagIndexService {
         log.warn("Failed to update SQL symbol graph for {}: {}", filePath, ex.getMessage());
       }
     }
-    if (graphSyncService != null) {
+    if (graphSyncService != null && graphSyncTracker.isEnabled()) {
+      graphSyncTracker.markAttempted();
       try {
         graphSyncService.syncFile(namespace, filePath, chunks);
       } catch (RuntimeException graphEx) {
+        graphSyncTracker.markFailure(graphEx.getMessage());
+        appendWarning(
+            warnings,
+            "Graph sync failed for " + filePath + ": " + graphEx.getMessage());
         log.warn("Failed to sync Neo4j graph for {}: {}", filePath, graphEx.getMessage());
       }
     }
   }
 
-  private void deleteSymbolGraphs(String namespace, String filePath) {
+  private void deleteSymbolGraphs(
+      String namespace,
+      String filePath,
+      List<String> warnings,
+      GraphSyncTracker graphSyncTracker) {
     if (properties.getGraph().isLegacyTableEnabled()) {
       symbolGraphWriter.deleteFile(namespace, filePath);
     }
-    if (graphSyncService != null) {
-      graphSyncService.deleteFile(namespace, filePath);
+    if (graphSyncService != null && graphSyncTracker.isEnabled()) {
+      graphSyncTracker.markAttempted();
+      try {
+        graphSyncService.deleteFile(namespace, filePath);
+      } catch (RuntimeException graphEx) {
+        graphSyncTracker.markFailure(graphEx.getMessage());
+        appendWarning(
+            warnings,
+            "Graph cleanup failed for " + filePath + ": " + graphEx.getMessage());
+        log.warn("Failed to delete graph nodes for {}: {}", filePath, graphEx.getMessage());
+      }
     }
   }
 
@@ -553,11 +580,66 @@ public class RepoRagIndexService {
       long workspaceSizeBytes,
       Instant fetchedAt) {}
 
+  public boolean isGraphSyncEnabled() {
+    return graphSyncService != null && properties.getGraph().isEnabled();
+  }
+
   public record IndexResult(
       long filesProcessed,
       long chunksProcessed,
       long filesSkipped,
       long filesDeleted,
       List<String> warnings,
-      boolean astReady) {}
+      boolean astReady,
+      GraphSyncResult graphSync) {}
+
+  public record GraphSyncResult(
+      boolean enabled, boolean attempted, boolean succeeded, @Nullable String errorMessage) {
+    public boolean shouldMarkReady() {
+      return enabled && attempted && succeeded;
+    }
+  }
+
+  private static final class GraphSyncTracker {
+    private final boolean enabled;
+    private boolean attempted;
+    private boolean failed;
+    private String error;
+
+    GraphSyncTracker(boolean enabled) {
+      this.enabled = enabled;
+    }
+
+    boolean isEnabled() {
+      return enabled;
+    }
+
+    void markAttempted() {
+      if (!enabled) {
+        return;
+      }
+      attempted = true;
+    }
+
+    void markFailure(String message) {
+      if (!enabled) {
+        return;
+      }
+      attempted = true;
+      failed = true;
+      if (!StringUtils.hasText(error)) {
+        error = message;
+      }
+    }
+
+    GraphSyncResult result() {
+      if (!enabled) {
+        return new GraphSyncResult(false, false, false, null);
+      }
+      if (!attempted) {
+        return new GraphSyncResult(true, false, false, error);
+      }
+      return new GraphSyncResult(true, true, !failed, failed ? error : null);
+    }
+  }
 }

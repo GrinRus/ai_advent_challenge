@@ -20,11 +20,7 @@ import com.aiadvent.mcp.backend.github.rag.RepoRagSearchReranker;
 import com.aiadvent.mcp.backend.github.rag.RepoRagSearchService;
 import com.aiadvent.mcp.backend.github.rag.SymbolGraphWriter;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
-import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.AstTestSupport;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagDocumentMapper;
@@ -146,17 +142,11 @@ class RepoRagCallGraphE2ETest {
     indexProperties.getChunking().getLine().setMaxLines(4);
     indexProperties.getChunking().setOverlapLines(0);
     indexProperties.getAst().setEnabled(true);
+    indexProperties.getAst().setNativeEnabled(false);
     indexProperties.getAst().setLanguages(List.of("java"));
 
     RepoRagChunker chunker = new RepoRagChunker(indexProperties);
-    TreeSitterAnalyzer analyzer = mock(TreeSitterAnalyzer.class);
-    when(analyzer.isEnabled()).thenReturn(true);
-    when(analyzer.supportsLanguage(anyString())).thenReturn(true);
-    when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
-    when(analyzer.isNativeEnabled()).thenReturn(true);
-    LanguageRegistry languageRegistry = mock(LanguageRegistry.class);
-    TreeSitterQueryRegistry queryRegistry = mock(TreeSitterQueryRegistry.class);
-    TreeSitterLibraryLoader loader = mock(TreeSitterLibraryLoader.class);
+    AstFileContextFactory astFactory = AstTestSupport.astComponents(indexProperties).factory();
 
     RepoRagIndexService indexService =
         new RepoRagIndexService(
@@ -165,8 +155,7 @@ class RepoRagCallGraphE2ETest {
             fileStateRepository,
             chunker,
             indexProperties,
-            new AstFileContextFactory(
-                languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer),
+            astFactory,
             new SymbolGraphWriter(symbolGraphRepository, null),
             null);
 

@@ -7,6 +7,7 @@ import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
 import com.aiadvent.mcp.backend.github.rag.chunking.Chunk;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ class GraphSyncNeo4jE2ETest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             3,
             10);
     AstSymbolMetadata helperSymbol =
@@ -83,7 +84,7 @@ class GraphSyncNeo4jE2ETest {
             List.of(),
             List.of(),
             List.of(),
-            List.of(),
+            Set.of(),
             12,
             20);
     Chunk serviceChunk =

@@ -153,6 +153,12 @@ public class RepoRagIndexScheduler {
               request.workspaceSizeBytes(),
               request.fetchedAt());
 
+      boolean graphSyncEnabled = indexService.isGraphSyncEnabled();
+      if (graphSyncEnabled) {
+        namespaceStateService.markGraphSyncStarted(
+            request.namespace(), RepoRagIndexService.AST_VERSION);
+      }
+
       Instant started = Instant.now();
       RepoRagIndexService.IndexResult result = indexService.indexWorkspace(indexRequest);
       Duration duration = Duration.between(started, Instant.now());
@@ -183,6 +189,25 @@ public class RepoRagIndexScheduler {
           result.astReady(),
           result.astReady() ? RepoRagIndexService.AST_VERSION : 0);
 
+      RepoRagIndexService.GraphSyncResult graphSync = result.graphSync();
+      if (graphSync.enabled()) {
+        if (graphSync.shouldMarkReady()) {
+          namespaceStateService.markGraphSyncSucceeded(
+              request.namespace(), RepoRagIndexService.AST_VERSION);
+        } else {
+          String error = graphSync.errorMessage();
+          if (!StringUtils.hasText(error)) {
+            error = graphSync.attempted()
+                ? "Graph sync failed"
+                : "Graph sync was not attempted";
+          }
+          namespaceStateService.markGraphSyncFailed(request.namespace(), error);
+        }
+      } else if (graphSyncEnabled) {
+        namespaceStateService.markGraphSyncFailed(
+            request.namespace(), "Graph sync disabled in runtime");
+      }
+
       embeddingsTotal.increment(result.chunksProcessed());
       indexDuration.record(duration);
       workRequests.remove(request.jobId());
@@ -202,6 +227,11 @@ public class RepoRagIndexScheduler {
     job.setLastError(buildErrorPayload(ex));
     job.setCompletedAt(Instant.now());
     jobRepository.save(job);
+
+    if (indexService.isGraphSyncEnabled()) {
+      namespaceStateService.markGraphSyncFailed(
+          request.namespace(), "Graph sync aborted: " + ex.getMessage());
+    }
 
     boolean retryable = isRetryable(ex) && job.getAttempt() < job.getMaxAttempts();
     if (retryable) {

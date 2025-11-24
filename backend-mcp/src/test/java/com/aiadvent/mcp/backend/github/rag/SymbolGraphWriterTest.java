@@ -11,6 +11,7 @@ import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class SymbolGraphWriterTest {
             List.<String>of(),
             List.<String>of(),
             List.<String>of(),
-            List.<String>of(),
+            Set.of(),
             1,
             5);
     Chunk chunk =

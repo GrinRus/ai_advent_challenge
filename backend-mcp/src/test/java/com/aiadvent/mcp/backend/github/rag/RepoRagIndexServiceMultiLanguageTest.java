@@ -1,20 +1,13 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
-import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.AstTestSupport;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphEntity;
@@ -68,20 +61,11 @@ class RepoRagIndexServiceMultiLanguageTest {
     properties.getChunking().setStrategy(GitHubRagProperties.Strategy.SEMANTIC);
     properties.getChunking().getSemantic().setEnabled(true);
     properties.getAst().setEnabled(true);
+    properties.getAst().setNativeEnabled(false);
     properties.getAst().setLanguages(List.of("java", "typescript", "python", "go", "kotlin", "javascript"));
 
     RepoRagChunker chunker = new RepoRagChunker(properties);
-    TreeSitterAnalyzer analyzer = mock(TreeSitterAnalyzer.class);
-    when(analyzer.isEnabled()).thenReturn(true);
-    when(analyzer.supportsLanguage(anyString())).thenReturn(true);
-    when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
-    when(analyzer.isNativeEnabled()).thenReturn(false);
-    LanguageRegistry languageRegistry = mock(LanguageRegistry.class);
-    TreeSitterQueryRegistry queryRegistry = mock(TreeSitterQueryRegistry.class);
-    TreeSitterLibraryLoader loader = mock(TreeSitterLibraryLoader.class);
-    AstFileContextFactory astFactory =
-        new AstFileContextFactory(
-            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
+    AstFileContextFactory astFactory = AstTestSupport.astComponents(properties).factory();
 
     SymbolGraphWriter symbolGraphWriter =
         new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());

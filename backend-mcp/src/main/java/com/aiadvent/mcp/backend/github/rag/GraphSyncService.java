@@ -10,6 +10,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -180,7 +181,7 @@ public class GraphSyncService {
       List<Map<String, Object>> target,
       Set<String> dedup,
       String source,
-      List<String> references,
+      Collection<String> references,
       String relation,
       Chunk chunk,
       int chunkIndex) {

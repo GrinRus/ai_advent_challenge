@@ -1457,7 +1457,7 @@
 
 - [x] **Fixtures и тесты**
   - [x] Расширить mini-repos для всех поддерживаемых языков: наследование, интерфейсы, перегрузки методов, docstring-комментарии, вызовы между файлами.
-  - [ ] Обновить `AstFileContextFactoryTest`, `RepoRagIndexService*Test` и смежные тесты на DI-подход: использовать `TreeSitterAnalyzer`/`LanguageRegistry` вместо ручных моков и проверять новые FQN/edges/docstrings.
+  - [x] Обновить `AstFileContextFactoryTest`, `RepoRagIndexService*Test` и смежные тесты на DI-подход: использовать `TreeSitterAnalyzer`/`LanguageRegistry` вместо ручных моков и проверять новые FQN/edges/docstrings.
   - [x] Разморозить native-smoke тесты (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`) и добавить ассерт на пропуск при неподдерживаемой архитектуре.
 
 - [ ] **CI / e2e smoke**

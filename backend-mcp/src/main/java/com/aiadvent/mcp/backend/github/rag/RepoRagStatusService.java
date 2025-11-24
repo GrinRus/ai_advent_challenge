@@ -45,9 +45,10 @@ public class RepoRagStatusService {
       Progress progress = computeProgress(job);
       RepoRagNamespaceStateEntity state = namespaceState.orElse(null);
 
-      boolean graphReady = isGraphReady(state);
-      int graphSchemaVersion = graphReady ? RepoRagIndexService.AST_VERSION : 0;
-      Instant graphReadyAt = graphReady && state != null ? state.getLastIndexedAt() : null;
+      boolean graphReady = state != null && state.isGraphReady();
+      int graphSchemaVersion = state != null ? state.getGraphSchemaVersion() : 0;
+      Instant graphReadyAt = state != null ? state.getGraphReadyAt() : null;
+      String graphSyncError = state != null ? state.getGraphSyncError() : null;
 
       return new StatusView(
           job.getRepoOwner(),
@@ -73,15 +74,17 @@ public class RepoRagStatusService {
           state != null ? state.getAstReadyAt() : null,
           graphReady,
           graphSchemaVersion,
-          graphReadyAt);
+          graphReadyAt,
+          graphSyncError);
     }
 
     if (namespaceState.isPresent()) {
       RepoRagNamespaceStateEntity state = namespaceState.get();
       String status = state.isReady() ? "READY" : "STALE";
-      boolean graphReady = isGraphReady(state);
-      int graphSchemaVersion = graphReady ? RepoRagIndexService.AST_VERSION : 0;
-      Instant graphReadyAt = graphReady ? state.getLastIndexedAt() : null;
+      boolean graphReady = state.isGraphReady();
+      int graphSchemaVersion = state.getGraphSchemaVersion();
+      Instant graphReadyAt = state.getGraphReadyAt();
+      String graphSyncError = state.getGraphSyncError();
       return new StatusView(
           state.getRepoOwner(),
           state.getRepoName(),
@@ -106,17 +109,15 @@ public class RepoRagStatusService {
           state.getAstReadyAt(),
           graphReady,
           graphSchemaVersion,
-          graphReadyAt);
+          graphReadyAt,
+          graphSyncError);
     }
 
     return StatusView.notFound(normalize(repoOwner), normalize(repoName));
   }
 
   private boolean isGraphReady(RepoRagNamespaceStateEntity state) {
-    if (!properties.getGraph().isEnabled() || state == null) {
-      return false;
-    }
-    return state.isReady() && state.getAstSchemaVersion() >= RepoRagIndexService.AST_VERSION;
+    return state != null && state.isGraphReady();
   }
 
   private Progress computeProgress(RepoRagIndexJobEntity job) {
@@ -169,7 +170,8 @@ public class RepoRagStatusService {
       Instant astReadyAt,
       boolean graphReady,
       int graphSchemaVersion,
-      Instant graphReadyAt) {
+      Instant graphReadyAt,
+      String graphSyncError) {
 
     static StatusView notFound(String owner, String name) {
       return new StatusView(
@@ -196,6 +198,7 @@ public class RepoRagStatusService {
           null,
           false,
           0,
+          null,
           null);
     }
   }

@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
@@ -23,7 +24,6 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -32,13 +32,13 @@ import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
 import org.neo4j.driver.SessionConfig;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @ExtendWith(MockitoExtension.class)
 @Testcontainers
-@Disabled("Native Tree-sitter bindings not yet wired with jtreesitter")
 class RepoRagNativeGraphSmokeTest {
 
   @Container
@@ -54,6 +54,7 @@ class RepoRagNativeGraphSmokeTest {
 
   @BeforeAll
   static void startNeo4j() {
+    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker not available");
     neo4j.start();
     driver =
         GraphDatabase.driver(
@@ -114,8 +115,7 @@ class RepoRagNativeGraphSmokeTest {
 
     TreeSitterLibraryLoader loader =
         new TreeSitterLibraryLoader(properties, new org.springframework.core.io.DefaultResourceLoader());
-    org.junit.jupiter.api.Assumptions.assumeTrue(
-        loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available for current arch");
+    assumeTrue(loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available for current arch");
     TreeSitterAnalyzer analyzer = new TreeSitterAnalyzer(properties, loader);
     RepoRagChunker chunker = new RepoRagChunker(properties);
     LanguageRegistry languageRegistry = new LanguageRegistry(loader);

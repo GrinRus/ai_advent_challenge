@@ -4,15 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.lenient;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
+import com.aiadvent.mcp.backend.github.rag.ast.AstTestSupport;
 import com.aiadvent.mcp.backend.github.rag.chunking.ChunkableFile;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateEntity;
@@ -34,11 +34,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.document.Document;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class RepoRagIndexServiceTest {
 
   private static final String NAMESPACE = "repo:owner/repo";
@@ -46,7 +49,6 @@ class RepoRagIndexServiceTest {
   @Mock private TempWorkspaceService workspaceService;
   @Mock private RepoRagVectorStoreAdapter vectorStoreAdapter;
   @Mock private RepoRagFileStateRepository fileStateRepository;
-  @Mock private AstFileContextFactory astFileContextFactory;
   @Mock private SymbolGraphWriter symbolGraphWriter;
 
   @TempDir Path tempDir;
@@ -54,6 +56,7 @@ class RepoRagIndexServiceTest {
   private RepoRagIndexService service;
   private GitHubRagProperties properties;
   private RepoRagChunker chunker;
+  private AstFileContextFactory astFileContextFactory;
 
   @BeforeEach
   void setUp() {
@@ -61,10 +64,11 @@ class RepoRagIndexServiceTest {
     properties.getChunking().getLine().setMaxBytes(1024);
     properties.getChunking().getLine().setMaxLines(50);
     properties.getChunking().setOverlapLines(0);
+    properties.getAst().setEnabled(true);
+    properties.getAst().setNativeEnabled(false);
+    properties.getAst().setLanguages(List.of("java"));
     chunker = new RepoRagChunker(properties);
-    lenient()
-        .when(astFileContextFactory.supplier(any(), any(), any(), any()))
-        .thenAnswer(invocation -> (java.util.function.Supplier<com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext>) () -> null);
+    astFileContextFactory = AstTestSupport.astComponents(properties).factory();
     service =
         new RepoRagIndexService(
             workspaceService,
@@ -113,7 +117,8 @@ class RepoRagIndexServiceTest {
     assertThat(doc.getMetadata().get("repo_name")).isEqualTo("repo");
     assertThat(doc.getMetadata().get("chunk_index")).isEqualTo(0);
     assertThat(doc.getMetadata().get("metadata_schema_version")).isEqualTo(2);
-    assertThat(doc.getMetadata().get("ast_available")).isEqualTo(false);
+    assertThat(doc.getMetadata().get("ast_available")).isEqualTo(true);
+    assertThat(doc.getMetadata().get("symbol_fqn")).isInstanceOf(String.class);
   }
 
   @Test

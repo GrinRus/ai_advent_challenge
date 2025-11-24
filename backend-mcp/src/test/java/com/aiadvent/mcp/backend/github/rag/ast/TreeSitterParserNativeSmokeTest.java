@@ -6,11 +6,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.DefaultResourceLoader;
 
-@Disabled("Native Tree-sitter bindings not yet wired with jtreesitter")
 class TreeSitterParserNativeSmokeTest {
 
   @Test
@@ -20,7 +18,8 @@ class TreeSitterParserNativeSmokeTest {
         new TreeSitterLibraryLoader(properties, new DefaultResourceLoader());
     assumeTrue(loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available");
 
-    TreeSitterParser parser = new TreeSitterParser(loader);
+    LanguageRegistry languageRegistry = new LanguageRegistry(loader);
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry);
     String content =
         Files.readString(
             Path.of("src/test/resources/mini-repos/java/src/main/java/com/example/DemoService.java"));

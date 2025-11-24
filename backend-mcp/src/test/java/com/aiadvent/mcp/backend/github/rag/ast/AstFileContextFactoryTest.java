@@ -1,12 +1,9 @@
 package com.aiadvent.mcp.backend.github.rag.ast;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 import com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext;
 import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
+import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,20 +21,10 @@ class AstFileContextFactoryTest {
 
   @BeforeEach
   void setUp() {
-    TreeSitterAnalyzer analyzer = mock(TreeSitterAnalyzer.class);
-    LanguageRegistry languageRegistry = mock(LanguageRegistry.class);
-    TreeSitterQueryRegistry queryRegistry = mock(TreeSitterQueryRegistry.class);
-    TreeSitterLibraryLoader loader = mock(TreeSitterLibraryLoader.class);
-
-    factory =
-        new AstFileContextFactory(
-            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
-
-    when(analyzer.isEnabled()).thenReturn(true);
-    when(analyzer.supportsLanguage(anyString())).thenReturn(true);
-    when(analyzer.ensureLanguageLoaded(anyString())).thenReturn(true);
-    when(analyzer.isNativeEnabled()).thenReturn(false);
-    when(languageRegistry.language(anyString())).thenReturn(java.util.Optional.empty());
+    GitHubRagProperties properties = new GitHubRagProperties();
+    properties.getAst().setEnabled(true);
+    properties.getAst().setNativeEnabled(false);
+    factory = AstTestSupport.astComponents(properties).factory();
   }
 
   @Test
@@ -54,6 +41,20 @@ class AstFileContextFactoryTest {
     AstSymbolMetadata clazz =
         context.symbols().stream().filter(symbol -> symbol.symbolKind().equals("class")).findFirst().orElseThrow();
     assertThat(clazz.docstring()).isNotNull();
+    assertThat(clazz.implementsTypes()).contains("com.example.Runner", "com.example.Runnable");
+    assertThat(clazz.implementsTypes())
+        .anySatisfy(entry -> assertThat(entry).contains("BaseService"));
+
+    AstSymbolMetadata overloaded =
+        context.symbols().stream()
+            .filter(symbol ->
+                "method".equals(symbol.symbolKind())
+                    && symbol.symbolFqn().equals("com.example#process(Stringname,intcount)"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(overloaded.callsOut()).contains("com.example.findUser");
+    assertThat(overloaded.imports())
+        .anySatisfy(entry -> assertThat(entry).contains("com.example.repository.UserRepository"));
   }
 
   @Test

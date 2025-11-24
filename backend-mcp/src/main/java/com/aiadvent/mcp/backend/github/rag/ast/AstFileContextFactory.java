@@ -43,13 +43,27 @@ public class AstFileContextFactory {
       log.debug("AST fallback: language missing for file {}", relativePath);
       return null;
     }
-    if (analyzer != null && (!analyzer.isEnabled() || !analyzer.supportsLanguage(language))) {
-      log.debug("AST fallback: Tree-sitter disabled or unsupported language {} for {}", language, relativePath);
-      return parser.parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty()).orElse(null);
+    if (analyzer == null) {
+      return parser.parse(content, language, relativePath, true, queries(language)).orElse(null);
     }
-    boolean nativeEnabled =
-        analyzer == null ? true : analyzer.ensureLanguageLoaded(language) && analyzer.isNativeEnabled();
-    return parser.parse(content, language, relativePath, nativeEnabled, queries(language)).orElse(null);
+    if (!analyzer.isEnabled() || !analyzer.supportsLanguage(language)) {
+      log.debug(
+          "AST fallback: Tree-sitter disabled or unsupported language {} for {}",
+          language,
+          relativePath);
+      return parser
+          .parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty())
+          .orElse(null);
+    }
+    boolean nativeEnabled = false;
+    if (analyzer.isNativeEnabled()) {
+      nativeEnabled = analyzer.ensureLanguageLoaded(language);
+    }
+    TreeSitterQueryRegistry.LanguageQueries languageQueries =
+        nativeEnabled ? queries(language) : TreeSitterQueryRegistry.empty();
+    return parser
+        .parse(content, language, relativePath, nativeEnabled, languageQueries)
+        .orElse(null);
   }
 
   public Optional<AstFileContext> optional(
