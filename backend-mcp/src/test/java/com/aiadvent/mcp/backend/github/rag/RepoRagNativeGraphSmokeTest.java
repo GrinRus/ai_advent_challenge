@@ -120,9 +120,8 @@ class RepoRagNativeGraphSmokeTest {
     RepoRagChunker chunker = new RepoRagChunker(properties);
     LanguageRegistry languageRegistry = new LanguageRegistry(loader);
     TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
-    AstFileContextFactory astFactory =
-        new AstFileContextFactory(
-            languageRegistry, queryRegistry, new TreeSitterParser(loader, languageRegistry), analyzer);
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry, queryRegistry);
+    AstFileContextFactory astFactory = new AstFileContextFactory(parser, analyzer);
     SymbolGraphWriter symbolGraphWriter = new SymbolGraphWriter(symbolGraphRepository, new SimpleMeterRegistry());
     GraphSyncService graphSyncService = new GraphSyncService(driver, properties, new SimpleMeterRegistry());
 

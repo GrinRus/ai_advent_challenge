@@ -19,7 +19,8 @@ class TreeSitterParserNativeSmokeTest {
     assumeTrue(loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available");
 
     LanguageRegistry languageRegistry = new LanguageRegistry(loader);
-    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry);
+    TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry, queryRegistry);
     String content =
         Files.readString(
             Path.of("src/test/resources/mini-repos/java/src/main/java/com/example/DemoService.java"));

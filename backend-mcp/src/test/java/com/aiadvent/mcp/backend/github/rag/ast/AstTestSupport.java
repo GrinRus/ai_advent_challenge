@@ -21,9 +21,8 @@ public final class AstTestSupport {
     LanguageRegistry languageRegistry = new LanguageRegistry(loader);
     TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
     TreeSitterAnalyzer analyzer = new TreeSitterAnalyzer(properties, loader);
-    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry);
-    AstFileContextFactory factory =
-        new AstFileContextFactory(languageRegistry, queryRegistry, parser, analyzer);
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry, queryRegistry);
+    AstFileContextFactory factory = new AstFileContextFactory(parser, analyzer);
     return new AstComponents(loader, languageRegistry, queryRegistry, analyzer, parser, factory);
   }
 

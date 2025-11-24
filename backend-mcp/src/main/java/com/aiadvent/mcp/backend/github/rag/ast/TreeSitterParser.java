@@ -42,11 +42,16 @@ public class TreeSitterParser {
 
   private final TreeSitterLibraryLoader libraryLoader;
   private final LanguageRegistry languageRegistry;
+  private final TreeSitterQueryRegistry queryRegistry;
 
   @Autowired
-  public TreeSitterParser(TreeSitterLibraryLoader libraryLoader, LanguageRegistry languageRegistry) {
+  public TreeSitterParser(
+      TreeSitterLibraryLoader libraryLoader,
+      LanguageRegistry languageRegistry,
+      TreeSitterQueryRegistry queryRegistry) {
     this.libraryLoader = libraryLoader;
     this.languageRegistry = languageRegistry;
+    this.queryRegistry = queryRegistry;
   }
 
   private static final Pattern CALL_PATTERN = Pattern.compile("\\b([A-Za-z_][\\w$]*)\\s*\\(");
@@ -122,15 +127,17 @@ public class TreeSitterParser {
           Map.entry("character", "java.lang.Character"));
 
   public Optional<AstFileContext> parse(String content, String language, String relativePath) {
-    return parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty());
+    return parse(content, language, relativePath, false);
   }
 
   public Optional<AstFileContext> parse(
       String content, String language, String relativePath, boolean nativeEnabled) {
-    return parse(content, language, relativePath, nativeEnabled, TreeSitterQueryRegistry.empty());
+    LanguageQueries queries =
+        nativeEnabled ? resolveQueries(language) : TreeSitterQueryRegistry.empty();
+    return parseInternal(content, language, relativePath, nativeEnabled, queries);
   }
 
-  public Optional<AstFileContext> parse(
+  private Optional<AstFileContext> parseInternal(
       String content,
       String language,
       String relativePath,
@@ -272,6 +279,17 @@ public class TreeSitterParser {
               endLine));
     }
     return Optional.of(new AstFileContext(List.copyOf(result)));
+  }
+
+  private LanguageQueries resolveQueries(String language) {
+    if (!StringUtils.hasText(language)) {
+      return TreeSitterQueryRegistry.empty();
+    }
+    String normalized = language.trim().toLowerCase(Locale.ROOT);
+    return languageRegistry
+        .language(normalized)
+        .map(lang -> queryRegistry.queries(lang, normalized))
+        .orElse(TreeSitterQueryRegistry.empty());
   }
 
   private SymbolBuilder fallbackNode(String relativePath, String packageName, int totalLines, List<String> imports) {

@@ -1,7 +1,6 @@
 package com.aiadvent.mcp.backend.github.rag.ast;
 
 import com.aiadvent.mcp.backend.github.rag.chunking.AstFileContext;
-import com.aiadvent.mcp.backend.github.rag.chunking.AstSymbolMetadata;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
@@ -16,18 +15,12 @@ public class AstFileContextFactory {
 
   private static final Logger log = LoggerFactory.getLogger(AstFileContextFactory.class);
 
-  private final LanguageRegistry languageRegistry;
-  private final TreeSitterQueryRegistry queryRegistry;
   private final TreeSitterParser parser;
   private final TreeSitterAnalyzer analyzer;
 
   public AstFileContextFactory(
-      LanguageRegistry languageRegistry,
-      TreeSitterQueryRegistry queryRegistry,
       TreeSitterParser parser,
       TreeSitterAnalyzer analyzer) {
-    this.languageRegistry = languageRegistry;
-    this.queryRegistry = queryRegistry;
     this.parser = parser;
     this.analyzer = analyzer;
   }
@@ -44,26 +37,20 @@ public class AstFileContextFactory {
       return null;
     }
     if (analyzer == null) {
-      return parser.parse(content, language, relativePath, true, queries(language)).orElse(null);
+      return parser.parse(content, language, relativePath, true).orElse(null);
     }
     if (!analyzer.isEnabled() || !analyzer.supportsLanguage(language)) {
       log.debug(
           "AST fallback: Tree-sitter disabled or unsupported language {} for {}",
           language,
           relativePath);
-      return parser
-          .parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty())
-          .orElse(null);
+      return parser.parse(content, language, relativePath, false).orElse(null);
     }
     boolean nativeEnabled = false;
     if (analyzer.isNativeEnabled()) {
       nativeEnabled = analyzer.ensureLanguageLoaded(language);
     }
-    TreeSitterQueryRegistry.LanguageQueries languageQueries =
-        nativeEnabled ? queries(language) : TreeSitterQueryRegistry.empty();
-    return parser
-        .parse(content, language, relativePath, nativeEnabled, languageQueries)
-        .orElse(null);
+    return parser.parse(content, language, relativePath, nativeEnabled).orElse(null);
   }
 
   public Optional<AstFileContext> optional(
@@ -71,10 +58,4 @@ public class AstFileContextFactory {
     return Optional.ofNullable(create(absolutePath, relativePath, language, content));
   }
 
-  private TreeSitterQueryRegistry.LanguageQueries queries(String language) {
-    return languageRegistry
-        .language(language)
-        .map(lang -> queryRegistry.queries(lang, language.toLowerCase(java.util.Locale.ROOT)))
-        .orElse(TreeSitterQueryRegistry.empty());
-  }
 }

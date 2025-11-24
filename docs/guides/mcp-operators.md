@@ -102,36 +102,37 @@ Backend использует `spring.ai.mcp.client.streamable-http.connections.<
    - Сообщить операторам, какие namespace уже AST-ready, какие профили используют call graph и какие лимиты (`neighborLimit`, `maxContextTokens`) актуальны.
 
 #### IDE-подобная навигация (контроллер → сервис → репозиторий)
-Чтобы повторить сценарий «IDE показывает переходы между слоями», используйте графовые инструменты `repo.code_graph_neighbors` и `repo.code_graph_path` вместе с `repo.rag_search`:
+Полноценный walkthrough есть в [release notes Wave 45](../releases/wave45.md), но кратко шаги такие:
 
-1. **Проверка графа.** Выполните `repo.rag_index_status` и убедитесь, что `graphReady=true`, `graphSchemaVersion>=1`. Если не так — повторите `github.repository_fetch` и дождитесь завершения индексации.
-2. **Найдите стартовый символ.** Через `repo.rag_search` (или `repo.rag_search_simple`) найдите контроллер/handler. Сохраните `symbol_fqn` из `matches[].metadata`.
-3. **Просмотрите ближайших соседей.** Вызовите `repo.code_graph_neighbors` c `direction=OUTGOING` и `relation=CALLS`, чтобы увидеть сервис, который вызывает контроллер:
+1. **Проверка графа.** Выполните `repo.rag_index_status` и убедитесь, что `graphReady=true`, `graphSchemaVersion>=1`, `graph_sync_error=null`. Если нет — повторите `github.repository_fetch`.
+2. **Найдите стартовый символ.** Через `repo.rag_search` (или `repo.rag_search_simple`) найдите контроллер/handler. Сохраните `symbol_fqn` и `file_path` из `matches[].metadata`.
+3. **Дополните определение.** По необходимости вызовите `repo.code_graph_definition`, чтобы получить точные строки/visibility — удобно для UI ссылок.
+4. **Посмотрите ближайших соседей.** `repo.code_graph_neighbors` с `direction=OUTGOING` и `relation=CALLS` покажет вызываемые сервисы:
    ```json
    {
      "namespace": "repo:owner/demo",
      "symbolFqn": "com.demo.api.Controller#handle",
      "direction": "OUTGOING",
      "relation": "CALLS",
-     "limit": 5,
-     "depth": 2
+     "limit": 6
    }
    ```
-   Ответ содержит `nodes[]` (FQN, файлы, строки) и `edges[]` (тип связи, chunkHash) — аналог навигации по references в IDE.
-4. **Постройте путь до репозитория.** Если нужно показать полный маршрут «контроллер → сервис → репозиторий», воспользуйтесь `repo.code_graph_path`:
+   В ответе будут `nodes[]` (FQN, файлы, строки, visibility) и `edges[]` (relation, chunkHash, chunkIndex) — аналог IDE references.
+5. **Постройте маршрут.** Для цепочки «контроллер → сервис → репозиторий» используйте `repo.code_graph_path`:
    ```json
    {
      "namespace": "repo:owner/demo",
-     "sourceSymbolFqn": "com.demo.api.Controller#handle",
-     "targetSymbolFqn": "com.demo.repo.UserRepository#save",
+     "sourceFqn": "com.demo.api.Controller#handle",
+     "targetFqn": "com.demo.repo.UserRepository#save",
      "maxDepth": 6
    }
    ```
-   MCP вернёт кратчайший путь, который можно визуализировать в UI или процитировать оператору.
-5. **Сопоставьте с выдачей поиска.** Запрос `repo.rag_search` автоматически добавит `graph_neighbors`/`graph_path` в `matches[].metadata`, если граф доступен. Если ключей нет или в `warnings[]` появилось `neighbor.graph-disabled`, значит граф ещё не готов.
-6. **Диагностика.** Для локального smoke используйте `./gradlew test --tests "com.aiadvent.mcp.backend.github.rag.RepoRagSearchServiceGraphIntegrationTest"` — он поднимает Neo4j через Testcontainers, синхронизирует мини-репозиторий и подтверждает, что `graph_neighbors`/`graph_path` попадают в ответ `repo.rag_search`.
+   MCP вернёт `nodes[]/edges[]` кратчайшего пути, который можно визуализировать или процитировать.
+6. **Сопоставьте с выдачей поиска.** `repo.rag_search` автоматически добавит `graph_neighbors`/`graph_path` в `matches[].metadata` (модуль `graph.lens`). Если данных нет или `warnings[]` содержит `neighbor.graph-disabled`, граф ещё не готов.
+7. **Мониторинг и диагностика.** В CI добавлен `backend-mcp-graph-alert`, который комментирует PR и пишет summary, если графовый smoke упал. Для ручного разбора воспользуйтесь runbook-ом [`docs/runbooks/graph-troubleshooting.md`](../runbooks/graph-troubleshooting.md).
 
 #### Troubleshooting Graph & Tree-sitter
+[Полный чек-лист находится здесь](../runbooks/graph-troubleshooting.md), ниже — краткая версия.
 1. **`graphReady=false` / `neighbor.graph-disabled`.** Проверьте `repo.rag_index_status`. Если `ready=true`, но `graphReady=false`, скорее всего `GraphSyncService` не успел завершиться. Повторите `github.repository_fetch` и дождитесь `graphReady=true`. Для одиночного namespace можно вызвать `RepoRagIndexService` с `graphLegacyTableEnabled=true`, чтобы временно вернуться на Postgres.
 2. **Восстановление графа.** При подозрении на повреждённый граф выполните `docker compose stop github-mcp`, очистите Neo4j (или выберите новую базу), затем повторите `github.repository_fetch` для нужных namespace. Health-check `RepoRagSearchServiceGraphIntegrationTest` подтверждает, что код способен индексировать mini-repo и получать `graph_neighbors`/`graph_path` в ответе. Если тест падает, проверьте логи `GraphSyncService` — там указываются Cypher-ошибки и namespace.
 3. **Tree-sitter native failure (`ast.degraded`).** Такие записи в логах означают, что `TreeSitterAnalyzer` не смог загрузить `libjava-tree-sitter.*` или языковую грамматику. Убедитесь, что перед запуском выполнены `git submodule update --init --recursive backend-mcp/treesitter` и `./gradlew treeSitterBuild treeSitterVerify`. Для macOS/Windows запускайте backend с `--enable-native-access=ALL-UNNAMED`. Smoke-тест `AstFileContextFactoryNativeModeTest` детектирует отсутствие библиотек и проверяет graceful fallback.

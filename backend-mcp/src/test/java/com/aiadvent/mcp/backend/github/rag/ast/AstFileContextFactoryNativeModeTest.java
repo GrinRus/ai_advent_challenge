@@ -34,10 +34,9 @@ class AstFileContextFactoryNativeModeTest {
     when(loader.loadLanguage("java")).thenReturn(Optional.empty());
     LanguageRegistry languageRegistry = spy(new LanguageRegistry(loader));
     TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
-    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry);
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry, queryRegistry);
     TreeSitterAnalyzer analyzer = new TreeSitterAnalyzer(props, loader);
-    AstFileContextFactory factory =
-        new AstFileContextFactory(languageRegistry, queryRegistry, parser, analyzer);
+    AstFileContextFactory factory = new AstFileContextFactory(parser, analyzer);
 
     String content = Files.readString(JAVA_FILE);
     AstFileContext context =
@@ -61,10 +60,9 @@ class AstFileContextFactoryNativeModeTest {
     assumeTrue(loader.ensureCoreLibraryLoaded(), "libjava-tree-sitter not available for platform");
     LanguageRegistry languageRegistry = spy(new LanguageRegistry(loader));
     TreeSitterQueryRegistry queryRegistry = new TreeSitterQueryRegistry();
-    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry);
+    TreeSitterParser parser = new TreeSitterParser(loader, languageRegistry, queryRegistry);
     TreeSitterAnalyzer analyzer = new TreeSitterAnalyzer(props, loader);
-    AstFileContextFactory factory =
-        new AstFileContextFactory(languageRegistry, queryRegistry, parser, analyzer);
+    AstFileContextFactory factory = new AstFileContextFactory(parser, analyzer);
 
     String content = Files.readString(JAVA_FILE);
     AstFileContext context =
