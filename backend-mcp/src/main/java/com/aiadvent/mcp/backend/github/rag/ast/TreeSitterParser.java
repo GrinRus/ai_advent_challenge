@@ -62,6 +62,8 @@ public class TreeSitterParser {
       Pattern.compile("\\bextends\\s+([A-Za-z_][\\w$<>,\\s]*)");
   private static final Pattern FIELD_READ_PATTERN =
       Pattern.compile("\\b([A-Za-z_][\\w$]*)\\.([A-Za-z_][\\w$]*)");
+  private static final Pattern TYPE_REFERENCE_PATTERN =
+      Pattern.compile("([A-Za-z_][\\w$.<>?]*)\\s+[A-Za-z_][\\w$]*");
   private static final Set<String> CALL_KEYWORDS =
       Set.of(
           "if",
@@ -80,6 +82,44 @@ public class TreeSitterParser {
           "fun",
           "fn",
           "match");
+  private static final Set<String> TYPE_KEYWORDS =
+      Set.of(
+          "public",
+          "private",
+          "protected",
+          "static",
+          "final",
+          "abstract",
+          "native",
+          "synchronized",
+          "transient",
+          "volatile",
+          "void",
+          "var",
+          "val",
+          "let",
+          "function",
+          "fun",
+          "int",
+          "long",
+          "short",
+          "byte",
+          "double",
+          "float",
+          "boolean",
+          "char");
+  private static final Map<String, String> JAVA_LANG_TYPES =
+      Map.ofEntries(
+          Map.entry("string", "java.lang.String"),
+          Map.entry("object", "java.lang.Object"),
+          Map.entry("integer", "java.lang.Integer"),
+          Map.entry("long", "java.lang.Long"),
+          Map.entry("double", "java.lang.Double"),
+          Map.entry("float", "java.lang.Float"),
+          Map.entry("short", "java.lang.Short"),
+          Map.entry("byte", "java.lang.Byte"),
+          Map.entry("boolean", "java.lang.Boolean"),
+          Map.entry("character", "java.lang.Character"));
 
   public Optional<AstFileContext> parse(String content, String language, String relativePath) {
     return parse(content, language, relativePath, false, TreeSitterQueryRegistry.empty());
@@ -145,6 +185,7 @@ public class TreeSitterParser {
         builder.symbolFqn =
             buildFqn(packageName, currentContainerFqn, builder.name, isContainer(builder.kind), builder.signature);
         builders.add(builder);
+        builder.usesTypes.addAll(extractTypesFromSignature(builder.signature));
         active = builder;
         if (isContainer(builder.kind)) {
           currentContainer = builder.name;
@@ -519,6 +560,10 @@ public class TreeSitterParser {
     if (importIndex != null && importIndex.containsKey(shortName)) {
       return importIndex.get(shortName);
     }
+    String javaLang = JAVA_LANG_TYPES.get(shortName.toLowerCase(Locale.ROOT));
+    if (javaLang != null) {
+      return javaLang;
+    }
     if (StringUtils.hasText(packageName)) {
       return packageName + "." + shortName;
     }
@@ -530,6 +575,33 @@ public class TreeSitterParser {
       return null;
     }
     return value.replaceAll("[^A-Za-z0-9_$.]", "").trim();
+  }
+
+  private Set<String> extractTypesFromSignature(String signature) {
+    if (!StringUtils.hasText(signature)) {
+      return Set.of();
+    }
+    Matcher matcher = TYPE_REFERENCE_PATTERN.matcher(signature);
+    Set<String> result = new LinkedHashSet<>();
+    while (matcher.find()) {
+      String candidate = matcher.group(1);
+      if (!StringUtils.hasText(candidate)) {
+        continue;
+      }
+      String sanitized = candidate.replaceAll("<.*>", "").trim();
+      if (!StringUtils.hasText(sanitized)) {
+        continue;
+      }
+      String lower = sanitized.toLowerCase(Locale.ROOT);
+      if (TYPE_KEYWORDS.contains(lower)) {
+        continue;
+      }
+      if (!Character.isLetter(sanitized.charAt(0))) {
+        continue;
+      }
+      result.add(sanitized);
+    }
+    return result;
   }
 
   private static final class SymbolBuilder {
@@ -852,6 +924,7 @@ public class TreeSitterParser {
                       buildFqn(
                           packageName, null, builder.name, isContainer(builder.kind), builder.signature);
                   builders.add(builder);
+                  builder.usesTypes.addAll(extractTypesFromSignature(builder.signature));
                 });
       }
       return builders;
@@ -1084,6 +1157,7 @@ public class TreeSitterParser {
           String containerFqn = containerStack.peek();
           builder.symbolFqn = buildFqn(packageName, containerFqn, name, isContainer, builder.signature);
           builders.add(builder);
+          builder.usesTypes.addAll(extractTypesFromSignature(builder.signature));
           if (isContainer) {
             containerStack.push(builder.symbolFqn);
             node.getNamedChildren().forEach(child -> walk(child, builders, containerStack));

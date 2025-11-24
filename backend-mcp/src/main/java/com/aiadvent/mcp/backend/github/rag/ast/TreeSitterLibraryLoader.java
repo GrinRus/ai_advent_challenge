@@ -25,6 +25,8 @@ import org.springframework.util.StringUtils;
 @Component
 public class TreeSitterLibraryLoader {
 
+  private static final String CORE_LIBRARY_BASE = "java-tree-sitter";
+
   private static final Logger log = LoggerFactory.getLogger(TreeSitterLibraryLoader.class);
 
   private final GitHubRagProperties properties;
@@ -177,11 +179,12 @@ public class TreeSitterLibraryLoader {
             + "/"
             + platform.arch()
             + "/"
-            + platform.libraryFileName("tree-sitter");
+            + platform.libraryFileName(CORE_LIBRARY_BASE);
     if (classpath) {
       return new ClassPathResource(resourcePath);
     }
-    Path fullPath = Path.of(basePath, platform.os(), platform.arch(), platform.libraryFileName("tree-sitter"));
+    Path fullPath =
+        Path.of(basePath, platform.os(), platform.arch(), platform.libraryFileName(CORE_LIBRARY_BASE));
     return new FileSystemResource(fullPath);
   }
 

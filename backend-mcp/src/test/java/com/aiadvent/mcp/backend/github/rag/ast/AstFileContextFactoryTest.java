@@ -55,6 +55,7 @@ class AstFileContextFactoryTest {
     assertThat(overloaded.callsOut()).contains("com.example.findUser");
     assertThat(overloaded.imports())
         .anySatisfy(entry -> assertThat(entry).contains("com.example.repository.UserRepository"));
+    assertThat(overloaded.usesTypes()).contains("java.lang.String");
   }
 
   @Test

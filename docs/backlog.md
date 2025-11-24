@@ -1448,7 +1448,7 @@
 - [ ] **Tree-sitter DI + обновление API 0.25.6**
   - [ ] Перейти на jtreesitter `0.25.6`, переписать использование `QueryCursor`, `QueryMatch.captures()` и обработку `QueryError`, включить `usesTypes` как `Set<String>`.
   - [ ] Удалить боевой no-arg конструктор `TreeSitterParser`, добившись, чтобы все компоненты создавались только через Spring-бин из `TreeSitterLibraryLoader/LanguageRegistry/TreeSitterAnalyzer`.
-  - [ ] Добавить интеграционные тесты/health-check, которые проверяют graceful fallback при отсутствии грамматики и корректное включение native режима (`isNativeEnabled=true`).
+  - [x] Добавить интеграционные тесты/health-check, которые проверяют graceful fallback при отсутствии грамматики и корректное включение native режима (`isNativeEnabled=true`).
 
 - [x] **Качество AST и нормализация FQN**
   - [x] Реализовать построение FQN через стек контейнеров (`package.Class.Inner#method(Type arg)`), нормализовать типы аргументов и видимость, и хранить `AST_VERSION=2` только для новых нод.
@@ -1461,11 +1461,11 @@
   - [x] Разморозить native-smoke тесты (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`) и добавить ассерт на пропуск при неподдерживаемой архитектуре.
 
 - [ ] **CI / e2e smoke**
-  - [ ] Добавить job, который поднимает Testcontainers Neo4j + включает native Tree-sitter, индексирует mini-repo, вызывает `repo.code_graph_neighbors`/`repo.code_graph_path` и проверяет наличие `graph_neighbors`/`graph_path` в `repo.rag_search`.
-  - [ ] Проверить layout `treesitter/<os>/<arch>` в собранном bootJar и удалить неиспользуемые зависимости (например, лишний `javacpp`).
+  - [x] Добавить job, который поднимает Testcontainers Neo4j + включает native Tree-sitter, индексирует mini-repo, вызывает `repo.code_graph_neighbors`/`repo.code_graph_path` и проверяет наличие `graph_neighbors`/`graph_path` в `repo.rag_search`.
+  - [x] Проверить layout `treesitter/<os>/<arch>` в собранном bootJar и удалить неиспользуемые зависимости (например, лишний `javacpp`).
   - [ ] Настроить алерты/метрики CI на деградацию графа (падение sync/test шага).
 
 - [ ] **Документация и гайды**
-  - [ ] Обновить `docs/infra.md` и `docs/architecture/github-rag-modular.md` разделами про Tree-sitter (JDK 22, `--enable-native-access`), layout библиотек и Neo4j пайплайн.
+  - [x] Обновить `docs/infra.md` и `docs/architecture/github-rag-modular.md` разделами про Tree-sitter (JDK 22, `--enable-native-access`), layout библиотек и Neo4j пайплайн.
   - [ ] Дополнить release notes и `docs/guides/mcp-operators.md` сценарием “контроллер → сервис → репозиторий” с примерами вызова `repo.code_graph_*` и скринами UI.
   - [ ] Добавить troubleshooting чек-лист: как проверить `graphReady`, как восстанавливать граф, что делать при ошибке загрузки нативных библиотек.

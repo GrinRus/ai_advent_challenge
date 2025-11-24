@@ -102,6 +102,19 @@ curl -X POST \
 ```
 В ответе будет новый профиль-заглушка; PUT/POST с тем же заголовком доступны до тех пор, пока dev-режим активен.
 
+## Tree-sitter и Neo4j для GitHub RAG
+
+### Нативные библиотеки Tree-sitter
+- Java 22 запускается с обязательным флагом `--enable-native-access=ALL-UNNAMED`, иначе `java-tree-sitter` не сможет загрузить JNI-биндинги. Gradle/bootRun уже прокидывают опцию через `JVM_OPTS`, но для кастомных запусков не забывайте добавлять её вручную.
+- Грамматики (Java/Kotlin/TypeScript/JavaScript/Python/Go) собираются задачей `./gradlew treeSitterBuild`. Она кладёт `libjava-tree-sitter.*` и `libtree-sitter-<lang>.*` в `src/main/resources/treesitter/<os>/<arch>/`. Проверить комплект можно через `./gradlew treeSitterVerify` или unit-тест `TreeSitterLibraryLayoutTest` — он убеждается, что для текущей платформы присутствуют runtime и все языковые библиотеки.
+- Для CI и локальной разработки достаточно выполнить `git submodule update --init --recursive backend-mcp/treesitter && ./gradlew treeSitterBuild treeSitterVerify bootJar`. Если нужно тестировать нативный режим без сборки bootJar, используйте smoke-тест `AstFileContextFactoryNativeModeTest` — он проверяет graceful fallback при отсутствии библиотек и полноценный AST при включённом `github.rag.ast.native-enabled=true`.
+- Путь к библиотекам можно переопределить через `github.rag.ast.library-path` (по умолчанию `classpath:treesitter`). В Docker-образ пакуются только linux x86_64/arm64 зависимости; для других архитектур backend автоматически переходит на эвристический режим chunking, оставляя индексацию безопасной.
+
+### Neo4j как графовый storage
+- Граф call graph синхронизируется в Neo4j. Настройки находятся в `github.rag.graph.*` (`GITHUB_RAG_GRAPH_ENABLED`, `..._URI`, `..._USERNAME`, `..._PASSWORD`, `..._DATABASE`). Для локальной работы можно запустить `neo4j:5.x` через docker (`docker run --rm -p 7687:7687 -e NEO4J_AUTH=neo4j/testpass neo4j:5.19.0-community`) и добавить сервис в `docker-compose.local.yaml`, либо полагаться на Testcontainers — большинство smoke-тестов (например, `RepoRagSearchServiceGraphIntegrationTest`) автоматически стартуют контейнер при наличии Docker.
+- `GraphSyncService` пишет данные через batch `UNWIND`, а `GraphQueryService` обслуживает инструменты `repo.code_graph_*` и graph lens в `RepoRagSearchService`. Если граф временно отключён, backend возвращается к LINEAR/PARENT стратегиям и пишет предупреждения в ответ MCP.
+- Для быстрого health-check выполните `./gradlew test --tests "com.aiadvent.mcp.backend.github.rag.RepoRagSearchServiceGraphIntegrationTest"`: тест запускает indexing→graph sync→`repo.rag_search`, проверяя, что `graph_neighbors`/`graph_path` появляются в ответе. Это же упражнение рекомендуем включить в CI smoke job.
+
 ## OAuth мониторинг и крон-джобы
 
 Чтобы Wave 43 не требовал архитектурных правок, уже в Wave 42 фиксируем требования по фоновой обработке токенов:
