@@ -1469,3 +1469,33 @@
   - [x] Обновить `docs/infra.md` и `docs/architecture/github-rag-modular.md` разделами про Tree-sitter (JDK 22, `--enable-native-access`), layout библиотек и Neo4j пайплайн.
   - [x] Дополнить release notes и `docs/guides/mcp-operators.md` сценарием “контроллер → сервис → репозиторий” с примерами вызова `repo.code_graph_*` и скринами UI.
   - [x] Добавить troubleshooting чек-лист: как проверить `graphReady`, как восстанавливать граф, что делать при ошибке загрузки нативных библиотек.
+
+## Wave 46 — IDE-навигация графа 2.0 (Tree-sitter + Neo4j)
+Цель: довести MCP-навигацию до уровня IDE — вложенные сущности, точный резолв вызовов/типов, расширенный вывод для LLM/UI и новые языки.
+
+### AST и полнота графа
+- [ ] Добавить рёбра `CONTAINS` (класс → метод/поле/inner) и хранить их в Neo4j вместе с `CALLS/IMPLEMENTS/...`; обновить `GraphSyncService`/Cypher и очистку при изменениях файла.
+- [ ] Нормализовать сигнатуры: сохранять возвращаемый тип и аргументы в каноническом виде, поддержать перегрузки/inner-классы в FQN (`pkg.Class.Inner#method(Type)`), помечать свойства/поля отдельным kind.
+- [ ] Улучшить резолв ссылок: учитывать статические импорты, alias/namespace (TS/JS), квалифицированные вызовы и пакет по умолчанию; при конфликтах фиксировать best-effort и метку точности в метаданных.
+- [ ] Расширить edges `USES_TYPE` на аргументы/возвращаемые типы и аннотации; хранить docstring и visibility в узле графа для дальнейших ответов.
+
+### MCP-инструменты и графовая выдача
+- [ ] Расширить `repo.code_graph_neighbors`/`definition` payload полями `signature/docstring/astVersion`, вернуть anchors (file + line) для UI preview.
+- [ ] Добавить relation `CONTAINS` или отдельный `repo.code_graph_outline`, который отдаёт членов класса по порядку строк, с флагами visibility/test.
+- [ ] Улучшить `repo.code_graph_path`: выбор целевого узла по переданному `targetHint`/`goalFqn`, поддержка направлений INCOMING/OUTGOING, контроль глубины/отношений; графовая линза должна брать путь к заданной цели, а не к первому соседу.
+- [ ] Включить в `graph_neighbors`/`graph_path` краткие превью (signature/docstring), чтобы LLM могла отвечать как IDE “go to definition” без дополнительного чтения файла.
+
+### Языковая поддержка и артефакты
+- [ ] Подключить новые грамматики Tree-sitter (минимум 2 из `csharp`, `cpp`, `rust`), собрать нативные библиотеки под поддерживаемые платформы и добавить в `treesitter/<os>/<arch>`.
+- [ ] Расширить mini-repos для новых языков: наследование, интерфейсы, перегрузки, статические импорты/using, вызовы между файлами; обновить smoke/fixture-тесты.
+- [ ] Обновить `TreeSitterLanguage`/loader/health-checkи и `docs/infra.md` с требованиями по платформам и layout библиотек.
+
+### Точность, производительность и наблюдаемость
+- [ ] Кэшировать ответы `GraphQueryService` (neighbors/path/definition) с TTL, добавить circuit-breaker на Neo4j и fallback к legacy таблице при деградации.
+- [ ] Метрики: hit/miss резолва (local/import/stdlib), латентность запросов по relation, fan-out соседей; алерты на рост недоопределённых вызовов/ошибок резолва.
+- [ ] Интеграционный тест: мини-репозиторий со статическими импортами/alias и квалифицированными вызовами; ассерт на точные FQN в `CALLS/USES_TYPE` и корректный `graph_path`.
+
+### Документация и UX
+- [ ] Обновить `docs/guides/mcp-operators.md` примерами outline/CONTAINS-навигации и анкорами на строки.
+- [ ] Добавить IDE-like cookbook по использованию графовых инструментов в LLM-промптах (навигация, outline, путь до цели) в `docs/architecture/github-rag-modular.md` или отдельный файл.
+- [ ] Подготовить release notes Wave 46 с примерами запросов и скриншотами UI/аннотаций графа.
