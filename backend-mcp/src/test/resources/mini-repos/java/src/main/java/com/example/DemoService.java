@@ -1,7 +1,11 @@
 package com.example;
 
+import com.example.repository.UserRepository;
+
 /** Demo service doc. */
 public class DemoService extends BaseService implements Runner, Runnable {
+
+  private final UserRepository repository = new UserRepository();
 
   @Override
   public void run() {
@@ -10,6 +14,7 @@ public class DemoService extends BaseService implements Runner, Runnable {
 
   /** Process request with name and count. */
   public String process(String name, int count) {
+    repository.findUser(name);
     helper(count);
     return name + count;
   }

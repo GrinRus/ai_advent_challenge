@@ -1,3 +1,6 @@
+from .helpers import helper, Repository
+
+
 class Base:
     """Base class with a hook."""
 
@@ -11,13 +14,14 @@ class Base:
 class DemoService(Base):
     """Demo service docstring."""
 
+    def __init__(self) -> None:
+        self.repository = Repository()
+
     def process(self, name: str, count: int) -> str:
         self.log(count)
         helper(count)
+        self.repository.find(name)
         return f"{name}-{count}"
 
     def process_once(self, name: str) -> str:
         return self.process(name, 1)
-
-def helper(count: int):
-    print("count", count)

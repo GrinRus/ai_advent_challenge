@@ -14,6 +14,7 @@ func (b Base) Log(value int) {
 
 type DemoService struct {
 	Base
+	repo Repository
 }
 
 func (d DemoService) Run() {
@@ -23,6 +24,9 @@ func (d DemoService) Run() {
 func (d DemoService) Process(name string, count int) string {
 	d.Log(count)
 	helper(count)
+	if d.repo != nil {
+		d.repo.Save(name)
+	}
 	return fmt.Sprintf("%s-%d", name, count)
 }
 
@@ -31,6 +35,7 @@ func helper(count int) {
 }
 
 func main() {
-	var r Runner = DemoService{}
+	service := DemoService{repo: &MemoryRepository{}}
+	var r Runner = service
 	r.Run()
 }

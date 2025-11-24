@@ -1455,10 +1455,10 @@
   - [x] Извлекать docstring/visibility/test-флаг из нативных узлов Tree-sitter (JavaDoc/KDoc/JSDoc/docstring) и прокидывать в `AstSymbolMetadata`.
   - [x] Добавить резолв импортов: маппинг `import` → FQN, который подставляется в `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`, чтобы граф получал полноценных соседей.
 
-- [ ] **Fixtures и тесты**
-  - [ ] Расширить mini-repos для всех поддерживаемых языков: наследование, интерфейсы, перегрузки методов, docstring-комментарии, вызовы между файлами.
+- [x] **Fixtures и тесты**
+  - [x] Расширить mini-repos для всех поддерживаемых языков: наследование, интерфейсы, перегрузки методов, docstring-комментарии, вызовы между файлами.
   - [ ] Обновить `AstFileContextFactoryTest`, `RepoRagIndexService*Test` и смежные тесты на DI-подход: использовать `TreeSitterAnalyzer`/`LanguageRegistry` вместо ручных моков и проверять новые FQN/edges/docstrings.
-  - [ ] Разморозить native-smoke тесты (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`) и добавить ассерт на пропуск при неподдерживаемой архитектуре.
+  - [x] Разморозить native-smoke тесты (`TreeSitterParserNativeSmokeTest`, `TreeSitterLibraryLoaderSmokeTest`, `TreeSitterAnalyzerTest`, `RepoRagNativeGraphSmokeTest`) и добавить ассерт на пропуск при неподдерживаемой архитектуре.
 
 - [ ] **CI / e2e smoke**
   - [ ] Добавить job, который поднимает Testcontainers Neo4j + включает native Tree-sitter, индексирует mini-repo, вызывает `repo.code_graph_neighbors`/`repo.code_graph_path` и проверяет наличие `graph_neighbors`/`graph_path` в `repo.rag_search`.

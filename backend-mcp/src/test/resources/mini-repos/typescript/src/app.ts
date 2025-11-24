@@ -1,3 +1,5 @@
+import { UserRepository } from "./repository";
+
 export interface Runner { run(): void; }
 
 export abstract class BaseService {
@@ -8,6 +10,8 @@ export abstract class BaseService {
 }
 
 export class DemoService extends BaseService implements Runner {
+
+  private repo = new UserRepository();
   /** Runs the demo service. */
   public run(): void {
     this.process("demo", 3);
@@ -17,6 +21,7 @@ export class DemoService extends BaseService implements Runner {
   process(name: string, count: number): string {
     this.log(count);
     helper(count);
+    this.repo.find(name);
     return `${name}-${count}`;
   }
 
