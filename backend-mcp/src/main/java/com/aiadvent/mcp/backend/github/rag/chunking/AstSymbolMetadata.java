@@ -1,6 +1,7 @@
 package com.aiadvent.mcp.backend.github.rag.chunking;
 
 import java.util.List;
+import java.util.Set;
 
 public record AstSymbolMetadata(
     String symbolFqn,
@@ -14,6 +15,6 @@ public record AstSymbolMetadata(
     List<String> callsIn,
     List<String> implementsTypes,
     List<String> readsFields,
-    List<String> usesTypes,
+    Set<String> usesTypes,
     int lineStart,
     int lineEnd) {}

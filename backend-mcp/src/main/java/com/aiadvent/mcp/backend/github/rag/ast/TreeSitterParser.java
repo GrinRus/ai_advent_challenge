@@ -14,6 +14,7 @@ import io.github.treesitter.jtreesitter.QueryMatch;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,6 +24,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -34,6 +38,8 @@ import org.springframework.util.StringUtils;
  */
 @Component
 public class TreeSitterParser {
+  private static final Logger log = LoggerFactory.getLogger(TreeSitterParser.class);
+
   private final TreeSitterLibraryLoader libraryLoader;
   private final LanguageRegistry languageRegistry;
 
@@ -43,11 +49,6 @@ public class TreeSitterParser {
     this.languageRegistry = languageRegistry;
   }
 
-  /** Convenience constructor for tests. */
-  public TreeSitterParser(TreeSitterLibraryLoader libraryLoader) {
-    this.libraryLoader = libraryLoader;
-    this.languageRegistry = new LanguageRegistry(libraryLoader);
-  }
   private static final Pattern CALL_PATTERN = Pattern.compile("\\b([A-Za-z_][\\w$]*)\\s*\\(");
   private static final Pattern IMPLEMENTS_PATTERN =
       Pattern.compile("\\bimplements\\s+([A-Za-z_][\\w$.,\\s<>]*)");
@@ -106,6 +107,7 @@ public class TreeSitterParser {
     String packageName = detectModuleOrPackage(lines, relativePath);
     List<String> docBuffer = new ArrayList<>();
     List<String> imports = collectImports(lines);
+    Map<String, String> importIndex = buildImportIndex(imports);
     List<SymbolBuilder> builders = new ArrayList<>();
     SymbolBuilder active = null;
     String currentContainer = null;
@@ -138,12 +140,12 @@ public class TreeSitterParser {
         builder.implementsTypes = new LinkedHashSet<>();
         builder.readsFields = new LinkedHashSet<>();
         builder.usesTypes = new LinkedHashSet<>();
-    builder.callsIn = List.of();
-    builder.parentFqn = currentContainerFqn;
-    builder.symbolFqn =
-        buildFqn(packageName, currentContainerFqn, builder.name, isContainer(builder.kind), builder.signature);
-    builders.add(builder);
-    active = builder;
+        builder.callsIn = List.of();
+        builder.parentFqn = currentContainerFqn;
+        builder.symbolFqn =
+            buildFqn(packageName, currentContainerFqn, builder.name, isContainer(builder.kind), builder.signature);
+        builders.add(builder);
+        active = builder;
         if (isContainer(builder.kind)) {
           currentContainer = builder.name;
           currentContainerFqn = builder.symbolFqn;
@@ -185,6 +187,9 @@ public class TreeSitterParser {
       builders.add(0, fileSymbol);
     }
 
+    assignParents(builders, packageName);
+    normalizeReferences(builders, importIndex, packageName);
+
     List<AstSymbolMetadata> result = new ArrayList<>();
     Map<String, SymbolBuilder> byFqn = new java.util.LinkedHashMap<>();
     for (SymbolBuilder builder : builders) {
@@ -221,7 +226,7 @@ public class TreeSitterParser {
               builder.callsIn,
               List.copyOf(builder.implementsTypes),
               List.copyOf(builder.readsFields),
-              List.copyOf(builder.usesTypes),
+              Set.copyOf(builder.usesTypes),
               builder.startLine,
               endLine));
     }
@@ -357,6 +362,174 @@ public class TreeSitterParser {
       }
     }
     return List.copyOf(imports);
+  }
+
+  private Map<String, String> buildImportIndex(List<String> imports) {
+    Map<String, String> map = new java.util.LinkedHashMap<>();
+    for (String imp : imports) {
+      if (!StringUtils.hasText(imp)) {
+        continue;
+      }
+      String cleaned = imp.replace("import", " ").replace("from", " ").replace(";", " ").trim();
+      cleaned = cleaned.replaceAll("\\{", " ").replaceAll("}", " ");
+      String[] tokens = cleaned.split(",");
+      for (String token : tokens) {
+        String t = token.trim();
+        if (!StringUtils.hasText(t)) {
+          continue;
+        }
+        String[] parts = t.split("\\s+");
+        String candidate = parts[0];
+        if (candidate.contains(".")) {
+          String shortName = candidate.substring(candidate.lastIndexOf('.') + 1);
+          map.put(shortName, candidate);
+        } else {
+          map.putIfAbsent(candidate, candidate);
+        }
+      }
+    }
+    return map;
+  }
+
+  private void assignParents(List<SymbolBuilder> builders, String packageName) {
+    if (builders == null || builders.isEmpty()) {
+      return;
+    }
+    List<SymbolBuilder> containers =
+        builders.stream().filter(builder -> isContainer(builder.kind)).toList();
+    for (SymbolBuilder builder : builders) {
+      if ("file".equals(builder.kind)) {
+        continue;
+      }
+      SymbolBuilder parent = findParentContainer(builder, containers);
+      builder.parentFqn = parent != null ? parent.symbolFqn : null;
+      builder.symbolFqn =
+          buildFqn(packageName, builder.parentFqn, builder.name, isContainer(builder.kind), builder.signature);
+    }
+  }
+
+  private SymbolBuilder findParentContainer(SymbolBuilder target, List<SymbolBuilder> containers) {
+    if (containers.isEmpty()) {
+      return null;
+    }
+    SymbolBuilder best = null;
+    for (SymbolBuilder container : containers) {
+      if (container == target) {
+        continue;
+      }
+      if (container.startLine <= target.startLine && container.endLine >= target.endLine) {
+        if (best == null || span(container) < span(best)) {
+          best = container;
+        }
+      }
+    }
+    return best;
+  }
+
+  private int span(SymbolBuilder builder) {
+    if (builder == null) {
+      return Integer.MAX_VALUE;
+    }
+    return Math.max(0, builder.endLine - builder.startLine);
+  }
+
+  private void normalizeReferences(
+      List<SymbolBuilder> builders, Map<String, String> importIndex, String packageName) {
+    if (builders == null || builders.isEmpty()) {
+      return;
+    }
+    for (SymbolBuilder builder : builders) {
+      builder.callsOut =
+          normalizeReferenceSet(builder.callsOut, builders, importIndex, packageName);
+      builder.implementsTypes =
+          normalizeReferenceSet(builder.implementsTypes, builders, importIndex, packageName);
+      builder.readsFields =
+          normalizeReferenceSet(builder.readsFields, builders, importIndex, packageName);
+      builder.usesTypes =
+          normalizeReferenceSet(builder.usesTypes, builders, importIndex, packageName);
+    }
+  }
+
+  private LinkedHashSet<String> normalizeReferenceSet(
+      Collection<String> references,
+      List<SymbolBuilder> builders,
+      Map<String, String> importIndex,
+      String packageName) {
+    LinkedHashSet<String> normalized = new LinkedHashSet<>();
+    if (references == null) {
+      return normalized;
+    }
+    for (String reference : references) {
+      String resolved = resolveReference(reference, builders, importIndex, packageName);
+      if (!StringUtils.hasText(resolved)) {
+        resolved = cleanupIdentifier(reference);
+      }
+      if (StringUtils.hasText(resolved)) {
+        normalized.add(resolved);
+      }
+    }
+    return normalized;
+  }
+
+  private String resolveReference(
+      String name,
+      List<SymbolBuilder> builders,
+      Map<String, String> importIndex,
+      String packageName) {
+    Map<String, String> local = new java.util.LinkedHashMap<>();
+    for (SymbolBuilder builder : builders) {
+      if (StringUtils.hasText(builder.name) && StringUtils.hasText(builder.symbolFqn)) {
+        local.putIfAbsent(builder.name, builder.symbolFqn);
+      }
+    }
+    return resolveReference(name, local.values().stream().toList(), local, importIndex, packageName);
+  }
+
+  private String resolveReference(
+      String name,
+      java.util.Collection<String> knownFqns,
+      Map<String, String> importIndex,
+      String packageName) {
+    Map<String, String> local = new java.util.LinkedHashMap<>();
+    for (String fqn : knownFqns) {
+      if (StringUtils.hasText(fqn)) {
+        String shortName =
+            fqn.contains("#") || fqn.contains(".")
+                ? fqn.substring(fqn.contains("#") ? fqn.lastIndexOf('#') + 1 : fqn.lastIndexOf('.') + 1)
+                : fqn;
+        local.putIfAbsent(shortName, fqn);
+      }
+    }
+    return resolveReference(name, knownFqns, local, importIndex, packageName);
+  }
+
+  private String resolveReference(
+      String name,
+      java.util.Collection<String> knownFqns,
+      Map<String, String> localMap,
+      Map<String, String> importIndex,
+      String packageName) {
+    if (!StringUtils.hasText(name)) {
+      return null;
+    }
+    String shortName = cleanupIdentifier(name);
+    if (localMap.containsKey(shortName)) {
+      return localMap.get(shortName);
+    }
+    if (importIndex != null && importIndex.containsKey(shortName)) {
+      return importIndex.get(shortName);
+    }
+    if (StringUtils.hasText(packageName)) {
+      return packageName + "." + shortName;
+    }
+    return null;
+  }
+
+  private String cleanupIdentifier(String value) {
+    if (value == null) {
+      return null;
+    }
+    return value.replaceAll("[^A-Za-z0-9_$.]", "").trim();
   }
 
   private static final class SymbolBuilder {
@@ -495,15 +668,11 @@ public class TreeSitterParser {
 
   private Optional<AstFileContext> parseNative(
       String content, String language, String relativePath, LanguageQueries queries) {
-    if ((libraryLoader == null && languageRegistry == null) || !StringUtils.hasText(language) || content == null) {
+    if (!StringUtils.hasText(language) || content == null) {
       return Optional.empty();
     }
     Optional<io.github.treesitter.jtreesitter.Language> lang =
-        languageRegistry != null
-            ? languageRegistry.language(language)
-            : libraryLoader != null
-                ? libraryLoader.loadLanguage(language).map(TreeSitterLibraryLoader.LoadedLibrary::languageHandle)
-                : Optional.empty();
+        languageRegistry != null ? languageRegistry.language(language) : Optional.empty();
     if (lang.isEmpty()) {
       return Optional.empty();
     }
@@ -530,6 +699,11 @@ public class TreeSitterParser {
       }
       return Optional.empty();
     } catch (RuntimeException ex) {
+      log.debug(
+          "Tree-sitter native parsing failed for {} (language={}): {}",
+          relativePath,
+          language,
+          ex.getMessage());
       return Optional.empty();
     }
   }
@@ -590,7 +764,8 @@ public class TreeSitterParser {
       if (queries.fields().isPresent()) {
         enrichFieldsWithQueries(root, queries.fields().get(), builders);
       }
-      assignParents(builders);
+      TreeSitterParser.this.assignParents(builders, packageName);
+      normalizeReferences(builders, importIndex, packageName);
 
       List<AstSymbolMetadata> result = new ArrayList<>();
       Map<String, SymbolBuilder> byFqn = new java.util.LinkedHashMap<>();
@@ -624,7 +799,7 @@ public class TreeSitterParser {
                 builder.callsIn,
                 List.copyOf(builder.implementsTypes),
                 List.copyOf(builder.readsFields),
-                List.copyOf(builder.usesTypes),
+                Set.copyOf(builder.usesTypes),
                 builder.startLine,
                 builder.endLine > 0 ? builder.endLine : builder.startLine));
       }
@@ -633,10 +808,10 @@ public class TreeSitterParser {
 
     private List<SymbolBuilder> extractSymbolsViaQueries(Node rootNode, Query symbolsQuery) {
       List<SymbolBuilder> builders = new ArrayList<>();
-      try (QueryCursor cursor = new QueryCursor(symbolsQuery)) {
-        cursor.findMatches(rootNode)
-            .forEach(
-                match -> {
+      try (QueryCursor cursor = new QueryCursor(symbolsQuery);
+          Stream<QueryMatch> matches = cursor.findMatches(rootNode)) {
+        matches.forEach(
+            match -> {
                   Node decl = null;
                   Node nameNode = null;
                   Node paramsNode = null;
@@ -683,10 +858,10 @@ public class TreeSitterParser {
     }
 
     private void enrichCallsWithQueries(Node rootNode, Query callsQuery, List<SymbolBuilder> builders) {
-      try (QueryCursor cursor = new QueryCursor(callsQuery)) {
-        cursor.findMatches(rootNode)
-            .forEach(
-                match -> {
+      try (QueryCursor cursor = new QueryCursor(callsQuery);
+          Stream<QueryMatch> matches = cursor.findMatches(rootNode)) {
+        matches.forEach(
+            match -> {
                   Node callNode = null;
                   Node nameNode = null;
                   for (QueryCapture capture : match.captures()) {
@@ -703,7 +878,8 @@ public class TreeSitterParser {
                   String name = cleanupIdentifier(nameNode.getText());
                   SymbolBuilder owner = findOwner(builders, callNode);
                   if (owner != null && StringUtils.hasText(name)) {
-                    String resolved = resolveReference(name, builders);
+                    String resolved =
+                        TreeSitterParser.this.resolveReference(name, builders, importIndex, packageName);
                     if (StringUtils.hasText(resolved)) {
                       owner.callsOut.add(resolved);
                     }
@@ -713,10 +889,10 @@ public class TreeSitterParser {
     }
 
     private void enrichHeritageWithQueries(Node rootNode, Query heritageQuery, Map<String, SymbolBuilder> byName) {
-      try (QueryCursor cursor = new QueryCursor(heritageQuery)) {
-        cursor.findMatches(rootNode)
-            .forEach(
-                match -> {
+      try (QueryCursor cursor = new QueryCursor(heritageQuery);
+          Stream<QueryMatch> matches = cursor.findMatches(rootNode)) {
+        matches.forEach(
+            match -> {
                   Node childNode = null;
                   Node baseNode = null;
                   for (QueryCapture capture : match.captures()) {
@@ -734,7 +910,9 @@ public class TreeSitterParser {
                   String base = cleanupIdentifier(baseNode.getText());
                   SymbolBuilder builder = byName.get(child);
                   if (builder != null && StringUtils.hasText(base)) {
-                    String resolved = resolveReference(base, byName.values().stream().toList());
+                    String resolved =
+                        TreeSitterParser.this.resolveReference(
+                            base, byName.values().stream().toList(), importIndex, packageName);
                     if (StringUtils.hasText(resolved)) {
                       builder.implementsTypes.add(resolved);
                     }
@@ -744,10 +922,10 @@ public class TreeSitterParser {
     }
 
     private void enrichFieldsWithQueries(Node rootNode, Query fieldsQuery, List<SymbolBuilder> builders) {
-      try (QueryCursor cursor = new QueryCursor(fieldsQuery)) {
-        cursor.findMatches(rootNode)
-            .forEach(
-                match -> {
+      try (QueryCursor cursor = new QueryCursor(fieldsQuery);
+          Stream<QueryMatch> matches = cursor.findMatches(rootNode)) {
+        matches.forEach(
+            match -> {
                   Node accessNode = null;
                   Node fieldNode = null;
                   for (QueryCapture capture : match.captures()) {
@@ -764,7 +942,8 @@ public class TreeSitterParser {
                   String field = cleanupIdentifier(fieldNode.getText());
                   SymbolBuilder owner = findOwner(builders, accessNode);
                   if (owner != null && StringUtils.hasText(field)) {
-                    String resolved = resolveReference(field, builders);
+                    String resolved =
+                        TreeSitterParser.this.resolveReference(field, builders, importIndex, packageName);
                     if (StringUtils.hasText(resolved)) {
                       owner.readsFields.add(resolved);
                     }
@@ -786,40 +965,6 @@ public class TreeSitterParser {
       }
       return best;
     }
-
-    private void assignParents(List<SymbolBuilder> builders) {
-      List<SymbolBuilder> containers = builders.stream().filter(b -> isContainer(b.kind)).toList();
-      for (SymbolBuilder builder : builders) {
-        if (isContainer(builder.kind)) {
-          continue;
-        }
-        SymbolBuilder parent = findOwner(containers, builder.startLine, builder.endLine);
-        if (parent != null) {
-          builder.parentFqn = parent.symbolFqn;
-          builder.symbolFqn = buildFqn(packageName, parent.symbolFqn, builder.name, false, builder.signature);
-        }
-      }
-    }
-
-    private SymbolBuilder findOwner(List<SymbolBuilder> containers, int start, int end) {
-      SymbolBuilder best = null;
-      for (SymbolBuilder container : containers) {
-        if (container.startLine <= start && container.endLine >= end) {
-          if (best == null || span(container) < span(best)) {
-            best = container;
-          }
-        }
-      }
-      return best;
-    }
-
-    private int span(SymbolBuilder builder) {
-      if (builder == null) {
-        return Integer.MAX_VALUE;
-      }
-      return Math.max(0, builder.endLine - builder.startLine);
-    }
-
     private String deriveKind(String declType) {
       String lower = declType != null ? declType.toLowerCase(Locale.ROOT) : "";
       if (lower.contains("interface")) {
@@ -904,73 +1049,6 @@ public class TreeSitterParser {
       return sanitized.trim();
     }
 
-    private Map<String, String> buildImportIndex(List<String> imports) {
-      Map<String, String> map = new java.util.LinkedHashMap<>();
-      for (String imp : imports) {
-        if (!StringUtils.hasText(imp)) {
-          continue;
-        }
-        String cleaned = imp.replace("import", " ").replace("from", " ").replace(";", " ").trim();
-        cleaned = cleaned.replaceAll("\\{", " ").replaceAll("}", " ");
-        String[] tokens = cleaned.split(",");
-        for (String token : tokens) {
-          String t = token.trim();
-          if (!StringUtils.hasText(t)) {
-            continue;
-          }
-          String[] parts = t.split("\\s+");
-          String candidate = parts[0];
-          if (candidate.contains(".")) {
-            String shortName = candidate.substring(candidate.lastIndexOf('.') + 1);
-            map.put(shortName, candidate);
-          } else {
-            map.putIfAbsent(candidate, candidate);
-          }
-        }
-      }
-      return map;
-    }
-
-    private String resolveReference(String name, List<SymbolBuilder> builders) {
-      Map<String, String> local = new java.util.LinkedHashMap<>();
-      for (SymbolBuilder builder : builders) {
-        if (StringUtils.hasText(builder.name) && StringUtils.hasText(builder.symbolFqn)) {
-          local.putIfAbsent(builder.name, builder.symbolFqn);
-        }
-      }
-      return resolveReference(name, local.values().stream().toList(), local);
-    }
-
-    private String resolveReference(String name, java.util.Collection<String> knownFqns) {
-      Map<String, String> local = new java.util.LinkedHashMap<>();
-      for (String fqn : knownFqns) {
-        if (StringUtils.hasText(fqn)) {
-          String shortName = fqn.contains("#") || fqn.contains(".")
-              ? fqn.substring(fqn.contains("#") ? fqn.lastIndexOf('#') + 1 : fqn.lastIndexOf('.') + 1)
-              : fqn;
-          local.putIfAbsent(shortName, fqn);
-        }
-      }
-      return resolveReference(name, knownFqns, local);
-    }
-
-    private String resolveReference(String name, java.util.Collection<String> knownFqns, Map<String, String> localMap) {
-      if (!StringUtils.hasText(name)) {
-        return null;
-      }
-      String shortName = cleanupIdentifier(name);
-      if (localMap.containsKey(shortName)) {
-        return localMap.get(shortName);
-      }
-      if (importIndex.containsKey(shortName)) {
-        return importIndex.get(shortName);
-      }
-      if (StringUtils.hasText(packageName)) {
-        return packageName + "." + shortName;
-      }
-      return null;
-    }
-
     private void walk(Node node, List<SymbolBuilder> builders, Deque<String> containerStack) {
       if (node == null) {
         return;
@@ -987,7 +1065,7 @@ public class TreeSitterParser {
           builder.signature = buildSignature(node, name, isContainer);
           builder.startLine = node.getStartPoint().row() + 1;
           builder.endLine = node.getEndPoint().row() + 1;
-          builder.docstring = null;
+          builder.docstring = findDocstring(builder.startLine);
           builder.visibility = inferVisibility(node.getText());
           builder.imports = imports;
           builder.isTest = isTestSymbol(relativePath, name);
@@ -1180,13 +1258,6 @@ public class TreeSitterParser {
       for (Node child : node.getNamedChildren()) {
         collectFieldReadsFromAst(child, target);
       }
-    }
-
-    private String cleanupIdentifier(String value) {
-      if (value == null) {
-        return null;
-      }
-      return value.replaceAll("[^A-Za-z0-9_$.]", "").trim();
     }
 
     private String inferVisibility(String nodeText) {

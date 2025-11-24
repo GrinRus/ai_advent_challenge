@@ -1440,20 +1440,20 @@
 - [x] Добавить end-to-end тест с Testcontainers Neo4j: поднять контейнер, прогнать полный цикл `RepoRagIndexService` → `GraphSyncService` → `repo.code_graph_neighbors`, проверить сохранённые узлы/ребра и отдачу MCP инструмента.
 
 ### Долги Wave 45 (после ревью)
-- [ ] **Graph readiness и статус MCP**
-  - [ ] Добавить в `repo_rag_namespace_state` миграцией новые поля `graph_ready`, `graph_ready_at`, `graph_schema_version` и `graph_sync_error`.
-  - [ ] Расширить `RepoRagNamespaceStateEntity`/`RepoRagNamespaceStateService` методами `markGraphSyncStarted/Succeeded/Failed(namespace, version, error)` и вызывать их из `GraphSyncService` после успешной/неуспешной загрузки Neo4j (включая очистку при удалении).
-  - [ ] Обновить `RepoRagStatusService`, `RepoRagTools`, REST/MCP ответ `repo.rag_index_status`, чтобы возвращать реальные значения графовых полей, и написать unit-тест на сценарии ready/failed/in-progress.
+- [x] **Graph readiness и статус MCP**
+  - [x] Добавить в `repo_rag_namespace_state` миграцией новые поля `graph_ready`, `graph_ready_at`, `graph_schema_version` и `graph_sync_error`.
+  - [x] Расширить `RepoRagNamespaceStateEntity`/`RepoRagNamespaceStateService` методами `markGraphSyncStarted/Succeeded/Failed(namespace, version, error)` и вызывать их из `GraphSyncService` после успешной/неуспешной загрузки Neo4j (включая очистку при удалении).
+  - [x] Обновить `RepoRagStatusService`, `RepoRagTools`, REST/MCP ответ `repo.rag_index_status`, чтобы возвращать реальные значения графовых полей, и написать unit-тест на сценарии ready/failed/in-progress.
 
 - [ ] **Tree-sitter DI + обновление API 0.25.6**
   - [ ] Перейти на jtreesitter `0.25.6`, переписать использование `QueryCursor`, `QueryMatch.captures()` и обработку `QueryError`, включить `usesTypes` как `Set<String>`.
   - [ ] Удалить боевой no-arg конструктор `TreeSitterParser`, добившись, чтобы все компоненты создавались только через Spring-бин из `TreeSitterLibraryLoader/LanguageRegistry/TreeSitterAnalyzer`.
   - [ ] Добавить интеграционные тесты/health-check, которые проверяют graceful fallback при отсутствии грамматики и корректное включение native режима (`isNativeEnabled=true`).
 
-- [ ] **Качество AST и нормализация FQN**
-  - [ ] Реализовать построение FQN через стек контейнеров (`package.Class.Inner#method(Type arg)`), нормализовать типы аргументов и видимость, и хранить `AST_VERSION=2` только для новых нод.
-  - [ ] Извлекать docstring/visibility/test-флаг из нативных узлов Tree-sitter (JavaDoc/KDoc/JSDoc/docstring) и прокидывать в `AstSymbolMetadata`.
-  - [ ] Добавить резолв импортов: маппинг `import` → FQN, который подставляется в `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`, чтобы граф получал полноценных соседей.
+- [x] **Качество AST и нормализация FQN**
+  - [x] Реализовать построение FQN через стек контейнеров (`package.Class.Inner#method(Type arg)`), нормализовать типы аргументов и видимость, и хранить `AST_VERSION=2` только для новых нод.
+  - [x] Извлекать docstring/visibility/test-флаг из нативных узлов Tree-sitter (JavaDoc/KDoc/JSDoc/docstring) и прокидывать в `AstSymbolMetadata`.
+  - [x] Добавить резолв импортов: маппинг `import` → FQN, который подставляется в `CALLS/IMPLEMENTS/READS_FIELD/USES_TYPE`, чтобы граф получал полноценных соседей.
 
 - [ ] **Fixtures и тесты**
   - [ ] Расширить mini-repos для всех поддерживаемых языков: наследование, интерфейсы, перегрузки методов, docstring-комментарии, вызовы между файлами.
