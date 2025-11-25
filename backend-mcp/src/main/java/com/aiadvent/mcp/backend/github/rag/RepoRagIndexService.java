@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -99,6 +100,15 @@ public class RepoRagIndexService {
     this.astFileContextFactory = astFileContextFactory;
     this.symbolGraphWriter = symbolGraphWriter;
     this.graphSyncService = graphSyncService;
+  }
+
+  @PostConstruct
+  void verifyGraphSyncAvailability() {
+    if (properties.getGraph().isEnabled() && graphSyncService == null) {
+      throw new IllegalStateException(
+          "Neo4j graph sync is enabled but GraphSyncService is not available. "
+              + "Ensure graph driver bean is created (profile=github, github.rag.graph.enabled=true).");
+    }
   }
 
   public IndexResult indexWorkspace(IndexRequest request) {
