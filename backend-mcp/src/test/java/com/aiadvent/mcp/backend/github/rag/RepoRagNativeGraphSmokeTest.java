@@ -38,7 +38,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @ExtendWith(MockitoExtension.class)
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class RepoRagNativeGraphSmokeTest {
 
   @Container

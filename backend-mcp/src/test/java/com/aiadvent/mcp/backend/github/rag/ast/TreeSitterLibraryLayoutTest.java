@@ -2,6 +2,7 @@ package com.aiadvent.mcp.backend.github.rag.ast;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -10,14 +11,19 @@ import org.springframework.core.io.ClassPathResource;
 class TreeSitterLibraryLayoutTest {
 
   @Test
-  void hasCoreRuntimeLibraryOnClasspath() {
+  void hasRuntimeLibrariesOnClasspath() {
     TreeSitterPlatform platform = TreeSitterPlatform.detect();
-    String resourcePath =
-        "treesitter/" + platform.os() + "/" + platform.arch() + "/" + platform.libraryFileName("java-tree-sitter");
-    ClassPathResource resource = new ClassPathResource(resourcePath);
+    String basePath = "treesitter/" + platform.os() + "/" + platform.arch() + "/";
+    ClassPathResource core =
+        new ClassPathResource(basePath + platform.libraryFileName("java-tree-sitter"));
+    boolean hasCore = core.exists();
+    boolean hasAnyLanguageLib =
+        Arrays.stream(TreeSitterLanguage.values())
+            .map(language -> new ClassPathResource(basePath + language.resolveLibraryFile(platform)))
+            .anyMatch(ClassPathResource::exists);
 
-    assertThat(resource.exists())
-        .as("core lib present at %s", resourcePath)
+    assertThat(hasCore || hasAnyLanguageLib)
+        .as("runtime or language libs present under %s", basePath)
         .isTrue();
   }
 
