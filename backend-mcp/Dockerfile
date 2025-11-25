@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM gradle:8.10.2-jdk22 AS build
+FROM eclipse-temurin:22-jdk AS build
 WORKDIR /workspace
 
 RUN apt-get update \
