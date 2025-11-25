@@ -2,8 +2,6 @@ server:
   port: ${GITHUB_MCP_HTTP_PORT:${SERVER_PORT:8080}}
 
 spring:
-  autoconfigure:
-    exclude: []
   datasource:
     url: ${GITHUB_MCP_DB_URL:jdbc:postgresql://localhost:5432/ai_advent}
     username: ${GITHUB_MCP_DB_USER:ai_advent}
@@ -17,6 +15,12 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+  neo4j:
+    uri: ${GITHUB_RAG_GRAPH_URI:bolt://localhost:7687}
+    authentication:
+      username: ${GITHUB_RAG_GRAPH_USERNAME:neo4j}
+      password: ${GITHUB_RAG_GRAPH_PASSWORD:neo4j}
+    database: ${GITHUB_RAG_GRAPH_DATABASE:neo4j}
   liquibase:
     change-log: classpath:db/changelog/github/db.changelog-master.yaml
     contexts: ${GITHUB_LIQUIBASE_CONTEXTS:github-rag}

@@ -3,7 +3,8 @@ server:
 
 spring:
   autoconfigure:
-    exclude: []
+    exclude:
+      - org.springframework.boot.autoconfigure.data.neo4j.Neo4jDataAutoConfiguration
   ai:
     mcp:
       server:
