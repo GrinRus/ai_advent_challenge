@@ -106,6 +106,7 @@ services:
       SPRING_PROFILES_ACTIVE: agentops
       AGENT_OPS_BACKEND_BASE_URL: ${AGENT_OPS_BACKEND_BASE_URL:-http://backend:8080}
       AGENT_OPS_BACKEND_API_TOKEN: ${AGENT_OPS_BACKEND_API_TOKEN:-}
+      GITHUB_RAG_GRAPH_ENABLED: "false"
     ports:
       - "${AGENT_OPS_MCP_HTTP_PORT:-7091}:8080"
     stdin_open: true
@@ -127,6 +128,7 @@ services:
       SPRING_PROFILES_ACTIVE: flowops
       FLOW_OPS_BACKEND_BASE_URL: ${FLOW_OPS_BACKEND_BASE_URL:-http://backend:8080}
       FLOW_OPS_BACKEND_API_TOKEN: ${FLOW_OPS_BACKEND_API_TOKEN:-}
+      GITHUB_RAG_GRAPH_ENABLED: "false"
     ports:
       - "${FLOW_OPS_MCP_HTTP_PORT:-7092}:8080"
     stdin_open: true
@@ -148,6 +150,7 @@ services:
       SPRING_PROFILES_ACTIVE: insight
       INSIGHT_BACKEND_BASE_URL: ${INSIGHT_BACKEND_BASE_URL:-http://backend:8080}
       INSIGHT_BACKEND_API_TOKEN: ${INSIGHT_BACKEND_API_TOKEN:-}
+      GITHUB_RAG_GRAPH_ENABLED: "false"
     ports:
       - "${INSIGHT_MCP_HTTP_PORT:-7093}:8080"
     stdin_open: true
@@ -216,6 +219,7 @@ services:
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: coding
+      GITHUB_RAG_GRAPH_ENABLED: "false"
       ZHIPU_API_KEY: ${ZHIPU_API_KEY:-replace-with-zhipu-key}
       CODING_CLAUDE_ENABLED: ${CODING_CLAUDE_ENABLED:-true}
       CODING_CLAUDE_BASE_URL: ${CODING_CLAUDE_BASE_URL:-https://api.z.ai/api/anthropic}
@@ -254,6 +258,7 @@ services:
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: docker
+      GITHUB_RAG_GRAPH_ENABLED: "false"
       DOCKER_RUNNER_WORKSPACE_ROOT: ${DOCKER_RUNNER_WORKSPACE_ROOT:-/var/tmp/aiadvent/mcp-workspaces}
       DOCKER_RUNNER_GRADLE_CACHE_PATH: ${DOCKER_RUNNER_GRADLE_CACHE_PATH:-/var/tmp/aiadvent/gradle-cache}
       DOCKER_RUNNER_ENABLE_NETWORK: ${DOCKER_RUNNER_ENABLE_NETWORK:-true}
@@ -284,6 +289,7 @@ services:
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: analysis
+      GITHUB_RAG_GRAPH_ENABLED: "false"
       REPO_ANALYSIS_STATE_ROOT: ${REPO_ANALYSIS_STATE_ROOT:-/var/tmp/aiadvent/mcp/repo-analysis}
       GITHUB_BACKEND_WORKSPACE_ROOT: ${GITHUB_BACKEND_WORKSPACE_ROOT:-/var/tmp/aiadvent/mcp-workspaces}
     ports:
@@ -310,6 +316,7 @@ services:
     environment:
       SPRING_MAIN_APPLICATION_CLASS: com.aiadvent.mcp.backend.McpApplication
       SPRING_PROFILES_ACTIVE: notes
+      GITHUB_RAG_GRAPH_ENABLED: "false"
       NOTES_MCP_DB_URL: ${NOTES_MCP_DB_URL:-jdbc:postgresql://postgres:5432/ai_advent}
       NOTES_MCP_DB_USER: ${NOTES_MCP_DB_USER:-ai_advent}
       NOTES_MCP_DB_PASSWORD: ${NOTES_MCP_DB_PASSWORD:-ai_advent}
