@@ -410,6 +410,11 @@ public class RepoRagIndexService {
     if (graphSyncService != null && graphSyncTracker.isEnabled()) {
       graphSyncTracker.markAttempted();
       try {
+        log.info(
+            "Starting Neo4j graph sync (namespace={}, file={}, chunks={})",
+            namespace,
+            filePath,
+            chunks.size());
         graphSyncService.syncFile(namespace, filePath, chunks);
       } catch (RuntimeException graphEx) {
         graphSyncTracker.markFailure(graphEx.getMessage());
@@ -418,6 +423,13 @@ public class RepoRagIndexService {
             "Graph sync failed for " + filePath + ": " + graphEx.getMessage());
         log.warn("Failed to sync Neo4j graph for {}: {}", filePath, graphEx.getMessage());
       }
+    } else {
+      log.info(
+          "Neo4j graph sync skipped (servicePresent={}, enabled={}, namespace={}, file={})",
+          graphSyncService != null,
+          graphSyncTracker.isEnabled(),
+          namespace,
+          filePath);
     }
   }
 

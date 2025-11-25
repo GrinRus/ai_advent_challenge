@@ -104,6 +104,12 @@ public class GraphSyncService {
       deleteFile(namespace, filePath);
       return;
     }
+    log.info(
+        "Graph sync scheduled (namespace={}, file={}, symbols={}, edges={})",
+        namespace,
+        filePath,
+        symbols.size(),
+        edges.size());
     runWithRetry(() -> doSync(namespace, filePath, symbols, edges));
   }
 
@@ -337,6 +343,7 @@ public class GraphSyncService {
         syncFailureCounter.increment();
         last = ex;
         attempts++;
+        log.warn("Graph sync attempt {}/{} failed: {}", attempts, maxAttempts, ex.getMessage());
         if (attempts >= maxAttempts) {
           break;
         }

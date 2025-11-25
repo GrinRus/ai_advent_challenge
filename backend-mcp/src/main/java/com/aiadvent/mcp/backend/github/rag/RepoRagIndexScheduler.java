@@ -154,6 +154,11 @@ public class RepoRagIndexScheduler {
               request.fetchedAt());
 
       boolean graphSyncEnabled = indexService.isGraphSyncEnabled();
+      log.info(
+          "Graph sync flag resolved (enabled={}, namespace={}, workspaceId={})",
+          graphSyncEnabled,
+          request.namespace(),
+          request.workspaceId());
       if (graphSyncEnabled) {
         namespaceStateService.markGraphSyncStarted(
             request.namespace(), RepoRagIndexService.AST_VERSION);
@@ -191,6 +196,12 @@ public class RepoRagIndexScheduler {
 
       RepoRagIndexService.GraphSyncResult graphSync = result.graphSync();
       if (graphSync.enabled()) {
+        log.info(
+            "Graph sync result (namespace={}): attempted={}, succeeded={}, error={}",
+            request.namespace(),
+            graphSync.attempted(),
+            graphSync.succeeded(),
+            graphSync.errorMessage());
         if (graphSync.shouldMarkReady()) {
           namespaceStateService.markGraphSyncSucceeded(
               request.namespace(), RepoRagIndexService.AST_VERSION);
