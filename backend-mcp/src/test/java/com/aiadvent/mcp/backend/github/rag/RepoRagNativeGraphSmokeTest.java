@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.aiadvent.mcp.backend.config.GitHubRagProperties;
 import com.aiadvent.mcp.backend.github.rag.ast.AstFileContextFactory;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
 import com.aiadvent.mcp.backend.github.rag.ast.LanguageRegistry;
-import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterAnalyzer;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterLibraryLoader;
 import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterParser;
+import com.aiadvent.mcp.backend.github.rag.ast.TreeSitterQueryRegistry;
 import com.aiadvent.mcp.backend.github.rag.chunking.RepoRagChunker;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagFileStateRepository;
 import com.aiadvent.mcp.backend.github.rag.persistence.RepoRagSymbolGraphRepository;
@@ -32,12 +32,13 @@ import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
 import org.neo4j.driver.SessionConfig;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @ExtendWith(MockitoExtension.class)
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 class RepoRagNativeGraphSmokeTest {
 
   @Container
@@ -53,6 +54,7 @@ class RepoRagNativeGraphSmokeTest {
 
   @BeforeAll
   static void startNeo4j() {
+    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker not available");
     neo4j.start();
     driver =
         GraphDatabase.driver(
