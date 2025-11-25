@@ -5,6 +5,7 @@ import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Config;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +13,7 @@ import org.springframework.util.StringUtils;
 
 @Configuration
 @ConditionalOnProperty(prefix = "github.rag.graph", name = "enabled", havingValue = "true", matchIfMissing = false)
+@ConditionalOnBean(GitHubRagProperties.class)
 public class GraphDriverConfiguration {
 
   @Bean(destroyMethod = "close")
