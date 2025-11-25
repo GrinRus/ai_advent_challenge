@@ -91,7 +91,7 @@ public class RepoRagIndexService {
       GitHubRagProperties properties,
       AstFileContextFactory astFileContextFactory,
       SymbolGraphWriter symbolGraphWriter,
-      @Autowired(required = false) @Nullable GraphSyncService graphSyncService) {
+      GraphSyncService graphSyncService) {
     this.workspaceService = workspaceService;
     this.vectorStoreAdapter = vectorStoreAdapter;
     this.fileStateRepository = fileStateRepository;
@@ -100,15 +100,6 @@ public class RepoRagIndexService {
     this.astFileContextFactory = astFileContextFactory;
     this.symbolGraphWriter = symbolGraphWriter;
     this.graphSyncService = graphSyncService;
-  }
-
-  @PostConstruct
-  void verifyGraphSyncAvailability() {
-    if (properties.getGraph().isEnabled() && graphSyncService == null) {
-      throw new IllegalStateException(
-          "Neo4j graph sync is enabled but GraphSyncService is not available. "
-              + "Ensure graph driver bean is created (profile=github, github.rag.graph.enabled=true).");
-    }
   }
 
   public IndexResult indexWorkspace(IndexRequest request) {

@@ -3,11 +3,16 @@ package com.aiadvent.mcp.backend.github.rag;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.aiadvent.mcp.backend.McpApplication;
+import org.neo4j.driver.AuthTokens;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.GraphDatabase;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -34,9 +39,19 @@ import org.testcontainers.junit.jupiter.Testcontainers;
       "github.backend.base-url=https://api.github.com",
       "github.backend.personal-access-token=dummy-token"
     })
-@ActiveProfiles("github")
+@ActiveProfiles({"github", "graph-test"})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphDriverContextTest {
+
+  @TestConfiguration
+  @Profile("graph-test")
+  static class Neo4jTestConfig {
+    @Bean
+    Driver neo4jDriver() {
+      return GraphDatabase.driver(
+          neo4j.getBoltUrl(), AuthTokens.basic("neo4j", neo4j.getAdminPassword()));
+    }
+  }
 
   @Container
   static final PostgreSQLContainer<?> postgres =

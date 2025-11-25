@@ -24,7 +24,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
 import org.springframework.test.context.ActiveProfiles;
 
-@SpringBootTest(classes = RepoRagToolsIT.TestConfig.class, properties = "logging.system=none")
+@SpringBootTest(
+    classes = RepoRagToolsIT.TestConfig.class,
+    properties = {
+      "logging.system=none",
+      "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration"
+    })
 @ActiveProfiles("test")
 class RepoRagToolsIT {
 

@@ -16,6 +16,7 @@ class GithubMcpApplicationTests {
   @DynamicPropertySource
   static void overrideProperties(DynamicPropertyRegistry registry) {
     PostgresTestContainer.register(registry);
+    registry.add("github.rag.graph.enabled", () -> true);
   }
 
   @Test

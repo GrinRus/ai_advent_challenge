@@ -41,7 +41,6 @@ dependencies {
     implementation "org.springframework.boot:spring-boot-starter-data-neo4j"
     implementation "com.github.ben-manes.caffeine:caffeine"
     implementation "org.bytedeco:javacpp:1.5.10"
-    implementation "org.neo4j.driver:neo4j-java-driver:5.26.2"
 
     implementation "org.liquibase:liquibase-core"
 
