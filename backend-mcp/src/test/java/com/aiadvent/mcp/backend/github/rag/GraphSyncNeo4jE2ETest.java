@@ -19,7 +19,7 @@ import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphSyncNeo4jE2ETest {
 

@@ -1,7 +1,6 @@
 package com.aiadvent.mcp.backend.github.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -29,13 +28,12 @@ import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
-import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @ExtendWith(MockitoExtension.class)
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class RepoRagSearchServiceGraphIntegrationTest {
 
   @Container
@@ -54,7 +52,6 @@ class RepoRagSearchServiceGraphIntegrationTest {
 
   @BeforeEach
   void setUp() {
-    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker not available");
     neo4j.start();
     driver =
         GraphDatabase.driver(neo4j.getBoltUrl(), AuthTokens.basic("neo4j", neo4j.getAdminPassword()));

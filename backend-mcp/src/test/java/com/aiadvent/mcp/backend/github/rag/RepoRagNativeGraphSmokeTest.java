@@ -32,13 +32,12 @@ import org.neo4j.driver.AuthTokens;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.GraphDatabase;
 import org.neo4j.driver.SessionConfig;
-import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @ExtendWith(MockitoExtension.class)
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class RepoRagNativeGraphSmokeTest {
 
   @Container
@@ -54,7 +53,6 @@ class RepoRagNativeGraphSmokeTest {
 
   @BeforeAll
   static void startNeo4j() {
-    assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker not available");
     neo4j.start();
     driver =
         GraphDatabase.driver(

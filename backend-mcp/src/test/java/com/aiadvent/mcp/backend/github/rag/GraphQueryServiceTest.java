@@ -17,7 +17,7 @@ import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 @Disabled("Requires Docker/Neo4j; skip in local Java 22 bump")
 class GraphQueryServiceTest {
 
