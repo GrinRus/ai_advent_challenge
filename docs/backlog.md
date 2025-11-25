@@ -1495,6 +1495,11 @@
 - [ ] Метрики: hit/miss резолва (local/import/stdlib), латентность запросов по relation, fan-out соседей; алерты на рост недоопределённых вызовов/ошибок резолва.
 - [ ] Интеграционный тест: мини-репозиторий со статическими импортами/alias и квалифицированными вызовами; ассерт на точные FQN в `CALLS/USES_TYPE` и корректный `graph_path`.
 
+### Инфраструктура и деплой
+- [ ] Добавить Neo4j сервис в `docker-compose.yml`/`docker-compose.local.yaml` (порты 7474/7687, volume `neo4j_data`, auth `NEO4J_AUTH`), описать профили/ресурсы.
+- [ ] Прокинуть графовые переменные в `github-mcp` (`GITHUB_RAG_GRAPH_ENABLED=true`, `GITHUB_RAG_GRAPH_URI`, `USERNAME/PASSWORD`) и `depends_on: neo4j`, обновить `.env.example`.
+- [ ] Обновить `docs/infra.md`/`docs/architecture/github-rag-modular.md` секцией “Графовая БД”: требования по памяти, бекап/очистка, как включить в прод/локально.
+
 ### Документация и UX
 - [ ] Обновить `docs/guides/mcp-operators.md` примерами outline/CONTAINS-навигации и анкорами на строки.
 - [ ] Добавить IDE-like cookbook по использованию графовых инструментов в LLM-промптах (навигация, outline, путь до цели) в `docs/architecture/github-rag-modular.md` или отдельный файл.
