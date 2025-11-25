@@ -2,3 +2,9 @@ services:
   backend:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+  neo4j:
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/testpass}
+  github-mcp:
+    environment:
+      GITHUB_RAG_GRAPH_PASSWORD: ${GITHUB_RAG_GRAPH_PASSWORD:-testpass}

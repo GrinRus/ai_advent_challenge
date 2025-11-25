@@ -20,6 +20,20 @@ services:
     volumes:
       - redis_data:/data
 
+  neo4j:
+    image: neo4j:5.19.0-community
+    container_name: ai-advent-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/testpass}
+      NEO4J_dbms_memory_pagecache_size: 1G
+      NEO4J_dbms_memory_heap_initial__size: 1G
+      NEO4J_dbms_memory_heap_max__size: 2G
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+
   backend:
     build:
       context: ./backend
@@ -167,12 +181,19 @@ services:
       GITHUB_RAG_MAX_ATTEMPTS: ${GITHUB_RAG_MAX_ATTEMPTS:-5}
       GITHUB_RAG_INITIAL_BACKOFF: ${GITHUB_RAG_INITIAL_BACKOFF:-PT15S}
       GITHUB_RAG_NAMESPACE_PREFIX: ${GITHUB_RAG_NAMESPACE_PREFIX:-repo}
+      GITHUB_RAG_GRAPH_ENABLED: ${GITHUB_RAG_GRAPH_ENABLED:-true}
+      GITHUB_RAG_GRAPH_URI: ${GITHUB_RAG_GRAPH_URI:-bolt://neo4j:7687}
+      GITHUB_RAG_GRAPH_USERNAME: ${GITHUB_RAG_GRAPH_USERNAME:-neo4j}
+      GITHUB_RAG_GRAPH_PASSWORD: ${GITHUB_RAG_GRAPH_PASSWORD:-testpass}
+      GITHUB_RAG_GRAPH_DATABASE: ${GITHUB_RAG_GRAPH_DATABASE:-neo4j}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-demo-openai-key}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
     ports:
       - "${GITHUB_MCP_HTTP_PORT:-7094}:8080"
     depends_on:
       postgres:
+        condition: service_started
+      neo4j:
         condition: service_started
     volumes:
       - /var/tmp/aiadvent/mcp-workspaces:/var/tmp/aiadvent/mcp-workspaces
@@ -316,3 +337,4 @@ volumes:
   postgres_data:
   redis_data:
   repo_analysis_state:
+  neo4j_data:
