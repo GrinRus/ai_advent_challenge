@@ -20,20 +20,20 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.SessionConfig;
 import org.neo4j.driver.summary.ResultSummary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.neo4j.driver.Driver;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 @Service
-@ConditionalOnBean(Driver.class)
+@ConditionalOnProperty(prefix = "github.rag.graph", name = "enabled", havingValue = "true")
 public class GraphSyncService {
 
   private static final Logger log = LoggerFactory.getLogger(GraphSyncService.class);
