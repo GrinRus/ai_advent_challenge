@@ -26,6 +26,13 @@ AI Advent Challenge — инициативный проект интеракти
 3) UI будет доступен на `http://localhost:4179`, API проксируется как `/api`.
 
 ### Локальная разработка
+- **Минимальный локальный запуск (Docker Compose + local профиль)**  
+  1) Скопируйте `.env.example` → `.env`.  
+  2) Замените минимум один ключ LLM: `OPENAI_API_KEY` **или** `ZHIPU_API_KEY`.  
+  3) Запустите:
+     ```bash
+     docker compose -f docker-compose.yml -f docker-compose.local.yaml up --build
+     ```
 - **Локальный профиль с Ollama/vLLM**  
   ```bash
   cp docs/env/local.env .env
@@ -52,6 +59,30 @@ AI Advent Challenge — инициативный проект интеракти
   ```bash
   git submodule update --init --recursive backend-mcp/treesitter
   cd backend-mcp && ./gradlew treeSitterBuild treeSitterVerify bootJar
+  ```
+- **Nginx для frontend (локальный Docker)**  
+  Для корректного проксирования `/api` обновите конфиг Nginx в `frontend/docker/nginx.conf` (или соответствующий в своём образе) на следующий:
+  ```nginx
+  server {
+      listen 4179;
+      server_name _;
+
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location / {
+          try_files $uri $uri/ /index.html;
+      }
+
+      location /api/ {
+          proxy_pass http://backend:8080;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+  }
   ```
 
 ### Деплой на сервер
