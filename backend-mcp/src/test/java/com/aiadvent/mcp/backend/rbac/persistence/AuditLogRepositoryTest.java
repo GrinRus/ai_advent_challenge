@@ -126,11 +126,9 @@ class AuditLogRepositoryTest {
     @Test
     void shouldFindByTimestampBetween() {
         Instant now = Instant.now();
-        Instant oneHourAgo = now.minus(1, ChronoUnit.HOURS);
         Instant twoHoursAgo = now.minus(2, ChronoUnit.HOURS);
-        Instant thirtyMinutesAgo = now.minus(30, ChronoUnit.MINUTES);
 
-        // Create entry with explicit timestamp (2 hours ago)
+        // Create entries that will get current timestamps from the DB.
         AuditLogEntity entity1 = new AuditLogEntity();
         entity1.setActorNamespace("github");
         entity1.setActorReference("user1");
@@ -146,8 +144,10 @@ class AuditLogRepositoryTest {
         entity2.setResult("ALLOWED");
         auditLogRepository.save(entity2);
 
+        // Use an upper bound after inserts to avoid flakiness around clock boundaries.
+        Instant upperBound = Instant.now().plus(1, ChronoUnit.MINUTES);
         Page<AuditLogEntity> results = auditLogRepository.findByTimestampBetween(
-                twoHoursAgo, now, PageRequest.of(0, 10));
+                twoHoursAgo, upperBound, PageRequest.of(0, 10));
 
         assertThat(results.getContent()).hasSize(2);
     }
