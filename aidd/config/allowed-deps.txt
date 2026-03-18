@@ -1,0 +1,9 @@
+# Разрешённые зависимости (по одной на строку, без версий).
+# Формат зависит от менеджера:
+# - Gradle/Maven: group:artifact
+# - npm/pnpm/yarn: package или @scope/package
+# - Python: package (pip/poetry/pipenv)
+# - Go: module/path
+# - Rust: crate-name
+# - .NET: PackageId
+# Примечание: если deps_allowlist=true и список пуст — проверки не выполняются.

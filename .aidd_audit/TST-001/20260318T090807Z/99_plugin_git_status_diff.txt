@@ -1,0 +1,6 @@
+baseline_source=00_plugin_git_status_before.txt
+after_source=99_plugin_git_status_after.txt
+before_hash=-204814126223713322
+after_hash=-204814126223713322
+delta_present=0
+classification=PASS

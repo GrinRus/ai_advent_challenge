@@ -1,0 +1,4 @@
+==> loop-run: ticket=TST-001 stream_mode=text
+==> loop-step iteration=2 stage=implement stream_log=aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.log
+==> loop-step: stage=implement ticket=TST-001 scope_key=iteration_id_I1
+==> streaming enabled: writing stream=aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.jsonl log=aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.log

@@ -1,0 +1,8 @@
+tasklist_path=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/docs/tasklist/TST-001.md
+tasklist_exists=1
+tasklist_status=READY
+tasks_key_present=1
+tasks_list_count=3
+commands_key_present=0
+tasklist_hygiene_chain_hits=0
+classification=ok_tasks_present

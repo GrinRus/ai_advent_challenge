@@ -1,0 +1,3 @@
+policy=force-clean
+commands=git reset --hard HEAD; git clean -fd
+source=step0

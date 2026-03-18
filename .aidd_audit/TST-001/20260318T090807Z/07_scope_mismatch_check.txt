@@ -1,0 +1,4 @@
+scope_fallback_stale_ignored_seen=1
+scope_drift_recoverable_seen=1
+recovery_path_scope_drift_reconcile_probe_seen=1
+classification=scope_drift_recoverable

@@ -1,0 +1,21 @@
+command=/feature-dev-aidd:spec-interview TST-001 AIDD:ANSWERS Q1=B; Q2=D
+mode=stream-json
+budget_seconds=1200
+elapsed_seconds=242
+exit_code=0
+killed=0
+watchdog_marker=0
+silent_stall=0
+termination_classification=completed
+init_present=1
+init_cwd=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new
+permission_mode=bypassPermissions
+plugin_loaded=1
+slash_status_present=1
+skills_present=1
+result_count=1
+unknown_skill_hits=0
+cwd_wrong_hits=0
+module_not_found_hits=0
+non_canonical_runtime_hits=0
+requires_approval_hits=0

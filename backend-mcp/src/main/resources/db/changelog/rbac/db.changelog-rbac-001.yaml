@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: rbac-0001-audit-log
+      author: ai-advent
+      context: rbac
+      changes:
+        - createTable:
+            tableName: rbac_audit_log
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: timestamp
+                  type: TIMESTAMP WITH TIME ZONE
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_namespace
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_reference
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: action
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_resource
+                  type: VARCHAR(256)
+              - column:
+                  name: target_profile_namespace
+                  type: VARCHAR(32)
+              - column:
+                  name: target_profile_reference
+                  type: VARCHAR(128)
+              - column:
+                  name: result
+                  type: VARCHAR(16)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: http_method
+                  type: VARCHAR(8)
+              - column:
+                  name: http_path
+                  type: VARCHAR(512)
+              - column:
+                  name: metadata
+                  type: JSONB
+        - createIndex:
+            tableName: rbac_audit_log
+            indexName: idx_rbac_audit_timestamp
+            columns:
+              - column:
+                  name: timestamp
+        - createIndex:
+            tableName: rbac_audit_log
+            indexName: idx_rbac_audit_actor
+            columns:
+              - column:
+                  name: actor_namespace
+              - column:
+                  name: actor_reference

@@ -1,0 +1,213 @@
+{
+  "generated_at": "2026-03-18T10:45:14Z",
+  "hotspots": [
+    {
+      "file_id": "ede7d1825c6f443290cc802a987bb642aa16901d",
+      "path": "backend/src/main/java/com/aiadvent/backend/BackendApplication.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/BackendApplication.java."
+    },
+    {
+      "file_id": "9fb325e6911ec11e83df0587f58cddead32abff0",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/AdminChatSummaryRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/AdminChatSummaryRequest.java."
+    },
+    {
+      "file_id": "b8597bb5dee007d150caab473ab2e805ccd7ff45",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatInteractionMode.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatInteractionMode.java."
+    },
+    {
+      "file_id": "0bd964e345027172407cea1df20db738504c59e3",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatProvidersResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatProvidersResponse.java."
+    },
+    {
+      "file_id": "d374113f06b5e06ea86a2ebd38ea2462a7ef3430",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamEvent.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamEvent.java."
+    },
+    {
+      "file_id": "a45289d56f3e9062bd3914c40ad019cb4d641025",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequest.java."
+    },
+    {
+      "file_id": "e8af805d9b44c95236e0b56228cef39a1342c1a0",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequestOptions.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequestOptions.java."
+    },
+    {
+      "file_id": "c539cfc853416dd713548ba911fe78db632e205a",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncRequest.java."
+    },
+    {
+      "file_id": "5dc042abfe590e86359a44c9b67339ef3caef21c",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncResponse.java."
+    },
+    {
+      "file_id": "101921318ca8428f4f76a195c6a9525c7c54c119",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/SessionUsageResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/SessionUsageResponse.java."
+    },
+    {
+      "file_id": "45d0cb7770d1d5d9bca6aa7ae5e35f6dbae5f244",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncAnswer.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncAnswer.java."
+    },
+    {
+      "file_id": "0b33a3a8c05f529a8a0f6bde419206b4e0f0d832",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncItem.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncItem.java."
+    },
+    {
+      "file_id": "d77dcd6349bc5218700185df69ddaec2bce9f526",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncProvider.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncProvider.java."
+    },
+    {
+      "file_id": "7cdb353bd292366c453a3b2094c88ddf0a61c6d9",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncResponse.java."
+    },
+    {
+      "file_id": "256f407d18c6cb87454d4921d164326f0fbc7397",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncStatus.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncStatus.java."
+    },
+    {
+      "file_id": "9cdba659d86dfa0ee1498b8dd191984c7ac93074",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncUsageStats.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncUsageStats.java."
+    },
+    {
+      "file_id": "414bff5a343ce764f1b43c21e8c98ac3bb9380a2",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/UsageCostDetails.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/UsageCostDetails.java."
+    },
+    {
+      "file_id": "52628a4cf335aad1079c5620290f5399a95439fb",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/config/ChatLoggingConfiguration.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/config/ChatLoggingConfiguration.java."
+    },
+    {
+      "file_id": "2a9a72be048659e99f2167381852f7b557ac0cb5",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/config/ChatLoggingProperties.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/config/ChatLoggingProperties.java."
+    },
+    {
+      "file_id": "0747f3527b59656752fa261843385a9dd2c1cd4d",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/config/ChatMemoryConfiguration.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/config/ChatMemoryConfiguration.java."
+    }
+  ],
+  "kind": "pack",
+  "pack_version": "v1",
+  "recommended_reads": [
+    {
+      "file_id": "ede7d1825c6f443290cc802a987bb642aa16901d",
+      "path": "backend/src/main/java/com/aiadvent/backend/BackendApplication.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/BackendApplication.java."
+    },
+    {
+      "file_id": "9fb325e6911ec11e83df0587f58cddead32abff0",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/AdminChatSummaryRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/AdminChatSummaryRequest.java."
+    },
+    {
+      "file_id": "b8597bb5dee007d150caab473ab2e805ccd7ff45",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatInteractionMode.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatInteractionMode.java."
+    },
+    {
+      "file_id": "0bd964e345027172407cea1df20db738504c59e3",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatProvidersResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatProvidersResponse.java."
+    },
+    {
+      "file_id": "d374113f06b5e06ea86a2ebd38ea2462a7ef3430",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamEvent.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamEvent.java."
+    },
+    {
+      "file_id": "a45289d56f3e9062bd3914c40ad019cb4d641025",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequest.java."
+    },
+    {
+      "file_id": "e8af805d9b44c95236e0b56228cef39a1342c1a0",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequestOptions.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatStreamRequestOptions.java."
+    },
+    {
+      "file_id": "c539cfc853416dd713548ba911fe78db632e205a",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncRequest.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncRequest.java."
+    },
+    {
+      "file_id": "5dc042abfe590e86359a44c9b67339ef3caef21c",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/ChatSyncResponse.java."
+    },
+    {
+      "file_id": "101921318ca8428f4f76a195c6a9525c7c54c119",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/SessionUsageResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/SessionUsageResponse.java."
+    },
+    {
+      "file_id": "45d0cb7770d1d5d9bca6aa7ae5e35f6dbae5f244",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncAnswer.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncAnswer.java."
+    },
+    {
+      "file_id": "0b33a3a8c05f529a8a0f6bde419206b4e0f0d832",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncItem.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncItem.java."
+    },
+    {
+      "file_id": "d77dcd6349bc5218700185df69ddaec2bce9f526",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncProvider.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncProvider.java."
+    },
+    {
+      "file_id": "7cdb353bd292366c453a3b2094c88ddf0a61c6d9",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncResponse.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncResponse.java."
+    },
+    {
+      "file_id": "256f407d18c6cb87454d4921d164326f0fbc7397",
+      "path": "backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncStatus.java",
+      "summary": "Auto bootstrap node for backend/src/main/java/com/aiadvent/backend/chat/api/StructuredSyncStatus.java."
+    }
+  ],
+  "schema": "aidd.report.pack.v1",
+  "slug": "TST-001",
+  "slug_hint": null,
+  "source_path": "aidd/reports/research/TST-001-rlm.nodes.jsonl",
+  "stats": {
+    "link_search": {
+      "candidate_truncated": 0,
+      "links_truncated": false,
+      "rg_calls": 0,
+      "rg_errors": 0,
+      "rg_timeouts": 0,
+      "symbols_scanned": 0,
+      "symbols_total": 0,
+      "symbols_truncated": 0
+    },
+    "links": 0,
+    "links_included": 0,
+    "links_unverified": 0,
+    "nodes": 377,
+    "nodes_total": 377,
+    "worklist_entries": 0,
+    "worklist_status": "ready"
+  },
+  "status": "ready",
+  "ticket": "TST-001",
+  "type": "rlm",
+  "warnings": [
+    "rlm_links_empty_warn"
+  ]
+}

@@ -1,0 +1,4 @@
+task_id=FS-RBAC-03
+title=Live RBAC enforcement + admin role operations
+generated_slug_hint=live-rbac-enforcement-admin-role-operations
+rationale=Best alignment with existing backend role/admin surfaces and frontend AdminRoles UX, with medium scope and clear acceptance checks for full-flow audit.

@@ -1,0 +1,65 @@
+{
+  "schema_version": "aidd.actions.v1",
+  "ticket": "TST-001",
+  "work_item_key": "TST-001 I2",
+  "scope_key": "TST-001/I2",
+  "stage": "implement",
+  "created_at": "2026-03-18T15:35:00Z",
+  "allowed_action_types": [
+    "tasklist_ops.set_iteration_done",
+    "tasklist_ops.append_progress_log",
+    "tasklist_ops.next3_recompute",
+    "context_pack_ops.context_pack_update"
+  ],
+  "actions": [
+    {
+      "type": "tasklist_ops.set_iteration_done",
+      "target": "TST-001",
+      "iteration_id": "I2",
+      "link": "commit:I2-implementation",
+      "metadata": {
+        "files_created": 8,
+        "loc": 603,
+        "tests_passed": 18,
+        "tests_failed": 0
+      }
+    },
+    {
+      "type": "tasklist_ops.append_progress_log",
+      "target": "TST-001",
+      "entry": {
+        "date": "2026-03-18",
+        "source": "implement",
+        "id": "I2",
+        "kind": "iteration",
+        "hash": "I2-complete",
+        "link": "aidd/reports/loops/TST-001/I2",
+        "msg": "I2: RBAC WebFilter + Audit logging service complete. 8 files created, 18 tests pass."
+      }
+    },
+    {
+      "type": "tasklist_ops.next3_recompute",
+      "target": "TST-001",
+      "next_3": [
+        {
+          "checkbox": "- [ ] I3: Profile service integration + Role caching (iteration_id: I3)",
+          "ref": "iteration_id=I3"
+        }
+      ]
+    },
+    {
+      "type": "context_pack_ops.context_pack_update",
+      "target": "TST-001",
+      "updates": {
+        "AIDD:CONTEXT_PACK": {
+          "current_focus": "I3: Profile service integration + Role caching",
+          "last_iteration": "I2",
+          "status": "I2 complete, ready for I3"
+        },
+        "AIDD:CHECKLIST_IMPLEMENT": {
+          "I2_status": "completed"
+        }
+      }
+    }
+  ]
+}

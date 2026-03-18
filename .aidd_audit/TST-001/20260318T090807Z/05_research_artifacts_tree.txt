@@ -1,0 +1,5 @@
+research_dir=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/research
+/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/research/TST-001-rlm-manifest.json
+/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/research/TST-001-rlm-targets.json
+/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/research/TST-001-rlm.nodes.jsonl
+/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/research/TST-001-rlm.worklist.pack.json

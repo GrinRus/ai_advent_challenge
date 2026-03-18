@@ -1,0 +1,127 @@
+plugin_runtime_path=/Users/griogrii_riabov/.claude/plugins/cache/aidd-local/feature-dev-aidd/0.1.0
+$ python3 -S <runtime>/skills/aidd-flow-state/runtime/set_active_stage.py --help
+usage: set_active_stage.py [-h] [--stage STAGE_ALIAS] [--allow-custom] [stage]
+
+Persist the active workflow stage in docs/.active.json.
+
+positional arguments:
+  stage                Stage name to persist.
+
+options:
+  -h, --help           show this help message and exit
+  --stage STAGE_ALIAS  Compatibility alias for stage value (canonical input is
+                       positional).
+  --allow-custom       Allow arbitrary stage values (skip validation).
+Examples:
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py --help
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py <stage>
+
+Outputs:
+  stdout: machine- and human-readable command status.
+
+Exit codes:
+  0 - success.
+  1 - runtime/validation failure.
+  2 - CLI usage error (argparse).
+$ python3 -S <runtime>/skills/status/runtime/index_sync.py --help
+usage: index_sync.py [-h] [--ticket TICKET] [--slug-hint SLUG_HINT]
+                     [--slug SLUG] [--output OUTPUT]
+
+Generate/update ticket index file.
+
+options:
+  -h, --help            show this help message and exit
+  --ticket TICKET       Ticket identifier (defaults to docs/.active.json).
+  --slug-hint SLUG_HINT
+                        Optional slug hint override.
+  --slug SLUG           Optional slug override used in the index file.
+  --output OUTPUT       Optional output path override.
+Examples:
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/status/runtime/index_sync.py --help
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/status/runtime/index_sync.py
+
+Outputs:
+  stdout + files configured by: --output.
+
+Exit codes:
+  0 - success.
+  1 - runtime/validation failure.
+  2 - CLI usage error (argparse).
+$ python3 -S <runtime>/skills/review/runtime/review_report.py --help
+usage: review_report.py [-h] [--ticket TICKET] [--slug-hint SLUG_HINT]
+                        [--branch BRANCH] [--report REPORT]
+                        [--scope-key SCOPE_KEY]
+                        [--work-item-key WORK_ITEM_KEY] [--findings FINDINGS]
+                        [--findings-file FINDINGS_FILE] [--status STATUS]
+                        [--summary SUMMARY] [--fix-plan FIX_PLAN]
+                        [--fix-plan-file FIX_PLAN_FILE]
+
+Create/update review report with findings (stored in
+aidd/reports/reviewer/<ticket>/<scope_key>.json).
+
+options:
+  -h, --help            show this help message and exit
+  --ticket TICKET       Ticket identifier to use (defaults to
+                        docs/.active.json).
+  --slug-hint SLUG_HINT
+                        Optional slug hint override for report metadata.
+  --branch BRANCH       Optional branch override for metadata.
+  --report REPORT       Optional report path override (default:
+                        aidd/reports/reviewer/<ticket>/<scope_key>.json).
+  --scope-key SCOPE_KEY
+                        Optional scope key override (default: derived from
+                        work item).
+  --work-item-key WORK_ITEM_KEY
+                        Optional work item key override (iteration_id=... /
+                        id=...).
+  --findings FINDINGS   JSON list of findings or JSON object containing
+                        findings.
+  --findings-file FINDINGS_FILE
+                        Path to JSON file containing findings list or full
+                        report payload.
+  --status STATUS       Review status label to store (READY|WARN|BLOCKED).
+  --summary SUMMARY     Optional summary for the review report.
+  --fix-plan FIX_PLAN   Optional JSON object with structured fix plan.
+  --fix-plan-file FIX_PLAN_FILE
+                        Path to JSON file containing structured fix plan.
+Examples:
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_report.py --help
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_report.py
+
+Outputs:
+  stdout + files configured by: --report, --findings-file, --fix-plan-file.
+
+Exit codes:
+  0 - success.
+  1 - runtime/validation failure.
+  2 - CLI usage error (argparse).
+$ python3 -S <runtime>/skills/aidd-rlm/runtime/rlm_slice.py --help
+usage: rlm_slice.py [-h] [--ticket TICKET] --query QUERY
+                    [--max-nodes MAX_NODES] [--max-links MAX_LINKS]
+                    [--paths PATHS] [--lang LANG] [--out OUT]
+
+Generate a compact RLM slice pack.
+
+options:
+  -h, --help            show this help message and exit
+  --ticket TICKET       Ticket identifier (defaults to docs/.active.json).
+  --query QUERY         Regex or token to match in nodes/links.
+  --max-nodes MAX_NODES
+                        Maximum number of nodes to include.
+  --max-links MAX_LINKS
+                        Maximum number of links to include.
+  --paths PATHS         Optional comma-separated list of path fragments to
+                        keep.
+  --lang LANG           Optional comma-separated list of languages to keep.
+  --out OUT             Optional output path for the pack.
+Examples:
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py --help
+  python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py --query
+
+Outputs:
+  stdout + files configured by: --paths, --out.
+
+Exit codes:
+  0 - success.
+  1 - runtime/validation failure.
+  2 - CLI usage error (argparse).

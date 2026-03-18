@@ -1,0 +1,8 @@
+report_path=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/prd/TST-001.json
+recommended_status=pending
+findings_count=3
+open_questions_count=0
+spec_exists=0
+prd_findings_sync_needed=1
+plan_findings_sync_needed=1
+narrative_vs_report_mismatch=1

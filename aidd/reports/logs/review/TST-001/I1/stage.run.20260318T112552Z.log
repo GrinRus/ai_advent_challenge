@@ -1,0 +1,29 @@
+[stdout]
+
+[stderr]
+[actions-validate] ERROR: actions[0]: missing field: item_id
+[actions-validate] ERROR: actions[1]: missing field: date
+[actions-validate] ERROR: actions[1]: missing field: source
+[actions-validate] ERROR: actions[1]: missing field: item_id
+[actions-validate] ERROR: actions[1]: missing field: kind
+[actions-validate] ERROR: actions[1]: missing field: hash
+[actions-validate] ERROR: actions[1]: missing field: msg
+[actions-validate] ERROR: actions[2]: params must be empty for next3_recompute
+[actions-validate] ERROR: actions[3]: unknown context_pack_update fields: ticket, updates
+[actions-validate] ERROR: actions[0]: missing field: item_id
+[actions-validate] ERROR: actions[1]: missing field: date
+[actions-validate] ERROR: actions[1]: missing field: source
+[actions-validate] ERROR: actions[1]: missing field: item_id
+[actions-validate] ERROR: actions[1]: missing field: kind
+[actions-validate] ERROR: actions[1]: missing field: hash
+[actions-validate] ERROR: actions[1]: missing field: msg
+[actions-validate] ERROR: actions[2]: params must be empty for next3_recompute
+[actions-validate] ERROR: actions[3]: unknown context_pack_update fields: ticket, updates
+[aidd] ERROR: reason_code=contract_mismatch_actions_shape
+[aidd] ERROR: diagnostics=actions_contract_retry_failed:canonicalized_once
+[aidd] ERROR: deterministic_error_bundle={"invalid_fields": ["actions[0]: missing field: item_id", "actions[1]: missing field: date", "actions[1]: missing field: hash", "actions[1]: missing field: item_id", "actions[1]: missing field: kind", "actions[1]: missing field: msg", "actions[1]: missing field: source", "actions[2]: params must be empty for next3_recompute", "actions[3]: unknown context_pack_update fields: ticket, updates"], "payload_hash_after": "612fa95f86fa1c38c38635989b1b7a3fbb6e83e5e30a91103f5d47608a9a1079", "payload_hash_before": "e8f70d00792e15fc4dde6ce0ea3906b956e49ed60a825981cb3743908be146a8", "recovered_fields": ["scope_key", "work_item_key"], "retry_applied": true, "retry_reason": "canonicalized_once"}
+[aidd] ERROR: actions_path=aidd/reports/actions/TST-001/I1/review.actions.json
+[aidd] ERROR: supported_action_types=context_pack_ops.context_pack_update,tasklist_ops.append_progress_log,tasklist_ops.next3_recompute,tasklist_ops.set_iteration_done
+[aidd] ERROR: canonical_example_aidd_actions_v1={"schema_version":"aidd.actions.v1","stage":"review","ticket":"TST-001","scope_key":"I1","work_item_key":"iteration_id=I1","allowed_action_types":["context_pack_ops.context_pack_update","tasklist_ops.append_progress_log","tasklist_ops.next3_recompute","tasklist_ops.set_iteration_done"],"actions":[{"type":"tasklist_ops.append_progress_log","params":{"date":"1970-01-01","source":"implement","item_id":"iteration_id=I1","kind":"iteration","hash":"sha256:example","msg":"progress update"}}]}
+[aidd] WARN: plugin write-safety unavailable (reason_code=plugin_write_safety_unavailable): fatal: not a git repository (or any of the parent directories): .git
+

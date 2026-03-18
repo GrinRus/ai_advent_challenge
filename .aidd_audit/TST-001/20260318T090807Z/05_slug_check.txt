@@ -1,0 +1,4 @@
+slug=fs-rbac-03-live-enforcement
+slug_non_empty=True
+slug_regex_ok=True
+slug_contains_raw_answers=False

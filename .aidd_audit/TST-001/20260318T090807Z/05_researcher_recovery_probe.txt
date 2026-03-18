@@ -1,0 +1,7 @@
+[aidd] WARN: failed to append research handoff task (tasklist not found at docs/tasklist/TST-001.md; create it via /feature-dev-aidd:tasks-new TST-001.).
+[aidd] INFO: links_empty_reason=no_symbols
+[aidd] INFO: shared RLM API owner is `aidd-rlm`; reason_code=rlm_links_empty_warn; next_action: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_links_build.py --ticket TST-001`.
+[aidd] rlm targets saved to aidd/reports/research/TST-001-rlm-targets.json.
+[aidd] rlm manifest saved to aidd/reports/research/TST-001-rlm-manifest.json.
+[aidd] rlm worklist saved to aidd/reports/research/TST-001-rlm.worklist.pack.json.
+[aidd] research summary refreshed at docs/research/TST-001.md.

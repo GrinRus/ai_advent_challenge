@@ -1,0 +1,13 @@
+Нужно довести RBAC до live-режима так, чтобы изменения ролей применялись к активной сессии без ручного рефреша и одинаково работали в backend API и frontend flow-controls. Сейчас в проекте уже есть админские операции ролей и UI, но enforcement и реакция на рольовые изменения остаются непоследовательными между критичными эндпоинтами. Требуется усилить backend guard/interceptor и аудит role operations/403, а на фронтенде — синхронизировать role state и унифицировать обработку отказов доступа. Решение должно сохранить существующий flow UX и не ломать текущие контракты apiClient.
+
+Acceptance criteria:
+- Изменение роли пользователя отражается в активной сессии без перезагрузки страницы.
+- Критичные backend API consistently возвращают 403 при отсутствии требуемой роли.
+- Все операции назначения/отзыва ролей и 403-инциденты пишутся в audit trail с достаточным контекстом.
+- Frontend role guards для admin/flow controls применяются единообразно, а ошибки 403 отображаются в унифицированном формате.
+
+Backend scope:
+- Role enforcement в interceptor/guard для критичных endpoint-групп, аудит role operations и denied access, стабилизация service-level checks.
+
+Frontend scope:
+- Live role-state refresh в profile/session store, role guards для admin/flow controls, единый 403 error-handling path.

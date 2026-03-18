@@ -1,0 +1,1 @@
+plugin_runtime_path=/Users/griogrii_riabov/.claude/plugins/cache/aidd-local/feature-dev-aidd/0.1.0

@@ -1,0 +1,14 @@
+command=python3 skills/aidd-loop/runtime/loop_run.py
+mode=text
+elapsed_seconds=1222
+exit_code=0
+killed=0
+watchdog_marker=0
+silent_stall=0
+termination_classification=completed
+result_count=0
+permission_mode_default_hits=0
+requires_approval_hits=0
+stage_result_missing_or_invalid_hits=0
+blocking_findings_hits=0
+scope_drift_hits=0

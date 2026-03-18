@@ -1,0 +1,4 @@
+blocked_policy=ralph
+blocking_findings_seen=0
+expected_revise_signal=0
+status=not_triggered

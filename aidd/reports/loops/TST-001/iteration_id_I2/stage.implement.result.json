@@ -1,0 +1,27 @@
+{
+  "schema": "aidd.stage_result.v1",
+  "ticket": "TST-001",
+  "stage": "implement",
+  "scope_key": "iteration_id_I2",
+  "result": "done",
+  "requested_result": "done",
+  "reason": "",
+  "reason_code": "",
+  "work_item_key": "iteration_id=I2",
+  "verdict": null,
+  "artifacts": [
+    "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/filter/RbacWebFilter.java",
+    "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/service/AuditLogService.java",
+    "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/config/RbacConfig.java"
+  ],
+  "errors": [],
+  "evidence_links": {
+    "links": [
+      "aidd/reports/actions/TST-001/I2/implement.actions.json"
+    ],
+    "cli_log": "aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.log",
+    "cli_stream": "aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.jsonl"
+  },
+  "updated_at": "2026-03-18T11:48:38Z",
+  "producer": "feature-dev-aidd:implementer"
+}

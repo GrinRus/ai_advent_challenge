@@ -1,0 +1,22 @@
+{
+  "schema": "aidd.stage_result.v1",
+  "ticket": "TST-001",
+  "stage": "review",
+  "scope_key": "iteration_id_I1",
+  "result": "continue",
+  "requested_result": "done",
+  "reason": "tests evidence required but not found",
+  "reason_code": "no_tests_soft",
+  "work_item_key": "iteration_id=I1",
+  "verdict": "REVISE",
+  "artifacts": [],
+  "errors": [],
+  "evidence_links": {
+    "links": [
+      "aidd/reports/reviewer/TST-001/I1/review.json"
+    ],
+    "tests_log": "aidd/reports/tests/TST-001/iteration_id_I1.jsonl"
+  },
+  "updated_at": "2026-03-18T11:25:33Z",
+  "producer": "command"
+}

@@ -1,0 +1,180 @@
+{
+  "schema": "aidd.ticket.v1",
+  "ticket": "TST-001",
+  "slug": "TST-001",
+  "stage": "implement",
+  "updated": "2026-03-18T11:49:55Z",
+  "summary": "Updated: 2026-03-18",
+  "artifacts": [
+    "aidd/docs/prd/TST-001.prd.md",
+    "aidd/docs/plan/TST-001.md",
+    "aidd/docs/research/TST-001.md",
+    "aidd/docs/spec/TST-001.spec.yaml",
+    "aidd/docs/tasklist/TST-001.md"
+  ],
+  "reports": [
+    "aidd/reports/research/TST-001-rlm-targets.json",
+    "aidd/reports/research/TST-001-rlm-manifest.json",
+    "aidd/reports/research/TST-001-rlm.nodes.jsonl",
+    "aidd/reports/research/TST-001-rlm.links.jsonl",
+    "aidd/reports/prd/TST-001.json",
+    "aidd/reports/research/TST-001-rlm.pack.json",
+    "aidd/reports/research/TST-001-rlm.worklist.pack.json",
+    "aidd/reports/prd/TST-001.pack.json",
+    "aidd/reports/context/TST-001.pack.md",
+    "aidd/reports/reviewer/TST-001/I1.json",
+    "aidd/reports/reviewer/TST-001/I1.tests.json",
+    "aidd/reports/tests/TST-001/TST-001.jsonl",
+    "aidd/reports/tests/TST-001/iteration_id_I1.jsonl"
+  ],
+  "next3": [
+    "> 3 ближайших implement‑чекбокса. Pointer list: 1–2 строки и `ref:` на детализацию.",
+    "- [ ] I3: Profile service integration + Role caching (ref: iteration_id=I3)"
+  ],
+  "open_questions": [
+    "None"
+  ],
+  "open_questions_source": "prd:aidd_open_questions",
+  "risks_top5": [
+    "- Performance impact of live RBAC checks → caching strategy with TTL",
+    "- Session desync between backend/frontend → polling mechanism",
+    "- Audit log storage growth → retention policy and archiving"
+  ],
+  "checks": [
+    {
+      "name": "prd-review",
+      "status": "ready",
+      "path": "aidd/reports/prd/TST-001.json",
+      "doc_status": "ready"
+    }
+  ],
+  "context_pack": [
+    "Updated: 2026-03-18",
+    "Ticket: TST-001",
+    "Stage: tasklist",
+    "Status: READY",
+    "### TL;DR",
+    "- Goal: Implement live RBAC enforcement for mutation APIs (POST/PUT/DELETE) with audit logging and SSE-based frontend role sync",
+    "- Current focus (1 checkbox): I3 - Profile service integration + Role caching",
+    "- Done since last pack: I2 complete - RBAC WebFilter + Audit logging service (8 files, 603 LOC, 18 tests pass)",
+    "- Risk level: medium — Profile service integration needs verification for I3",
+    "### Scope & boundaries",
+    "- Allowed paths (patch boundaries):",
+    "- `backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/` (new package)",
+    "- `backend-mcp/src/main/resources/db/changelog/rbac/` (migrations)",
+    "- `frontend/src/lib/profileStore.ts` (modifications)",
+    "- `frontend/src/lib/useRoleGuard.ts` (new)",
+    "- `frontend/src/components/RoleGuard.tsx` (new)",
+    "- `frontend/src/pages/AdminRoles.tsx` (refactor)",
+    "- Forbidden / out-of-scope:",
+    "- `backend-mcp/src/main/java/com/aiadvent/mcp/backend/notes/` — no changes to note domain",
+    "- `frontend/src/pages/notes/` — no changes to note UI",
+    "- Spring Security integration — using custom WebFlux filters",
+    "- WebSocket — using existing SSE infrastructure instead",
+    "- Integrations / dependencies:",
+    "- Profile service API — fetch roles by namespace:reference (fallback to local DB if unavailable)",
+    "- PostgreSQL — rbac_audit_log table",
+    "- Caffeine cache — role caching with 5min TTL",
+    "- SSE endpoint — extends existing flow events infrastructure",
+    "### Decisions & defaults (living)",
+    "- Feature flag: `rbac.enforcement.enabled` (default: false), `rbac.audit-only` (default: true for Phase 1)",
+    "- Contract/API: X-Profile-Key header format `namespace:reference`, X-Profile-Auth for verification",
+    "- Data model changes: New `rbac_audit_log` table with JSONB metadata",
+    "- Observability: Micrometer timer on RBAC filter, Caffeine cache stats, SSE connection metrics",
+    "### Test policy (iteration budget)",
+    "- Cadence: checkpoint",
+    "- Profile: targeted",
+    "- Tasks:",
+    "- `./gradlew :backend-mcp:test --tests \"com.aiadvent.mcp.backend.rbac.*\"`",
+    "- `npm test -- useRoleGuard`",
+    "- Filters:",
+    "- `RbacWebFilterTest`",
+    "- `ProfileRoleServiceTest`",
+    "- `useRoleGuard.test.ts`",
+    "- Budget minutes: 10",
+    "- Known flaky / failing: none",
+    "### Commands quickstart (copy/paste)",
+    "- Format: cmd",
+    "- Tests (manual):",
+    "- `./gradlew :backend-mcp:test --tests \"*Rbac*\"`",
+    "- `npm test -- useRoleGuard`",
+    "- Run/Dev:",
+    "- `./gradlew :backend-mcp:bootRun`",
+    "- `npm run dev` (frontend)",
+    "- DB migration: `./gradlew :backend-mcp:liquibaseUpdate`",
+    "### Open questions / blockers",
+    "- None — all questions resolved via PRD decisions Q1-Q5",
+    "### Blockers summary (handoff)",
+    "- None",
+    "### References",
+    "- Spec: aidd/docs/spec/TST-001.spec.yaml (OUTDATED — uses WebSocket, follow Plan for SSE)",
+    "- PRD: aidd/docs/prd/TST-001.prd.md (Status: READY)",
+    "- Research: aidd/docs/research/TST-001.md",
+    "- Plan: aidd/docs/plan/TST-001.md (Status: READY, source of truth for implementation)",
+    "---"
+  ],
+  "events": [
+    {
+      "ts": "2026-03-18T11:24:13Z",
+      "ticket": "TST-001",
+      "slug_hint": "TST-001",
+      "type": "format-and-test",
+      "status": "skipped",
+      "source": "hook format-and-test",
+      "details": {
+        "profile": "none",
+        "reason": "format-only"
+      }
+    },
+    {
+      "ts": "2026-03-18T11:26:45Z",
+      "ticket": "TST-001",
+      "slug_hint": "TST-001",
+      "type": "format-and-test",
+      "status": "skipped",
+      "source": "hook format-and-test",
+      "details": {
+        "profile": "none",
+        "reason": "format-only"
+      }
+    },
+    {
+      "ts": "2026-03-18T11:46:24Z",
+      "ticket": "TST-001",
+      "slug_hint": "TST-001",
+      "type": "format-and-test",
+      "status": "skipped",
+      "source": "hook format-and-test",
+      "details": {
+        "profile": "none",
+        "reason": "format-only"
+      }
+    },
+    {
+      "ts": "2026-03-18T11:49:54Z",
+      "ticket": "TST-001",
+      "slug_hint": "TST-001",
+      "type": "format-and-test",
+      "status": "skipped",
+      "source": "hook format-and-test",
+      "details": {
+        "profile": "none",
+        "reason": "format-only"
+      }
+    },
+    {
+      "ts": "2026-03-18T11:49:55Z",
+      "ticket": "TST-001",
+      "slug_hint": "TST-001",
+      "type": "progress",
+      "status": "ok",
+      "details": {
+        "source": "implement",
+        "message": "",
+        "code_files": 24,
+        "new_items": 11
+      },
+      "source": "aidd progress"
+    }
+  ]
+}

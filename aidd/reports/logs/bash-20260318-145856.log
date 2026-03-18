@@ -1,0 +1,150 @@
+---
+Ticket: TST-001
+Slug: fs-rbac-03-live-enforcement
+Status: READY
+Updated: 2026-03-18
+Owner: backend-lead, frontend-lead
+PRD: aidd/docs/prd/TST-001.prd.md
+Plan: aidd/docs/plan/TST-001.md
+Research: aidd/docs/research/TST-001.md
+Spec: aidd/docs/spec/TST-001.spec.yaml
+Reports:
+  tests: aidd/reports/tests/TST-001/TST-001.jsonl
+  review_report: aidd/reports/reviewer/TST-001/TST-001.json
+  reviewer_marker: aidd/reports/reviewer/TST-001/TST-001.tests.json
+  qa: aidd/reports/qa/TST-001.json
+---
+
+# Tasklist: TST-001 — FS-RBAC-03 Live RBAC Enforcement
+
+> Единственный источник правды для implement/review/qa.
+> Всегда начинайте чтение с `## AIDD:CONTEXT_PACK`, затем `## AIDD:SPEC_PACK`, затем `## AIDD:TEST_EXECUTION`, затем `## AIDD:ITERATIONS_FULL`, затем `## AIDD:NEXT_3`.
+
+## AIDD:CONTEXT_PACK
+Updated: 2026-03-18
+Ticket: TST-001
+Stage: tasklist
+Status: READY
+
+### TL;DR
+- Goal: Implement live RBAC enforcement for mutation APIs (POST/PUT/DELETE) with audit logging and SSE-based frontend role sync
+- Current focus (1 checkbox): I1 - Database migration + RBAC domain model
+- Done since last pack: PRD finalized, Plan created with 5 phases, research findings integrated
+- Risk level: medium — SSE infrastructure exists but profile service integration needs verification
+
+### Scope & boundaries
+- Allowed paths (patch boundaries):
+  - `backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/` (new package)
+  - `backend-mcp/src/main/resources/db/changelog/rbac/` (migrations)
+  - `frontend/src/lib/profileStore.ts` (modifications)
+  - `frontend/src/lib/useRoleGuard.ts` (new)
+  - `frontend/src/components/RoleGuard.tsx` (new)
+  - `frontend/src/pages/AdminRoles.tsx` (refactor)
+- Forbidden / out-of-scope:
+  - `backend-mcp/src/main/java/com/aiadvent/mcp/backend/notes/` — no changes to note domain
+  - `frontend/src/pages/notes/` — no changes to note UI
+  - Spring Security integration — using custom WebFlux filters
+  - WebSocket — using existing SSE infrastructure instead
+- Integrations / dependencies:
+  - Profile service API — fetch roles by namespace:reference (fallback to local DB if unavailable)
+  - PostgreSQL — rbac_audit_log table
+  - Caffeine cache — role caching with 5min TTL
+  - SSE endpoint — extends existing flow events infrastructure
+
+### Decisions & defaults (living)
+- Feature flag: `rbac.enforcement.enabled` (default: false), `rbac.audit-only` (default: true for Phase 1)
+- Contract/API: X-Profile-Key header format `namespace:reference`, X-Profile-Auth for verification
+- Data model changes: New `rbac_audit_log` table with JSONB metadata
+- Observability: Micrometer timer on RBAC filter, Caffeine cache stats, SSE connection metrics
+
+### Test policy (iteration budget)
+- Cadence: checkpoint
+- Profile: targeted
+- Tasks: `./gradlew :backend-mcp:test --tests "com.aiadvent.mcp.backend.rbac.*"`, `npm test -- useRoleGuard`
+- Filters: `RbacWebFilterTest`, `ProfileRoleServiceTest`, `useRoleGuard.test.ts`
+- Budget minutes: 10
+- Known flaky / failing: none
+
+### Commands quickstart (copy/paste)
+- Format: cmd
+- Tests (manual): `./gradlew :backend-mcp:test --tests "*Rbac*"`, `npm test -- useRoleGuard`
+- Run/Dev: `./gradlew :backend-mcp:bootRun`, `npm run dev` (frontend)
+- DB migration: `./gradlew :backend-mcp:liquibaseUpdate`
+
+### Open questions / blockers
+- None — all questions resolved via PRD decisions Q1-Q5
+
+### Blockers summary (handoff)
+- None
+
+### References
+- Spec: aidd/docs/spec/TST-001.spec.yaml (OUTDATED — uses WebSocket, follow Plan for SSE)
+- PRD: aidd/docs/prd/TST-001.prd.md (Status: READY, Q5=B polling but Plan uses SSE)
+- Research: aidd/docs/research/TST-001.md
+- Plan: aidd/docs/plan/TST-001.md (Status: READY, source of truth for implementation)
+- Reports:
+  - review_report: aidd/reports/reviewer/TST-001/TST-001.json
+  - reviewer_marker: aidd/reports/reviewer/TST-001/TST-001.tests.json
+  - qa: aidd/reports/qa/TST-001.json
+
+---
+
+## AIDD:SPEC_PACK
+Updated: 2026-03-18
+Spec: aidd/docs/spec/TST-001.spec.yaml (status: draft — OUTDATED)
+
+- Goal: Implement live RBAC enforcement on mutation APIs with auditable role operations and SSE-based frontend synchronization
+- Non-goals:
+  - UI for role management (assumes existing admin interface)
+  - Migration of historical access logs
+  - Multi-tenant RBAC scope
+  - WebSocket (Spec says WebSocket, but Plan uses SSE — follow Plan)
+- Key decisions:
+  - Backend: Custom WebFlux filter for RBAC (no Spring Security)
+  - Auth: X-Profile-Key header-based identity extraction
+  - Frontend: React + Zustand (not Redux as in Spec)
+  - Session Sync: SSE (Server-Sent Events) — NOT WebSocket, NOT Polling
+  - Cache: Caffeine with 5min TTL
+  - Audit: PostgreSQL table `rbac_audit_log` with JSONB metadata
+- Risks:
+  - R-001: Profile service unavailable → Circuit breaker, fail-closed, cache roles
+  - R-002: Cache stale roles after assignment → Cache invalidation on role change
+  - R-003: SSE connection memory leak → Proper cleanup on disconnect
+  - R-004: Audit log write failures → Async logging, error queue
+  - R-005: RBAC filter performance degradation → Caffeine cache, async audit
+  - R-006: Breaking change to existing APIs → Feature flags, audit-only mode first
+  - R-007: Component scan misses RBAC beans → Add to all profile configs
+  - R-008: Missing profile service integration → Define contract or implement local role storage
+
+## AIDD:TEST_STRATEGY
+- Unit:
+  - Scope: RBAC middleware logic, role caching, audit log formatting, useRoleGuard hook
+  - Files: `RbacWebFilterTest`, `ProfileRoleServiceTest`, `AuditLogServiceTest`, `useRoleGuard.test.ts`
+- Integration:
+  - Scope: RBAC filter + profile service client, audit log DB writes, SSE endpoint connection handling
+  - Files: `RbacIntegrationTest`, `RoleEventsControllerTest`
+- Contract:
+  - Scope: API response schemas (403 format), SSE event format
+  - Files: Contract tests for `/api/profiles/role-events` endpoint
+- E2E/Stand:
+  - Critical paths:
+    - flow.admin-change-role: Admin assigns role → user receives SSE update
+    - flow.unauthorized-access: User attempts restricted action → 403 + audit log
+    - flow.live-session-update: Role change propagates to frontend within 5 seconds
+- Test data:
+  - Fixtures: Admin user with GRANT/REVOKE permissions, regular user with limited role, user with missing headers
+
+---
+
+## AIDD:TEST_EXECUTION
+> Конкретные команды/фильтры запуска (execution‑уровень).
+- profile: targeted
+- tasks:
+  - Backend: `./gradlew :backend-mcp:test --tests "com.aiadvent.mcp.backend.rbac.*"`
+  - Frontend: `npm test -- useRoleGuard`
+  - Integration: `./gradlew :backend-mcp:test --tests "*RbacIntegrationTest*"`
+- filters:
+  - `RbacWebFilterTest` — filter logic tests
+  - `ProfileRoleServiceTest` — caching and role resolution tests
+  - `AuditLogServiceTest` — audit logging tests
+  - `useRoleGuard.test.ts` — frontend hook tests

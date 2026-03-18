@@ -1,0 +1,5 @@
+stage_result_missing_or_invalid_seen=1
+scope_fallback_stale_ignored_seen=1
+scope_drift_recoverable_seen=1
+invalid_schema_seen=0
+classification=scope_drift_recoverable

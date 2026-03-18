@@ -1,0 +1,328 @@
+---
+schema: aidd.spec.v1
+
+# Core
+status: draft
+updated_at: "2026-03-18"
+ticket: "TST-001"
+slug: "fs-rbac-03-live-enforcement"
+
+owners:
+  product: "security-team"
+  tech: "backend-lead"
+  qa: "qa-lead"
+
+sources:
+  plan: "aidd/docs/plan/TST-001.md"
+  prd: "aidd/docs/prd/TST-001.prd.md"
+  tasklist: "aidd/docs/tasklist/TST-001.md"
+  interview_log: "aidd/reports/spec/TST-001.interview.jsonl"
+
+spec_pack:
+  goal: "Implement live RBAC enforcement on critical APIs, add auditable role operations trail, and synchronize frontend role guards with session updates via WebSocket"
+  non_goals:
+    - "UI for role management (assumes existing admin interface)"
+    - "Migration of historical access logs"
+    - "Multi-tenant RBAC scope"
+  constraints:
+    - "No existing RBAC - build from scratch per interview Q2=D"
+    - "WebSocket server must scale with current infrastructure"
+    - "Audit logs stored in existing DB (separate table)"
+    - "Frontend stack: React + Context/Redux (no changes)"
+  decisions:
+    - "Q1: Critical APIs = all mutation APIs (POST/PUT/DELETE) [Interview: B]"
+    - "Q2: Current RBAC = none exists, build from scratch [Interview: D - overrides PRD assumption]"
+    - "Q3: Frontend = React + Context/Redux"
+    - "Q4: Audit logs = database (separate table)"
+    - "Q5: Session sync = WebSocket (push updates)"
+  risks_top:
+    - "Performance impact of live RBAC checks → caching strategy with TTL"
+    - "Session desync between backend/frontend → websocket/polling mechanism"
+    - "Audit log storage growth → retention policy and archiving"
+  links:
+    spec: "aidd/docs/spec/TST-001.spec.yaml"
+
+iteration_decisions:
+  - iteration_id: "I1"
+    scope:
+      - api_contract
+      - data_model
+      - tests
+      - roll_out
+      - observability
+    decisions:
+      - "Backend RBAC middleware with audit logging (Phase 1)"
+      - "WebSocket push notifications infrastructure (Phase 2)"
+      - "Frontend WebSocket integration + Redux state sync (Phase 3)"
+      - "Q1: Critical APIs = all mutation APIs (POST/PUT/DELETE) [Interview: B]"
+      - "Q2: No existing RBAC - build from scratch [Interview: D]"
+    open_questions: []
+
+platforms:
+  frontend:
+    enabled: true
+    stack_hint: "React + Context/Redux"
+  backend:
+    enabled: true
+    stack_hint: "Build from scratch - no existing RBAC (per interview Q2=D)"
+  mobile:
+    enabled: false
+    stack_hint: ""
+
+user_flows:
+  - id: "flow.admin-change-role"
+    actors: ["admin", "target_user"]
+    entrypoints: ["PUT /api/users/{id}/role"]
+    steps:
+      - "Admin calls API to change user role"
+      - "RBAC middleware checks admin permissions"
+      - "Role updated in DB, operation logged to audit_log"
+      - "WebSocket push notification sent to target user"
+      - "Frontend updates auth state without refresh"
+    edge_cases:
+      - "Insufficient admin permissions → 403 with audit log"
+      - "WebSocket unavailable → graceful degradation"
+  - id: "flow.unauthorized-access"
+    actors: ["user"]
+    entrypoints: ["POST/PUT/DELETE APIs"]
+    steps:
+      - "User attempts restricted action"
+      - "RBAC middleware checks JWT claims"
+      - "Access denied → 403 Forbidden"
+      - "Attempt logged to audit_log (user_id, endpoint, timestamp, denied)"
+      - "Frontend displays permission error"
+    edge_cases:
+      - "JWT token expired → 401 (not 403)"
+  - id: "flow.live-session-update"
+    actors: ["user", "admin"]
+    entrypoints: ["WebSocket connection"]
+    steps:
+      - "User active in React app"
+      - "Admin revokes role via API"
+      - "WebSocket server broadcasts update"
+      - "Redux store updates auth state"
+      - "UI immediately hides restricted elements"
+    edge_cases:
+      - "Connection lost → exponential backoff reconnect"
+
+ui_ux:
+  screens:
+    - "Admin role management interface (existing)"
+    - "Permission denied error display"
+  states:
+    loading: ["WebSocket connection status indicator"]
+    empty: []
+    error: ["403 permission denied message", "WebSocket connection error"]
+    partial_success: []
+  accessibility:
+    - "Error messages must be screen-reader accessible"
+  i18n:
+    - "Permission error messages need i18n support"
+  analytics_events:
+    - "role_change_denied"
+    - "permission_check_failed"
+
+api_contract:
+  - id: "ALL POST/PUT/DELETE /*"
+    auth: "JWT Bearer"
+    request:
+      content_type: "application/json"
+      body_schema: {}
+    response:
+      success_schema: {}
+      error_codes: ["403 Forbidden", "401 Unauthorized"]
+      timeouts_ms: 5000
+  - id: "PUT /api/users/{id}/role"
+    auth: "JWT Bearer (admin only)"
+    request:
+      content_type: "application/json"
+      body_schema:
+        role: "string"
+    response:
+      success_schema:
+        user_id: "string"
+        new_role: "string"
+        updated_at: "timestamp"
+      error_codes: ["403 Forbidden", "404 Not Found", "400 Bad Request"]
+      timeouts_ms: 3000
+  - id: "WS /ws/session"
+    auth: "JWT Bearer (upgrade)"
+    request:
+      content_type: "N/A"
+      body_schema: {}
+    response:
+      success_schema:
+        event: "role_updated"
+        payload:
+          user_id: "string"
+          new_role: "string"
+          timestamp: "string"
+      error_codes: ["401 Unauthorized"]
+      timeouts_ms: 30000
+
+data_model:
+  entities:
+    - name: "audit_log"
+      fields:
+        - "id: UUID PK"
+        - "user_id: UUID FK"
+        - "action: ENUM(GRANT, REVOKE, DENIED)"
+        - "target_resource: STRING"
+        - "role_changes: JSONB"
+        - "timestamp: TIMESTAMP"
+        - "ip_address: INET"
+        - "user_agent: STRING"
+    - name: "user_sessions"
+      fields:
+        - "user_id: UUID FK"
+        - "role: STRING"
+        - "permissions: JSONB"
+        - "last_updated: TIMESTAMP"
+  schema_changes:
+    required: true
+    notes: "New audit_log table required; user_sessions cache table optional for performance"
+  versioning: "backward"
+  idempotency: "Role updates must be idempotent (same role set = no-op)"
+
+tradeoffs:
+  - topic: "RBAC check caching strategy"
+    options:
+      - name: "In-memory cache with TTL"
+        pros: ["Fast (<10ms)", "Simple implementation"]
+        cons: ["Stale data risk", "Per-node cache"]
+      - name: "Redis distributed cache"
+        pros: ["Consistent across nodes", "Configurable TTL"]
+        cons: ["Network latency", "Additional infrastructure"]
+    decision: "In-memory cache with TTL"
+    rationale: "Meet P95 <10ms latency requirement; accept eventual consistency for role changes via WebSocket push"
+  - topic: "Session sync mechanism"
+    options:
+      - name: "WebSocket push"
+        pros: ["Real-time updates", "Efficient"]
+        cons: ["Connection management complexity"]
+      - name: "Short polling"
+        pros: ["Simple implementation", "No persistent connections"]
+        cons: ["Higher latency", "Unnecessary load"]
+    decision: "WebSocket push"
+    rationale: "<5 second sync requirement demands WebSocket; polling would add unnecessary load"
+
+risks:
+  - risk: "Performance impact from live RBAC checks on every request"
+    impact: "high"
+    mitigation:
+      - "In-memory caching with TTL"
+      - "Async audit logging"
+    detection:
+      - "RBAC latency P95 metrics"
+      - "Alert if >10ms"
+  - risk: "Session desync between backend and frontend"
+    impact: "med"
+    mitigation:
+      - "WebSocket with heartbeat"
+      - "Fallback to polling"
+    detection:
+      - "WebSocket connection metrics"
+      - "Role mismatch logs"
+  - risk: "Audit log storage growth"
+    impact: "med"
+    mitigation:
+      - "Retention policy (90 days)"
+      - "Archive to cold storage"
+    detection:
+      - "Storage usage monitoring"
+      - "Growth rate alerts"
+  - risk: "WebSocket connection instability"
+    impact: "high"
+    mitigation:
+      - "Graceful degradation"
+      - "Exponential backoff reconnect"
+    detection:
+      - "Connection uptime metrics"
+      - "Error rate monitoring"
+
+observability:
+  logs:
+    - "RBAC check results (allowed/denied)"
+    - "Audit log writes"
+    - "WebSocket connection events"
+  metrics:
+    - "rbac_check_latency_p95"
+    - "rbac_check_denied_total"
+    - "audit_log_writes_total"
+    - "websocket_connections_active"
+    - "websocket_events_sent_total"
+  traces:
+    - "RBAC decision path"
+    - "WebSocket message flow"
+  dashboards:
+    - "RBAC Performance Dashboard"
+    - "Audit Log Activity"
+
+roll_out:
+  feature_flags:
+    - name: "rbac_live_enforcement"
+      description: "Enable live RBAC checks on mutation APIs"
+    - name: "websocket_session_sync"
+      description: "Enable WebSocket session updates"
+  stages:
+    - "Phase 1: Backend RBAC middleware + audit logging"
+    - "Phase 2: WebSocket infrastructure"
+    - "Phase 3: Frontend integration"
+    - "Phase 4: E2E testing + performance validation"
+  rollback:
+    - "Disable feature flags"
+    - "Revert to previous middleware version"
+
+test_strategy:
+  unit:
+    scope:
+      - "RBAC middleware logic"
+      - "JWT claims parsing"
+      - "Audit log formatting"
+  integration:
+    scope:
+      - "RBAC middleware + JWT integration"
+      - "Audit log database writes"
+      - "WebSocket connection handling"
+  contract:
+    scope:
+      - "API response schemas"
+      - "WebSocket message format"
+  e2e:
+    scope:
+      - "Admin role change flow"
+      - "Permission denied flow"
+      - "Live session update flow"
+    critical_paths:
+      - "flow.admin-change-role"
+      - "flow.unauthorized-access"
+      - "flow.live-session-update"
+  test_data:
+    fixtures:
+      - "Admin user with GRANT/REVOKE permissions"
+      - "Regular user with limited role"
+      - "User with expired JWT"
+  environments:
+    stage:
+      - "Integration test environment"
+      - "Load test environment"
+
+open_questions:
+  blocker: []
+  non_blocker:
+    - "What is the preferred audit log retention period beyond 90 days?"
+    - "Should denied access attempts trigger security alerts?"
+
+done_definition:
+  acceptance_criteria_map:
+    - ac: "AC-1: All POST/PUT/DELETE APIs return 403 for unauthorized users"
+      test_coverage: "e2e flow.unauthorized-access"
+    - ac: "AC-2: All role operations logged to audit_log"
+      test_coverage: "integration audit_log writes"
+    - ac: "AC-3: Frontend updates within 5 seconds of backend change"
+      test_coverage: "e2e flow.live-session-update"
+    - ac: "AC-4: RBAC latency P95 <= 10ms at 1000 RPS"
+      test_coverage: "load test validation"
+  manual_checks:
+    - "Verify WebSocket graceful degradation when connection lost"
+    - "Verify audit logs do not contain sensitive data"

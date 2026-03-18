@@ -1,0 +1,331 @@
+{
+  "tests_required": "soft",
+  "tests_policy": {
+    "implement": "none",
+    "review": "targeted",
+    "qa": "full"
+  },
+  "tests_gate": {
+    "source_roots": [
+      "src/main",
+      "src",
+      "app",
+      "apps",
+      "packages",
+      "services",
+      "service",
+      "lib",
+      "libs",
+      "backend",
+      "frontend"
+    ],
+    "source_extensions": [
+      ".kt",
+      ".java",
+      ".kts",
+      ".groovy",
+      ".py",
+      ".js",
+      ".jsx",
+      ".ts",
+      ".tsx",
+      ".go",
+      ".rb",
+      ".rs",
+      ".cs",
+      ".php"
+    ],
+    "test_patterns": [
+      "src/test/{rel_dir}/{base}Test{ext}",
+      "src/test/{rel_dir}/{base}Tests{ext}",
+      "tests/{rel_dir}/test_{base}{ext}",
+      "tests/{rel_dir}/{base}_test{ext}",
+      "tests/{rel_dir}/{base}.test{ext}",
+      "tests/{rel_dir}/{base}.spec{ext}",
+      "test/{rel_dir}/test_{base}{ext}",
+      "test/{rel_dir}/{base}_test{ext}",
+      "spec/{rel_dir}/{base}_spec{ext}",
+      "spec/{rel_dir}/{base}Spec{ext}",
+      "__tests__/{rel_dir}/{base}.test{ext}",
+      "__tests__/{rel_dir}/{base}.spec{ext}"
+    ],
+    "exclude_dirs": [
+      "test",
+      "tests",
+      "spec",
+      "specs",
+      "__tests__",
+      "androidTest",
+      "integrationTest",
+      "functionalTest",
+      "testFixtures"
+    ]
+  },
+  "deps_allowlist": false,
+  "deps_allowlist_mode": "all",
+  "deps_allowlist_files": [
+    "**/build.gradle",
+    "**/build.gradle.kts",
+    "**/settings.gradle",
+    "**/settings.gradle.kts",
+    "**/gradle/libs.versions.toml",
+    "**/package.json",
+    "**/pyproject.toml",
+    "**/requirements*.txt",
+    "**/Pipfile",
+    "**/setup.py",
+    "**/setup.cfg",
+    "**/go.mod",
+    "**/Cargo.toml",
+    "**/*.csproj",
+    "**/*.fsproj",
+    "**/*.vbproj",
+    "**/Directory.Packages.props",
+    "**/packages.config",
+    "**/global.json",
+    "**/nuget.config"
+  ],
+  "prd_review": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ],
+    "approved_statuses": [
+      "ready"
+    ],
+    "blocking_statuses": [
+      "blocked"
+    ],
+    "allow_missing_section": false,
+    "require_action_items_closed": true,
+    "allow_missing_report": false,
+    "blocking_severities": [
+      "critical"
+    ],
+    "report_path": "aidd/reports/prd/{ticket}.json"
+  },
+  "plan_review": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ],
+    "approved_statuses": [
+      "ready"
+    ],
+    "blocking_statuses": [
+      "blocked"
+    ],
+    "allow_missing_section": false,
+    "require_action_items_closed": true
+  },
+  "researcher": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ],
+    "require_status": [
+      "reviewed"
+    ],
+    "freshness_days": 14,
+    "allow_missing": false,
+    "minimum_paths": 1,
+    "allow_pending_baseline": true,
+    "baseline_phrase": "контекст пуст",
+    "downstream_gate_mode": "always_soft"
+  },
+  "rlm": {
+    "enabled": true,
+    "require_pack": true,
+    "require_nodes": true,
+    "require_links": true,
+    "required_for_langs": [
+      "kt",
+      "kts",
+      "java"
+    ]
+  },
+  "analyst": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ],
+    "min_questions": 1,
+    "require_ready": true,
+    "allow_blocked": false,
+    "check_open_questions": true,
+    "require_dialog_section": true
+  },
+  "qa": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ],
+    "requires": [
+      "gate-tests"
+    ],
+    "command": [
+      "python3",
+      "${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa.py"
+    ],
+    "debounce_minutes": 10,
+    "timeout": 600,
+    "report": "aidd/reports/qa/{ticket}.json",
+    "block_on": [
+      "blocker",
+      "critical"
+    ],
+    "warn_on": [
+      "major",
+      "minor"
+    ],
+    "allow_missing_report": false,
+    "handoff": true,
+    "handoff_mode": "block",
+    "tests": {
+      "allow_skip": true,
+      "discover": {
+        "max_files": 20,
+        "max_bytes": 200000,
+        "allow_paths": [
+          ".github/workflows/*.yml",
+          ".github/workflows/*.yaml",
+          ".gitlab-ci.yml",
+          ".circleci/config.yml",
+          "Jenkinsfile",
+          "README*",
+          "readme*"
+        ]
+      }
+    }
+  },
+  "review_pack_v2_required": false,
+  "loop": {
+    "blocked_policy": "ralph",
+    "strict_recoverable_reason_codes": [
+      "no_tests_hard"
+    ],
+    "auto_repair_from_qa": false,
+    "block_reason_policy": {
+      "hard": [
+        "loop_runner_permissions",
+        "user_approval_required",
+        "diff_boundary_violation",
+        "preflight_contract_mismatch",
+        "plugin_root_missing",
+        "command_unavailable",
+        "invalid_work_item_key",
+        "work_item_resolution_failed",
+        "active_stage_sync_failed",
+        "prompt_flow_blocker",
+        "contract_mismatch_stage_result_shape",
+        "contract_mismatch_actions_shape"
+      ],
+      "recoverable": [
+        "stage_result_missing_or_invalid",
+        "stage_result_blocked",
+        "blocked_without_reason",
+        "blocking_findings",
+        "scope_drift_recoverable",
+        "no_tests_hard",
+        "qa_tests_failed",
+        "review_pack_missing",
+        "review_pack_stale",
+        "review_context_pack_missing",
+        "qa_blocked"
+      ],
+      "warn": [
+        "rlm_links_empty_warn",
+        "rlm_status_pending",
+        "output_contract_warn",
+        "no_tests_soft",
+        "review_context_pack_placeholder_warn",
+        "fast_mode_warn",
+        "out_of_scope_warn",
+        "no_boundaries_defined_warn",
+        "auto_boundary_extend_warn"
+      ]
+    }
+  },
+  "reviewer": {
+    "enabled": true,
+    "tests_marker": "aidd/reports/reviewer/{ticket}/{scope_key}.tests.json",
+    "review_report": "aidd/reports/reviewer/{ticket}/{scope_key}.json",
+    "tests_field": "tests",
+    "required_values": [
+      "required"
+    ],
+    "optional_values": [
+      "optional",
+      "skipped",
+      "not-required"
+    ],
+    "warn_on_missing": true
+  },
+  "tasklist_spec": {
+    "enabled": true,
+    "branches": [
+      "feature/*",
+      "release/*",
+      "hotfix/*"
+    ],
+    "skip_branches": [
+      "docs/*"
+    ]
+  },
+  "tasklist_progress": {
+    "enabled": true,
+    "code_prefixes": [
+      "src/",
+      "tests/",
+      "test/",
+      "app/",
+      "services/",
+      "backend/",
+      "frontend/",
+      "lib/",
+      "core/",
+      "packages/",
+      "modules/",
+      "cmd/"
+    ],
+    "skip_branches": [
+      "docs/*",
+      "chore/*"
+    ],
+    "allow_missing_tasklist": false,
+    "override_env": "CLAUDE_SKIP_TASKLIST_PROGRESS",
+    "sources": [
+      "manual",
+      "implement",
+      "qa",
+      "review",
+      "gate",
+      "handoff"
+    ]
+  }
+}

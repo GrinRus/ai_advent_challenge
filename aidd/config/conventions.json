@@ -1,0 +1,320 @@
+{
+  "metadata": {
+    "lastUpdated": "2024-05-14",
+    "maintainer": "workflow-team",
+    "notes": "Измените mode и соответствующие шаблоны, если нужно расширить список режимов."
+  },
+  "commit": {
+    "mode": "ticket-prefix",
+    "fields": {
+      "ticket": "Обязательный идентификатор задачи (например, ABC-123). Используется в ticket-prefix и mixed режимах.",
+      "type": "Базовый тип изменения (feat, fix, chore, docs, test, refactor, perf, build, ci, revert).",
+      "scope": "Логическая область или модуль (checkout, payments, infra)."
+    },
+    "modes": {
+      "ticket-prefix": {
+        "description": "Сообщение начинается с тикета и двоеточия.",
+        "template": "<TICKET>: <summary>",
+        "example": "STORE-123: implement rule engine",
+        "usage": "Подходит командам, где тикет обязателен во всех коммитах."
+      },
+      "conventional": {
+        "description": "Следует стандарту Conventional Commits.",
+        "template": "<type>(<scope>): <summary>",
+        "example": "feat(checkout): add retry on failure",
+        "usage": "Используйте, когда важна типизация и автогенерация CHANGELOG."
+      },
+      "mixed": {
+        "description": "Гибридный режим: добавляет тикет и сохраняет тип/область.",
+        "template": "<TICKET> <type>(<scope>): <summary>",
+        "example": "STORE-123 feat(payments): add 3ds redirect",
+        "usage": "Рекомендуется, если тикет нужен, но важен и формат Conventional."
+      }
+    }
+  },
+  "branch": {
+    "defaultPrefix": "feature",
+    "naming": {
+      "feature": {
+        "pattern": "feature/<TICKET>",
+        "example": "feature/STORE-123",
+        "when": "Основная разработка по задаче."
+      },
+      "fix": {
+        "pattern": "fix/<scope>",
+        "example": "fix/checkout-errors",
+        "when": "Быстрые корректировки без связанного тикета."
+      },
+      "hotfix": {
+        "pattern": "hotfix/<TICKET>",
+        "example": "hotfix/STORE-999",
+        "when": "Срочные исправления в продакшене."
+      },
+      "mixed": {
+        "pattern": "feature/<TICKET>-<type>/<scope>",
+        "example": "feature/STORE-123-feat/payments",
+        "when": "Режим для смешанных команд: тикет + тип + область."
+      }
+    },
+    "notes": "Дополните список паттернов, если используете иные типы веток."
+  },
+  "review": {
+    "guidelines": [
+      "Сообщения коммитов должны соответствовать активному режиму.",
+      "Ветки создаются только допустимой командой (feature/fix/hotfix/mixed).",
+      "Перед выпуском релиза обновите conventions.md вручную, чтобы зафиксировать актуальные правила."
+    ]
+  },
+  "rlm": {
+    "max_files": 500,
+    "max_links": 2000,
+    "max_file_bytes": 200000,
+    "targets_mode": "auto",
+    "worklist_paths": [],
+    "worklist_keywords": [],
+    "worklist_max_entries": 500,
+    "rg_timeout_s": 6,
+    "rg_batch_size": 24,
+    "max_symbols_per_file": 40,
+    "max_definition_hits_per_symbol": 5,
+    "link_key_calls_source": "key_calls",
+    "link_type_refs_mode": "additive",
+    "link_type_refs_priority": "prefer",
+    "link_unverified_warn_ratio": 0.5,
+    "link_rg_verify": "auto",
+    "type_refs_include_prefixes": [],
+    "type_refs_exclude_prefixes": [
+      "java.",
+      "jakarta.",
+      "org.springframework."
+    ],
+    "link_target_threshold": 500,
+    "dir_children_limit": 50,
+    "dir_summary_max_chars": 600,
+    "pack_budget": {
+      "max_chars": 12000,
+      "max_lines": 240,
+      "entrypoints": 20,
+      "hotspots": 20,
+      "integration_points": 20,
+      "test_hooks": 15,
+      "recommended_reads": 15,
+      "evidence_snippet_chars": 160,
+      "trim_priority": [
+        "entrypoints",
+        "hotspots",
+        "integration_points",
+        "test_hooks",
+        "risks",
+        "recommended_reads",
+        "links"
+      ],
+      "enforce": false
+    },
+    "slice_budget": {
+      "max_nodes": 20,
+      "max_links": 40
+    },
+    "ignore_dirs": [
+      ".git",
+      ".gradle",
+      ".idea",
+      ".venv",
+      "aidd",
+      "build",
+      "dist",
+      "node_modules",
+      "out",
+      "output",
+      "target",
+      "vendor"
+    ],
+    "exclude_path_prefixes": [
+      "aidd/docs",
+      "aidd/reports",
+      "aidd/.cache"
+    ]
+  },
+  "researcher": {
+    "defaults": {
+      "paths": [
+        "src/main",
+        "src/test",
+        "docs/prd",
+        "docs/plan"
+      ],
+      "docs": [
+        "docs/prd",
+        "docs/plan"
+      ],
+      "keywords": []
+    },
+    "keyword_settings": {
+      "min_len": 3,
+      "max_count": 25,
+      "short_whitelist": [
+        "kt",
+        "kts",
+        "js",
+        "ts"
+      ],
+      "stopwords": [
+        "в",
+        "и",
+        "не",
+        "для",
+        "во",
+        "все",
+        "как",
+        "это",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "to",
+        "of"
+      ]
+    },
+    "ignore_dirs": [
+      ".git",
+      ".gradle",
+      ".idea",
+      ".venv",
+      "aidd",
+      "build",
+      "dist",
+      "node_modules",
+      "out",
+      "output",
+      "target",
+      "vendor"
+    ],
+    "path_discovery": {
+      "max_discovered": 12
+    },
+    "auto_tags": {
+      "jvm": {
+        "slug_keywords": [
+          "jvm",
+          "java",
+          "kotlin",
+          "spring",
+          "gradle"
+        ],
+        "path_markers": [
+          "src/main/java",
+          "src/main/kotlin",
+          "build.gradle",
+          "settings.gradle"
+        ]
+      },
+      "web": {
+        "slug_keywords": [
+          "web",
+          "frontend",
+          "react",
+          "vue",
+          "next"
+        ],
+        "path_markers": [
+          "frontend",
+          "web",
+          "apps/web",
+          "packages/web"
+        ]
+      },
+      "mobile": {
+        "slug_keywords": [
+          "mobile",
+          "android",
+          "ios"
+        ],
+        "path_markers": [
+          "android",
+          "ios",
+          "mobile",
+          "app/src"
+        ]
+      },
+      "common": {
+        "slug_keywords": [
+          "common",
+          "shared",
+          "core"
+        ],
+        "path_markers": [
+          "common",
+          "shared",
+          "core"
+        ]
+      }
+    },
+    "tags": {
+      "jvm": {
+        "description": "JVM сервисы и библиотеки.",
+        "paths": [],
+        "docs": [],
+        "keywords": [
+          "java",
+          "kotlin",
+          "spring",
+          "gradle"
+        ]
+      },
+      "web": {
+        "description": "Web/Frontend модули.",
+        "paths": [],
+        "docs": [],
+        "keywords": [
+          "web",
+          "frontend",
+          "react",
+          "vue"
+        ]
+      },
+      "mobile": {
+        "description": "Mobile (Android/iOS) модули.",
+        "paths": [],
+        "docs": [],
+        "keywords": [
+          "android",
+          "ios",
+          "mobile"
+        ]
+      },
+      "common": {
+        "description": "Shared/common модули.",
+        "paths": [],
+        "docs": [],
+        "keywords": [
+          "common",
+          "shared",
+          "core"
+        ]
+      },
+      "checkout": {
+        "description": "Модули оформления заказа и оплаты.",
+        "paths": [
+          "src/main/kotlin",
+          "src/test/kotlin"
+        ],
+        "docs": [
+          "docs/prd/demo-checkout.prd.md",
+          "docs/plan/demo-checkout.md"
+        ],
+        "keywords": [
+          "checkout",
+          "order",
+          "payment",
+          "cart"
+        ]
+      }
+    },
+    "features": {
+      "demo-checkout": [
+        "checkout"
+      ]
+    }
+  }
+}

@@ -1,0 +1,991 @@
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-core/templates/workspace-agents.md ===
+lines=38 bytes=2992
+# AGENTS
+
+Единая точка входа для runtime‑агентов AIDD (workspace). Dev‑гайд репозитория: `AGENTS.md` в корне плагина.
+
+## Skill-first канон
+- Core policy: `${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/SKILL.md`.
+- Loop policy: `${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/SKILL.md`.
+- Этот документ — пользовательский обзор; не дублируйте алгоритмы из skills.
+- Stage lexicon (public/internal): `aidd/docs/shared/stage-lexicon.md`.
+
+## Базовые правила
+- Все артефакты находятся в `aidd/**` (paths от root).
+- Pack‑first/read‑budget, output‑контракт, question format, DocOps и subagent‑guard — см. `skills/aidd-core`.
+- `AIDD:READ_LOG` обязателен для чтения артефактов и fallback full-read причин (см. `skills/aidd-core`).
+- Loop discipline — см. `skills/aidd-loop`.
+- Stage/shared runtime entrypoints: `skills/*/runtime/*.py` (Python-only canon).
+- Shared entrypoints: canonical путь `skills/aidd-core/runtime/*.py`, `skills/aidd-loop/runtime/*.py`, `skills/aidd-rlm/runtime/*.py`.
+- Shell wrappers допустимы только в hooks/platform glue; stage orchestration не должна зависеть от `skills/*/scripts/*`.
+- `tools/` содержит только import stubs и repo-only tooling.
+- Wrapper‑вывод: stdout ≤ 200 lines или ≤ 50KB; stderr ≤ 50 lines; большие выводы пишите в `aidd/reports/**`.
+- Stage-chain orchestration (`preflight -> run -> postflight -> stage_result`) обязательна для loop stages.
+
+## Evidence read policy (summary)
+- Primary evidence (research): `aidd/reports/research/<ticket>-rlm.pack.json`.
+- Slice on demand: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py --ticket <ticket> --query "<token>"`.
+
+## Migration policy (legacy -> RLM-only)
+- Legacy pre-RLM research context/targets artifacts не читаются гейтами и не считаются evidence.
+- Для старого workspace состояния пересоберите research stage: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py --ticket <ticket> --auto`.
+- Если после research `rlm_status=pending`, выполните handoff на shared owner: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_finalize.py --ticket <ticket>`.
+- Gate readiness для plan/review/qa требует минимальный RLM набор: `rlm-targets`, `rlm-manifest`, `rlm.worklist.pack`, `rlm.nodes`, `rlm.links`, `rlm.pack`.
+
+## Ответы пользователя
+Ответы давайте в рамках той же команды (без смены стадии). Если ответы приходят в чате, попросите блок:
+```
+## AIDD:ANSWERS
+AIDD:ANSWERS Q1=A; Q2="короткий текст с пробелами"
+```
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-core/templates/stage-lexicon.md ===
+lines=48 bytes=1833
+# Stage Lexicon (AIDD)
+
+Этот документ фиксирует единый словарь стадий для workflow и runtime.
+
+## Public stages (user-facing)
+- `idea`
+- `research`
+- `plan`
+- `review-spec`
+- `spec-interview` (optional)
+- `tasklist`
+- `implement`
+- `review`
+- `qa`
+- `status`
+
+## Internal stages (runtime/internal gates)
+- `review-plan`
+- `review-prd`
+
+## Legacy aliases (normalized to canonical stages)
+- `spec` -> `spec-interview`
+- `tasks`/`task` -> `tasklist`
+
+## Mapping rules
+- `review-spec` — umbrella stage:
+  - сначала `review-plan`
+  - затем `review-prd`
+- В пользовательских сценариях и документации по умолчанию используйте `review-spec`.
+- В runtime/gates допускается детализация через `review-plan` и `review-prd`.
+
+## Artifact expectations (summary)
+- Все стадии читают/пишут только в workspace `aidd/**`.
+- Planning flow (`idea/research/plan/review-spec/spec-interview/tasklist`) создаёт/обновляет docs:
+  - `aidd/docs/prd/<ticket>.prd.md`
+  - `aidd/docs/research/<ticket>.md`
+  - `aidd/docs/plan/<ticket>.md`
+  - `aidd/docs/tasklist/<ticket>.md`
+- Loop flow (`implement/review/qa/status`) опирается на reports:
+  - `aidd/reports/loops/**`
+  - `aidd/reports/reviewer/**`
+  - `aidd/reports/qa/**`
+  - `aidd/reports/actions/**`
+
+## Path policy
+- Stage-specific entrypoints: `skills/<stage>/runtime/*.py` (canonical Python-only).
+- Shared entrypoints: canonical `skills/aidd-core/runtime/*.py`, `skills/aidd-docio/runtime/*.py`, `skills/aidd-flow-state/runtime/*.py`, `skills/aidd-loop/runtime/*.py`.
+- `tools/*.sh` и stage shell wrappers не входят в runtime-path и не используются для stage orchestration.
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/tasks-new/templates/tasklist.template.md ===
+lines=314 bytes=11950
+---
+Ticket: <ABC-123>
+Slug: <short-slug>
+# Status: PENDING|READY|WARN|BLOCKED
+Status: PENDING
+Updated: <YYYY-MM-DD>
+Owner: <name/team>
+PRD: aidd/docs/prd/<ABC-123>.prd.md
+Plan: aidd/docs/plan/<ABC-123>.md
+Research: aidd/docs/research/<ABC-123>.md
+Spec: aidd/docs/spec/<ABC-123>.spec.yaml
+Reports:
+  tests: aidd/reports/tests/<ABC-123>/<scope_key>.jsonl  # optional
+  review_report: aidd/reports/reviewer/<ABC-123>/<scope_key>.json
+  reviewer_marker: aidd/reports/reviewer/<ABC-123>/<scope_key>.tests.json
+  qa: aidd/reports/qa/<ABC-123>.json
+---
+
+# Tasklist: <ABC-123> — <short-slug>
+
+> Единственный источник правды для implement/review/qa.
+> Всегда начинайте чтение с `## AIDD:CONTEXT_PACK`, затем `## AIDD:SPEC_PACK`, затем `## AIDD:TEST_EXECUTION`, затем `## AIDD:ITERATIONS_FULL`, затем `## AIDD:NEXT_3`.
+
+## AIDD:CONTEXT_PACK
+Updated: <YYYY-MM-DD>
+Ticket: <ABC-123>
+Stage: <idea|research|plan|review-spec|review-plan|review-prd|spec-interview|tasklist|implement|review|qa|status>
+Status: PENDING
+
+### TL;DR
+- Goal: <1–2 строки — что делаем>
+- Current focus (1 checkbox): <точное имя из AIDD:NEXT_3>
+- Done since last pack: <1–3 пункта, кратко>
+- Risk level: <low|medium|high> — <почему 1 строка>
+
+### Scope & boundaries
+- Allowed paths (patch boundaries):
+  - <path1/>
+  - <path2/>
+- Forbidden / out-of-scope:
+  - <pathX/> — <почему>
+- Integrations / dependencies:
+  - <api/service/db/topic> — <что важно>
+
+### Decisions & defaults (living)
+- Feature flag: <none|flag_name + default>
+- Contract/API: <ссылка на spec или 1 строка>
+- Data model changes: <none|schema changes needed: ...>
+- Observability: <logs/metrics/tracing expectations>
+
+### Test policy (iteration budget)
+- Cadence: <on_stop|checkpoint|manual>
+- Profile: <fast|targeted|full|none>
+- Tasks: <пример: :module:test или npm test ...> (если targeted/full)
+- Filters: <если применимо>
+- Budget minutes: <N>
+- Known flaky / failing: <none|link to aidd/reports/tests/...>
+
+### Commands quickstart (copy/paste)
+- Format: <hook does it|cmd>
+- Tests (manual): <cmd for targeted/full>
+- Run/Dev: <cmd / url / emulator / device steps> (optional)
+
+### Open questions / blockers
+- Q1: <...>
+- Q2: <...>
+
+### Blockers summary (handoff)
+- <handoff-id> — <1 строка, почему блокирует>
+
+### References
+- Spec: aidd/docs/spec/<ABC-123>.spec.yaml
+- PRD: aidd/docs/prd/<ABC-123>.prd.md (ищи #AIDD:ACCEPTANCE, #AIDD:ROLL_OUT)
+- Research: aidd/docs/research/<ABC-123>.md (ищи #AIDD:INTEGRATION_POINTS)
+- Plan: aidd/docs/plan/<ABC-123>.md (ищи #AIDD:FILES_TOUCHED, #AIDD:ITERATIONS)
+- Reports:
+  - review_report: aidd/reports/reviewer/<ABC-123>/<scope_key>.json
+  - reviewer_marker: aidd/reports/reviewer/<ABC-123>/<scope_key>.tests.json
+  - qa: aidd/reports/qa/<ABC-123>.json
+
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-loop/templates/loop-pack.template.md ===
+lines=42 bytes=1045
+---
+schema: aidd.loop_pack.v1
+updated_at: <UTC>
+ticket: <ABC-123>
+work_item_id: <I1>
+work_item_key: <iteration_id=I1>
+scope_key: <iteration_id_I1>
+boundaries:
+  allowed_paths:
+    - src/feature/**
+  forbidden_paths: []
+commands_required:
+  - <doc/ref or command>
+tests_required:
+  - <test command>
+evidence_policy: RLM-first
+---
+
+# Loop Pack — <ABC-123> / <iteration_id=I1>
+
+## Work item
+- work_item_id: <I1>
+- work_item_key: <iteration_id=I1>
+- scope_key: <iteration_id_I1>
+- goal: <1–2 строки>
+
+## Read policy
+- Prefer excerpt; read full tasklist/PRD/Plan/Research/Spec только если excerpt не содержит **Goal/DoD/Boundaries/Expected paths/Size budget/Tests/Acceptance** или если REVISE требует контекста.
+
+## Boundaries
+- allowed_paths:
+  - src/feature/**
+- forbidden_paths: []
+
+## Commands required
+- <doc/ref or command>
+
+## Tests required
+- <test command>
+
+## Work item excerpt (required)
+> Должно включать: Goal/DoD/Boundaries/Expected paths/Size budget/Tests/Acceptance.
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/researcher/templates/research.template.md ===
+lines=114 bytes=4500
+# Research Summary — {{feature}}
+
+Status: {{doc_status}}
+Last reviewed: {{date}}
+Commands:
+  Research scan: python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py --ticket {{ticket}} --auto --paths {{paths}} --keywords {{keywords}}
+  Search: rg "{{ticket|feature}}" {{modules}}
+Artifacts:
+  PRD: aidd/docs/prd/{{ticket}}.prd.md
+  Tasklist: aidd/docs/tasklist/{{ticket}}.md
+
+## AIDD:CONTEXT_PACK
+- {{summary_short}}
+- Limit: <= 20 lines / <= 1200 chars.
+- Paths discovered: {{paths_discovered}}
+- Invalid paths: {{invalid_paths}}
+- Pack-first: используйте `*-rlm.pack.*` и `rlm-slice`; не вставляйте raw JSONL.
+
+## AIDD:PRD_OVERRIDES
+{{prd_overrides}}
+- Должно совпадать с PRD (`USER OVERRIDE`) и не противоречить принятым решениям.
+
+## AIDD:NON_NEGOTIABLES
+- {{non_negotiables}}
+
+## AIDD:OPEN_QUESTIONS
+- {{open_questions}}
+
+## AIDD:RISKS
+- {{risks}}
+
+## AIDD:DECISIONS
+- {{decisions}}
+
+## AIDD:INTEGRATION_POINTS
+- {{integration_points}}
+
+## AIDD:REUSE_CANDIDATES
+- {{reuse_candidates}}
+
+## AIDD:COMMANDS_RUN
+- {{commands_run}}
+
+## AIDD:RLM_EVIDENCE
+- Status: {{rlm_status}}
+- Pack: {{rlm_pack_path}}
+- Pack status: {{rlm_pack_status}}
+- Pack bytes: {{rlm_pack_bytes}}
+- Pack updated_at: {{rlm_pack_updated_at}}
+- Warnings: {{rlm_warnings}} (e.g., rlm_links_empty_warn)
+- Pending reason: {{rlm_pending_reason}}
+- Next action: {{rlm_next_action}}
+- Baseline marker: {{rlm_baseline_marker}}
+- Auto recovery: auto_recovery_attempted={{rlm_auto_recovery_attempted}}, bootstrap_attempted={{rlm_bootstrap_attempted}}, finalize_attempted={{rlm_finalize_attempted}}, recovery_path={{rlm_recovery_path}}
+- Slice: python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py --ticket {{ticket}} --query "<token>"
+- Nodes/links: {{rlm_nodes_path}} / {{rlm_links_path}} (не читать целиком)
+
+## AIDD:TEST_HOOKS
+- {{test_hooks}}
+- Evidence: {{tests_evidence}}
+- Suggested tasks: {{suggested_test_tasks}}
+
+## Context Pack (TL;DR)
+- **Entry points:** {{entry_points}}
+- **Reuse candidates:** {{reuse_candidates}}
+- **Integration points:** {{integration_points}}
+- **RLM:** {{rlm_summary}} (pack: {{rlm_pack_path}})
+- **Test pointers:** {{test_pointers}}
+- **Top risks:** {{risks}}
+- Keep concise; may be longer than AIDD:CONTEXT_PACK.
+
+## Definition of reviewed
+- Найдены ≥ 1 точки интеграции или явно указан baseline.
+- Указаны тесты/контракты или явно зафиксирован риск «нет тестов».
+- Зафиксированы команды/пути сканирования и ссылки на отчёты.
+
+## Контекст
+- **Цель фичи:** {{goal}}
+- **Scope изменений:** {{scope}}
+- **Ключевые модули/директории:** {{modules}}
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/templates/aidd/config/gates.json ===
+lines=338 bytes=7246
+{
+  "tests_required": "soft",
+  "tests_policy": {
+    "implement": "none",
+    "review": "targeted",
+    "qa": "full"
+  },
+  "tests_gate": {
+    "source_roots": [
+      "src/main",
+      "src",
+      "app",
+      "apps",
+      "packages",
+      "services",
+      "service",
+      "lib",
+      "libs",
+      "backend",
+      "frontend"
+    ],
+    "source_extensions": [
+      ".kt",
+      ".java",
+      ".kts",
+      ".groovy",
+      ".py",
+      ".js",
+      ".jsx",
+      ".ts",
+      ".tsx",
+      ".go",
+      ".rb",
+      ".rs",
+      ".cs",
+      ".php"
+    ],
+    "test_patterns": [
+      "src/test/{rel_dir}/{base}Test{ext}",
+      "src/test/{rel_dir}/{base}Tests{ext}",
+      "tests/{rel_dir}/test_{base}{ext}",
+      "tests/{rel_dir}/{base}_test{ext}",
+      "tests/{rel_dir}/{base}.test{ext}",
+      "tests/{rel_dir}/{base}.spec{ext}",
+      "test/{rel_dir}/test_{base}{ext}",
+      "test/{rel_dir}/{base}_test{ext}",
+      "spec/{rel_dir}/{base}_spec{ext}",
+      "spec/{rel_dir}/{base}Spec{ext}",
+      "__tests__/{rel_dir}/{base}.test{ext}",
+      "__tests__/{rel_dir}/{base}.spec{ext}"
+    ],
+    "exclude_dirs": [
+      "test",
+      "tests",
+      "spec",
+      "specs",
+      "__tests__",
+      "androidTest",
+      "integrationTest",
+      "functionalTest",
+      "testFixtures"
+    ]
+  },
+  "deps_allowlist": false,
+  "deps_allowlist_mode": "all",
+  "deps_allowlist_files": [
+    "**/build.gradle",
+    "**/build.gradle.kts",
+    "**/settings.gradle",
+    "**/settings.gradle.kts",
+    "**/gradle/libs.versions.toml",
+    "**/package.json",
+    "**/pyproject.toml",
+    "**/requirements*.txt",
+    "**/Pipfile",
+    "**/setup.py",
+    "**/setup.cfg",
+    "**/go.mod",
+    "**/Cargo.toml",
+    "**/*.csproj",
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/templates/aidd/config/conventions.json ===
+lines=336 bytes=8750
+{
+  "metadata": {
+    "lastUpdated": "2024-05-14",
+    "maintainer": "workflow-team",
+    "notes": "Измените mode и соответствующие шаблоны, если нужно расширить список режимов."
+  },
+  "commit": {
+    "mode": "ticket-prefix",
+    "fields": {
+      "ticket": "Обязательный идентификатор задачи (например, ABC-123). Используется в ticket-prefix и mixed режимах.",
+      "type": "Базовый тип изменения (feat, fix, chore, docs, test, refactor, perf, build, ci, revert).",
+      "scope": "Логическая область или модуль (checkout, payments, infra)."
+    },
+    "modes": {
+      "ticket-prefix": {
+        "description": "Сообщение начинается с тикета и двоеточия.",
+        "template": "<TICKET>: <summary>",
+        "example": "STORE-123: implement rule engine",
+        "usage": "Подходит командам, где тикет обязателен во всех коммитах."
+      },
+      "conventional": {
+        "description": "Следует стандарту Conventional Commits.",
+        "template": "<type>(<scope>): <summary>",
+        "example": "feat(checkout): add retry on failure",
+        "usage": "Используйте, когда важна типизация и автогенерация CHANGELOG."
+      },
+      "mixed": {
+        "description": "Гибридный режим: добавляет тикет и сохраняет тип/область.",
+        "template": "<TICKET> <type>(<scope>): <summary>",
+        "example": "STORE-123 feat(payments): add 3ds redirect",
+        "usage": "Рекомендуется, если тикет нужен, но важен и формат Conventional."
+      }
+    }
+  },
+  "branch": {
+    "defaultPrefix": "feature",
+    "naming": {
+      "feature": {
+        "pattern": "feature/<TICKET>",
+        "example": "feature/STORE-123",
+        "when": "Основная разработка по задаче."
+      },
+      "fix": {
+        "pattern": "fix/<scope>",
+        "example": "fix/checkout-errors",
+        "when": "Быстрые корректировки без связанного тикета."
+      },
+      "hotfix": {
+        "pattern": "hotfix/<TICKET>",
+        "example": "hotfix/STORE-999",
+        "when": "Срочные исправления в продакшене."
+      },
+      "mixed": {
+        "pattern": "feature/<TICKET>-<type>/<scope>",
+        "example": "feature/STORE-123-feat/payments",
+        "when": "Режим для смешанных команд: тикет + тип + область."
+      }
+    },
+    "notes": "Дополните список паттернов, если используете иные типы веток."
+  },
+  "review": {
+    "guidelines": [
+      "Сообщения коммитов должны соответствовать активному режиму.",
+      "Ветки создаются только допустимой командой (feature/fix/hotfix/mixed).",
+      "Перед выпуском релиза обновите conventions.md вручную, чтобы зафиксировать актуальные правила."
+    ]
+  },
+  "rlm": {
+    "max_files": 500,
+    "max_links": 2000,
+    "max_file_bytes": 200000,
+    "targets_mode": "auto",
+    "worklist_paths": [],
+    "worklist_keywords": [],
+    "worklist_max_entries": 500,
+    "rg_timeout_s": 6,
+    "rg_batch_size": 24,
+    "max_symbols_per_file": 40,
+    "max_definition_hits_per_symbol": 5,
+    "link_key_calls_source": "key_calls",
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-core/SKILL.md ===
+lines=47 bytes=3506
+---
+name: aidd-core
+description: Aggregates shared runtime navigation and cross-skill ownership links. Use when resolving shared runtime entrypoints or ownership boundaries. Do not use when the request belongs to `aidd-policy` output/question rules or `status` summary reporting.
+lang: en
+model: inherit
+user-invocable: false
+---
+
+## Purpose
+- This skill is the thin runtime-oriented navigation layer.
+- Policy guidance (output contract, question format, read discipline, loop safety) lives in `feature-dev-aidd:aidd-policy`.
+- Domain owners are split into dedicated shared skills (`aidd-docio`, `aidd-flow-state`, `aidd-observability`, `aidd-loop`, `aidd-rlm`).
+- Agents may reference `feature-dev-aidd:aidd-core` as the topology entrypoint and navigation hub.
+
+## Canonical shared Python entrypoints
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/diff_boundary_check.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/plan_review_gate.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/prd_review_gate.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/rlm_targets.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/skill_contract_validate.py`
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/skill_contract_validate.py`
+- When to run: before release or CI checks when skill contract drift is suspected.
+- Inputs: repository root plus optional filters for prompt/skill validation scope.
+- Outputs: deterministic validation diagnostics for contract and prompt structure issues.
+- Failure mode: non-zero exit when required contract fields/sections are missing or inconsistent.
+- Next action: fix reported contract gaps in owners, then rerun the same validator.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/diff_boundary_check.py`
+- When to run: during loop/review orchestration before applying actions that may cross boundaries.
+- Inputs: diff metadata (`--ticket`, `--scope-key`, optional work-item context).
+- Outputs: boundary verdict (`ok|warn|blocked`) and evidence references.
+- Failure mode: non-zero exit when diff inputs are missing or policy boundary checks fail.
+- Next action: tighten scope/actions or hand off blocker, then rerun the boundary check.
+
+## Ownership guard
+- `aidd-core` owns only aggregator-level shared runtime modules.
+- Policy/procedure text must be hosted in `feature-dev-aidd:aidd-policy`.
+
+## Additional resources
+- Policy contract: [../aidd-policy/SKILL.md](../aidd-policy/SKILL.md) (when: output/read/question rules are needed; why: apply shared policy without duplicating stage docs).
+- DocIO runtime owner: [../aidd-docio/SKILL.md](../aidd-docio/SKILL.md) (when: actions/map/markdown tooling is needed; why: use canonical DocIO entrypoints from a dedicated shared skill).
+- Flow/state runtime owner: [../aidd-flow-state/SKILL.md](../aidd-flow-state/SKILL.md) (when: stage state/progress/tasklist lifecycle tools are needed; why: use dedicated flow-state entrypoints).
+- Observability runtime owner: [../aidd-observability/SKILL.md](../aidd-observability/SKILL.md) (when: diagnostics/inventory/log/report commands are needed; why: keep observability surface under a dedicated shared owner).
+- Context pack template source: [templates/context-pack.template.md](templates/context-pack.template.md) (when: context pack format is unclear; why: confirm canonical sections generated by init/runtime).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-loop/SKILL.md ===
+lines=53 bytes=3797
+---
+name: aidd-loop
+description: Enforces loop-mode discipline for implement/review/qa (packs, scope, no questions). Use when loop stages require bounded scope and retry policy. Do not use when direct stage execution belongs to `implement`, `review`, or `qa` stage skills.
+lang: en
+model: inherit
+user-invocable: false
+---
+
+Follow `feature-dev-aidd:aidd-core` for output contract and DocOps.
+
+## Loop discipline
+1. Read order: loop pack -> review pack (if any) -> fix_plan.json when verdict=REVISE -> rolling context pack.
+2. Excerpt-first: do not read full PRD/plan/tasklist/spec when the loop pack excerpt covers Goal/DoD/Boundaries/Expected paths/Size budget/Tests/Acceptance.
+3. No questions in loop-mode; record blockers/handoff instead.
+4. REVISE: reuse the same scope, follow fix_plan.json, and do not widen boundaries.
+5. Scope guard: out-of-scope -> WARN + handoff; forbidden -> BLOCKED. Never expand boundaries yourself.
+6. Tests: follow loop pack or reviewer policy; do not invent new test requirements.
+7. No large logs/diffs in chat; link to `aidd/reports/**`.
+8. Block policy: `strict` fail-fast by default; `strict_recoverable_reason_codes` may explicitly enable bounded retries for selected reasons (for example `no_tests_hard`).
+9. `ralph` uses policy matrix v2 (`hard_block|recoverable_retry|warn_continue`) with bounded retries for recoverable reasons.
+10. For recoverable blocked retries, emit observability fields: `recoverable_blocked`, `recovery_path`, `retry_attempt`, plus `ralph_reason_class|strict_recoverable_reason_class`.
+11. Scope mismatch fallback is telemetry-only (`scope_mismatch_non_authoritative=1`): emit `expected_scope_key`/`selected_scope_key`; do not treat mismatched fallback as authoritative transition input.
+
+## Preload matrix v2
+- Roles: `implementer`, `reviewer`, `qa`.
+- This skill must not be preloaded for other subagents.
+
+## Canonical shared Python entrypoints
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_pack.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_step.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_run.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/preflight_result_validate.py`
+- `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/output_contract.py`
+- Preflight preparation is stage-chain-internal and not an operator command.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_pack.py`
+- When to run: before loop stage execution to assemble bounded evidence input.
+- Inputs: ticket/scope context and available stage artifacts (`readmap`, `review pack`, context pack).
+- Outputs: deterministic loop pack summary for implement/review/qa orchestration.
+- Failure mode: non-zero exit when required upstream artifacts are missing or malformed.
+- Next action: repair missing prerequisites and rerun pack generation.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_run.py`
+- When to run: stage-chain-orchestrated loop execution for bounded stage retries.
+- Inputs: loop mode/profile, ticket/scope context, and stage-specific payloads.
+- Outputs: loop execution status with deterministic retry/blocked metadata.
+- Failure mode: non-zero exit on invalid loop payload, policy violation, or unrecoverable blocked condition.
+- Next action: apply fix plan or handoff policy action, then rerun with unchanged scope.
+
+## Additional resources
+- Loop stage-chain reference: [reference.md](reference.md) (when: stage-chain path/fallback behavior needs clarification; why: confirm canonical chain and bounded recovery policy).
+- Loop pack template source: [templates/loop-pack.template.md](templates/loop-pack.template.md) (when: loop pack format is unclear; why: confirm canonical sections seeded by init/runtime).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/researcher/SKILL.md ===
+lines=58 bytes=3887
+---
+name: researcher
+description: Generates or refreshes research artifacts and RLM evidence for a ticket. Use when research stage should produce or update canonical RLM outputs. Do not use when the request is initial ticket bootstrap in `idea-new` or implementation planning in `plan-new`.
+argument-hint: $1 [note...] [--paths path1,path2] [--keywords kw1,kw2] [--note text]
+lang: ru
+prompt_version: 1.2.34
+source_version: 1.2.34
+allowed-tools:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - "Bash(rg *)"
+  - "Bash(sed *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_feature.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasks_derive.py *)"
+model: inherit
+disable-model-invocation: true
+user-invocable: true
+---
+
+Follow `feature-dev-aidd:aidd-core`.
+
+## Steps
+1. Set active feature and stage `research`.
+2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py --ticket <ticket> --auto`.
+3. Re-run the same entrypoint with optional overrides (`--paths`, `--keywords`, `--note`) when targeted refresh is needed.
+4. Validate RLM outputs (`*-rlm-targets.json`, `*-rlm-manifest.json`, `*-rlm.worklist.pack.json`, optional `*-rlm.pack.json`).
+5. Run subagent `feature-dev-aidd:researcher`. First action: read RLM pack/worklist.
+6. In `--auto` mode run bounded canonical finalize recovery once (`rlm_finalize --bootstrap-if-missing`) from stage runtime.
+7. If RLM is still pending after auto recovery, return deterministic pending reason + explicit next action (`python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_finalize.py --ticket <ticket>`) and append research handoff via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasks_derive.py --source research --append`.
+8. Return the output contract with explicit next step (`/feature-dev-aidd:plan-new <ticket>` when stage handoff is ready).
+9. Runtime-path safety: execute only canonical runtime commands from this contract (`python3 ${CLAUDE_PLUGIN_ROOT}/skills/.../runtime/...`).
+10. Root-relative `/skills/...` runtime paths are forbidden; use only `${CLAUDE_PLUGIN_ROOT}/skills/.../runtime/...`.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py`
+- When to run: always as canonical researcher pipeline entrypoint.
+- Inputs: `--ticket <ticket>` with optional path/keyword/note overrides.
+- Outputs: research artifacts, stage status, and RLM readiness/handoff markers (`rlm_status`, `rlm_pack_status`).
+- Failure mode: non-zero exit when required inputs/artifacts are missing or RLM artifact generation fails.
+- Next action: fix missing inputs/paths, rerun this entrypoint; in auto mode finalize/bridge runs once, then pending outcomes include deterministic `reason_code` + `next_action`.
+
+## Notes
+- Planning stage: `AIDD:ACTIONS_LOG: n/a`.
+
+## Migration policy
+- Legacy pre-RLM research context/targets artifacts are ignored by runtime/gates.
+- For old workspace state, rerun:
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/researcher/runtime/research.py --ticket <ticket> --auto`.
+- If `rlm_status` remains `pending` after bounded auto recovery, hand off to shared owner:
+  `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_finalize.py --ticket <ticket>`.
+
+## Additional resources
+- Research template source: [templates/research.template.md](templates/research.template.md) (when: drafting or reviewing `aidd/docs/research/<ticket>.md`; why: keep artifact shape aligned with canonical workspace template).
+- Shared RLM owner skill: [../aidd-rlm/SKILL.md](../aidd-rlm/SKILL.md) (when: `rlm_status` is not `ready` or RLM pack is missing; why: run canonical shared RLM API outside stage-local orchestration).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-stage-research/SKILL.md ===
+lines=50 bytes=3362
+---
+name: aidd-stage-research
+description: Defines stage-specific research contract for subagent evidence reading and handoff behavior. Use when researcher subagent stage rules are needed. Do not use when the request belongs to shared RLM runtime ownership in `aidd-rlm` or direct stage command execution in `researcher`.
+lang: en
+model: inherit
+user-invocable: false
+---
+
+## Scope
+- Preload-only reference for `feature-dev-aidd:researcher` subagent.
+- Defines stage behavior for research content work in the RLM-only pipeline.
+- Keeps stage rules separate from the user-invocable `researcher` command skill.
+
+## Stage contract
+- `skills/researcher/SKILL.md` owns orchestration only (state sync, pipeline run, explicit subagent call, handoff).
+- `agents/researcher.md` owns content updates (`aidd/docs/research/<ticket>.md`) based on existing evidence.
+- Subagent must not run shared RLM owner internals directly (`rlm_nodes_build.py`, `rlm_links_build.py`, `rlm_finalize.py`).
+- Stage runtime may run bounded canonical finalize recovery once in `--auto` mode; manual recovery paths remain outside subagent scope.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py`
+- When to run: for bounded evidence lookup during researcher subagent analysis.
+- Inputs: ticket/query tuple for targeted code-artifact context extraction.
+- Outputs: slice evidence blocks suitable for research document updates.
+- Failure mode: non-zero exit on missing pack/worklist artifacts or invalid query.
+- Next action: surface blocker and handoff to RLM owner flow, then rerun slice when artifacts are ready.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_finalize.py`
+- When to run: handoff-only path when stage runtime reports pending RLM readiness after bounded auto recovery.
+- Inputs: `--ticket <ticket>` from deterministic pending output.
+- Outputs: finalized RLM readiness state (`ready` or pending with reason code).
+- Failure mode: non-zero exit when upstream targets/manifest/worklist integrity is broken.
+- Next action: resolve upstream integrity issues and rerun finalize via shared owner flow.
+
+## Evidence policy
+- Read pack-first: `aidd/reports/research/<ticket>-rlm.pack.json`.
+- If pack is missing, read `*-rlm.worklist.pack.json` and return BLOCKED with explicit handoff.
+- Use slice for targeted evidence only:
+  - `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py --ticket <ticket> --query "<token>"`.
+- Avoid full JSONL scans unless pack/worklist is insufficient.
+
+## Handoff policy
+- When `rlm_status` is not ready, return BLOCKED with deterministic next action:
+  - `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_finalize.py --ticket <ticket>`.
+- Pending output must include deterministic `reason_code` + `next_action` and append research handoff tasks.
+- When evidence is ready, update research document and return READY with next stage command hint.
+
+## Additional resources
+- Stage command owner: [../researcher/SKILL.md](../researcher/SKILL.md) (when: researcher stage orchestration order is unclear; why: keep stage entrypoint behavior aligned with no-fork command contract).
+- Shared RLM owner: [../aidd-rlm/SKILL.md](../aidd-rlm/SKILL.md) (when: pending/finalize ownership boundaries are unclear; why: enforce explicit handoff from stage to shared RLM runtime owner).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/spec-interview/SKILL.md ===
+lines=50 bytes=2440
+---
+name: spec-interview
+description: Collects missing spec inputs and synchronizes answers into `spec.yaml`. Use when review-spec leaves unresolved specification fields. Do not use when the request is readiness gating in `review-spec` or task derivation in `tasks-new`.
+argument-hint: $1 [note...]
+lang: ru
+prompt_version: 1.0.15
+source_version: 1.0.15
+allowed-tools:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - AskUserQuestionTool
+  - "Bash(rg *)"
+  - "Bash(sed *)"
+  - "Bash(cat *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/spec-interview/runtime/spec_interview.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_feature.py *)"
+model: inherit
+disable-model-invocation: true
+user-invocable: true
+---
+
+Follow `feature-dev-aidd:aidd-core`.
+
+## Steps
+1. Set active stage `spec-interview` and active feature.
+2. Run `python3 ${CLAUDE_PLUGIN_ROOT}/skills/spec-interview/runtime/spec_interview.py --ticket <ticket>`.
+3. Run subagent `feature-dev-aidd:spec-interview-writer`.
+4. Use `AskUserQuestionTool` to gather missing spec details; update `aidd/docs/spec/<ticket>.spec.yaml`.
+5. If answers arrive, sync them into the spec and `AIDD:OPEN_QUESTIONS`/`AIDD:DECISIONS` as needed.
+6. Return the output contract and next step `/feature-dev-aidd:tasks-new <ticket>`.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/spec-interview/runtime/spec_interview.py`
+- When to run: as canonical spec interview entrypoint after review-spec and before tasklist derivation.
+- Inputs: `--ticket <ticket>` with current PRD/plan context and optional notes.
+- Outputs: updated `spec.yaml`, synchronized open questions/decisions, and stage status.
+- Failure mode: non-zero exit when required source artifacts are missing or spec contract is violated.
+- Next action: gather missing inputs/answers, then rerun the same command.
+
+## Notes
+- Use the aidd-core question format.
+- Planning stage: `AIDD:ACTIONS_LOG: n/a`.
+- Canonical stage name: `spec-interview` (legacy alias `spec` normalizes to `spec-interview`).
+
+## Additional resources
+- Spec template source: [templates/spec.template.yaml](templates/spec.template.yaml) (when: creating or reconciling spec structure; why: keep generated `spec.yaml` aligned with canonical schema).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/implement/SKILL.md ===
+lines=89 bytes=6472
+---
+name: implement
+description: Executes implement-stage loop workflow for the next scoped work item through stage-chain orchestration. Use when implement stage enters loop mode. Do not use when the request is focused on findings validation in `review` or verification/reporting in `qa`.
+argument-hint: $1 [note...] [test=fast|targeted|full|none] [tests=<filters>] [tasks=<task1,task2>]
+lang: ru
+prompt_version: 1.1.49
+source_version: 1.1.49
+allowed-tools:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/implement/runtime/implement_run.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py *)"
+  - "Bash(rg *)"
+  - "Bash(sed *)"
+  - "Bash(cat *)"
+  - "Bash(xargs *)"
+  - "Bash(npm *)"
+  - "Bash(pnpm *)"
+  - "Bash(yarn *)"
+  - "Bash(pytest *)"
+  - "Bash(python *)"
+  - "Bash(go *)"
+  - "Bash(mvn *)"
+  - "Bash(make *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/prd_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_pack.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/diff_boundary_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py *)"
+  - "Bash(${CLAUDE_PLUGIN_ROOT}/hooks/format-and-test.sh *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/progress_cli.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/status_summary.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py --fix *)"
+  - "Bash(git status *)"
+  - "Bash(git diff *)"
+  - "Bash(git log *)"
+  - "Bash(git show *)"
+  - "Bash(git rev-parse *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_feature.py *)"
+model: inherit
+disable-model-invocation: true
+user-invocable: true
+---
+
+Follow `feature-dev-aidd:aidd-core` and `feature-dev-aidd:aidd-loop`.
+
+## Steps
+1. Inputs: resolve active `<ticket>/<scope_key>` and confirm loop artifacts are present for implement stage.
+2. Stage-chain policy: execute via canonical stage-chain orchestration through stage runtime entrypoint; internal preflight/postflight are orchestration details and not operator commands.
+3. Manual write/create of `stage.implement.result.json` is forbidden; stage-result files are produced only by stage-chain postflight. `[AIDD_LOOP_POLICY:MANUAL_STAGE_RESULT_FORBIDDEN]`
+4. Runtime-path safety: use only runtime commands from this skill contracts. If stdout/stderr contains `can't open file .../skills/.../runtime/...`, stop with immediate BLOCKED `runtime_path_missing_or_drift`; one runtime-path error is terminal for current run, do not invent alternate filenames, and do not retry guessed commands.
+5. Retry safety: do not rerun the same failing shell command more than once without new evidence/artifacts. For cwd/build mismatches, stop with blocker and handoff instead of looped retries.
+6. Read order after stage-chain preflight artifacts: `readmap.md` -> loop pack -> review pack (if exists) -> rolling context pack; do not perform broad repo scan before these artifacts.
+7. Run subagent `feature-dev-aidd:implementer`.
+8. Orchestration: use the existing rolling context pack (do not regenerate it), Fill actions.json (v1) at `aidd/reports/actions/<ticket>/<scope_key>/implement.actions.json`, keep action types strictly in `{tasklist_ops.set_iteration_done, tasklist_ops.append_progress_log, tasklist_ops.next3_recompute, context_pack_ops.context_pack_update}`, and validate schema via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/implement/runtime/implement_run.py`.
+9. Canonical stage-chain: internal preflight -> stage runtime -> actions_apply.py/postflight -> `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`; it must produce `aidd/reports/loops/<ticket>/<scope_key>/stage.implement.result.json`. `[AIDD_LOOP_POLICY:CANONICAL_STAGE_RESULT_PATH]`
+10. Non-canonical stage-result path under `skills/aidd-loop/runtime/` is forbidden (treat as prompt-flow drift). `[AIDD_LOOP_POLICY:NON_CANONICAL_STAGE_RESULT_FORBIDDEN]`
+11. Output: return stage contract + updated artifacts with explicit handoff/next action.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/implement/runtime/implement_run.py`
+- When to run: as canonical implement stage runtime before postflight.
+- Inputs: ticket, scope/work-item context, and validated actions payload.
+- Outputs: stage validation artifacts and status payload for downstream postflight.
+- Failure mode: non-zero exit for invalid actions schema or missing stage prerequisites.
+- Next action: fix actions/preconditions and rerun runtime validation before postflight.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py`
+- When to run: mandatory final step in stage-chain postflight after actions validation.
+- Inputs: `--actions <path>` and optional `--apply-log <path>`.
+- Outputs: applied actions, progress/status artifacts, and apply logs.
+- Failure mode: DocOps apply failure, boundary guard failure, or status-summary failure.
+- Next action: inspect action/apply logs, fix root cause, rerun the stage-chain, and verify canonical stage result exists (`aidd/reports/loops/<ticket>/<scope_key>/stage.implement.result.json`).
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`
+- When to run: stage-chain postflight stage-result emission only (not operator/manual recovery command).
+- Inputs: canonical postflight payload (`ticket`, `stage`, `result`, `scope-key`, `work-item-key`, evidence links).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/review/SKILL.md ===
+lines=83 bytes=7379
+---
+name: review
+description: Runs review-stage validation for scope changes, findings, and follow-up task derivation. Use when review stage needs verdict and handoff tasks. Do not use when the request is direct implementation execution in `implement` or QA validation in `qa`.
+argument-hint: $1 [note...]
+lang: ru
+prompt_version: 1.0.44
+source_version: 1.0.44
+allowed-tools:
+  - Read
+  - Edit
+  - Glob
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_run.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py *)"
+  - "Bash(rg *)"
+  - "Bash(sed *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-loop/runtime/loop_pack.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-core/runtime/diff_boundary_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_report.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_pack.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/reviewer_tests.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasks_derive.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/progress_cli.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/status_summary.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py --fix *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_feature.py *)"
+model: inherit
+disable-model-invocation: true
+user-invocable: true
+---
+
+Follow `feature-dev-aidd:aidd-core` and `feature-dev-aidd:aidd-loop`.
+
+## Steps
+1. Inputs: resolve active `<ticket>/<scope_key>` and verify loop/readmap artifacts required for review stage.
+2. Stage-chain policy: execute via canonical stage-chain orchestration through stage runtime entrypoint; internal preflight/postflight are orchestration details and not operator commands.
+3. Manual write/create of `stage.review.result.json` is forbidden; stage-result files are produced only by stage-chain postflight. `[AIDD_LOOP_POLICY:MANUAL_STAGE_RESULT_FORBIDDEN]`
+4. Runtime-path safety: use only runtime commands from this skill contracts. If stdout/stderr contains `can't open file .../skills/.../runtime/...`, stop with BLOCKED `runtime_path_missing_or_drift`; do not invent alternate filenames and do not retry guessed commands.
+5. Test command safety: do not run raw build/test commands (`./gradlew`, `mvn test`, `npm test`) in review stage orchestration. Manage test requirement via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/reviewer_tests.py` and existing `aidd/reports/tests/**` evidence. If you detect cwd mismatch (`./gradlew` missing or `does not contain a Gradle build`), record blocker `tests_cwd_mismatch` and stop repeated retries.
+6. Read order after stage-chain preflight artifacts: `readmap.md` -> loop pack -> review pack (if exists) -> rolling context pack; do not perform broad repo scan before these artifacts.
+7. Run subagent `feature-dev-aidd:reviewer`.
+8. Orchestration: produce review artifacts with `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_report.py`, `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_pack.py`, `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/reviewer_tests.py`, and `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasks_derive.py`; then Fill actions.json for `aidd/reports/actions/<ticket>/<scope_key>/review.actions.json` strictly as `aidd.actions.v1` (`schema_version`, `allowed_action_types`, canonical `type` + `params`) with action types only from `{tasklist_ops.set_iteration_done, tasklist_ops.append_progress_log, tasklist_ops.next3_recompute, context_pack_ops.context_pack_update}`, and validate via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_run.py`.
+9. Canonical stage-chain: internal preflight -> stage runtime -> actions_apply.py/postflight -> `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`; it must produce `aidd/reports/loops/<ticket>/<scope_key>/stage.review.result.json`. `[AIDD_LOOP_POLICY:CANONICAL_STAGE_RESULT_PATH]`
+10. Non-canonical stage-result path under `skills/aidd-loop/runtime/` is forbidden (treat as prompt-flow drift). `[AIDD_LOOP_POLICY:NON_CANONICAL_STAGE_RESULT_FORBIDDEN]`
+11. Output: return review-stage contract, findings summary, and next action/handoff.
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/review_run.py`
+- When to run: as canonical review stage runtime before postflight.
+- Inputs: ticket, scope/work-item context, and reviewer findings/actions payload.
+- Outputs: validated review artifacts and stage status payload.
+- Failure mode: non-zero exit on invalid review contracts or missing prerequisites.
+- Next action: fix findings/actions inputs and rerun runtime validation.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/review/runtime/reviewer_tests.py`
+- When to run: when reviewer must set/clear test requirement marker for the current scope.
+- Inputs: `--ticket`, optional `--scope-key`, `--work-item-key`, and `--status` (`required|optional|skipped|not-required`).
+- Outputs: reviewer marker at `aidd/reports/reviewer/<ticket>/<scope_key>.tests.json`.
+- Failure mode: invalid status or unresolved ticket/scope context.
+- Next action: fix marker arguments/context and rerun once; do not replace with ad-hoc shell test loops.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py`
+- When to run: mandatory final step in stage-chain postflight after review actions are validated.
+- Inputs: `--actions <path>` and optional `--apply-log <path>`.
+- Outputs: applied actions plus progress/stage-result/status-summary artifacts.
+- Failure mode: apply failure, boundary guard failure, or summary generation failure.
+- Next action: inspect logs, fix blocking artifact/contract, rerun the stage-chain, and verify canonical stage result exists (`aidd/reports/loops/<ticket>/<scope_key>/stage.review.result.json`).
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`
+- When to run: stage-chain postflight stage-result emission only (not operator/manual recovery command).
+- Inputs: canonical postflight payload (`ticket`, `stage`, `result`, `scope-key`, `work-item-key`, evidence links).
+- Outputs: canonical `aidd.stage_result.v1` at `aidd/reports/loops/<ticket>/<scope_key>/stage.review.result.json`.
+- Failure mode: non-zero exit on missing required args or invalid stage-result contract fields.
+- Next action: fix postflight payload generation and rerun the stage-chain; do not switch to non-canonical loop runtime paths.
+
+## Notes
+- Review stage sets/verifies test requirement via reviewer marker and existing reports; avoid ad-hoc repeated shell retries.
+- Use the existing rolling context pack; do not regenerate it in loop mode (DocOps updates only).
+
+=== /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/qa/SKILL.md ===
+lines=81 bytes=6623
+---
+name: qa
+description: Runs QA-stage validation, report generation, and postflight actions for the current scope. Use when QA stage is ready for loop verification. Do not use when the request belongs to `review` findings synthesis or `implement` execution loops.
+argument-hint: $1 [note...]
+lang: ru
+prompt_version: 1.0.39
+source_version: 1.0.39
+allowed-tools:
+  - Read
+  - Edit
+  - Glob
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa_run.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py *)"
+  - "Bash(rg *)"
+  - "Bash(npm *)"
+  - "Bash(pnpm *)"
+  - "Bash(yarn *)"
+  - "Bash(pytest *)"
+  - "Bash(python *)"
+  - "Bash(go *)"
+  - "Bash(mvn *)"
+  - "Bash(make *)"
+  - "Bash(./gradlew *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-rlm/runtime/rlm_slice.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_stage.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasks_derive.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/progress_cli.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/status_summary.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/tasklist_check.py --fix *)"
+  - "Bash(python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/set_active_feature.py *)"
+model: inherit
+disable-model-invocation: true
+user-invocable: true
+---
+
+Follow `feature-dev-aidd:aidd-core` and `feature-dev-aidd:aidd-loop`.
+
+## Steps
+1. Inputs: resolve active `<ticket>/<scope_key>` and validate QA prerequisites from loop/readmap artifacts.
+2. Stage-chain policy: execute via canonical stage-chain orchestration through stage runtime entrypoint; internal preflight/postflight are orchestration details and not operator commands.
+3. Manual write/create of `stage.qa.result.json` is forbidden; stage-result files are produced only by stage-chain postflight. `[AIDD_LOOP_POLICY:MANUAL_STAGE_RESULT_FORBIDDEN]`
+4. Runtime-path safety: use only runtime commands from this skill contracts. If stdout/stderr contains `can't open file .../skills/.../runtime/...`, stop with immediate BLOCKED `runtime_path_missing_or_drift`; one runtime-path error is terminal for current run, do not invent alternate filenames, and do not retry guessed commands.
+5. Retry safety: do not rerun the same failing shell command more than once without new evidence/artifacts. For cwd/build mismatches, stop with blocker and handoff instead of looped retries.
+6. Fail-fast convergence hardening: if preflight/stage-chain context is missing (`reason_code=preflight_missing`) or workflow paths resolve to non-workspace targets, stop immediately with terminal BLOCKED for the current run and explicit next action `/feature-dev-aidd:implement <ticket>`.
+7. Actions contract hardening: if `actions-apply` reports schema/payload mismatch (`reason_code=contract_mismatch_actions_shape`), do not attempt guessed retries or manual payload edits; return terminal BLOCKED with the canonical handoff.
+8. Read order after stage-chain preflight artifacts: `readmap.md` -> loop pack -> review pack (if exists) -> rolling context pack; do not perform broad repo scan before these artifacts.
+9. Run subagent `feature-dev-aidd:qa`.
+10. Orchestration: run QA via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa.py`, derive tasks if needed, then Fill actions.json for `aidd/reports/actions/<ticket>/<scope_key>/qa.actions.json` strictly as `aidd.actions.v1` (`schema_version`, `allowed_action_types`, canonical `type` + `params`) with action types only from `{tasklist_ops.set_iteration_done, tasklist_ops.append_progress_log, tasklist_ops.next3_recompute, context_pack_ops.context_pack_update}`, and validate via `python3 ${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa_run.py`.
+11. Canonical stage-chain: internal preflight -> stage runtime -> actions_apply.py/postflight -> `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`. `[AIDD_LOOP_POLICY:CANONICAL_STAGE_RESULT_PATH]`
+12. Non-canonical stage-result path under `skills/aidd-loop/runtime/` is forbidden (treat as prompt-flow drift). `[AIDD_LOOP_POLICY:NON_CANONICAL_STAGE_RESULT_FORBIDDEN]`
+13. Output: return QA status contract with report paths and explicit canonical next action (`/feature-dev-aidd:status <ticket>` or `/feature-dev-aidd:tasks-new <ticket>` when follow-up tasks are required). Ensure one terminal payload per run (no repeated guessed recovery loops).
+
+## Command contracts
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/qa/runtime/qa_run.py`
+- When to run: after `qa.py` report generation, to validate canonical `qa.actions.json` before postflight apply.
+- Inputs: ticket/scope/work-item context and actions payload (`--actions`).
+- Outputs: actions-validation status for stage-chain; does not generate `aidd/reports/qa/<ticket>.json`.
+- Failure mode: non-zero exit when actions schema/contract or required stage inputs are invalid.
+- Next action: fix actions payload contract and rerun `qa_run.py`; keep report generation in `qa.py`.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-docio/runtime/actions_apply.py`
+- When to run: mandatory final step in stage-chain postflight after QA actions are validated.
+- Inputs: `--actions <path>` and optional `--apply-log <path>`.
+- Outputs: applied actions plus progress/stage-result/status-summary artifacts.
+- Failure mode: apply failure, progress update failure, or status summary failure.
+- Next action: inspect logs, fix blocking contract issues, rerun the stage-chain.
+
+### `python3 ${CLAUDE_PLUGIN_ROOT}/skills/aidd-flow-state/runtime/stage_result.py`
+- When to run: stage-chain postflight stage-result emission only (not operator/manual recovery command).
+- Inputs: canonical postflight payload (`ticket`, `stage`, `result`, `scope-key`, `work-item-key`, evidence links).
+- Outputs: canonical `aidd.stage_result.v1` at `aidd/reports/loops/<ticket>/<scope_key>/stage.qa.result.json`.
+- Failure mode: non-zero exit on missing required args or invalid stage-result contract fields.
+- Next action: fix postflight payload generation and rerun the stage-chain; do not switch to non-canonical loop runtime paths.
+
+## Notes
+- QA stage runs full tests per policy.
+
+## Additional resources
+

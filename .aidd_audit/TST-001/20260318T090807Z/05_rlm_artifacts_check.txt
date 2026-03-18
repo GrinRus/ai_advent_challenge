@@ -1,0 +1,15 @@
+TST-001-rlm-targets.json_exists=1
+TST-001-rlm-targets.json_bytes=1050
+TST-001-rlm-manifest.json_exists=1
+TST-001-rlm-manifest.json_bytes=313
+TST-001-rlm.worklist.pack.json_exists=1
+TST-001-rlm.worklist.pack.json_bytes=563
+TST-001-rlm.pack.json_exists=0
+TST-001-rlm.nodes.jsonl_exists=1
+TST-001-rlm.nodes.jsonl_bytes=0
+TST-001-rlm.links.jsonl_exists=0
+TST-001-context.json_exists=0
+TST-001-targets.json_exists=0
+nodes_non_empty=0
+minimal_baseline=0
+research_status_inferred=invalid
