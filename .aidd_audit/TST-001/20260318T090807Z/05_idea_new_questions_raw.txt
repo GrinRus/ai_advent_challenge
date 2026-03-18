@@ -1,0 +1,53 @@
+### Open Questions (Please answer in compact format)
+
+Reply with answers in this format: `Q1=A; Q2=B; Q3=A; Q4=D; Q5=C`
+
+**Q1 (Blocker):** Какие конкретные API/эндпоинты считаются "критическими" для RBAC-контроля?  
+- **Зачем:** Определяет scope работы  
+- **Варианты:**  
+  A) Только админские эндпоинты (/admin/*)  
+  B) Все мутационные API (POST/PUT/DELETE)  
+  C) Список из N конкретных эндпоинтов  
+  D) Все API с уровнем доступа > public  
+- **Default:** B
+
+**Q2 (Clarification):** Какая текущая реализация RBAC используется?  
+- **Варианты:**  
+  A) Casbin/OPA/другая библиотека  
+  B) Кастомная middleware на JWT-claims  
+  C) Ролевая проверка в каждом хендлере вручную  
+  D) RBAC отсутствует, нужно с нуля  
+- **Default:** B
+
+**Q3 (Clarification):** Какой фронтенд-фреймворк и текущий механизм аутентификации используется?  
+- **Варианты:**  
+  A) React + Context/Redux  
+  B) Vue + Pinia/Vuex  
+  C) Angular + Guards  
+  D) Другой (указать)  
+- **Default:** A
+
+**Q4 (Clarification):** Где должны храниться audit-логи ролевых операций?  
+- **Варианты:**  
+  A) База данных (отдельная таблица)  
+  B) Файловая система (JSONL/CSV)  
+  C) Внешний сервис (ELK/Splunk/Datadog)  
+  D) Гибрид: БД + архив в файл  
+- **Default:** A
+
+**Q5 (Clarification):** Какой механизм обновления сессии ожидается на фронтенде?  
+- **Варианты:**  
+  A) WebSocket (push-обновления)  
+  B) Polling (каждые N секунд)  
+  C) SSE (Server-Sent Events)  
+  D) Только на действиях пользователя (lazy update)  
+- **Default:** A
+
+---
+
+### Next Step
+
+After you provide answers, run:
+```
+/feature-dev-aidd:researcher TST-001
+```

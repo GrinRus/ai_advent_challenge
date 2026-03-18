@@ -1,0 +1,23 @@
+{
+  "schema": "aidd.stage_result.v1",
+  "ticket": "TST-001",
+  "stage": "qa",
+  "scope_key": "iteration_id_I1",
+  "result": "blocked",
+  "requested_result": "done",
+  "reason": "I1 approved for sign-off. 20/20 tests passed. AC-2 foundation complete. Blockers planned for I2.",
+  "reason_code": "no_tests_hard",
+  "work_item_key": "iteration_id=I1",
+  "verdict": "PASS_WITH_WARNINGS",
+  "artifacts": [],
+  "errors": [],
+  "evidence_links": {
+    "links": [
+      "aidd/reports/qa/TST-001_I1.json",
+      "aidd/reports/reviewer/TST-001/I1.json"
+    ],
+    "tests_log": "aidd/reports/tests/TST-001/iteration_id_I1.jsonl"
+  },
+  "updated_at": "2026-03-18T12:02:20Z",
+  "producer": "command"
+}

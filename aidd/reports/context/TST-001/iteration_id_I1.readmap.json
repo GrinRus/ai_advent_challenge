@@ -1,0 +1,87 @@
+{
+  "allowed_paths": [
+    "aidd/reports/context/TST-001/iteration_id_I1.readmap.md",
+    "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md",
+    "aidd/reports/loops/TST-001/iteration_id_I1/review.latest.pack.md",
+    "aidd/reports/context/TST-001.pack.md",
+    "aidd/reports/memory/TST-001.semantic.pack.json",
+    "aidd/reports/memory/TST-001.decisions.pack.json",
+    "aidd/docs/tasklist/TST-001.md",
+    "aidd/reports/**",
+    "aidd/reports/actions/**"
+  ],
+  "always_allow": [
+    "aidd/reports/**",
+    "aidd/reports/actions/**"
+  ],
+  "entries": [
+    {
+      "path": "aidd/reports/context/TST-001/iteration_id_I1.readmap.md",
+      "reason": "contract.required",
+      "ref": "aidd/reports/context/TST-001/iteration_id_I1.readmap.md",
+      "required": true,
+      "selector": ""
+    },
+    {
+      "path": "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md",
+      "reason": "contract.required",
+      "ref": "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md#AIDD:WORK_ITEM",
+      "required": true,
+      "selector": "#AIDD:WORK_ITEM"
+    },
+    {
+      "path": "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md",
+      "reason": "contract.required",
+      "ref": "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md#AIDD:BOUNDARIES",
+      "required": true,
+      "selector": "#AIDD:BOUNDARIES"
+    },
+    {
+      "path": "aidd/reports/loops/TST-001/iteration_id_I1/review.latest.pack.md",
+      "reason": "contract.optional",
+      "ref": "aidd/reports/loops/TST-001/iteration_id_I1/review.latest.pack.md",
+      "required": false,
+      "selector": ""
+    },
+    {
+      "path": "aidd/reports/context/TST-001.pack.md",
+      "reason": "contract.optional",
+      "ref": "aidd/reports/context/TST-001.pack.md#AIDD:CONTEXT_PACK",
+      "required": false,
+      "selector": "#AIDD:CONTEXT_PACK"
+    },
+    {
+      "path": "aidd/reports/memory/TST-001.semantic.pack.json",
+      "reason": "contract.optional",
+      "ref": "aidd/reports/memory/TST-001.semantic.pack.json",
+      "required": false,
+      "selector": ""
+    },
+    {
+      "path": "aidd/reports/memory/TST-001.decisions.pack.json",
+      "reason": "contract.optional",
+      "ref": "aidd/reports/memory/TST-001.decisions.pack.json",
+      "required": false,
+      "selector": ""
+    },
+    {
+      "path": "aidd/docs/tasklist/TST-001.md",
+      "reason": "contract.optional",
+      "ref": "aidd/docs/tasklist/TST-001.md@handoff:review",
+      "required": false,
+      "selector": "@handoff:review"
+    }
+  ],
+  "generated_at": "2026-03-18T11:29:41Z",
+  "loop_allowed_paths": [
+    "`backend-mcp/src/main/resources/db/changelog/rbac/`",
+    "`backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/domain/`",
+    "`backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/persistence/`"
+  ],
+  "schema": "aidd.readmap.v1",
+  "scope_key": "iteration_id_I1",
+  "source_contract": "/Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/implement/CONTRACT.yaml",
+  "stage": "implement",
+  "ticket": "TST-001",
+  "work_item_key": "iteration_id=I1"
+}

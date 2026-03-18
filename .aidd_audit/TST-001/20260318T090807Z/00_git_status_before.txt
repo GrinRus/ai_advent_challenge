@@ -1,0 +1,12 @@
+## codex/audit-tst-001-20260317
+?? .aidd_audit/
+?? .claude/
+?? aidd/
+?? backend/src/main/java/com/aiadvent/backend/flow/analysis/
+?? backend/src/main/java/com/aiadvent/backend/flow/api/github/
+?? backend/src/main/java/com/aiadvent/backend/flow/controller/GithubAnalysisController.java
+?? backend/src/main/java/com/aiadvent/backend/flow/service/github/
+?? backend/src/test/java/com/aiadvent/backend/flow/analysis/
+?? backend/src/test/java/com/aiadvent/backend/flow/api/
+?? backend/src/test/java/com/aiadvent/backend/flow/controller/GithubAnalysisControllerTest.java
+?? backend/src/test/java/com/aiadvent/backend/flow/service/github/

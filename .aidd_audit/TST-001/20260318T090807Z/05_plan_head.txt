@@ -1,0 +1,120 @@
+# Implementation Plan — TST-001: FS-RBAC-03 Live RBAC Enforcement
+
+**Status:** READY
+**Ticket:** TST-001
+**Updated:** 2026-03-18
+**Research Status:** warn (see research findings for PRD overrides)
+
+---
+
+## Executive Summary
+
+This plan implements live RBAC enforcement for all mutation APIs (POST/PUT/DELETE) with audit logging and frontend role synchronization. Based on research findings, we adapt the PRD assumptions to the actual codebase:
+
+| PRD Assumption | Research Finding | Adaptation |
+|----------------|------------------|------------|
+| JWT claims auth | X-Profile-Key header auth | Custom WebFlux filter with header parsing |
+| Redux state | Zustand with persistence | Extend Zustand store with SSE listener |
+| WebSocket push | SSE already exists for flows | Extend SSE for role notifications |
+| Spring Security | Not in classpath | Custom WebFlux filters (no Spring Security) |
+
+---
+
+## AIDD:DECISIONS
+
+### Architecture Decisions
+
+1. **No Spring Security** — Adding spring-boot-starter-security introduces significant complexity and potential conflicts with existing WebFlux setup. Instead, implement custom `WebFilter` for RBAC.
+
+2. **Extend SSE instead of WebSocket** — SSE infrastructure already exists (`subscribeToFlowEvents` in apiClient.ts). Adding WebSocket requires new dependencies and infrastructure. SSE is sufficient for unidirectional server-to-client role updates.
+
+3. **Role Caching with Caffeine** — Backend uses Caffeine cache (already in classpath). Cache profile roles with 5-minute TTL to meet P95 ≤ 10ms latency requirement.
+
+4. **Audit Log as Separate Table** — Follow existing pattern (note_entry table) with PostgreSQL JSONB for flexible metadata.
+
+5. **Header-Based Identity** — Use `X-Profile-Key` (format: `namespace:reference`) and `X-Profile-Auth` headers for identity extraction.
+
+---
+
+## AIDD:NON_NEGOTIABLES
+
+- All POST/PUT/DELETE APIs must return 403 for unauthorized requests
+- Audit log must capture: timestamp, actor profile key, action (GRANT/REVOKE/DENIED), target resource, result
+- Frontend role guards must update within 5 seconds of backend role change
+- RBAC check latency P95 ≤ 10ms
+- Zero breaking changes to existing API contracts
+
+---
+
+## AIDD:RISKS
+
+| Risk ID | Description | Probability | Impact | Mitigation |
+|---------|-------------|-------------|--------|------------|
+| R-001 | Profile service unavailable | Medium | High | Circuit breaker; fail-closed; cache roles |
+| R-002 | Cache stale roles after assignment | Medium | Medium | Cache invalidation on role change; TTL 5min |
+| R-003 | SSE connection memory leak | Low | Medium | Proper cleanup on disconnect; subscriber limits |
+| R-004 | Audit log write failures | Low | Medium | Async logging; error queue; never block request |
+| R-005 | RBAC filter performance degradation | Low | High | Caffeine cache; async audit; P95 target 10ms |
+| R-006 | Breaking change to existing APIs | Low | High | Feature flags; audit-only mode first; rollback |
+| R-007 | Component scan misses RBAC beans | Medium | High | Add to all profile configs; verify on startup |
+| R-008 | Missing profile service integration | High | High | Define contract; implement fallback to local DB |
+
+### Validation-Derived Risks (from TST-001-validation.md)
+
+**R-007: Component Scan Configuration**
+The application uses profile-based component scanning. The RBAC module needs to be added to ALL profiles or a shared configuration created.
+- **Mitigation**: Create `RbacConfig.java` with `@Profile("!test")` active in all non-test profiles
+
+**R-008: Profile Service Integration**
+The plan assumes `profileClient.fetchRoles()` exists, but no backend API for fetching profile roles was found in research.
+- **Mitigation**: Define profile service contract or implement local role storage via `rbac_profile_roles` table
+
+---
+
+## Milestones & Iterations
+
+### Phase 1: Backend Foundation (Days 1-3)
+**Goal:** Core RBAC filter and audit infrastructure
+
+#### 1.1 Database Migration
+**File:** `backend-mcp/src/main/resources/db/changelog/rbac/db.changelog-rbac-001.yaml`
+
+```yaml
+# Create audit_log table
+- changeSet:
+    id: rbac-0001-audit-log
+    author: ai-advent
+    context: rbac
+    changes:
+      - createTable:
+          tableName: rbac_audit_log
+          columns:
+            - column:
+                name: id
+                type: UUID
+                defaultValueComputed: gen_random_uuid()
+                constraints:
+                  primaryKey: true
+            - column:
+                name: timestamp
+                type: TIMESTAMP WITH TIME ZONE
+                defaultValueComputed: now()
+                constraints:
+                  nullable: false
+            - column:
+                name: actor_namespace
+                type: VARCHAR(32)
+                constraints:
+                  nullable: false
+            - column:
+                name: actor_reference
+                type: VARCHAR(128)
+                constraints:
+                  nullable: false
+            - column:
+                name: action
+                type: VARCHAR(32)
+                constraints:
+                  nullable: false
+            - column:
+                name: target_resource

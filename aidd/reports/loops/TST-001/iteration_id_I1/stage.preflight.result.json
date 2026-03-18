@@ -1,0 +1,26 @@
+{
+  "details": {
+    "artifacts": {
+      "actions_template": "aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.template.json",
+      "loop_pack": "aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md",
+      "readmap_json": "aidd/reports/context/TST-001/iteration_id_I1.readmap.json",
+      "readmap_md": "aidd/reports/context/TST-001/iteration_id_I1.readmap.md",
+      "writemap_json": "aidd/reports/context/TST-001/iteration_id_I1.writemap.json",
+      "writemap_md": "aidd/reports/context/TST-001/iteration_id_I1.writemap.md"
+    },
+    "contract": "/Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/implement/CONTRACT.yaml",
+    "preflight_status": "ok",
+    "target_stage": "implement"
+  },
+  "reason": "",
+  "reason_code": "",
+  "result": "done",
+  "schema": "aidd.stage_result.v1",
+  "schema_version": "aidd.stage_result.v1",
+  "scope_key": "iteration_id_I1",
+  "stage": "preflight",
+  "status": "ok",
+  "ticket": "TST-001",
+  "updated_at": "2026-03-18T11:29:41Z",
+  "work_item_key": "iteration_id=I1"
+}

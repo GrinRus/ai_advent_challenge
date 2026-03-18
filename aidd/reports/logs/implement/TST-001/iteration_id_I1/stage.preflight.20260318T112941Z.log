@@ -1,0 +1,47 @@
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-flow-state/runtime/set_active_feature.py TST-001
+[stdout]
+active feature: TST-001
+[researcher] rlm targets saved to reports/research/TST-001-rlm-targets.json.
+[index] index saved to aidd/docs/index/TST-001.json.
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-flow-state/runtime/set_active_stage.py implement
+[stdout]
+active stage: implement
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-flow-state/runtime/prd_check.py --ticket TST-001
+[stdout]
+
+[stderr]
+[prd-check] SKIP: cache hit (reason_code=cache_hit)
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-loop/runtime/preflight_prepare.py --ticket TST-001 --scope-key iteration_id_I1 --work-item-key iteration_id=I1 --stage implement --actions-template aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.template.json --readmap-json aidd/reports/context/TST-001/iteration_id_I1.readmap.json --readmap-md aidd/reports/context/TST-001/iteration_id_I1.readmap.md --writemap-json aidd/reports/context/TST-001/iteration_id_I1.writemap.json --writemap-md aidd/reports/context/TST-001/iteration_id_I1.writemap.md --result aidd/reports/loops/TST-001/iteration_id_I1/stage.preflight.result.json
+[stdout]
+loop_pack_path=aidd/reports/loops/TST-001/iteration_id_I1.loop.pack.md
+readmap_path=aidd/reports/context/TST-001/iteration_id_I1.readmap.json
+writemap_path=aidd/reports/context/TST-001/iteration_id_I1.writemap.json
+template_path=aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.template.json
+preflight_result=aidd/reports/loops/TST-001/iteration_id_I1/stage.preflight.result.json
+summary=preflight ok
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-docio/runtime/context_map_validate.py --map aidd/reports/context/TST-001/iteration_id_I1.readmap.json
+[stdout]
+[context-map-validate] OK: aidd/reports/context/TST-001/iteration_id_I1.readmap.json (aidd.readmap.v1)
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-docio/runtime/context_map_validate.py --map aidd/reports/context/TST-001/iteration_id_I1.writemap.json
+[stdout]
+[context-map-validate] OK: aidd/reports/context/TST-001/iteration_id_I1.writemap.json (aidd.writemap.v1)
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-docio/runtime/actions_validate.py --actions aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.template.json
+[stdout]
+[actions-validate] OK: aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.template.json (aidd.actions.v1)
+[stderr]
+
+$ /opt/homebrew/opt/python@3.10/bin/python3.10 /Users/griogrii_riabov/grigorii_projects/ai_driven_dev/skills/aidd-loop/runtime/preflight_result_validate.py --result aidd/reports/loops/TST-001/iteration_id_I1/stage.preflight.result.json
+[stdout]
+[preflight-result-validate] OK: aidd/reports/loops/TST-001/iteration_id_I1/stage.preflight.result.json (aidd.stage_result.v1)
+[stderr]
+

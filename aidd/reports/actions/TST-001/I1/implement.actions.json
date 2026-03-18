@@ -1,0 +1,55 @@
+{
+  "schema_version": "aidd.actions.v1",
+  "stage": "implement",
+  "ticket": "TST-001",
+  "scope_key": "I1",
+  "work_item_key": "",
+  "allowed_action_types": [
+    "context_pack_ops.context_pack_update",
+    "tasklist_ops.append_progress_log",
+    "tasklist_ops.next3_recompute",
+    "tasklist_ops.set_iteration_done"
+  ],
+  "actions": [
+    {
+      "type": "tasklist_ops.set_iteration_done",
+      "params": {
+        "item_id": "iteration_id=I1",
+        "commit_ref": "a1f45f2",
+        "files_created": 10,
+        "tests_passed": true
+      }
+    },
+    {
+      "type": "tasklist_ops.append_progress_log",
+      "params": {
+        "date": "2026-03-18",
+        "source": "implement",
+        "item_id": "iteration_id=I1",
+        "kind": "iteration",
+        "hash": "a1f45f2",
+        "msg": "Database migration + RBAC domain model complete. 10 files created, tests pass."
+      }
+    },
+    {
+      "type": "tasklist_ops.next3_recompute",
+      "params": {}
+    }
+  ],
+  "evidence": {
+    "files_created": [
+      "backend-mcp/src/main/resources/db/changelog/rbac/db.changelog-rbac-001.yaml",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/domain/Role.java",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/domain/ProfileIdentity.java",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/domain/Permission.java",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/domain/RbacDecision.java",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/persistence/AuditLogEntity.java",
+      "backend-mcp/src/main/java/com/aiadvent/mcp/backend/rbac/persistence/AuditLogRepository.java",
+      "backend-mcp/src/test/java/com/aiadvent/mcp/backend/rbac/domain/RoleTest.java",
+      "backend-mcp/src/test/java/com/aiadvent/mcp/backend/rbac/domain/ProfileIdentityTest.java",
+      "backend-mcp/src/test/java/com/aiadvent/mcp/backend/rbac/persistence/AuditLogRepositoryTest.java"
+    ],
+    "tests_passed": true,
+    "test_report": "BUILD SUCCESSFUL"
+  }
+}

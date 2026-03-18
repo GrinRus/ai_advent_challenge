@@ -1,0 +1,9 @@
+tasklist_path=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/docs/tasklist/TST-001.md
+tasks_key_present=1
+commands_key_present=0
+command_entries_count=3
+shell_chain_hits=0
+classification=PASS(no_shell_chain_in_test_execution_commands)
+command_1=./gradlew :backend-mcp:test --tests "com.aiadvent.mcp.backend.rbac.*"
+command_2=npm test -- useRoleGuard
+command_3=./gradlew :backend-mcp:test --tests "*RbacIntegrationTest*"

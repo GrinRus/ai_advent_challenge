@@ -1,0 +1,7 @@
+aidd/reports/loops
+aidd/reports/loops/.gitkeep
+aidd/reports/loops/TST-001
+aidd/reports/loops/TST-001/I1
+aidd/reports/loops/TST-001/iteration_id_I1
+aidd/reports/loops/TST-001/iteration_id_I1/stage.implement.result.json
+aidd/reports/loops/TST-001/iteration_id_I1/stage.review.result.json

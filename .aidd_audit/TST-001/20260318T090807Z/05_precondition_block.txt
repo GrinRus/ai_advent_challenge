@@ -1,0 +1,7 @@
+prd_status=READY
+open_questions_count=0
+answers_format=compact_q_values
+research_status=ok
+research_warn_scope=links_empty_non_blocking
+readiness_gate=PASS
+reason_code=-

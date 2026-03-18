@@ -1,0 +1,3 @@
+identity_marker_hits=0
+tasklist_scan_hits_excluded_context=0
+note=handoff_markers_in_progress_log_or_iterations_full_are_allowed; identity_fields_only_are_incident_scope

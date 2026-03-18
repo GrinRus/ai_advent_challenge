@@ -1,0 +1,2 @@
+Filesystem   1024-blocks      Used Available Capacity  Mounted on
+/dev/disk3s1   239362496 187672684  18828288    91%    /System/Volumes/Data

@@ -1,0 +1,50 @@
+{
+  "schema_version": "aidd.actions.v1",
+  "allowed_action_types": [
+    "tasklist_ops.set_iteration_done",
+    "tasklist_ops.append_progress_log",
+    "tasklist_ops.next3_recompute",
+    "context_pack_ops.context_pack_update"
+  ],
+  "actions": [
+    {
+      "type": "tasklist_ops.set_iteration_done",
+      "params": {
+        "ticket": "TST-001",
+        "iteration_id": "I1",
+        "status": "done",
+        "evidence": "QA report: PASS_WITH_WARNINGS, 20/20 tests passed, AC-2 schema foundation complete"
+      }
+    },
+    {
+      "type": "tasklist_ops.append_progress_log",
+      "params": {
+        "ticket": "TST-001",
+        "entry": "2026-03-18T16:00:00Z QA completed for I1. Status: PASS_WITH_WARNINGS. AC-2 partial (schema ready, service pending I2). Blockers QB1/QB2 planned for I2 resolution."
+      }
+    },
+    {
+      "type": "tasklist_ops.next3_recompute",
+      "params": {
+        "ticket": "TST-001"
+      }
+    },
+    {
+      "type": "context_pack_ops.context_pack_update",
+      "params": {
+        "ticket": "TST-001",
+        "updates": {
+          "qa_status": "PASS_WITH_WARNINGS",
+          "last_qa_scope": "TST-001/I1",
+          "ac_traceability": {
+            "AC-1": {"status": "NOT_APPLICABLE_I1", "target_iteration": "I2"},
+            "AC-2": {"status": "PARTIAL", "evidence": "Schema complete, service pending I2"},
+            "AC-3": {"status": "NOT_APPLICABLE_I1", "target_iteration": "I4/I5"},
+            "AC-4": {"status": "NOT_APPLICABLE_I1", "target_iteration": "I3"}
+          },
+          "i1_blockers": ["QB1: Component scan (I2)", "QB2: Liquibase config (I2)"]
+        }
+      }
+    }
+  ]
+}

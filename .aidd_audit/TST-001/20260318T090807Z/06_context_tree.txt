@@ -1,0 +1,8 @@
+aidd/reports/context
+aidd/reports/context/.gitkeep
+aidd/reports/context/TST-001.pack.md
+aidd/reports/context/by-ticket
+aidd/reports/context/by-ticket/TST-001
+aidd/reports/context/by-ticket/TST-001/latest_working_set.md
+aidd/reports/context/latest_working_set.md
+aidd/reports/context/template.context-pack.md

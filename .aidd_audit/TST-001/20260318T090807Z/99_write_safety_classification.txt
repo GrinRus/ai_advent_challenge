@@ -1,0 +1,3 @@
+plugin_write_safety=PASS
+plugin_write_runtime_evidence_hits=0
+workspace_layout=INFO(preexisting_noncanonical_root)

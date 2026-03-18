@@ -1,0 +1,682 @@
+# README head
+# AI Advent Challenge
+
+AI Advent Challenge — инициативный проект интерактивного LLM‑чата: веб‑клиент, Telegram‑бот и набор MCP‑сервисов для работы с кодом, GitHub и агентными сценариями.
+
+## Что за проект и зачем он нужен
+- Универсальный LLM‑чат с несколькими режимами (stream, sync, structured) и поддержкой pluggable провайдеров (OpenAI, zhipu.ai и др.).
+- RAG вокруг GitHub: индексация репозиториев, AST-aware разбивка, call graph и поиск по коду.
+- Конструктор флоу/агентов, который позволяет собирать цепочки шагов и управлять ими из UI или Telegram.
+- Два клиента: веб‑UI для полноценной работы и Telegram‑бот для быстрых запросов и голосового ввода.
+
+## Архитектура и используемые технологии
+- **Backend** — Spring Boot (Java 22), Clean Architecture (controller → service → domain → persistence), Spring AI для LLM, Liquibase, Postgres + pgvector, опционально Redis для кеша токенов. Включены RAG‑модули (Tree‑sitter AST, Neo4j call graph), конструктор флоу и MCP‑интеграции.
+- **MCP‑сервисы** (`backend-mcp/`) — HTTP MCP (GitHub, coding, agent/flow/insight/notes). Для AST понадобятся сабмодули в `backend-mcp/treesitter`.
+- **Frontend** — React + Vite (TypeScript), SSE‑клиент для стрима, собирается в статический бандл и отдаётся Nginx‑ом.
+- **Инфраструктура** — Docker Compose поднимает backend, frontend, Postgres, Redis и MCP; опционально Neo4j для графа вызовов. Поддержан локальный профиль с Ollama/vLLM.
+- **Паттерны** — многопровайдерный слой `app.chat.providers`, SSE‑стриминг, sync/structured ответы, гибкая пост‑обработка (sampling overrides, neighbor expansion).
+
+## Развертывание
+
+### Быстрый старт (Docker Compose, prod‑профиль)
+1) Скопируйте `.env.example` → `.env` и заполните ключи: минимум `OPENAI_API_KEY` или `ZHIPU_API_KEY`; для GitHub MCP — `GITHUB_PAT`; для бота — `TELEGRAM_*`.
+2) Запустите стек:
+   ```bash
+   docker compose up --build
+   ```
+3) UI будет доступен на `http://localhost:4179`, API проксируется как `/api`.
+
+### Локальная разработка
+- **Минимальный локальный запуск (Docker Compose + local профиль)**  
+  1) Скопируйте `.env.example` → `.env`.  
+  2) Замените минимум один ключ LLM: `OPENAI_API_KEY` **или** `ZHIPU_API_KEY`.  
+  3) Запустите:
+     ```bash
+     docker compose -f docker-compose.yml -f docker-compose.local.yaml up --build
+     ```
+- **Локальный профиль с Ollama/vLLM**  
+  ```bash
+  cp docs/env/local.env .env
+  docker compose -f docker-compose.yml -f docker-compose.local.yaml up --build
+  ```
+- **Backend/Frontend вне контейнеров**  
+  Поднимите базу и Redis:
+  ```bash
+  docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d postgres redis
+  ```
+  Backend:  
+  ```bash
+  APP_DB_URL=jdbc:postgresql://localhost:5434/ai_advent \
+  SPRING_DATA_REDIS_HOST=localhost \
+  SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+  ```
+  Frontend:  
+  ```bash
+  cd frontend
+  npm install
+  VITE_API_BASE_URL=/api npm run dev
+  ```
+- **AST/Tree‑sitter** (нужно, если трогаете GitHub RAG AST):  
+  ```bash
+  git submodule update --init --recursive backend-mcp/treesitter
+  cd backend-mcp && ./gradlew treeSitterBuild treeSitterVerify bootJar
+  ```
+- **Nginx для frontend (локальный Docker)**  
+  Для корректного проксирования `/api` обновите конфиг Nginx в `frontend/docker/nginx.conf` (или соответствующий в своём образе) на следующий:
+  ```nginx
+  server {
+      listen 4179;
+      server_name _;
+
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location / {
+          try_files $uri $uri/ /index.html;
+      }
+
+      location /api/ {
+          proxy_pass http://backend:8080;
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+  }
+  ```
+
+### Деплой на сервер
+Используется тот же compose. На целевой машине: `git pull && docker compose up -d --build` с prod‑значениями в `.env`. Подробнее — `docs/infra.md`.
+
+## Настройка провайдеров и моделей
+- Конфигурация лежит в `app.chat.providers` (Spring). Каждый запрос может указывать `provider` и `model`; UI и Telegram дают переключение из меню.
+- **OpenAI**: `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL`, `OPENAI_TEMPERATURE/TOP_P/MAX_TOKENS`, `OPENAI_TIMEOUT`.
+- **Zhipu (z.ai)**: `ZHIPU_BASE_URL`, `ZHIPU_COMPLETIONS_PATH`, `ZHIPU_API_KEY`, `ZHIPU_DEFAULT_MODEL`, `ZHIPU_TEMPERATURE/TOP_P/MAX_TOKENS`, `ZHIPU_TIMEOUT`.
+- Режимы моделей (stream/sync/structured) задаются в конфиге; usage считается либо по нативным данным, либо через fallback токенизацию (см. `docs/infra.md`).
+
+## Минимальный набор переменных окружения
+- **База данных**: `APP_DB_URL`, `APP_DB_USERNAME`, `APP_DB_PASSWORD` (по умолчанию соответствуют сервису `postgres` из compose).
+- **LLM**: один из ключей `OPENAI_API_KEY` или `ZHIPU_API_KEY` + дефолтные модели/URLs выше.
+- **Frontend**: `VITE_API_BASE_URL=/api` (установлен в `.env.example`).
+- **Опционально**: `GITHUB_PAT` для GitHub MCP, `TELEGRAM_*` для бота, `GITHUB_RAG_GRAPH_*`/Neo4j для call graph, `PROFILE_DEV_ENABLED/PROFILE_BASIC_TOKEN` для dev‑режима профилей. Полный список — в `.env.example` и `docs/infra.md`.
+
+## Как зайти в UI
+- После `docker compose up --build`: `http://localhost:4179` (прокси на backend `/api`). Backend слушает `8080`, но прямой доступ не нужен.
+- Для dev‑режима профилей можно включить `PROFILE_DEV_ENABLED=true` и `PROFILE_BASIC_TOKEN=...`; тогда запросы требуют заголовок `X-Profile-Auth`, UI показывает баннер «Dev session».
+
+## Telegram‑бот
+1) В `.env` выставьте `TELEGRAM_BOT_ENABLED=true`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_BOT_WEBHOOK_URL` (публичный HTTPS) и `TELEGRAM_BOT_WEBHOOK_SECRET`. Голос: `TELEGRAM_STT_MODEL`, `TELEGRAM_STT_FALLBACK_MODEL` (опционально), `TELEGRAM_STT_LANGUAGE`.
+2) Запустите backend (compose или вручную).
+3) Зарегистрируйте webhook:
+   ```bash
+   curl -X POST http://localhost:8080/api/telegram/webhook/register
+   ```
+4) Команды: `/start`, `/new`, `/menu`; inline‑меню для выбора провайдера/модели/режима/MCP/sampling. Голосовые сообщения транскрибируются и отправляются как текст.
+Подробнее про UX — `docs/guides/telegram-bot.md`.
+
+## Дополнительные материалы
+- Обзор: `docs/overview.md`
+- Архитектура: `docs/architecture/`
+- Инфраструктура и переменные: `docs/infra.md`
+- Бэклог: `docs/backlog.md`
+- Гайд по Telegram: `docs/guides/telegram-bot.md`
+
+# backlog head
+# Backlog
+
+Цель проекта — AI Advent Challenge: активное развитие собственного AI-проекта.
+
+Этот документ хранит список задач, которые предстоит реализовать в проекте.
+
+## Формат
+- `#` — крупные эпики.
+- `##` — пользовательские истории или большие блоки работ.
+- `- [ ]` — конкретные задачи, которые можно брать в работу.
+
+## Wave 0 — базовая настройка проекта
+### Backend (Java + Spring)
+- [x] Код backend-проекта располагается в директории `backend/`.
+- [x] Создать базовый Spring Boot сервис с REST контроллером-заглушкой.
+- [x] Настроить конфигурацию через `application.yaml` + профили `local`/`prod`.
+- [x] Настроить Gradle-проект с плагинами для проверок (`spotless`/`checkstyle` или `spotbugs`).
+- [x] Реализовать базовые принципы разработки:
+  - Использовать Clean Architecture: разделить слои controller/service/domain/persistence.
+  - Включить здравый логгинг (`Slf4j`) и централизованный обработчик ошибок.
+  - Писать модульные тесты с `JUnit 5` + `MockMvc`.
+  - Для интеграционных тестов применять Testcontainers.
+  - Описывать API в `OpenAPI/Swagger`.
+- [x] Подготовить Dockerfile (OpenJDK 22 + слоистая сборка Spring).
+- [x] Настроить миграции через Liquibase, интегрировать их в процесс сборки и деплоя.
+- [x] Реализовать эндпоинт `/api/help`, который возвращает заглушку с текстовой подсказкой.
+- [x] Зафиксировать, что все backend-эндпоинты публикуются с префиксом `/api` при доступе извне.
+
+### Frontend
+- [x] Код frontend-проекта располагается в директории `frontend/`.
+- [x] Выбрать стек (варианты: `React + Vite`, `Vue + Vite`, `SvelteKit`); приоритизировать тот, что проще команде.
+- [x] Сконфигурировать клиент для работы с REST API backend (axios/fetch с базовым клиентом).
+- [x] Настроить компонентовую структуру (страница-заглушка + состояние подключения к backend).
+- [x] Реализовать интеграцию: настроить окружение и эндпоинты для общения frontend ↔ backend, предусмотреть обработку ошибок и конфигурацию URL.
+- [x] Добавить Dockerfile для frontend (node builder + static Nginx/serve слой).
+- [x] Создать раздел `Help`, который обращается к `/api/help` и отображает результат; оставить заглушку на корневой странице.
+- [x] Зафиксировать, что frontend работает на порту `4179` (в Docker и локально).
+
+### Инфраструктура
+- [x] Создать `docker-compose.yml`, который поднимает frontend и backend с нужными сетевыми алиасами.
+- [x] Добавить сервис базы данных `postgres` c образом `pgvector/pgvector:pg15`, настроить volume для данных и переменные окружения.
+- [x] Настроить `.env`/секреты для локальной разработки и деплоя.
+- [x] Добавить GitHub Actions workflow: сборка backend, фронтенд, прогон тестов, билд контейнеров, деплой на VPS (например, через SSH + Docker Compose).
+- [x] Документировать процесс запуска и деплоя в `README.md` или `docs/infra.md`.
+- [x] Зафиксировать порты сервисов: backend — `8080`, frontend — `4179`; описать их в документации и `docker-compose.yml`.
+
+## Wave 1 — интерактивный LLM-чат
+### Backend
+- [x] Подключить библиотеку Spring AI и настроить клиента для OpenAI-compatible провайдера z.ai (модель `glm-4.6`, базовый URL, ключ, параметры запросов).
+- [x] Вынести настройки LLM (ключи, base URL, имя модели, опции стриминга) в `application.yaml` с возможностью переопределения через переменные окружения из `.env` и `docker-compose.yml`.
+- [x] Добавить сервис домена чата, который проксирует запросы в LLM, обрабатывает стриминговые ответы (интерактивная передача токенов) и сохраняет историю диалогов в хранилище backend.
+- [x] Реализовать SSE-эндпоинт на `/api/llm/chat/stream`, который принимает историю диалога и настройки запроса, стримит ответы LLM без дополнительной пост-обработки и не требует дополнительной авторизации.
+- [x] Обновить OpenAPI/Swagger-описание и документацию (`docs/infra.md`/`README.md`) с инструкциями по запуску чата и используемым переменным окружения.
+
+### Frontend
+- [x] Добавить новую вкладку `LLM Chat` с формой отправки сообщений, списком истории диалога и подсветкой сообщений пользователя/модели.
+- [x] Настроить подключение к SSE-эндпоинту backend, обрабатывать потоковые события, показывать токены по мере поступления и обрабатывать ошибки/разрывы соединения.
+- [x] Обеспечить интерактивный ввод-вывод: отображать состояние запроса (loading/streaming), поддержать отмену запроса и повторную отправку без перезагрузки страницы.
+- [x] Вынести адреса SSE и ключевые настройки фронтенда в конфигурацию окружения, синхронизировать переменные с `.env` и документацией.
+
+### Тестирование и контроль качества
+- [x] Добавить smoke-тесты/интеграционные проверки, покрывающие SSE-ручку и сохранение истории (например, MockMvc с Spring AI stub или контрактный тест).
+- [x] Настроить минимальный e2e-сценарий или storybook/demo, чтобы проверить потоковый ответ от backend.
+- [x] Обновить CI/CD сценарии при необходимости (секреты, прогон тестов).
+
+#### Wave 1 gaps
+- Покрытие SSE закрыто smoke и HTTP e2e тестами; дальнейшие улучшения можно выполнять по мере появления новых пользовательских сценариев.
+
+**Решения и допущения**
+- Провайдер LLM — z.ai, модель `glm-4.6`; настраиваем через совместимый OpenAI-клиент.
+- SSE-эндпоинт открыт без дополнительной авторизации, опирается на существующую инфраструктуру защиты.
+- История диалогов хранится на backend и доступна для восстановления контекста при следующих запросах.
+
+## Wave 1.5 — Spring AI memory integration
+### Цели
+- [x] Перейти от самописного формирования истории в контроллере к стандартным `ChatMemory`-компонентам Spring AI, чтобы упростить поддержку и включить готовые политики хранения.
+- [x] Сократить объём промпта при длинных сессиях, сохранив полное хранение истории в БД для аудита и отладки.
+
+### Backend
+- [x] Подключить `MessageWindowChatMemory` (или аналогичную реализацию) с конфигурируемым размером окна и зарегистрировать `MessageChatMemoryAdvisor` на уровне `ChatClient`.
+- [x] Настроить `ChatMemoryRepository`, повторно используя таблицы `chat_session`/`chat_message` либо переведя хранение на `JdbcChatMemoryRepository`, и обеспечить миграцию текущих данных.
+- [x] Обновить `ChatStreamController`, чтобы история подтягивалась через `ChatMemory.CONVERSATION_ID`, а не вручную через сервис.
+- [x] Переработать `ChatService` (или вынести отдельный компонент), разделив ответственность: полная история в БД и управление окном памяти для LLM.
+
+### Конфигурация и инструментирование
+- [x] Вынести параметры памяти (размер окна, тип репозитория, таймаут очистки) в `application.yaml` с возможностью переопределения через переменные окружения.
+- [x] Добавить диагностическое логирование/метрики вокруг `ChatMemory` (размер окна, количество сбросов), чтобы контролировать поведение в проде.
+
+### Тестирование и контроль качества
+- [x] Дополнить модульные тесты кейсами с длинными диалогами и убедиться, что в промпт попадает только окно сообщений, а полная история сохраняется в БД.
+- [x] Обновить e2e-тесты стриминга: повторные запросы с одним `conversationId` должны поднимать память из Spring AI, а не из ручного списка.
+
+### Документация
+- [x] Обновить `docs/processes.md` и `docs/infra.md` с описанием новой схемы памяти, параметров конфигурации и сценариев эксплуатации (очистка, миграции, диагностика).
+
+## Wave 2 — расширенная документация
+- [x] Спроектировать структуру каталога `docs/`:
+  - `docs/overview.md` — цели проекта, ключевые понятия, дорожная карта.
+  - `docs/architecture/` — отдельные файлы для backend (`backend.md`), frontend (`frontend.md`), интеграции с LLM (`llm.md`) и общих диаграмм (`diagrams/` с исходниками PlantUML/Excalidraw).
+  - `docs/processes.md` — принципы разработки, тестирование, правила ведения документации (без инструкции по запуску).
+  - `docs/faq.md` — типовые вопросы и сценарии использования.
+- [x] Обновить существующие материалы (`docs/infra.md`, `README.md`) под новую структуру и связать перекрёстными ссылками.
+- [x] Зафиксировать требования к обновлению документации при изменениях (чек-лист в `docs/CONTRIBUTING.md` или отдельный раздел).
+
+## Wave 3 — мультипровайдерный чат и выбор моделей
+### Цели
+- [x] Обеспечить возможность переключения между провайдерами z.ai и open.ai без изменения прикладного кода.
+- [x] Дать пользователю выбор набора поддерживаемых моделей от «эконом» до «топовых» внутри каждого провайдера.
+- [x] Стандартизировать создание и использование сущности `ChatClient` через выделенный сервис, уменьшая дублирование и связанные зависимости.
+
+### Backend
+- [x] Вынести текущую логику построения клиента LLM в сервис-фабрику (`ChatClientFactory` или `ChatProviderService`), инкапсулируя настройки HTTP, стриминга и токенов.
+- [x] Отключить автоконфигурацию прототипного `ChatClient.Builder` (`spring.ai.chat.client.enabled=false`) и зарегистрировать именованные `ChatClient`-бины для каждого провайдера через фабрику.
+- [x] Добавить слой абстракции `ProviderStrategy`/`ProviderAdapter`, реализующий унифицированный интерфейс для z.ai и open.ai, включая различия в API и параметрах моделей.
+- [x] Расширить доменную модель чата: хранить в истории диалогов выбранный провайдер и модель, обновить миграции Liquibase.
+- [x] Обновить сервисы и контроллеры, чтобы при запросе можно было явно передать `provider` и `model`, с дефолтами на уровне конфигурации.
+- [x] Поддержать передачу `ChatOptions`/`ZhiPuAiChatOptions` в `Prompt` на каждый вызов, чтобы UI мог переопределять модель, температуру и лимиты токенов.
+- [x] Реализовать гибридный фабричный метод, использующий `OpenAiApi#mutate` и `ZhiPuAiChatOptions` для сборки клиентов под разные базовые URL/ключи и fallback-сценарии.
+- [x] Покрыть новую фабрику и стратегии модульными тестами; добавить интеграционный тест, проверяющий переключение провайдера (использовать стаб-реализации для каждого).
+
+### Конфигурация и инфраструктура
+- [x] Описать в `application.yaml` и профилях структуру настроек провайдеров: base URL, ключ, таймауты, лимиты токенов, список доступных моделей (id, отображаемое имя, оценочная стоимость).
+- [x] Синхронизировать переменные окружения в `.env.example` и `docker-compose.yml`, обеспечить независимое управление ключами для обоих провайдеров.
+- [x] Задокументировать поддерживаемые свойства `spring.ai.openai.*` и `spring.ai.zhipuai.*`, включая runtime-перекрытия `chat.options.*`, и добавить рекомендации по выбору моделей (`gpt-4o`, `gpt-4o-mini`, `GLM-4.6`, `GLM-4.5`, `GLM-4.5 Air` и др.).
+- [x] Обновить документацию (`docs/infra.md`, `README.md`) с таблицей моделей: класс (budget/standard/pro), ориентировочная стоимость и рекомендуемые сценарии.
+- [x] Зафиксировать требования по актуализации документации при добавлении новых провайдеров/моделей (инструкции в `docs/processes.md` или ADR).
+
+### Frontend
+- [x] Добавить UI-компонент для выбора провайдера и модели перед отправкой запроса, автоподстройка доступных моделей в зависимости от выбранного провайдера.
+- [x] Отображать в интерфейсе текущий провайдер и модель в истории сообщений для упрощения отладки и поддержки.
+
+### Тестирование и контроль качества
+- [x] Расширить e2e-сценарии чата: переключение провайдера и модели, проверка сохранения истории и корректности ответа.
+- [x] Настроить smoke-тесты в CI, которые выполняют запросы к обоим провайдерам с использованием моков или контрактов.
+
+**Варианты подхода**
+1. **Стратегия + фабрика (рекомендуется)** — единая `ChatClientFactory`, регистрирующая стратегии провайдеров через Spring (`@Component`/`@ConfigurationProperties`). Простой в сопровождении, позволяет быстро добавлять новые провайдеры, дружит с профилями и конфигурациями, повторно использует `ChatClient.builder(model)` и runtime-опции (`chatClient.prompt().options(...)`) для подстановки модели.
+2. **Каталог провайдеров как конфиг** — хранить описания провайдеров и моделей в конфигурации или БД, динамически поднимать адаптеры на старте. Подходит, если планируется расширение списка провайдеров и нужен UI для управления.
+3. **Унифицированный OpenAI-слой** — использовать один OpenAI-compatible клиент Spring AI с кастомизацией через `ClientCustomizer`. Минимальные изменения кода, но сложнее учесть несовместимости (стриминг, лимиты, специфичные параметры) и отдельные свойства `spring.ai.zhipuai.chat.options.*`.
+
+## Wave 4 — Structured Sync Response
+### Backend
+- [x] Зафиксировать отдельный стек синхронных DTO: `ChatSyncRequest`, `StructuredSyncResponse`, вложенные `StructuredSyncAnswer`/`StructuredSyncItem`/`UsageStats`, `StructuredSyncStatus`, и задокументировать JSON пример в `docs/infra.md`.
+- [x] Добавить `BeanOutputConverter<StructuredSyncResponse>` в конфигурацию (при необходимости `ParameterizedTypeReference` для коллекций) и описать, как получаем JSON Schema/format для промпта.
+- [x] Реализовать новый `ChatSyncController` с POST `/api/llm/chat/sync`: валидация входа, регистрация `registerUserMessage`, вызов синхронного сервиса, возврат `StructuredSyncResponse`.
+- [x] Создать `StructuredSyncService`, который выбирает провайдера/модель, собирает `ChatOptions`, вызывает `chatProviderService.chatClient(...).prompt()...call().entity(StructuredSyncResponse.class)` с `BeanOutputConverter`, прокидывает conversation/system контекст и регистрирует ответ ассистента.
+- [x] Сохранить текущие стриминговые эндпоинты без изменений: никаких требований structured output для `/api/llm/chat/stream` и связанных опций.
+- [x] Расширить адаптеры провайдеров для sync-режима: OpenAI — `responseFormat(JSON_SCHEMA)` + `strict=true`, ZhiPu — добавление `beanOutputConverter.getFormat()` в промпт и валидация десериализации.
+- [x] Настроить ретраи (3 попытки, экспоненциальный backoff 250→1000 мс) на 429/5xx и ошибки схемы, при окончательном провале отдавать 422.
+- [x] Обновить OpenAPI и `docs/infra.md`: новое API, требования к JSON, поведение провайдеров, без телеметрии на первом этапе.
+
+**JSON ответа (черновик)**
+```json
+{
+  "requestId": "4bd0f474-78e8-4ffd-a990-3aa54f0704c3",
+  "status": "success",
+  "provider": {
+    "type": "ZHI_PU",
+    "model": "glm-4.6"
+  },
+  "answer": {
+    "summary": "Краткое описание ответа.",
+    "items": [
+      {
+        "title": "Основная рекомендация",
+        "details": "Расширенный текст ответа.",
+        "tags": ["insight", "priority"]
+      }
+    ],
+    "confidence": 0.82
+  },
+  "usage": {
+    "promptTokens": 350,
+    "completionTokens": 512,
+    "totalTokens": 862
+  },
+  "latencyMs": 1240,
+  "timestamp": "2024-05-24T10:15:30Z"
+}
+```
+
+### Frontend
+- [x] Добавить новую вкладку `Structured` на странице чата, переключающуюся между стриминговым и синхронным режимами.
+- [x] Реализовать форму отправки в синхронный эндпоинт с отображением состояния загрузки и ошибок.
+- [x] Отрисовать структурированный ответ: summary, список `items` (карточки), блок статистики `usage`, технические метаданные (provider, latency).
+- [x] Обновить клиентский слой API, добавить типы/интерфейсы под новую структуру ответа.
+- [x] Написать e2e сценарий (Playwright / Cypress) на создание structured-запроса и проверку UI.
+
+### Документация
+- [x] Обновить `README.md` и `docs/infra.md` с описанием нового режима, ссылками на Spring AI `BeanOutputConverter`/`ChatClient` и примерами конфигурации `spring.ai.openai.chat.options.response-format`.
+- [x] Добавить в `docs/processes.md` рекомендации по тестированию/наблюдаемости: проверка JSON Schema, fallback при провале автоконвертера, метрики latency и token usage.
+- [x] Подготовить follow-up (persist structured answers, retries для schema violations) и зафиксировать отдельными задачами в backlog.
+
+## Wave 4.1 — Structured Sync Follow-up
+### Backend
+- [x] Liquibase: добавить колонку `structured_payload JSONB` в `chat_message`, создать индекс по `session_id, created_at`, обновить `db.changelog-master.yaml`.
+- [x] Persistence слой: расширить сущности/DTO/mapper для работы с новой колонкой, обеспечить безопасную сериализацию/десериализацию (fail-safe при несовпадении схемы).
+- [x] StructuredSyncService: сохранять structured payload вместе с текстовым сообщением, логировать версию схемы и статус десериализации.
+- [x] Retry конфигурация: расширить `ChatProvidersProperties` секцией `retry` (attempts, initialDelayMs, multiplier, retryableStatuses), генерировать `RetryTemplate` на основании настроек и покрыть оба провайдера.
+- [x] Наблюдаемость и ошибки: добавить структурированное логирование количества попыток, итоговой причины остановки и метрик по retry.
+- [x] Тесты: unit для сериализации и retry, интеграционные для сохранения payload (включая 422/429/5xx сценарии и ограничение по макс. попыткам).
+
+### Frontend
+- [x] API клиента: подтягивать structured payload в истории, предусмотреть backwards compatibility с пустыми значениями.
+- [x] UI: отображать карточки structured ответа рядом с текстом, добавить fallback, если payload невалиден.
+- [x] Пользовательские тесты: e2e сценарий загрузки истории structured сессии и визуальной регрессии карточек.
+
+### Документация
+- [x] Обновить `docs/infra.md`: описать новую колонку, пример блока `retry`, требования к логам.
+- [x] Обновить `docs/processes.md`: чек-лист к тестированию сериализации, ретраев и визуального слоя.
+
+## Wave 5 — Клиентские параметры LLM из фронтенда
+### Backend
+- [x] Усилить тесты `ChatStreamController`/`StructuredSyncService`: зафиксировать, что при передаче `options.temperature/topP/maxTokens` они доходят до `ChatProviderAdapter`, а при отсутствии значений используются дефолты из `ChatProvidersProperties`.
+- [x] Расширить OpenAPI/REST документацию (`application.yaml`/`docs/infra.md` ссылкой) описанием новых опциональных полей `options.*` в теле запроса, привести примеры payload с и без overrides.
+
+### Frontend
+- [x] Добавить в UI управления (sliders/inputs) для `temperature`, `topP`, `maxTokens` в обоих режимах (`stream` и `structured`), инициализировать их значениями из каталога провайдера; предусмотреть кнопку сброса к дефолтам.
+- [x] Централизовать сборку payload: если пользователь оставил поля пустыми или сбросил значения, не отправлять ключи в `options`, чтобы backend продолжал применять конфиг по умолчанию.
+- [x] Обновить `LLMChat` стейт, чтобы смена провайдера/модели перезаполняла опции актуальными дефолтами, при этом не прерывая текущую сессию; отображать активные параметры рядом с сообщением ассистента.
+
+### Тестирование
+- [x] Добавить unit-тесты на сборщик payload (оба режима) — проверка передачи изменённых значений и fallback при `undefined`.
+- [x] E2E (Playwright): сценарий с изменением параметров, проверкой фактической отправки/отображения и обратного перехода к дефолтам без ошибок.
+
+### Документация
+- [x] Дополнить `docs/architecture/frontend.md` и `README.md` разделом о пользовательских настройках запроса, указать диапазоны допустимых значений и поведение по умолчанию.
+
+## Wave 6 — Расширение пула моделей ChatGPT
+### Аналитика
+- [x] Зафиксировать актуальную матрицу моделей OpenAI (июль 2024 — октябрь 2025): `gpt-5-nano` (~$0.05 / $0.40 за 1M input/output токенов — суперэконом), `gpt-4o-mini` (~$0.15 / $0.60 — дешёвая и быстрая), `gpt-5` (~$1.25 / $10.00 — флагман); описать сильные стороны, ограничения и доступные режимы (стриминг, мультимодальность).
+- [x] Расширить обзор альтернативных провайдеров: добавить GLM-линейку (`glm-4-32b-0414-128k` — контекст 128K, flat-pricing ~$0.10 / $0.10 за 1M токенов), сравнить с текущим `glm-4.6`, зафиксировать источники цен и ограничения по API.
+- [x] Обновить раздел выбора моделей в `docs/infra.md` и wiki, добавив рекомендации по сегментации (суперэконом, value, флагман, альтернативные GLM) и триггеры для переключения между ними.
+
+### Backend
+- [x] Расширить `ChatProvidersProperties` и каталог моделей OpenAI/GLM: добавить `gpt-5-nano`, `gpt-4o-mini`, `gpt-5`, а также `glm-4-32b-0414-128k` с дефолтными параметрами и поддержкой overrides (цены за 1K токенов $0.0001 input/output, контекст 128K).
+- [x] Обновить `ChatProviderRegistry`/`ChatProviderService`, чтобы новые модели корректно отображались в списке, имели fallback на прежние значения и валидацию совместимости со streaming/structured режимами (для GLM предусмотреть только sync).
+- [x] Добавить unit и интеграционные тесты, которые проверяют выбор каждой новой модели и happy-path запросы, а также блокируют неподдерживаемые режимы и превышение лимитов токенов; обновить тестовые стабы (OpenAI, GLM) с разной стоимостью.
+- [x] Добавить миграцию Liquibase и расширить `ChatMessage`: сохранить `prompt_tokens/completion_tokens/total_tokens`, рассчитанную стоимость (input/output) и валюту; обновить JPA-энтити, репозиторий и `ChatService`, использовать цены за 1K токенов из `ChatProvidersProperties.Model.pricing`.
+- [x] Обновить `StructuredSyncService` и стриминговый пайплайн (`ChatStreamController`/`ChatProviderService`): извлекать `ChatResponseMetadata.usage`, рассчитывать стоимость одного сообщения, сохранять её вместе с историей; для SSE добавить расширенный payload финального события (usage + cost) и fallback, если провайдер метаданные не прислал.
+- [x] Реализовать `SessionUsageService` и REST-эндпоинт (`GET /api/llm/sessions/{id}/usage`), формирующий агрегаты по диалогу (разбивка по сообщениям, суммарные токены/стоимость), отдающий валюту и источники цены; покрыть сервис unit-/integration-тестами и обновить `StubChatClientState` для передачи usage в тестах.
+
+### Frontend
+- [x] Расширить UI выбора модели: сгруппировать модели по сегментам (`Economy: gpt-5-nano`, `Value: gpt-4o-mini`, `Flagship: gpt-5`, `Alt: glm-4-32b-0414-128k`), вывести подсказки по стоимости, контексту и ограничениям (стриминг vs только sync).
+- [x] Обновить клиентский слой: гарантировать, что `options` формируются с учётом специфики `gpt-5-nano` (урезанные лимиты), `gpt-4o-mini` (большой контекст) и `glm-4-32b-0414-128k` (flat pricing, 128K), и что дефолты подхватываются из конфигурации.
+- [x] Расширить состояние `LLMChat`: обрабатывать usage/cost из SSE и sync-ответов, хранить агрегаты по текущей сессии, отображать подсказку по тарифу из каталога моделей.
+- [x] Добавить UI-блок в карточке диалога (header/side summary) с количеством токенов и стоимостью для текущего диалога и последнего сообщения; предусмотреть форматирование валюты, подсветку перерасхода, обновить e2e/визуальные тесты.
+
+### Документация и эксплуатация
+- [x] Добавить в `docs/processes.md` рекомендации по контролю затрат (алерты в OpenAI/GLM usage, квоты по сегментам, лимиты токенов для дорогих моделей).
+- [x] Подготовить CHANGELOG/релизную заметку Wave 6 с сравнением сегментов и планом постепенного включения `gpt-5`/`glm-4` с fallback на более дешёвые варианты.
+- [x] Обновить `docs/infra.md` и `docs/processes.md`: формула расчёта стоимости (Input/Output per 1K → фактический счёт), нюансы округления, требования к конфигурации `pricing` для OpenAI и GLM, гайды по мониторингу и алертам.
+
+## Wave 7 — Разделение sync и structured API
+### Backend
+- [x] Ввести отдельный сервис синхронных текстовых ответов (`SyncChatService`): использовать `ChatProviderService` и `ChatService` для plain-вызова без `BeanOutputConverter`, сформировать новый DTO `ChatSyncResponse` (текст, провайдер, задержка, usage/cost), сохранять ассистентские сообщения без `structuredPayload`.
+- [x] Переписать `ChatSyncController`: эндпоинт `POST /api/llm/chat/sync` должен возвращать `ChatSyncResponse`, выставлять заголовки `X-Session-Id`/`X-New-Session`, проверять поддержку синхронного режима через новый флаг `syncEnabled` в `ChatProvidersProperties.Model` и его обработку в `ChatProviderRegistry`.
+- [x] Вынести структурированный поток в отдельный `StructuredSyncController` с маршрутом `POST /api/llm/chat/sync/structured`, переиспользовать `StructuredSyncService`, добавить при необходимости временный alias для старого пути и явно пометить его как устаревший.
+- [x] Вынести общую логику подготовки `Prompt`/`ChatOptions`, регистрации сообщений, подсчёта `UsageCostEstimate` и конфигурации retry в переиспользуемый компонент для обоих sync-сервисов, чтобы устранить дублирование и расхождения в поведении.
+- [x] Обновить конфигурацию провайдеров: добавить свойство `sync-enabled` в YAML, актуализировать `structured-enabled` для моделей (например, `glm-4-32b-0414-128k` — только sync), синхронизировать значения в `application.yaml`, `.env.example` и документации.
+
+# backend controllers
+backend/src/main/java/com/aiadvent/backend/chat/controller/ChatProviderController.java
+backend/src/main/java/com/aiadvent/backend/chat/controller/ChatSessionUsageController.java
+backend/src/main/java/com/aiadvent/backend/chat/controller/ChatStreamController.java
+backend/src/main/java/com/aiadvent/backend/chat/controller/ChatSummaryAdminController.java
+backend/src/main/java/com/aiadvent/backend/chat/controller/ChatSyncController.java
+backend/src/main/java/com/aiadvent/backend/chat/controller/StructuredSyncController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/AgentConstructorController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/AgentDefinitionController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowControlController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowDefinitionController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowEventStreamController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowInteractionController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowLaunchController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowStatusController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowStepController.java
+backend/src/main/java/com/aiadvent/backend/flow/controller/FlowSummaryAdminController.java
+backend/src/main/java/com/aiadvent/backend/help/controller/HelpController.java
+backend/src/main/java/com/aiadvent/backend/profile/controller/ProfileAdminController.java
+backend/src/main/java/com/aiadvent/backend/profile/controller/ProfileController.java
+
+# frontend pages
+frontend/src/pages/AdminRoles.tsx
+frontend/src/pages/FlowAgents.tsx
+frontend/src/pages/FlowDefinitions.tsx
+frontend/src/pages/FlowLaunch.test.tsx
+frontend/src/pages/FlowLaunch.tsx
+frontend/src/pages/FlowSessions.tsx
+frontend/src/pages/FlowsLayout.tsx
+frontend/src/pages/FlowsOverview.tsx
+frontend/src/pages/Help.tsx
+frontend/src/pages/Home.tsx
+frontend/src/pages/LLMChat.tsx
+frontend/src/pages/ProfileSettings.tsx
+
+# apiClient
+import { z } from 'zod';
+import type { ZodSchema } from 'zod';
+import {
+  FlowLaunchPayloadSchema,
+  parseFlowStartResponse,
+  parseFlowStatusResponse,
+} from './types/flow';
+import type { FlowLaunchPayload, FlowStartResponse, FlowStatusResponse } from './types/flow';
+import {
+  AgentDefinitionDetailsSchema,
+  AgentDefinitionSummarySchema,
+  AgentVersionSchema,
+} from './types/agent';
+import type {
+  AgentCapability,
+  AgentDefinitionDetails,
+  AgentDefinitionSummary,
+  AgentInvocationOptionsPayload,
+  AgentVersion,
+} from './types/agent';
+import {
+  FlowDefinitionDetailsSchema,
+  FlowDefinitionHistoryEntrySchema,
+  FlowDefinitionSummarySchema,
+} from './types/flowDefinition';
+import type {
+  FlowDefinitionDetails,
+  FlowDefinitionDocument,
+  FlowDefinitionHistoryEntry,
+  FlowDefinitionSummary,
+  FlowStepOverrides,
+} from './types/flowDefinition';
+import { FlowLaunchPreviewSchema } from './types/flowLaunch';
+import type { FlowLaunchPreview } from './types/flowLaunch';
+import {
+  FlowInteractionItemSchema,
+  FlowInteractionListSchema,
+} from './types/flowInteraction';
+import type {
+  FlowInteractionItem,
+  FlowInteractionList,
+  FlowInteractionResponseSource,
+  FlowInteractionResponseSummary,
+} from './types/flowInteraction';
+import type { JsonValue } from './types/json';
+import { buildActiveProfileHeaders } from './profileStore';
+import {
+  DevLinkResponseSchema,
+  ProfileAdminPageSchema,
+  ProfileAuditEntrySchema,
+  ProfileDocumentSchema,
+  type DevProfileLinkResponse,
+  type ProfileAdminPage,
+  type ProfileAuditEntry,
+  type ProfileUpdatePayload,
+  type UserProfileDocument,
+} from './profileTypes';
+
+export type {
+  FlowEvent,
+  FlowStartResponse,
+  FlowState,
+  FlowStatusResponse,
+  FlowTelemetrySnapshot,
+} from './types/flow';
+export type {
+  AgentCapability,
+  AgentCapabilityPayload,
+  AgentDefinitionDetails,
+  AgentDefinitionSummary,
+  AgentInvocationOptionsPayload,
+  AgentInvocationOptionsType,
+  AgentVersion,
+} from './types/agent';
+export type {
+  FlowDefinitionDetails,
+  FlowDefinitionHistoryEntry,
+  FlowDefinitionSummary,
+} from './types/flowDefinition';
+export type {
+  FlowLaunchPreview,
+  FlowLaunchStep,
+  FlowLaunchCostEstimate,
+  FlowLaunchPricing,
+} from './types/flowLaunch';
+export type {
+  FlowInteractionResponseSource,
+  FlowInteractionStatus,
+  FlowInteractionType,
+  FlowInteractionResponseSummary,
+  FlowSuggestedAction,
+  FlowSuggestedActionFilter,
+  FlowSuggestedActions,
+} from './types/flowInteraction';
+export type { JsonValue } from './types/json';
+export type {
+  UserProfileDocument,
+  ProfileUpdatePayload,
+  ProfileAuditEntry,
+  DevProfileLinkResponse,
+  ProfileAdminPage,
+} from './profileTypes';
+
+export type AdminRole = z.infer<typeof AdminRoleSchema>;
+
+export type McpToolSummary = {
+  code: string;
+  displayName?: string | null;
+  description?: string | null;
+  mcpToolName?: string | null;
+  schemaVersion: number;
+  available: boolean;
+};
+
+export type McpServerSummary = {
+  id: string;
+  displayName?: string | null;
+  description?: string | null;
+  tags: string[];
+  status: 'UP' | 'DOWN' | 'UNKNOWN';
+  securityPolicy?: string | null;
+  tools: McpToolSummary[];
+};
+
+export type McpCatalogResponse = {
+  servers: McpServerSummary[];
+};
+
+export type McpHealthEvent = {
+  serverId: string;
+  status: 'UP' | 'DOWN' | 'UNKNOWN';
+  toolCount: number;
+  availableTools: string[];
+  unavailableTools: string[];
+  timestamp: string;
+};
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? '/api';
+export const CHAT_STREAM_URL = `${API_BASE_URL}/llm/chat/stream`;
+export const CHAT_SYNC_URL = `${API_BASE_URL}/llm/chat/sync`;
+export const CHAT_STRUCTURED_SYNC_URL = `${API_BASE_URL}/llm/chat/sync/structured`;
+
+
+export type HelpResponse = {
+  message: string;
+};
+
+export type ChatProvidersResponse = {
+  defaultProvider: string;
+  providers: Array<{
+    id: string;
+    displayName?: string;
+    type?: string;
+    defaultModel?: string;
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+    models: Array<{
+      id: string;
+      displayName?: string;
+      tier?: string;
+      inputPer1KTokens?: number;
+      outputPer1KTokens?: number;
+      contextWindow?: number;
+      maxOutputTokens?: number;
+      syncEnabled?: boolean;
+      streamingEnabled?: boolean;
+      structuredEnabled?: boolean;
+      currency?: string;
+    }>;
+  }>;
+};
+
+const AgentDefinitionSummaryListSchema = z.array(AgentDefinitionSummarySchema);
+const FlowDefinitionSummaryListSchema = z.array(FlowDefinitionSummarySchema);
+const FlowDefinitionHistoryListSchema = z.array(FlowDefinitionHistoryEntrySchema);
+const AdminRoleSchema = z.object({
+  id: z.string().uuid(),
+  code: z.string(),
+  displayName: z.string(),
+  description: z.string().optional().nullable(),
+});
+const AdminRoleListSchema = z.array(AdminRoleSchema);
+const ProfileAuditEntryListSchema = z.array(ProfileAuditEntrySchema);
+
+function validateWithSchema<T>(payload: unknown, schema: ZodSchema<T>, context: string): T {
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(
+      `${context}: формат ответа не соответствует ожиданиям (${parsed.error.message})`,
+    );
+  }
+  return parsed.data;
+}
+
+async function parseJsonResponse<T>(
+  response: Response,
+  schema: ZodSchema<T>,
+  errorPrefix: string,
+): Promise<T> {
+  const rawText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `${errorPrefix} (status ${response.status}): ${
+        rawText || response.statusText
+      }`,
+    );
+  }
+
+  let payload: unknown = null;
+  try {
+    payload = rawText ? JSON.parse(rawText) : null;
+  } catch (error) {
+    throw new Error(`${errorPrefix}: не удалось разобрать JSON (${(error as Error).message})`);
+  }
+
+  return validateWithSchema(payload, schema, errorPrefix);
+}
+
+function tryParseJson(raw: string): unknown | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function buildProfileHeaders(
+  profileKey: string,
+  channel?: string,
+  ifMatch?: string,
+  devToken?: string,
+): HeadersInit {
+  const headers: HeadersInit = {
+    'X-Profile-Key': profileKey,
+  };
+  if (channel) {
+    headers['X-Profile-Channel'] = channel;
+  }
+  if (ifMatch) {
+    headers['If-Match'] = ifMatch;
+  }
+  if (devToken) {
+    headers['X-Profile-Auth'] = devToken;
+  }
+  return headers;
+}
+
+export async function fetchProfileDocument(
+  namespace: string,
+  reference: string,
+  profileKey: string,
+  channel?: string,
+  devToken?: string,
+): Promise<{ profile: UserProfileDocument; etag?: string }> {
+  const response = await fetch(`${API_BASE_URL}/profile/${namespace}/${reference}`, {

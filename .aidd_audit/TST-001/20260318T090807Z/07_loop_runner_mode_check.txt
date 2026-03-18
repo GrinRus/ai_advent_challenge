@@ -1,0 +1,4 @@
+permission_mode_default_hits=0
+requires_approval_hits=0
+runner_env=AIDD_LOOP_RUNNER=claude --dangerously-skip-permissions
+runner_mode_status=PASS

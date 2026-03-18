@@ -1,0 +1,9 @@
+init_present=1
+cwd=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new
+permission_mode=bypassPermissions
+plugin_loaded=1
+plugin_paths_count=2
+slash_status_present=1
+skills_present=1
+plugin_path_1=/Users/griogrii_riabov/.claude/plugins/cache/aidd-local/feature-dev-aidd/0.1.0
+plugin_path_2=/Users/griogrii_riabov/grigorii_projects/ai_driven_dev

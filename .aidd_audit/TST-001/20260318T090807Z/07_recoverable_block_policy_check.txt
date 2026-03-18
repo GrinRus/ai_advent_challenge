@@ -1,0 +1,5 @@
+blocked_policy=ralph
+recoverable_blocked=1
+recovery_path=scope_drift_reconcile_probe
+retry_attempt=1/2
+policy_match=1

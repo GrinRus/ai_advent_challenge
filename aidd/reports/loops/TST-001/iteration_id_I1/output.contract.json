@@ -1,0 +1,29 @@
+{
+  "schema": "aidd.output_contract.v1",
+  "ticket": "TST-001",
+  "stage": "implement",
+  "scope_key": "iteration_id_I1",
+  "work_item_key": "iteration_id=I1",
+  "log_path": "aidd/reports/loops/TST-001/cli.implement.20260318-112941.log",
+  "stage_result_path": "aidd/reports/loops/TST-001/iteration_id_I1/stage.implement.result.json",
+  "status": "warn",
+  "reason_code": "output_contract_warn",
+  "missing_fields": [
+    "artifacts",
+    "blockers",
+    "next_actions",
+    "read_log",
+    "status",
+    "tests",
+    "work_item_key"
+  ],
+  "warnings": [
+    "read_log_missing",
+    "read_order_missing_loop_pack"
+  ],
+  "suppressed_warnings": [],
+  "status_output": "",
+  "status_expected": "READY",
+  "read_log": [],
+  "actions_log": "aidd/reports/actions/TST-001/iteration_id_I1/implement.actions.json"
+}

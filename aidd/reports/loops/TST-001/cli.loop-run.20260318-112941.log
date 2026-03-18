@@ -1,0 +1,7 @@
+2026-03-18T11:29:41Z event=start ticket=TST-001 max_iterations=6 runner=local blocked_policy=ralph recoverable_retry_budget=2 research_gate=auto step_timeout_seconds=3600 silent_stall_seconds=1200
+2026-03-18T11:29:41Z event=auto-select-work-item selected=iteration_id=I2
+2026-03-18T11:29:41Z event=research-gate-warn-continue reason_code=research_status_invalid blocked_policy=ralph reason_class=soft_override
+2026-03-18T11:29:41Z event=step iteration=1 status=blocked stage=implement scope_key=iteration_id_I2 exit_code=20 runner_cmd=claude --dangerously-skip-permissions blocked_policy=ralph recoverable_blocked=1 ralph_reason_class=recoverable_retry work_item_key=iteration_id=I2 active_stage_sync_applied=0
+2026-03-18T11:29:41Z event=recoverable-block iteration=1 reason_code=scope_drift_recoverable retry_attempt=1/2 recovery_path=scope_drift_reconcile_probe
+2026-03-18T11:49:55Z event=step iteration=2 status=done stage=implement scope_key=iteration_id_I1 exit_code=0 runner_cmd=claude --dangerously-skip-permissions --plugin-dir /Users/griogrii_riabov/grigorii_projects/ai_driven_dev --add-dir /Users/griogrii_riabov/grigorii_projects/ai_driven_dev --output-format stream-json --include-partial-messages --verbose -p /feature-dev-aidd:implement TST-001 blocked_policy=ralph recoverable_blocked=0 ralph_reason_class=not_recoverable work_item_key=iteration_id=I1 active_stage_sync_applied=1
+2026-03-18T11:49:55Z event=done iterations=2

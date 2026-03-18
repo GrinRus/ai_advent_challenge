@@ -1,0 +1,9 @@
+Q1: What is the exact database schema for the existing users/roles tables?
+  A) Provide schema details :: I will describe the existing users, roles, and permissions table structure
+  B) Point to migration files :: The schema is defined in existing migration files I can reference
+  C) Research needed :: The researcher should investigate the current database schema from the codebase
+Q2: Is there existing WebSocket infrastructure to extend?
+  A) Yes - Socket.IO :: Existing Socket.IO server that can be extended
+  B) Yes - Native WS :: Existing native WebSocket server implementation
+  C) Yes - Other library :: Using another WebSocket library (please specify)
+  D) No - build new :: No existing WebSocket infrastructure, need to create from scratch

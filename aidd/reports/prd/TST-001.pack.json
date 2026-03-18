@@ -1,0 +1,37 @@
+{
+  "action_items": [
+    "- [x] **F1: Auth Model Mismatch** — **RESOLVED** — Q2 updated to \"X-Profile-Key header-based auth\" (Q2=C). All PRD sections updated.",
+    "- [x] **F2: Frontend State Management Mismatch** — **RESOLVED** — Q3 updated to \"React + Zustand\" (Q3=B). All PRD sections updated.",
+    "- [x] **F3: Real-time Infrastructure Mismatch** — **RESOLVED** — Q5 updated to \"Polling\" (Q5=B) as simpler approach aligned with system constraints.",
+    "- [x] **F4: Research Status Warning** — **RESOLVED** — Research findings synchronized with PRD decisions.",
+    "- [x] **F5: AIDD:OPEN_QUESTIONS Not Cleared** — **RESOLVED** — All open questions closed, documented in section 10.",
+    "- [x] **F6: AIDD:ROLL_OUT Empty** — **RESOLVED** — Rollout plan filled with 4 phases, feature flags, and rollback strategies.",
+    "- [x] **F7: Research Hints Not Validated** — **RESOLVED** — Research hints validated against actual codebase structure.",
+    "- [x] **AI-1: Update Q2 answer** — Changed Q2 from JWT-claims to X-Profile-Key header-based auth.",
+    "- [x] **AI-2: Update Q3 answer** — Changed Q3 from Redux to Zustand.",
+    "- [x] **AI-3: Revisit Q5 decision** — Changed Q5 from WebSocket to Polling (30s interval)."
+  ],
+  "findings": {
+    "cols": [
+      "id",
+      "severity",
+      "title",
+      "details"
+    ],
+    "rows": []
+  },
+  "generated_at": "2026-03-18T10:47:37Z",
+  "kind": "review",
+  "pack_version": "v1",
+  "recommended_status": "ready",
+  "schema": "aidd.report.pack.v1",
+  "slug": "fs-rbac-03-live-enforcement",
+  "source_path": "reports/prd/TST-001.json",
+  "stats": {
+    "action_items": 13,
+    "findings": 0
+  },
+  "status": "ready",
+  "ticket": "TST-001",
+  "type": "prd"
+}

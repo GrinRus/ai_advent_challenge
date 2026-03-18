@@ -1,0 +1,24 @@
+{
+  "entries": [],
+  "generated_at": "2026-03-18T10:45:14Z",
+  "kind": "pack",
+  "links": {
+    "manifest": "aidd/reports/research/TST-001-rlm-manifest.json",
+    "nodes": "aidd/reports/research/TST-001-rlm.nodes.jsonl"
+  },
+  "pack_version": "v1",
+  "schema": "aidd.report.pack.v1",
+  "slug_hint": "fs-rbac-03-live-enforcement",
+  "stats": {
+    "entries_total": 0,
+    "entries_trimmed": 0,
+    "failed": 0,
+    "missing": 0,
+    "outdated": 0,
+    "total": 0,
+    "trim_reason": null
+  },
+  "status": "ready",
+  "ticket": "TST-001",
+  "type": "rlm-worklist"
+}

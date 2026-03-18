@@ -1,0 +1,21 @@
+{
+  "schema": "aidd.stage_result.v1",
+  "ticket": "TST-001",
+  "stage": "implement",
+  "scope_key": "iteration_id_I1",
+  "result": "done",
+  "requested_result": "done",
+  "reason": "Stage policy (implement) запрещает тесты — стадия тестов пропущена.",
+  "reason_code": "tests_forbidden",
+  "work_item_key": "iteration_id=I1",
+  "verdict": null,
+  "artifacts": [],
+  "errors": [],
+  "evidence_links": {
+    "tests_log": "aidd/reports/tests/TST-001/iteration_id_I1.jsonl",
+    "cli_log": "aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.log",
+    "cli_stream": "aidd/reports/loops/TST-001/cli.loop-step.20260318-112941.stream.jsonl"
+  },
+  "updated_at": "2026-03-18T12:03:17.939305+00:00",
+  "producer": "command"
+}

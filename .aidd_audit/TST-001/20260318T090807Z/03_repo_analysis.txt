@@ -1,0 +1,9 @@
+Repository surface analysis (TST-001)
+
+1) README and backlog show active focus on flow orchestration, MCP integrations, profile/roles, and Telegram/web channel parity.
+2) Backend controllers currently include profile admin role endpoints and flow endpoints, but no dedicated GitHub analysis flow controller in tracked sources.
+3) Frontend pages include AdminRoles and flow pages, indicating existing role UX and flow launch UX that can be extended.
+4) apiClient already exposes admin roles/profile audit contracts, so RBAC-related improvements can reuse existing client infrastructure.
+5) Backlog has open role/OAuth tasks (Wave 43) and open graph navigation polish tasks (Wave 45), which align with catalog options.
+
+Conclusion: best convergence for full e2e stage flow is FS-RBAC-03 because it has concrete backend+frontend footholds already in code, medium scope, and clear acceptance checks without introducing new provider stacks.

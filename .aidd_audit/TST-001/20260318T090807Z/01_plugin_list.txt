@@ -1,0 +1,7 @@
+Installed plugins:
+
+  ❯ feature-dev-aidd@aidd-local
+    Version: 0.1.0
+    Scope: user
+    Status: ✔ enabled
+

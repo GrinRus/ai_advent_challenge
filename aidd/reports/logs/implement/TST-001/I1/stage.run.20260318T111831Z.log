@@ -1,0 +1,13 @@
+[stdout]
+
+[stderr]
+[actions-validate] ERROR: actions[2]: params must be empty for next3_recompute
+[actions-validate] ERROR: actions[3]: unknown context_pack_update fields: iteration_completed, next_iteration
+[aidd] ERROR: reason_code=contract_mismatch_actions_shape
+[aidd] ERROR: diagnostics=actions_contract_retry_failed:no_changes_applied
+[aidd] ERROR: deterministic_error_bundle={"invalid_fields": ["actions[2]: params must be empty for next3_recompute", "actions[3]: unknown context_pack_update fields: iteration_completed, next_iteration"], "payload_hash_after": "c1fe08debd0f5ef3c4ed35804ba39ce9e72f560575fd2d1ca07d6e2e84199edb", "payload_hash_before": "c1fe08debd0f5ef3c4ed35804ba39ce9e72f560575fd2d1ca07d6e2e84199edb", "recovered_fields": [], "retry_applied": false, "retry_reason": "no_changes_applied"}
+[aidd] ERROR: actions_path=aidd/reports/actions/TST-001/I1/implement.actions.json
+[aidd] ERROR: supported_action_types=context_pack_ops.context_pack_update,tasklist_ops.append_progress_log,tasklist_ops.next3_recompute,tasklist_ops.set_iteration_done
+[aidd] ERROR: canonical_example_aidd_actions_v1={"schema_version":"aidd.actions.v1","stage":"implement","ticket":"TST-001","scope_key":"I1","work_item_key":"","allowed_action_types":["context_pack_ops.context_pack_update","tasklist_ops.append_progress_log","tasklist_ops.next3_recompute","tasklist_ops.set_iteration_done"],"actions":[{"type":"tasklist_ops.append_progress_log","params":{"date":"1970-01-01","source":"implement","item_id":"iteration_id=I1","kind":"iteration","hash":"sha256:example","msg":"progress update"}}]}
+[aidd] WARN: plugin write-safety unavailable (reason_code=plugin_write_safety_unavailable): fatal: not a git repository (or any of the parent directories): .git
+

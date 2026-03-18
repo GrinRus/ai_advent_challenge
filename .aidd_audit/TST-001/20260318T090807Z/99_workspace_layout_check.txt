@@ -1,0 +1,5 @@
+project_root=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new
+checked=docs,reports,config,.cache (outside aidd/)
+found_count=1
+found_1=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/docs
+classification=INFO(preexisting_noncanonical_root)

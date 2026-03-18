@@ -1,0 +1,12 @@
+qa_log_path=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/.aidd_audit/TST-001/20260318T090807Z/08_qa_run1.log
+discovery_method=find+rg_simulation
+qa_reports_and_test_logs_found=5
+gradlew_invocations_seen=0
+gradlew_no_such_file_hits=1
+build_successful_hits=6
+path_1=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/qa/.gitkeep
+path_2=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/qa/TST-001_I1.json
+path_3=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/tests/.gitkeep
+path_4=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/tests/TST-001/TST-001.jsonl
+path_5=/Users/griogrii_riabov/grigorii_projects/ai_advent_challenge_new/aidd/reports/tests/TST-001/iteration_id_I1.jsonl
+classification=WARN(qa_gradle_invocation_context_mismatch)

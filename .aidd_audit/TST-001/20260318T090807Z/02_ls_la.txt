@@ -1,0 +1,23 @@
+total 128
+drwxr-xr-x   22 griogrii_riabov  staff    704 Mar 18 13:09 .
+drwxr-xr-x   43 griogrii_riabov  staff   1376 Mar 16 19:37 ..
+drwxr-xr-x@   3 griogrii_riabov  staff     96 Mar 18 13:08 .aidd_audit
+drwxr-xr-x@   3 griogrii_riabov  staff     96 Mar 18 13:09 .claude
+-rw-r--r--    1 griogrii_riabov  staff  10635 Feb 15 15:09 .env.example
+drwxr-xr-x   17 griogrii_riabov  staff    544 Mar 18 13:10 .git
+drwxr-xr-x    3 griogrii_riabov  staff     96 Feb 15 15:09 .github
+-rw-r--r--    1 griogrii_riabov  staff    231 Feb 15 15:09 .gitignore
+-rw-r--r--    1 griogrii_riabov  staff   1001 Feb 15 15:09 .gitmodules
+-rw-r--r--    1 griogrii_riabov  staff   2135 Feb 15 15:09 AGENTS.md
+-rw-r--r--    1 griogrii_riabov  staff   8384 Feb 15 15:09 README.md
+drwxr-xr-x@   6 griogrii_riabov  staff    192 Mar 18 13:09 aidd
+drwxr-xr-x   15 griogrii_riabov  staff    480 Mar 18 11:24 backend
+drwxr-xr-x   16 griogrii_riabov  staff    512 Mar  6 18:10 backend-mcp
+drwxr-xr-x@   4 griogrii_riabov  staff    128 Mar 12 16:36 dist
+-rw-r--r--    1 griogrii_riabov  staff    278 Feb 15 15:09 docker-compose.local.yaml
+-rw-r--r--    1 griogrii_riabov  staff  12506 Feb 15 15:09 docker-compose.yml
+drwxr-xr-x   20 griogrii_riabov  staff    640 Mar 18 11:24 docs
+-rwxr-xr-x    1 griogrii_riabov  staff   1140 Feb 15 15:09 download-spring-ai-docs.sh
+drwxr-xr-x   23 griogrii_riabov  staff    736 Mar  8 13:34 frontend
+drwxr-xr-x@ 187 griogrii_riabov  staff   5984 Mar 12 16:29 node_modules
+-rw-r--r--    1 griogrii_riabov  staff   3236 Feb 15 15:09 task_day_4.md

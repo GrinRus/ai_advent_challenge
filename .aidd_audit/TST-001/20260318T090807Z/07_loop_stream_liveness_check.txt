@@ -1,0 +1,5 @@
+main_growth_bytes=418
+stream_growth_bytes=2689698
+liveness_class=active_stream
+stream_paths_source=fallback_scan
+note=main_log_stagnation_with_stream_growth_is_not_silent_stall
